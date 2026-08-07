@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
 import fcntl
 import json
 import math
@@ -12,9 +11,9 @@ import os
 import pathlib
 import re
 import sys
-from datetime import datetime, timezone
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from typing import Any
-
 
 SCHEMA_VERSION = "stage-telemetry/v3"
 SCHEMA_VERSION_V1 = "stage-telemetry/v1"
@@ -27,9 +26,24 @@ SUPPORTED_SCHEMA_VERSIONS = {
 STAGE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 VERIFICATION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$")
 STATUSES = {"planned", "in_progress", "blocked", "accepted", "closed"}
-COVERAGE_KEYS = {"worker_wall", "queue", "verification", "review", "integration", "rebase"}
+COVERAGE_KEYS = {
+    "worker_wall",
+    "queue",
+    "verification",
+    "review",
+    "integration",
+    "rebase",
+}
 COVERAGE_VALUES = {"complete", "partial", "unavailable"}
-TOP_LEVEL_KEYS_V1 = {"schema_version", "stage_id", "updated_at", "status", "metrics", "verification", "coverage"}
+TOP_LEVEL_KEYS_V1 = {
+    "schema_version",
+    "stage_id",
+    "updated_at",
+    "status",
+    "metrics",
+    "verification",
+    "coverage",
+}
 TOP_LEVEL_KEYS_V2 = TOP_LEVEL_KEYS_V1 | {"delegation"}
 V3_FIELDS = {
     "orchestration_level",
@@ -102,7 +116,7 @@ DELEGATION_REASONS = {
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def default_document(stage_id: str) -> dict[str, Any]:
@@ -157,7 +171,12 @@ def require_exact_keys(value: object, expected: set[str], label: str) -> dict[st
 def require_duration(value: object, label: str) -> None:
     if value is None:
         return
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+    ):
         raise SystemExit(f"{label} must be a non-negative finite number or null")
 
 
@@ -183,12 +202,19 @@ def validate_document(document: object, stage_id: str) -> dict[str, Any]:
     payload = require_exact_keys(document, expected_keys, "telemetry")
     if payload["stage_id"] != stage_id:
         raise SystemExit("telemetry stage_id does not match the stage directory")
-    if not isinstance(payload["updated_at"], str) or not payload["updated_at"].endswith("Z"):
+    if not isinstance(payload["updated_at"], str) or not payload["updated_at"].endswith(
+        "Z"
+    ):
         raise SystemExit("telemetry updated_at must be an RFC3339 UTC timestamp")
     if payload["status"] not in STATUSES:
         raise SystemExit("telemetry status is not supported")
     metrics = require_exact_keys(payload["metrics"], METRICS_KEYS, "metrics")
-    for key in ("worker_wall_seconds", "queue_seconds", "integration_seconds", "rebase_seconds"):
+    for key in (
+        "worker_wall_seconds",
+        "queue_seconds",
+        "integration_seconds",
+        "rebase_seconds",
+    ):
         require_duration(metrics[key], f"metrics.{key}")
     require_count(metrics["review_rounds"], "metrics.review_rounds")
     findings = require_exact_keys(metrics["findings"], FINDING_KEYS, "metrics.findings")
@@ -204,22 +230,31 @@ def validate_document(document: object, stage_id: str) -> dict[str, Any]:
     if any(value not in COVERAGE_VALUES for value in coverage.values()):
         raise SystemExit("coverage values must be complete, partial, or unavailable")
     if schema_version in {SCHEMA_VERSION_V2, SCHEMA_VERSION}:
-        delegation = require_exact_keys(payload["delegation"], DELEGATION_KEYS, "delegation")
+        delegation = require_exact_keys(
+            payload["delegation"], DELEGATION_KEYS, "delegation"
+        )
         decision = delegation["decision"]
         if decision is not None and (
             not isinstance(decision, str) or decision not in DELEGATION_DECISIONS
         ):
-            raise SystemExit("delegation.decision must be local, worker, parallel, or null")
+            raise SystemExit(
+                "delegation.decision must be local, worker, parallel, or null"
+            )
         require_count(delegation["subagent_count"], "delegation.subagent_count")
         reasons = delegation["reasons"]
         if not isinstance(reasons, list) or any(
-            not isinstance(reason, str) or reason not in DELEGATION_REASONS for reason in reasons
+            not isinstance(reason, str) or reason not in DELEGATION_REASONS
+            for reason in reasons
         ):
             raise SystemExit("delegation.reasons contains an unsupported reason")
         if len(reasons) != len(set(reasons)):
             raise SystemExit("delegation.reasons must not contain duplicates")
-        require_duration(delegation["agent_wall_seconds"], "delegation.agent_wall_seconds")
-        require_duration(delegation["coordination_seconds"], "delegation.coordination_seconds")
+        require_duration(
+            delegation["agent_wall_seconds"], "delegation.agent_wall_seconds"
+        )
+        require_duration(
+            delegation["coordination_seconds"], "delegation.coordination_seconds"
+        )
     if schema_version == SCHEMA_VERSION:
         level = payload["orchestration_level"]
         if level is not None:
@@ -247,8 +282,7 @@ def validate_document(document: object, stage_id: str) -> dict[str, Any]:
             require_count(payload[key], key)
         anomalies = payload["anomalies"]
         if not isinstance(anomalies, list) or any(
-            not isinstance(item, str) or item not in ANOMALY_CODES
-            for item in anomalies
+            not isinstance(item, str) or item not in ANOMALY_CODES for item in anomalies
         ):
             raise SystemExit("anomalies contains an unsupported cost signal")
         if len(anomalies) != len(set(anomalies)):
@@ -287,9 +321,11 @@ def detect_cost_anomalies(
     product = metrics.get("product_commit_count")
     orchestration = metrics.get("orchestration_commit_count")
     proof = metrics.get("proof_commit_count")
-    if all(isinstance(value, int) and not isinstance(value, bool) for value in (product, orchestration, proof)):
-        if int(orchestration) + int(proof) > int(product):
-            anomalies.append("orchestration_commits_exceed_product")
+    if all(
+        isinstance(value, int) and not isinstance(value, bool)
+        for value in (product, orchestration, proof)
+    ) and int(orchestration) + int(proof) > int(product):
+        anomalies.append("orchestration_commits_exceed_product")
     repeated = metrics.get("repeated_verification_count")
     if (
         not suppress_repeated_verification
@@ -363,7 +399,9 @@ def load_document(path: pathlib.Path, stage_id: str) -> dict[str, Any]:
 def save_document(path: pathlib.Path, document: dict[str, Any]) -> None:
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
-        temporary.write_text(json.dumps(document, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+        temporary.write_text(
+            json.dumps(document, indent=2, ensure_ascii=True) + "\n", encoding="utf-8"
+        )
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
@@ -401,9 +439,14 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--repeated-verification-count", type=int)
     parser.add_argument("--bookkeeping-write-count", type=int)
     parser.add_argument(
-        "--sizing-diagnostic", action="append", default=[], choices=sorted(SIZING_DIAGNOSTIC_CODES)
+        "--sizing-diagnostic",
+        action="append",
+        default=[],
+        choices=sorted(SIZING_DIAGNOSTIC_CODES),
     )
-    parser.add_argument("--prior-result", choices=("passed", "failed", "missing", "invalid"))
+    parser.add_argument(
+        "--prior-result", choices=("passed", "failed", "missing", "invalid")
+    )
     parser.add_argument("--prior-reusable", action="store_true")
     parser.add_argument("--must-run-reason", choices=sorted(MUST_RUN_REASONS))
     args = parser.parse_args(argv[1:])
@@ -479,9 +522,10 @@ def main(argv: list[str]) -> int:
     if len(args.sizing_diagnostic) != len(set(args.sizing_diagnostic)):
         raise SystemExit("--sizing-diagnostic must not contain duplicates")
     for key, value in v3_updates.items():
-        if key.endswith("_count") or key in {"reuse_count", "stage_count_window"}:
-            if value is not None:
-                require_count(value, f"--{key.replace('_', '-')}")
+        if (
+            key.endswith("_count") or key in {"reuse_count", "stage_count_window"}
+        ) and value is not None:
+            require_count(value, f"--{key.replace('_', '-')}")
     v3_requested = any(value is not None for value in v3_updates.values()) or bool(
         args.sizing_diagnostic
     )
@@ -549,7 +593,8 @@ def main(argv: list[str]) -> int:
                     [
                         *detect_cost_anomalies(
                             document,
-                            suppress_repeated_verification=args.must_run_reason is not None,
+                            suppress_repeated_verification=args.must_run_reason
+                            is not None,
                         ),
                         *preserved_sizing,
                         *args.sizing_diagnostic,

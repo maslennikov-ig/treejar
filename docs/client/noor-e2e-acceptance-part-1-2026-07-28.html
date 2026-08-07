@@ -1,0 +1,1132 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Noor - приемочное тестирование, часть 1</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --ink: #16231f;
+      --muted: #60706a;
+      --paper: #f7f4ee;
+      --white: #ffffff;
+      --forest-950: #06372f;
+      --forest-850: #075044;
+      --forest-700: #0c6b59;
+      --forest-300: #85b9aa;
+      --forest-100: #dcece7;
+      --forest-050: #eef6f3;
+      --amber-900: #70420f;
+      --amber-500: #d8902f;
+      --amber-100: #fff0d5;
+      --amber-050: #fff8eb;
+      --line: #d3ddd9;
+      --red-700: #9a3b34;
+      --red-100: #f7dfdc;
+    }
+
+    html,
+    body {
+      margin: 0;
+      background: #dce2df;
+      color: var(--ink);
+      font-family: "DejaVu Sans", "Segoe UI", Arial, sans-serif;
+      font-size: 10.5px;
+      line-height: 1.45;
+    }
+
+    body {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .page {
+      position: relative;
+      width: 210mm;
+      height: 296mm;
+      margin: 0 auto 8mm;
+      overflow: hidden;
+      background: var(--paper);
+      break-after: page;
+      break-inside: avoid-page;
+      page-break-after: always;
+      page-break-inside: avoid;
+    }
+
+    .page:last-child {
+      break-after: auto;
+      page-break-after: auto;
+    }
+
+    .page + .page {
+      break-before: page;
+      page-break-before: always;
+    }
+
+    .page-inner {
+      height: 100%;
+      padding: 17mm 17mm 15mm;
+    }
+
+    .page-number {
+      position: absolute;
+      right: 17mm;
+      bottom: 8mm;
+      color: var(--muted);
+      font-size: 8.5px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+    }
+
+    .footer-label {
+      position: absolute;
+      left: 17mm;
+      bottom: 8mm;
+      color: var(--muted);
+      font-size: 8px;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+
+    .brand {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      align-items: center;
+      margin-bottom: 12mm;
+      break-inside: avoid;
+      page-break-inside: avoid;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .brand-name {
+      color: var(--forest-850);
+    }
+
+    .brand-meta {
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      text-align: right;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      color: var(--forest-950);
+      font-size: 38px;
+      line-height: 1.07;
+      letter-spacing: -0.035em;
+    }
+
+    h2 {
+      color: var(--forest-950);
+      font-size: 23px;
+      line-height: 1.15;
+      letter-spacing: -0.025em;
+    }
+
+    h3 {
+      color: var(--forest-950);
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .eyebrow {
+      margin-bottom: 4mm;
+      color: var(--forest-700);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .lead {
+      max-width: 160mm;
+      margin-top: 5mm;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 12mm;
+      margin-bottom: 8mm;
+      padding-bottom: 4mm;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .section-header p {
+      max-width: 72mm;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .cover {
+      background:
+        radial-gradient(circle at 87% 14%, rgba(133, 185, 170, 0.5), transparent 24%),
+        linear-gradient(145deg, #f8f5ee 0%, #edf4f0 58%, #d8ebe4 100%);
+    }
+
+    .cover::after {
+      content: "";
+      position: absolute;
+      right: -38mm;
+      bottom: -30mm;
+      width: 128mm;
+      height: 128mm;
+      border: 22mm solid rgba(7, 80, 68, 0.08);
+      border-radius: 50%;
+    }
+
+    .cover .page-inner {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .cover-title {
+      position: relative;
+      z-index: 1;
+      margin-top: 14mm;
+    }
+
+    .part-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 7mm;
+      padding: 7px 11px;
+      border: 1px solid rgba(7, 80, 68, 0.18);
+      border-radius: 999px;
+      color: var(--forest-850);
+      background: rgba(255, 255, 255, 0.64);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .part-badge::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--amber-500);
+    }
+
+    .cover-summary {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 7mm;
+      margin-top: auto;
+      margin-bottom: 16mm;
+    }
+
+    .verdict-card {
+      padding: 8mm;
+      border-radius: 15px;
+      color: var(--white);
+      background: var(--forest-950);
+      box-shadow: 0 14px 34px rgba(6, 55, 47, 0.13);
+    }
+
+    .verdict-card .label {
+      margin-bottom: 3mm;
+      color: #b9d8cf;
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .verdict-card strong {
+      display: block;
+      margin-bottom: 3mm;
+      font-size: 19px;
+      line-height: 1.25;
+    }
+
+    .verdict-card p {
+      color: #d9e9e4;
+      font-size: 10.5px;
+    }
+
+    .cover-meta {
+      display: grid;
+      gap: 3mm;
+      padding: 7mm;
+      border: 1px solid rgba(7, 80, 68, 0.16);
+      border-radius: 15px;
+      background: rgba(255, 255, 255, 0.65);
+    }
+
+    .meta-row {
+      display: grid;
+      grid-template-columns: 25mm 1fr;
+      gap: 4mm;
+      padding-bottom: 2.5mm;
+      border-bottom: 1px solid rgba(7, 80, 68, 0.12);
+    }
+
+    .meta-row:last-child {
+      padding-bottom: 0;
+      border-bottom: 0;
+    }
+
+    .meta-row span {
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .meta-row strong {
+      color: var(--forest-950);
+      font-size: 9px;
+      overflow-wrap: anywhere;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4mm;
+      margin-bottom: 7mm;
+    }
+
+    .metric {
+      min-height: 32mm;
+      padding: 5mm;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    .metric strong {
+      display: block;
+      margin-bottom: 2mm;
+      color: var(--forest-950);
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 9px;
+      line-height: 1.3;
+    }
+
+    .metric.alert {
+      border-color: #e5bd79;
+      background: var(--amber-050);
+    }
+
+    .callout {
+      padding: 6mm;
+      border-radius: 12px;
+    }
+
+    .callout h3 {
+      margin-bottom: 2.5mm;
+    }
+
+    .callout p {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .callout.warning {
+      border: 1px solid #e6c68f;
+      background: var(--amber-050);
+    }
+
+    .callout.verified {
+      border: 1px solid #b6d2ca;
+      background: var(--forest-050);
+    }
+
+    .callout.dark {
+      color: var(--white);
+      background: var(--forest-950);
+    }
+
+    .callout.dark h3 {
+      color: var(--white);
+    }
+
+    .callout.dark p {
+      color: #d9e9e4;
+    }
+
+    .two-columns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6mm;
+    }
+
+    .stack {
+      display: grid;
+      gap: 4mm;
+    }
+
+    .check-list,
+    .plain-list {
+      display: grid;
+      gap: 3mm;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .check-list li,
+    .plain-list li {
+      position: relative;
+      padding-left: 7mm;
+      color: var(--muted);
+    }
+
+    .check-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 1.5px;
+      width: 4mm;
+      height: 4mm;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle, var(--forest-700) 0 35%, transparent 38%),
+        var(--forest-100);
+    }
+
+    .plain-list li::before {
+      content: "";
+      position: absolute;
+      left: 1mm;
+      top: 6px;
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: var(--amber-500);
+    }
+
+    .identity-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4mm;
+    }
+
+    .identity-item {
+      padding: 4.5mm;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: rgba(255, 255, 255, 0.68);
+    }
+
+    .identity-item span {
+      display: block;
+      margin-bottom: 1.5mm;
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .identity-item strong {
+      display: block;
+      color: var(--forest-950);
+      font-size: 9.5px;
+      overflow-wrap: anywhere;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4mm;
+      margin-top: 7mm;
+    }
+
+    .flow-step {
+      position: relative;
+      min-height: 39mm;
+      padding: 5mm;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    .flow-step:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      z-index: 2;
+      top: 18mm;
+      right: -5mm;
+      width: 6mm;
+      height: 1px;
+      background: var(--forest-300);
+    }
+
+    .flow-step .number {
+      display: grid;
+      width: 7mm;
+      height: 7mm;
+      margin-bottom: 3mm;
+      border-radius: 7px;
+      place-items: center;
+      color: var(--white);
+      background: var(--forest-700);
+      font-size: 9px;
+      font-weight: 800;
+    }
+
+    .flow-step p {
+      margin-top: 2mm;
+      color: var(--muted);
+      font-size: 9px;
+    }
+
+    .boundary {
+      display: grid;
+      grid-template-columns: 1fr 12mm 1fr;
+      gap: 4mm;
+      align-items: stretch;
+      margin-top: 7mm;
+    }
+
+    .boundary-arrow {
+      display: grid;
+      place-items: center;
+      color: var(--forest-700);
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .boundary-card {
+      min-height: 91mm;
+      padding: 7mm;
+      border-radius: 13px;
+    }
+
+    .boundary-card h3 {
+      margin-bottom: 4mm;
+      font-size: 16px;
+    }
+
+    .boundary-card.done {
+      border: 1px solid #b8d5cc;
+      background: var(--forest-050);
+    }
+
+    .boundary-card.next {
+      color: var(--white);
+      background: var(--forest-950);
+    }
+
+    .boundary-card.next h3 {
+      color: var(--white);
+    }
+
+    .boundary-card.next .plain-list li {
+      color: #d9e9e4;
+    }
+
+    .criteria-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 2.1mm;
+      table-layout: fixed;
+    }
+
+    .criteria-table th {
+      padding: 0 3mm 1.8mm;
+      color: var(--muted);
+      font-size: 7.5px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-align: left;
+      text-transform: uppercase;
+    }
+
+    .criteria-table td {
+      padding: 2.1mm 3mm;
+      vertical-align: middle;
+      background: rgba(255, 255, 255, 0.72);
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .criteria-table td:first-child {
+      width: 15mm;
+      border-left: 1px solid var(--line);
+      border-radius: 7px 0 0 7px;
+      color: var(--forest-950);
+      font-size: 8px;
+      font-weight: 800;
+    }
+
+    .criteria-table td:nth-child(2) {
+      color: var(--ink);
+      font-size: 8.2px;
+      font-weight: 650;
+    }
+
+    .criteria-table td:nth-child(3) {
+      width: 30mm;
+      color: var(--muted);
+      font-size: 7.7px;
+    }
+
+    .criteria-table td:last-child {
+      width: 24mm;
+      border-right: 1px solid var(--line);
+      border-radius: 0 7px 7px 0;
+    }
+
+    .status {
+      display: inline-block;
+      padding: 1.4mm 2.4mm;
+      border-radius: 999px;
+      color: var(--amber-900);
+      background: var(--amber-100);
+      font-size: 7.3px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+
+    .evidence-note {
+      margin-top: 4mm;
+      padding: 4mm 5mm;
+      border-left: 2px solid var(--forest-700);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.55);
+      font-size: 8.5px;
+    }
+
+    #criteria-final .criteria-table {
+      border-spacing: 0 1.45mm;
+    }
+
+    #criteria-final::before {
+      content: "TREEJAR / NOOR";
+      position: absolute;
+      z-index: 3;
+      top: 17mm;
+      left: 17mm;
+      color: var(--forest-850);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    #criteria-final .brand-name {
+      visibility: hidden;
+    }
+
+    #criteria-final .criteria-table td {
+      padding-top: 1.6mm;
+      padding-bottom: 1.6mm;
+    }
+
+    #criteria-final .callout {
+      padding: 4.5mm 6mm;
+    }
+
+    #criteria-final .evidence-note {
+      margin-top: 2.5mm;
+      padding-top: 2.5mm;
+      padding-bottom: 2.5mm;
+    }
+
+    code {
+      padding: 0.4mm 1.2mm;
+      border-radius: 4px;
+      color: var(--forest-950);
+      background: var(--forest-100);
+      font-family: "DejaVu Sans Mono", Consolas, monospace;
+      font-size: 0.9em;
+    }
+
+    @media print {
+      html,
+      body {
+        background: var(--paper);
+      }
+
+      .page {
+        margin: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <section class="page cover">
+    <div class="page-inner">
+      <div class="brand">
+        <span class="brand-name">Treejar / Noor</span>
+        <span class="brand-meta">Client acceptance report</span>
+      </div>
+
+      <div class="cover-title">
+        <div class="part-badge">Часть 1 из 2</div>
+        <p class="eyebrow">Техническая готовность и границы запуска</p>
+        <h1>Приёмочное<br>тестирование Noor</h1>
+        <p class="lead">
+          Проверка production-среды, идентичности релиза и готовности
+          доказательного контура перед живой оценкой продаж.
+        </p>
+      </div>
+
+      <div class="cover-summary">
+        <div class="verdict-card">
+          <p class="label">Главный вывод</p>
+          <strong>Среда доступна. Качество продаж пока не проверено.</strong>
+          <p>
+            Запуск остановился на защитных воротах до отправки сообщений.
+            Этот документ фиксирует только первую, техническую часть приёмки.
+          </p>
+        </div>
+
+        <div class="cover-meta">
+          <div class="meta-row">
+            <span>Дата</span>
+            <strong>28 июля 2026</strong>
+          </div>
+          <div class="meta-row">
+            <span>Среда</span>
+            <strong>Production</strong>
+          </div>
+          <div class="meta-row">
+            <span>Запуск</span>
+            <strong>tj-ee5f-live-20260728t165236z</strong>
+          </div>
+          <div class="meta-row">
+            <span>Статус</span>
+            <strong>Gate-only / BLOCKED</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+    <span class="footer-label">Конфиденциальный клиентский документ</span>
+    <span class="page-number">01 / 06</span>
+  </section>
+
+  <section class="page">
+    <div class="page-inner">
+      <div class="brand">
+        <span class="brand-name">Treejar / Noor</span>
+        <span class="brand-meta">Executive summary</span>
+      </div>
+
+      <div class="section-header">
+        <div>
+          <p class="eyebrow">Результат первой части</p>
+          <h2>Честный статус приёмки</h2>
+        </div>
+        <p>
+          Техническая идентичность подтверждена, но пользовательское поведение
+          и коммерческая эффективность не оценивались.
+        </p>
+      </div>
+
+      <div class="metric-grid">
+        <div class="metric">
+          <strong>OK</strong>
+          <span>production health и базовая доступность</span>
+        </div>
+        <div class="metric alert">
+          <strong>29</strong>
+          <span>критериев зарегистрировано как BLOCKED</span>
+        </div>
+        <div class="metric alert">
+          <strong>0</strong>
+          <span>живых сообщений и диалоговых ответов</span>
+        </div>
+        <div class="metric alert">
+          <strong>0</strong>
+          <span>вызовов моделей и бизнес-инструментов</span>
+        </div>
+      </div>
+
+      <div class="callout warning" style="margin-bottom: 6mm;">
+        <h3>Этот документ не оценивает, насколько хорошо Noor продаёт</h3>
+        <p>
+          Нет транскриптов, tool traces, КП, фактических задержек или
+          пользовательских ответов. Значения latency 0 мс означают отсутствие
+          выполненных диалогов, а не мгновенный ответ системы.
+        </p>
+      </div>
+
+      <div class="two-columns">
+        <div class="stack">
+          <div class="callout verified">
+            <h3>Что подтверждено</h3>
+            <ul class="check-list">
+              <li>Production endpoint отвечает и сообщает health <code>ok</code>.</li>
+              <li>Идентифицированы версия приложения, релиз, CI и миграция.</li>
+              <li>Подтверждены ожидаемые main и fast model routes.</li>
+              <li>Собран редактированный и проверяемый комплект доказательств.</li>
+              <li>Во время запуска не затронуты клиенты и бизнес-данные.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="callout warning">
+            <h3>Что не подтверждено</h3>
+            <ul class="plain-list">
+              <li>Качество продажи, discovery и работа с возражениями.</li>
+              <li>Фактические вызовы поиска, склада, CRM и эскалации.</li>
+              <li>Создание и доставка корректного коммерческого предложения.</li>
+              <li>Живой WhatsApp/Wazzup ingress и доставка ответа.</li>
+              <li>Память, языковая последовательность и latency диалогов.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout dark" style="margin-top: 6mm;">
+        <h3>Вердикт</h3>
+        <p>
+          Production Noor технически доступен. Готовность продукта по
+          приёмочным требованиям не доказана. Для оценки продаж требуется
+          отдельный живой отчёт с реальными диалогами и инструментальными
+          трассировками.
+        </p>
+      </div>
+    </div>
+    <span class="footer-label">Noor - приёмочное тестирование, часть 1</span>
+    <span class="page-number">02 / 06</span>
+  </section>
+
+  <section class="page">
+    <div class="page-inner">
+      <div class="brand">
+        <span class="brand-name">Treejar / Noor</span>
+        <span class="brand-meta">Verified environment</span>
+      </div>
+
+      <div class="section-header">
+        <div>
+          <p class="eyebrow">Подтверждённая среда</p>
+          <h2>Техническая идентичность</h2>
+        </div>
+        <p>
+          Эти факты получены свежим read-only preflight и относятся к
+          production-среде Noor на момент запуска.
+        </p>
+      </div>
+
+      <div class="identity-grid">
+        <div class="identity-item">
+          <span>Endpoint</span>
+          <strong>https://noor.starec.ai</strong>
+        </div>
+        <div class="identity-item">
+          <span>Health / версия</span>
+          <strong>ok / 0.4.0</strong>
+        </div>
+        <div class="identity-item">
+          <span>Deployed release</span>
+          <strong>0dd9615a16fdf4eb17abe156551c53fb77f39c21</strong>
+        </div>
+        <div class="identity-item">
+          <span>Execution commit</span>
+          <strong>deab79b1134210a9d1fbb7691137363263e1cd98</strong>
+        </div>
+        <div class="identity-item">
+          <span>CI run</span>
+          <strong>github-actions-30379943318</strong>
+        </div>
+        <div class="identity-item">
+          <span>Migration head</span>
+          <strong>2026_06_04_customer_memory</strong>
+        </div>
+        <div class="identity-item">
+          <span>Main model</span>
+          <strong>z-ai/glm-5.2</strong>
+        </div>
+        <div class="identity-item">
+          <span>Fast model</span>
+          <strong>deepseek/deepseek-v4-flash</strong>
+        </div>
+      </div>
+
+      <div class="flow">
+        <div class="flow-step">
+          <span class="number">1</span>
+          <h3>Read-only preflight</h3>
+          <p>
+            Проверены endpoint, runtime identity, model routes и технические
+            зависимости без изменения production.
+          </p>
+        </div>
+        <div class="flow-step">
+          <span class="number">2</span>
+          <h3>Gate evaluation</h3>
+          <p>
+            Каждый сценарий получил статус BLOCKED из-за отсутствия полного
+            независимого доказательства.
+          </p>
+        </div>
+        <div class="flow-step">
+          <span class="number">3</span>
+          <h3>Immutable evidence</h3>
+          <p>
+            Итоги сохранены как неизменяемый редактированный комплект без
+            номера телефона и секретов.
+          </p>
+        </div>
+      </div>
+
+      <div class="two-columns" style="margin-top: 7mm;">
+        <div class="callout verified">
+          <h3>Безопасность запуска</h3>
+          <ul class="check-list">
+            <li>Внешние сообщения: 0.</li>
+            <li>Платные model calls: 0.</li>
+            <li>Изменения CRM/Zoho: 0.</li>
+            <li>Telegram-уведомления: 0.</li>
+            <li>Реальные клиенты не использовались.</li>
+          </ul>
+        </div>
+        <div class="callout warning">
+          <h3>Ограничение метода</h3>
+          <p>
+            Запуск подтвердил механизм fail-closed, но не работу Noor как
+            продавца. Без реального сообщения невозможно наблюдать ответ
+            модели, выбор инструмента, состояние диалога или delivery.
+          </p>
+        </div>
+      </div>
+
+      <div class="evidence-note">
+        Канонический комплект: <code>.codex/stages/tj-ee5f/results/tj-ee5f-live-20260728t165236z/</code>
+      </div>
+    </div>
+    <span class="footer-label">Noor - приёмочное тестирование, часть 1</span>
+    <span class="page-number">03 / 06</span>
+  </section>
+
+  <section class="page">
+    <div class="page-inner">
+      <div class="brand">
+        <span class="brand-name">Treejar / Noor</span>
+        <span class="brand-meta">Boundary and continuation</span>
+      </div>
+
+      <div class="section-header">
+        <div>
+          <p class="eyebrow">Граница отчёта</p>
+          <h2>Почему это только часть 1</h2>
+        </div>
+        <p>
+          Gate-only запуск ошибочно применил принцип "всё или ничего" и не
+          перешёл к доступным живым диалогам на тестовой личности.
+        </p>
+      </div>
+
+      <div class="callout warning">
+        <h3>Операционная причина остановки</h3>
+        <p>
+          В финальном разрешении запуска были установлены нулевые квоты на
+          сообщения и модели, пустой список внешних действий и защитный
+          локальный адаптер. Это исключило отправку сообщений ещё до первого
+          диалога. Ограничение возникло в режиме запуска, а не в production Noor.
+        </p>
+      </div>
+
+      <div class="boundary">
+        <div class="boundary-card done">
+          <p class="eyebrow">Часть 1 - готово</p>
+          <h3>Техническая готовность</h3>
+          <ul class="check-list">
+            <li>Release и runtime идентифицированы.</li>
+            <li>Production health подтверждён.</li>
+            <li>Критерии и границы зафиксированы.</li>
+            <li>Privacy проверена.</li>
+            <li>Отсутствие внешних эффектов доказано.</li>
+          </ul>
+        </div>
+
+        <div class="boundary-arrow">&rarr;</div>
+
+        <div class="boundary-card next">
+          <p class="eyebrow" style="color:#9fcbbf;">Отдельный отчёт - далее</p>
+          <h3>Живые продажи и инструменты</h3>
+          <ul class="plain-list">
+            <li>Минимум 10 живых многошаговых диалогов.</li>
+            <li>Private Desk / LUMA / NOVO и другие продажи.</li>
+            <li>Точные вопросы и ответы модели.</li>
+            <li>Фактические tool calls и latency.</li>
+            <li>Создание, доставка и аудит КП/PDF.</li>
+            <li>Итоговая оценка продаж 0-30.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="two-columns" style="margin-top: 7mm;">
+        <div class="callout verified">
+          <h3>Что не нужно повторять</h3>
+          <p>
+            Второму отчёту не требуется заново доказывать историю разработки
+            или строить новую acceptance-систему. Достаточен минимальный
+            preflight и немедленный живой smoke.
+          </p>
+        </div>
+        <div class="callout dark">
+          <h3>Условие успеха второй части</h3>
+          <p>
+            В отчёте должны появиться реальные сообщения, ответы Noor, вызовы
+            моделей и инструменты. Пустой gate-only run не считается
+            выполнением.
+          </p>
+        </div>
+      </div>
+    </div>
+    <span class="footer-label">Noor - приёмочное тестирование, часть 1</span>
+    <span class="page-number">04 / 06</span>
+  </section>
+
+  <section class="page">
+    <div class="page-inner">
+      <div class="brand">
+        <span class="brand-name">Treejar / Noor</span>
+        <span class="brand-meta">Acceptance register 1-15</span>
+      </div>
+
+      <div class="section-header" style="margin-bottom: 4mm;">
+        <div>
+          <p class="eyebrow">Приложение A</p>
+          <h2>Реестр критериев 01-15</h2>
+        </div>
+        <p>
+          BLOCKED означает "не доказано", а не "сломано" и не "пройдено".
+        </p>
+      </div>
+
+      <table class="criteria-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Область проверки</th>
+            <th>Режим доказательства</th>
+            <th>Статус</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>AC-01</td><td>Runtime, transport и provider ingress</td><td>fresh</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-02</td><td>Новый и возвращающийся клиент, CRM-контекст</td><td>fresh</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-03</td><td>English/Arabic, имя и сохранение языка</td><td>fresh</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-04</td><td>Голосовые сообщения и транскрипция</td><td>fresh</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-05</td><td>Каталог, продуктовые факты, изображения и цена</td><td>fresh</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-06</td><td>Discovery, продажа, возражения и следующий шаг</td><td>fresh</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-07</td><td>Наличие, коммерческие обещания и grounding</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-08</td><td>Статус существующего заказа</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-09</td><td>Жизненный цикл КП, follow-up и feedback</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-10</td><td>Расчёт заказа и персонализированные цены</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-11</td><td>CRM mapping, UTM и fail-soft поведение</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-12</td><td>Стадии CRM-сделки</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-13</td><td>Память, контекст, коррекции и прерывания</td><td>fresh</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-14</td><td>Формирование КП, SKU, количество и PDF</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-15</td><td>Эскалация, Telegram и ответ менеджера</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+        </tbody>
+      </table>
+
+      <div class="evidence-note">
+        Для каждого критерия сохранены типизированные ссылки на evidence.
+        Результат намеренно не повышался до PASS или FAIL без наблюдаемого
+        пользовательского действия.
+      </div>
+    </div>
+    <span class="footer-label">Noor - приёмочное тестирование, часть 1</span>
+    <span class="page-number">05 / 06</span>
+  </section>
+
+  <section class="page" id="criteria-final">
+    <div class="page-inner">
+      <div class="brand">
+        <span class="brand-name">Treejar / Noor</span>
+        <span class="brand-meta">Acceptance register 16-30</span>
+      </div>
+
+      <div class="section-header" style="margin-bottom: 4mm;">
+        <div>
+          <p class="eyebrow">Приложение B</p>
+          <h2>Реестр критериев 16-30</h2>
+        </div>
+        <p>
+          Вторая часть отчёта сфокусируется на продажах, tool calls и КП.
+        </p>
+      </div>
+
+      <table class="criteria-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Область проверки</th>
+            <th>Режим доказательства</th>
+            <th>Статус</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>AC-16</td><td>Admin surface и наблюдаемость операций</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-17</td><td>Оценка качества бота по шкале 0-30</td><td>fresh</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-18</td><td>Оценка работы менеджера после эскалации</td><td>fresh</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-19</td><td>Отчёты, метрики и контроль затрат</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-20</td><td>Альтернативы и complementary products</td><td>fresh</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-21</td><td>Реферальная механика и rewards</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-22</td><td>HTTPS, доступы, privacy и prompt injection</td><td>reused exact</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-23</td><td>Диалоговая latency и целевые 10 секунд</td><td>fresh</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-24</td><td>Доступность и целевой uptime 99%</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-25</td><td>Нагрузка 100+ одновременных диалогов</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-26</td><td>Backup, retention и restore evidence</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-27</td><td>Полнота SKU, фото, описаний и цен</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-28</td><td>Скорость формирования top-3 предложения</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-29</td><td>Media ordering и WhatsApp formatting</td><td>fresh</td><td><span class="status">BLOCKED</span></td></tr>
+          <tr><td>AC-30</td><td>Release readiness и отсутствие P0/P1</td><td>external gate</td><td><span class="status">BLOCKED</span></td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout dark" style="margin-top: 5mm;">
+        <h3>Следующий измеримый результат</h3>
+        <p>
+          Отдельный живой отчёт должен показать минимум 10 многошаговых
+          диалогов, точные вопросы и ответы, реальные tool traces, оценку продаж
+          0-30 и фактически проверенное коммерческое предложение.
+        </p>
+      </div>
+
+      <div class="evidence-note">
+        Источник первой части: run <code>tj-ee5f-live-20260728t165236z</code>.
+        Сформировано 28 июля 2026 года. Защищённые идентификаторы и секреты
+        исключены из документа.
+      </div>
+    </div>
+    <span class="footer-label">Noor - приёмочное тестирование, часть 1</span>
+    <span class="page-number">06 / 06</span>
+  </section>
+</body>
+</html>

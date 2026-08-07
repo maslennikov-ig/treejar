@@ -141,7 +141,7 @@ treejar-ai-bot/
 │   │   ├── engine.py             # PydanticAI agent, multi-model routing
 │   │   └── prompts.py            # Системные промпты (EN), шаблоны
 │   ├── rag/                      # RAG-пайплайн
-│   │   ├── embeddings.py         # BGE-M3 через FastEmbed (локально)
+│   │   ├── embeddings.py         # BGE-M3 через sentence-transformers (локально)
 │   │   ├── indexer.py            # Индексация продуктов и базы знаний
 │   │   └── pipeline.py           # SQL-фильтры + pgvector cosine similarity
 │   └── quality/                  # Контроль качества
@@ -397,7 +397,7 @@ rollback procedure in [the administrator guide](admin-guide.md#rollback-a-deploy
 | **OpenRouter** | LLM API (Claude Haiku для extraction, Sonnet для генерации) | `src/llm/engine.py` | Через `openai` SDK с `base_url` |
 | **Supabase** | PostgreSQL 17 + pgvector (managed) | `src/core/database.py` | SQLAlchemy async |
 | **Redis** | Кеш сессий, очереди ARQ, debounce, idempotency, OAuth lock | `src/core/redis.py` | `redis.asyncio` |
-| **FastEmbed** | Локальные embeddings (BGE-M3, EN/AR) | `src/rag/embeddings.py` | `fastembed` |
+| **sentence-transformers** | Локальные embeddings (BGE-M3, EN/AR) | `src/rag/embeddings.py` | `sentence-transformers` |
 | **PydanticAI** | Оркестрация LLM (tool calling, structured output) | `src/llm/engine.py` | Нативная интеграция |
 
 ### Все внешние сервисы изолированы за Protocol-интерфейсами
@@ -429,7 +429,7 @@ src/integrations/
 | **Интеграции** | Protocol-абстракции | Переключение провайдера без изменения бизнес-логики |
 | **Поиск товаров** | SQL WHERE + pgvector fallback | LLM извлекает фильтры (цена, цвет, категория) -> SQL. Семантика — для нечётких запросов |
 | **БД** | Supabase Cloud | Managed PostgreSQL, auto backups, pgvector из коробки, dashboard |
-| **Embeddings** | BGE-M3 через FastEmbed (локально) | Бесплатно, мультиязычность (EN/AR), dense + sparse |
+| **Embeddings** | BGE-M3 через sentence-transformers (локально) | Бесплатно, мультиязычность (EN/AR), dense + sparse |
 | **Admin** | SQLAdmin + React/Vite dashboard | SQLAdmin для operator data/config surfaces, отдельный dashboard для KPI, weekly reports, sync/test actions и manager review queue |
 
 ### Критические паттерны

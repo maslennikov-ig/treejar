@@ -528,3 +528,45 @@ def test_wazzup_webhook_accepts_all_when_no_allowlist(mock_networks: Any) -> Non
     )
     assert response.status_code == 200
     assert response.json() == {"ok": True}
+
+
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_a_refused_channel_is_logged_with_both_ids(
+    mock_networks: Any, caplog: Any
+) -> None:
+    """tj-ppid: a refusal has to say which channel it refused.
+
+    The warning reported only `channel_present=true`. Five inbound messages
+    were refused between 2026-08-06 and 2026-08-07 and the logs could not say
+    whether the account had grown a second channel or the configured one had
+    gone stale; it took a read-only call to the Wazzup account to find out.
+    Both values are channel identifiers, not customer data.
+    """
+    app.state.redis = AsyncMock()
+    app.state.arq_pool = AsyncMock()
+    other_channel = "13c71a7f-cf9d-4df2-8b27-11ea67e6b0d9"
+
+    payload = {
+        "messages": [
+            {
+                "messageId": "ch-1",
+                "chatId": "79991234567",
+                "chatType": "whatsapp",
+                "text": "Hello bot!",
+                "type": "text",
+                "channelId": other_channel,
+                "timestamp": 1234567890,
+            }
+        ]
+    }
+
+    with (
+        patch("src.api.v1.webhook.settings.wazzup_channel_id", EXPECTED_CHANNEL_ID),
+        caplog.at_level(logging.WARNING),
+    ):
+        response = client.post("/api/v1/webhook/wazzup", json=payload)
+
+    assert response.status_code == 200
+    assert other_channel in caplog.text
+    assert EXPECTED_CHANNEL_ID in caplog.text
+    app.state.redis.rpush.assert_not_called()

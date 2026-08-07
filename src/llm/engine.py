@@ -2832,6 +2832,15 @@ def _claim_contract_directive(
             "assumption, state the per-unit figure you are assuming, and ask "
             "one short question that confirms it."
         )
+    # tj-7z1x. The sizing directive demands the arithmetic in the open and one
+    # concrete next step; this one demanded neither, and reading the four turns
+    # the contract still rewrites showed the worst of them losing exactly that
+    # closing offer, 349 characters down to 271. Stated here so a repaired
+    # reply is held to the same bar as an unrepaired one.
+    directive += (
+        " Keep the arithmetic visible where the answer rests on it, and close "
+        "with one concrete next step."
+    )
     return directive
 
 

@@ -267,9 +267,16 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
             continue
 
         if msg.channelId != expected_channel:
+            # tj-ppid. This used to log only `channel_present=true`, which says
+            # a message was refused and nothing about why. On 2026-08-07 five
+            # inbound messages had been refused since the 2026-08-06 deploy and
+            # there was no way to tell from the logs whether the account had
+            # grown a second channel or the configured one had gone stale.
+            # Both ids are Wazzup channel identifiers, not customer data.
             logger.warning(
-                "Skipping message from unexpected Wazzup channel: channel_present=%s",
-                bool(msg.channelId),
+                "Skipping message from unexpected Wazzup channel: got=%s expected=%s",
+                msg.channelId or "<absent>",
+                expected_channel,
             )
             continue
 

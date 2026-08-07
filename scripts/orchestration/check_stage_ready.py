@@ -88,11 +88,18 @@ def main(argv: list[str]) -> int:
             )
             if sizing.returncode != 0:
                 sizing_errors = [
-                    line for line in (sizing.stderr or sizing.stdout).splitlines() if line
+                    line
+                    for line in (sizing.stderr or sizing.stdout).splitlines()
+                    if line
                 ]
                 errors.extend(sizing_errors)
                 if any("suspicious_micro_stage" in line for line in sizing_errors):
-                    recorder = repo_root / "scripts" / "orchestration" / "record_stage_telemetry.py"
+                    recorder = (
+                        repo_root
+                        / "scripts"
+                        / "orchestration"
+                        / "record_stage_telemetry.py"
+                    )
                     recorded = subprocess.run(
                         [
                             sys.executable,
@@ -134,7 +141,9 @@ def main(argv: list[str]) -> int:
         if exact_identity:
             workspace = contract.get("workspace")
             current_stage = (
-                workspace.get("current_stage_id") if isinstance(workspace, dict) else None
+                workspace.get("current_stage_id")
+                if isinstance(workspace, dict)
+                else None
             )
             if current_stage != stage_id:
                 errors.append(
@@ -162,7 +171,10 @@ def main(argv: list[str]) -> int:
         return 1
 
     if artifacts:
-        subprocess.run([sys.executable, str(validator), *[str(path) for path in artifacts]], check=True)
+        subprocess.run(
+            [sys.executable, str(validator), *[str(path) for path in artifacts]],
+            check=True,
+        )
     print(f"stage {stage_id} ready")
     return 0
 

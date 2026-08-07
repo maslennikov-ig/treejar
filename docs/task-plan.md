@@ -33,7 +33,7 @@
   - [x] Sync job: Zoho Inventory -> PostgreSQL (таблица `products`), фильтр: `status=active AND cf_end_product=true` (856 SKU)
   - [x] ARQ cron task: синхронизация каждый час
 - [x] Embeddings
-  - [x] `src/rag/embeddings.py` -- BGE-M3 через FastEmbed (локально)
+  - [x] `src/rag/embeddings.py` -- BGE-M3 через sentence-transformers (локально)
   - [x] Генерация embeddings для products (name_en + description_en + category)
   - [x] Запись в колонку `products.embedding` (pgvector Vector(1024))
 - [x] RAG pipeline

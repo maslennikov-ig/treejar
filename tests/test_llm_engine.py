@@ -22052,6 +22052,21 @@ def test_a_malformed_input_list_never_breaks_the_turn(raw_inputs: object) -> Non
     assert claims[0].inputs == ()
 
 
+def test_the_repair_directive_asks_for_a_closing_next_step() -> None:
+    """tj-7z1x: a repaired reply is held to the same bar as an unrepaired one.
+
+    The sizing directive demands visible arithmetic and one concrete next step.
+    The repair directive demanded neither, and the four turns the contract
+    still rewrites showed the worst of them dropping exactly that closing
+    offer. Unmeasured on live output, and deliberately so: the only evidence
+    available to score it is the four examples it was written from.
+    """
+    directive = engine_module._claim_contract_directive("{}")
+
+    assert "one concrete next step" in directive
+    assert "arithmetic visible" in directive
+
+
 def test_the_directive_states_both_shapes_a_derivation_input_may_take() -> None:
     """Measured on the `claimpass-r2` round of 2026-08-06.
 

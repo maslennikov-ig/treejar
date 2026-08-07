@@ -1,0 +1,2075 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Noor - живое E2E-тестирование продаж, часть 2</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 16mm 17mm;
+      background: #f7f4ee;
+      @top-left {
+        content: "TREEJAR / NOOR";
+        color: #075044;
+        font-family: "DejaVu Sans", sans-serif;
+        font-size: 7.5pt;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+      }
+      @top-right {
+        content: "LIVE SALES REPORT";
+        color: #60706a;
+        font-family: "DejaVu Sans", sans-serif;
+        font-size: 7pt;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+      @bottom-left {
+        content: "Noor - приемочное тестирование, часть 2";
+        color: #60706a;
+        font-family: "DejaVu Sans", sans-serif;
+        font-size: 6.5pt;
+      }
+      @bottom-right {
+        content: counter(page) " / " counter(pages);
+        color: #60706a;
+        font-family: "DejaVu Sans", sans-serif;
+        font-size: 6.5pt;
+        font-weight: 700;
+      }
+    }
+
+    @page cover {
+      margin: 0;
+      background: #eef6f3;
+      @top-left { content: none; }
+      @top-right { content: none; }
+      @bottom-left { content: none; }
+      @bottom-right { content: none; }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --ink: #16231f;
+      --muted: #60706a;
+      --paper: #f7f4ee;
+      --white: #ffffff;
+      --forest-950: #06372f;
+      --forest-850: #075044;
+      --forest-700: #0c6b59;
+      --forest-300: #85b9aa;
+      --forest-100: #dcece7;
+      --forest-050: #eef6f3;
+      --amber-900: #70420f;
+      --amber-500: #d8902f;
+      --amber-100: #fff0d5;
+      --amber-050: #fff8eb;
+      --red-800: #7f302b;
+      --red-100: #f7dfdc;
+      --line: #d3ddd9;
+    }
+
+    html,
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: "DejaVu Sans", sans-serif;
+      font-size: 9.3pt;
+      line-height: 1.48;
+      hyphens: auto;
+    }
+
+    body {
+      -webkit-print-color-adjust: exact;
+    }
+
+    .cover {
+      page: cover;
+      position: relative;
+      width: 210mm;
+      height: 297mm;
+      padding: 18mm 17mm 16mm;
+      overflow: hidden;
+      break-after: page;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 86% 14%, rgba(133, 185, 170, 0.55), transparent 26%),
+        linear-gradient(145deg, #f8f5ee 0%, #edf4f0 58%, #d8ebe4 100%);
+    }
+
+    .cover::after {
+      content: "";
+      position: absolute;
+      right: -40mm;
+      bottom: -37mm;
+      width: 140mm;
+      height: 140mm;
+      border: 24mm solid rgba(7, 80, 68, 0.08);
+      border-radius: 50%;
+    }
+
+    .brand {
+      display: flex;
+      justify-content: space-between;
+      color: var(--forest-850);
+      font-size: 8pt;
+      font-weight: 800;
+      letter-spacing: 0.15em;
+    }
+
+    .brand span:last-child {
+      color: var(--muted);
+      letter-spacing: 0.06em;
+    }
+
+    .cover-main {
+      position: relative;
+      z-index: 2;
+      margin-top: 34mm;
+    }
+
+    .part-badge {
+      display: inline-block;
+      margin-bottom: 8mm;
+      padding: 2.5mm 4mm;
+      border: 1px solid rgba(7, 80, 68, 0.2);
+      border-radius: 999px;
+      color: var(--forest-850);
+      background: rgba(255, 255, 255, 0.7);
+      font-size: 7.5pt;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .cover h1 {
+      max-width: 160mm;
+      margin: 0;
+      color: var(--forest-950);
+      font-size: 35pt;
+      line-height: 1.06;
+      letter-spacing: -0.035em;
+    }
+
+    .cover-lead {
+      max-width: 150mm;
+      margin-top: 7mm;
+      color: var(--muted);
+      font-size: 14pt;
+      line-height: 1.45;
+    }
+
+    .cover-bottom {
+      position: absolute;
+      z-index: 2;
+      right: 17mm;
+      bottom: 20mm;
+      left: 17mm;
+      display: grid;
+      grid-template-columns: 1.18fr 0.82fr;
+      gap: 7mm;
+    }
+
+    .cover-verdict,
+    .cover-meta {
+      padding: 7mm;
+      border-radius: 4mm;
+    }
+
+    .cover-verdict {
+      color: var(--white);
+      background: var(--forest-950);
+    }
+
+    .cover-verdict small,
+    .eyebrow {
+      display: block;
+      margin-bottom: 3mm;
+      color: var(--forest-700);
+      font-size: 7.5pt;
+      font-weight: 800;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    .cover-verdict small {
+      color: #a9d2c6;
+    }
+
+    .cover-verdict strong {
+      display: block;
+      margin-bottom: 3mm;
+      font-size: 17pt;
+      line-height: 1.25;
+    }
+
+    .cover-verdict p {
+      margin: 0;
+      color: #d9e9e4;
+    }
+
+    .cover-meta {
+      border: 1px solid rgba(7, 80, 68, 0.18);
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    .cover-meta dl {
+      display: grid;
+      grid-template-columns: 25mm 1fr;
+      gap: 2.5mm 3mm;
+      margin: 0;
+    }
+
+    .cover-meta dt {
+      color: var(--muted);
+      font-size: 7pt;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .cover-meta dd {
+      margin: 0;
+      color: var(--forest-950);
+      font-size: 8pt;
+      font-weight: 700;
+    }
+
+    .front-page {
+      min-height: 247mm;
+      break-after: page;
+    }
+
+    h2 {
+      margin: 0 0 6mm;
+      padding-bottom: 3.5mm;
+      border-bottom: 1px solid var(--line);
+      color: var(--forest-950);
+      font-size: 21pt;
+      line-height: 1.15;
+      letter-spacing: -0.025em;
+    }
+
+    h3 {
+      margin: 7mm 0 3mm;
+      color: var(--forest-950);
+      font-size: 15pt;
+      line-height: 1.25;
+    }
+
+    h4 {
+      margin: 5mm 0 2mm;
+      color: var(--forest-950);
+      font-size: 11pt;
+    }
+
+    p {
+      margin: 0 0 3mm;
+      orphans: 3;
+      widows: 3;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 3.5mm;
+      margin-bottom: 6mm;
+    }
+
+    .metric {
+      min-height: 30mm;
+      padding: 4.5mm;
+      border: 1px solid var(--line);
+      border-radius: 3mm;
+      background: rgba(255, 255, 255, 0.75);
+    }
+
+    .metric.alert {
+      border-color: #e4bd7a;
+      background: var(--amber-050);
+    }
+
+    .metric strong {
+      display: block;
+      margin-bottom: 2mm;
+      color: var(--forest-950);
+      font-size: 21pt;
+      line-height: 1;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 7.8pt;
+      line-height: 1.25;
+    }
+
+    .verdict {
+      margin: 5mm 0;
+      padding: 6mm;
+      border-radius: 3mm;
+      color: var(--white);
+      background: var(--forest-950);
+    }
+
+    .verdict h3 {
+      margin: 0 0 2mm;
+      color: var(--white);
+      font-size: 15pt;
+    }
+
+    .verdict p {
+      margin: 0;
+      color: #d9e9e4;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5mm;
+    }
+
+    .panel {
+      padding: 5mm;
+      border: 1px solid var(--line);
+      border-radius: 3mm;
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    .panel.good {
+      border-color: #b7d3cb;
+      background: var(--forest-050);
+    }
+
+    .panel.warn {
+      border-color: #e6c68f;
+      background: var(--amber-050);
+    }
+
+    .panel h3 {
+      margin: 0 0 3mm;
+      font-size: 12pt;
+    }
+
+    .panel ul {
+      margin: 0;
+      padding-left: 5mm;
+    }
+
+    .panel li {
+      margin-bottom: 2mm;
+      color: var(--muted);
+    }
+
+    .consistency-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3.5mm;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .consistency-list li {
+      padding: 4mm;
+      border: 1px solid #b7d3cb;
+      border-radius: 3mm;
+      color: var(--muted);
+      background: var(--forest-050);
+    }
+
+    .consistency-list strong {
+      display: block;
+      margin-bottom: 1mm;
+      color: var(--forest-950);
+    }
+
+    .reading-note {
+      margin-top: 5mm;
+      padding: 5mm;
+      border-left: 2px solid var(--amber-500);
+      color: var(--muted);
+      background: var(--amber-050);
+    }
+
+    .report-content > h2 {
+      break-before: page;
+    }
+
+    .report-content > h2:first-child {
+      break-before: auto;
+    }
+
+    .scenario-heading {
+      break-before: page;
+      margin-top: 0;
+      padding: 4mm 5mm;
+      border-radius: 3mm;
+      color: var(--white);
+      background: var(--forest-950);
+    }
+
+    .scenario-heading.first-scenario {
+      break-before: auto;
+    }
+
+    .chat {
+      max-width: 165mm;
+      margin: 3mm 0;
+      padding: 4mm 5mm;
+      border-radius: 3mm;
+      break-inside: avoid;
+    }
+
+    .chat.customer {
+      margin-left: 14mm;
+      border: 1px solid #d9c695;
+      background: var(--amber-050);
+    }
+
+    .chat.noor {
+      margin-right: 14mm;
+      border: 1px solid #b7d3cb;
+      background: var(--forest-050);
+    }
+
+    .chat strong {
+      color: var(--forest-950);
+    }
+
+    .analysis-note {
+      margin: 5mm 0;
+      padding: 5mm;
+      border-left: 2px solid var(--forest-700);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.72);
+      break-inside: avoid;
+    }
+
+    .data-table {
+      width: 100%;
+      margin: 4mm 0 6mm;
+      border-collapse: collapse;
+      table-layout: auto;
+      font-size: 7.2pt;
+    }
+
+    .data-table thead {
+      display: table-header-group;
+    }
+
+    .data-table tr {
+      break-inside: avoid;
+    }
+
+    .data-table th {
+      padding: 2.3mm;
+      color: var(--white);
+      background: var(--forest-850);
+      text-align: left;
+    }
+
+    .data-table td {
+      padding: 2.2mm;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      overflow-wrap: anywhere;
+    }
+
+    .data-table tbody tr:nth-child(even) {
+      background: rgba(255, 255, 255, 0.55);
+    }
+
+    .score-table {
+      font-size: 6.3pt;
+    }
+
+    .audit-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4mm;
+      margin-top: 5mm;
+    }
+
+    .audit-card {
+      padding: 4mm;
+      border: 1px solid var(--line);
+      border-radius: 3mm;
+      background: rgba(255, 255, 255, 0.74);
+      break-inside: avoid;
+    }
+
+    .audit-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5mm;
+    }
+
+    .audit-head strong {
+      color: var(--forest-950);
+      font-size: 11pt;
+    }
+
+    .audit-head span {
+      padding: 1mm 2.2mm;
+      border-radius: 999px;
+      color: var(--amber-900);
+      background: var(--amber-100);
+      font-size: 7pt;
+      font-weight: 800;
+    }
+
+    .audit-time {
+      margin-bottom: 2mm;
+      color: var(--muted);
+      font-size: 7pt;
+    }
+
+    .audit-card dl {
+      display: grid;
+      grid-template-columns: 28mm 1fr;
+      gap: 1.5mm 2.5mm;
+      margin: 0;
+    }
+
+    .audit-card dt {
+      color: var(--muted);
+      font-size: 6.8pt;
+      font-weight: 700;
+    }
+
+    .audit-card dd {
+      margin: 0;
+      font-size: 7.2pt;
+      overflow-wrap: anywhere;
+    }
+
+    .audit-card dd p {
+      margin: 0;
+    }
+
+    .quality-code {
+      color: var(--forest-850);
+      font-family: "DejaVu Sans Mono", monospace;
+      font-weight: 700;
+    }
+
+    blockquote {
+      margin: 4mm 0;
+      padding: 3mm 5mm;
+      border-left: 2px solid var(--forest-300);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.55);
+    }
+
+    code {
+      padding: 0.3mm 1mm;
+      border-radius: 1mm;
+      color: var(--forest-950);
+      background: var(--forest-100);
+      font-family: "DejaVu Sans Mono", monospace;
+      font-size: 0.86em;
+      overflow-wrap: anywhere;
+    }
+
+    a {
+      color: var(--forest-700);
+      text-decoration: none;
+    }
+
+    hr {
+      height: 1px;
+      margin: 5mm 0;
+      border: 0;
+      background: var(--line);
+    }
+
+    ul,
+    ol {
+      margin: 2mm 0 4mm;
+      padding-left: 6mm;
+    }
+
+    li {
+      margin-bottom: 1.5mm;
+    }
+
+    img {
+      max-width: 100%;
+    }
+
+    .evidence-anchor {
+      display: block;
+      height: 0;
+    }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <div class="brand">
+      <span>TREEJAR / NOOR</span>
+      <span>CLIENT ACCEPTANCE REPORT</span>
+    </div>
+    <div class="cover-main">
+      <span class="part-badge">Часть 2 из 2</span>
+      <span class="eyebrow">Живые продажи и инструменты</span>
+      <h1>Production E2E<br>продаж Noor</h1>
+      <p class="cover-lead">
+        Реальные диалоги, ответы модели, инструментальные вызовы,
+        коммерческое предложение и наблюдаемые побочные эффекты.
+      </p>
+    </div>
+    <div class="cover-bottom">
+      <div class="cover-verdict">
+        <small>Главный вывод</small>
+        <strong>Релиз не принят как полноценный AI sales assistant.</strong>
+        <p>
+          Каталоговая консультация уже полезна, но пять P1-дефектов
+          нарушают переходы, CRM, КП/PDF и voice flow.
+        </p>
+      </div>
+      <div class="cover-meta">
+        <dl>
+          <dt>Дата</dt><dd>28 июля 2026</dd>
+          <dt>Среда</dt><dd>Production</dd>
+          <dt>Релиз</dt><dd>0dd9615a...</dd>
+          <dt>Модель</dt><dd>z-ai/glm-5.2</dd>
+          <dt>Сценарии</dt><dd>11 live</dd>
+          <dt>Статус</dt><dd>NOT ACCEPTED</dd>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <section class="front-page">
+    <span class="eyebrow">Executive summary</span>
+    <h2>Живая проверка состоялась</h2>
+    <div class="metric-grid">
+      <div class="metric"><strong>11</strong><span>production-сценариев</span></div>
+      <div class="metric"><strong>39 / 38</strong><span>входящих / ответов Noor</span></div>
+      <div class="metric alert"><strong>12,76</strong><span>средняя оценка продаж из 30</span></div>
+      <div class="metric alert"><strong>5</strong><span>открытых P1-дефектов</span></div>
+    </div>
+    <div class="verdict">
+      <h3>Что уже работает</h3>
+      <p>
+        Noor выполняет реальный поиск по каталогу, сравнивает LUMA и NOVO,
+        показывает SKU, цены и остатки, пересчитывает конфигурацию и в лучших
+        ответах действует как компетентный мебельный консультант.
+      </p>
+    </div>
+    <div class="two-col">
+      <div class="panel good">
+        <h3>Сильные стороны</h3>
+        <ul>
+          <li>9 реальных поисков по production-каталогу.</li>
+          <li>2 точные model-tool проверки остатка.</li>
+          <li>Grounded сравнение private LUMA и open NOVO.</li>
+          <li>11 товарных изображений доставлены через Wazzup.</li>
+          <li>Изменение команды 8 -> 12 человек пересчитано корректно.</li>
+        </ul>
+      </div>
+      <div class="panel warn">
+        <h3>Критические ограничения</h3>
+        <ul>
+          <li>После name gate теряется исходное намерение.</li>
+          <li>Discovery преждевременно превращается в quote-state.</li>
+          <li>CRM opportunity не создана.</li>
+          <li>Создание КП упало на Zoho HTTP 400, PDF отсутствует.</li>
+          <li>Voice transcription трижды вернула HTTP 400.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="metric-grid" style="margin-top:6mm;">
+      <div class="metric"><strong>9</strong><span>search_products</span></div>
+      <div class="metric"><strong>2</strong><span>get_stock model tools</span></div>
+      <div class="metric"><strong>58</strong><span>Wazzup audit rows sent</span></div>
+      <div class="metric alert"><strong>0</strong><span>созданных и отправленных PDF</span></div>
+    </div>
+  </section>
+
+  <section class="front-page">
+    <span class="eyebrow">Consistency review</span>
+    <h2>Отчёт внутренне согласован</h2>
+    <ul class="consistency-list">
+      <li><strong>11 сценариев</strong>10 текстовых и 1 voice-сценарий присутствуют в сводке и транскриптах.</li>
+      <li><strong>39 входящих / 38 ответов</strong>38 строк аудита совпадают с 38 ответами; один повтор имени не получил отдельного ответа.</li>
+      <li><strong>12,755 -> 12,76</strong>Среднее десяти текстовых сценариев пересчитано и округлено корректно.</li>
+      <li><strong>Все score blocks сходятся</strong>11 итоговых оценок равны сумме четырёх взвешенных блоков.</li>
+      <li><strong>Tool counts подтверждены</strong>9 search, 2 get_stock, 1 advance_stage и 1 неуспешный create_quotation.</li>
+      <li><strong>Пять P1 существуют</strong>Beads tj-ee5f.6 - tj-ee5f.10 открыты и соответствуют указанным сценариям.</li>
+      <li><strong>Privacy сохранена</strong>В отчёте нет тестового номера, chat/provider ID и секретов.</li>
+      <li><strong>Внутренние ссылки целы</strong>Все ссылки S01-S11 имеют соответствующие evidence anchors.</li>
+    </ul>
+    <div class="reading-note">
+      <strong>Как читать статусы.</strong> «PASS с оговоркой» означает, что
+      конкретная цель сценария была достигнута, но не превращает весь диалог
+      в хороший продажный результат. Поэтому S03/S04 могут иметь scenario PASS
+      и одновременно лишь 18,15/30 и 18,90/30 по общей методике.
+    </div>
+    <div class="reading-note">
+      <strong>Почему 58 audit rows при 38 ответах.</strong> Один ответ может
+      породить несколько записей: текст, product media и caption. Для трёх
+      voice fallback ответов outbound-dedupe, наоборот, сохранил только одну
+      фактическую Wazzup-отправку.
+    </div>
+    <div class="reading-note">
+      <strong>Типографическая нормализация.</strong> Только декоративные emoji
+      в HTML/PDF заменены понятными текстовыми метками. Вопросы, ответы,
+      числовые значения и исходный Markdown не изменены.
+    </div>
+  </section>
+
+  <main class="report-content">
+    <h2>Что именно проверено</h2>
+<ul>
+<li>Английский и арабский языки.</li>
+<li>Значение <code>private-dash/private-desk</code>, актуальные семейства LUMA и NOVO.</li>
+<li>Поиск по бюджету и количеству, сравнение вариантов, точный SKU и live-остаток.</li>
+<li>Возражение по цене, более дешёвая конфигурация и cross-sell.</li>
+<li>Честный no-match.</li>
+<li>Память, исправление требования и прерывание вопросом о доставке/сборке.</li>
+<li>Попытка полного КП с тестовым клиентом, Zoho-readback и PDF.</li>
+<li>Попытка создания/продвижения CRM-возможности без КП.</li>
+<li>Эскалация и Telegram-уведомление.</li>
+<li>Карточки товаров и изображения через Wazzup.</li>
+<li>Голосовой файл и fallback.</li>
+</ul>
+<h2>Метод и ограничения</h2>
+<p>Входящие сообщения подавались через существующий application-native production webhook и затем перечитывались из production PostgreSQL. Ответы отправлялись штатной Wazzup-интеграцией только на разрешённый тестовый номер. Это доказывает production-обработку, запись сообщения, работу модели/инструментов и исходящую доставку через провайдера, но <strong>не является provider-originated входящим сообщением с физического WhatsApp-клиента</strong>. Такой входящий canary нельзя безопасно имитировать серверным API без устройства владельца тестового номера.</p>
+<p>Деловой текст ниже приведён дословно. Из tracked-отчёта удалены только внутренние корреляционные маркеры вида <code>[smoke:…]</code>, номера телефонов, chat/provider ID, URL голосового вложения и секреты. Полные raw-транскрипты, логи и аудиты находятся в защищённом локальном каталоге вне Git с правами <code>0700/0600</code>.</p>
+<p>Два входящих сообщения были продублированы тестовым клиентом после неопределённого локального stdout: первый запрос S08 и имя <code>Yusuf</code> в S10. Дубликаты честно сохранены в production и показаны ниже; это дефект тестового драйвера, а не Noor. При расчёте задержек дублированный <code>Yusuf</code>, на который не было отдельного ответа, исключён.</p>
+<h2>Сводка результатов</h2>
+<table class="data-table">
+<thead>
+<tr>
+<th>ID</th>
+<th>Сценарий</th>
+<th style="text-align: right;">Результат</th>
+<th style="text-align: right;">Оценка</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>S01</td>
+<td>EN: потребность, бюджет, кресла и столы</td>
+<td style="text-align: right;">PARTIAL</td>
+<td style="text-align: right;">18,90/30</td>
+</tr>
+<tr>
+<td>S02</td>
+<td>AR: шесть приватных мест и кресла</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">7,40/30</td>
+</tr>
+<tr>
+<td>S03</td>
+<td><code>private-dash</code>, LUMA и актуальные альтернативы</td>
+<td style="text-align: right;">PASS с оговоркой по name gate</td>
+<td style="text-align: right;">18,15/30</td>
+</tr>
+<tr>
+<td>S04</td>
+<td>Сравнение LUMA/NOVO и рекомендация</td>
+<td style="text-align: right;">PASS с оговоркой по переходу после имени</td>
+<td style="text-align: right;">18,90/30</td>
+</tr>
+<tr>
+<td>S05</td>
+<td>Бюджет, возражение, дешёвая конфигурация, cross-sell</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">6,40/30</td>
+</tr>
+<tr>
+<td>S06</td>
+<td>Точный SKU, цена и live-остаток</td>
+<td style="text-align: right;">PARTIAL</td>
+<td style="text-align: right;">15,38/30</td>
+</tr>
+<tr>
+<td>S07</td>
+<td>Честный no-match и релевантные альтернативы</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">7,62/30</td>
+</tr>
+<tr>
+<td>S08</td>
+<td>Память, прерывание, исправление количества</td>
+<td style="text-align: right;">PARTIAL</td>
+<td style="text-align: right;">15,60/30</td>
+</tr>
+<tr>
+<td>S09</td>
+<td>Полное КП, Zoho, PDF</td>
+<td style="text-align: right;">BLOCKED/FAIL</td>
+<td style="text-align: right;">12,80/30</td>
+</tr>
+<tr>
+<td>S10</td>
+<td>CRM opportunity и следующий шаг без КП</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">6,40/30</td>
+</tr>
+<tr>
+<td>S11</td>
+<td>Голос/медиа и fallback</td>
+<td style="text-align: right;">BLOCKED; fallback PASS</td>
+<td style="text-align: right;">0,75/30</td>
+</tr>
+</tbody>
+</table>
+<h2>Реальные инструменты, модели и побочные эффекты</h2>
+<h3>Вызовы модели и инструментов</h3>
+<ul>
+<li>5 ответов основной <code>z-ai/glm-5.2</code> с ненулевыми токенами.</li>
+<li>9 реальных <code>search_products</code>.</li>
+<li>2 реальных model-tool вызова <code>get_stock</code>.</li>
+<li>1 <code>advance_stage</code>.</li>
+<li>1 <code>create_quotation</code>, завершившийся ошибкой до создания КП.</li>
+<li><code>lookup_customer</code>, <code>create_deal</code> и model-tool <code>escalate_to_manager</code> в наблюдаемых traces не вызывались.</li>
+<li>Детерминированный stock/price route S06 делал live inventory readback, но не был model-tool вызовом; это различие важно для аудита.</li>
+<li>Поле стоимости в таблице сообщений не заполнялось, поэтому финансовую сумму провайдерских вызовов подтвердить по production-БД нельзя. Нельзя интерпретировать это как нулевую стоимость.</li>
+</ul>
+<h3>Wazzup и медиа</h3>
+<ul>
+<li>58 outbound audit-записей, все в терминальном статусе <code>sent</code>.</li>
+<li>47 записей имеют provider message ID.</li>
+<li>33 обычных текстовых ответа, 2 escalation fallback, 1 voice fallback.</li>
+<li>11 товарных изображений реально отправлены; ещё 11 связанных caption-аудитов не имеют отдельного provider ID.</li>
+<li>PDF не создан и не отправлен.</li>
+<li>Три сохранённых voice-fallback ответа дедуплицировались до одной исходящей Wazzup-записи. Для разных входящих voice message ID это подозрительно и вынесено в дефект.</li>
+</ul>
+<h3>Zoho, CRM и эскалации</h3>
+<ul>
+<li>В S09 выполнены успешные read-only проверки каталога/контакта, затем POST создания клиента Zoho Inventory вернул HTTP <code>400</code>.</li>
+<li>После ошибки не появились Zoho contact, deal, quotation или PDF.</li>
+<li>В S10 не появились Zoho contact/deal и не произошло продвижение стадии.</li>
+<li>S02, S07 и S09 создали три test-only эскалации и три ограниченных Telegram-уведомления.</li>
+<li>После сбора evidence ровно эти три записи были разрешены штатным production-сервисом. Readback: 3 <code>resolved</code>, 0 <code>pending</code>.</li>
+<li>Telegram callback от реального администратора не симулировался: безопасного способа совершить его без выдачи себя за администратора нет.</li>
+</ul>
+<h2>Производительность</h2>
+<p>Задержка считается от ближайшего входящего сообщения до сохранённого ответа Noor.</p>
+<table class="data-table">
+<thead>
+<tr>
+<th>ID</th>
+<th style="text-align: right;">Ответов</th>
+<th style="text-align: right;">Средняя</th>
+<th style="text-align: right;">Медиана</th>
+<th style="text-align: right;">Максимум</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>S01</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">18,0 с</td>
+<td style="text-align: right;">10,1 с</td>
+<td style="text-align: right;">35,8 с</td>
+</tr>
+<tr>
+<td>S02</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">11,1 с</td>
+<td style="text-align: right;">9,3 с</td>
+<td style="text-align: right;">15,1 с</td>
+</tr>
+<tr>
+<td>S03</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">21,1 с</td>
+<td style="text-align: right;">25,8 с</td>
+<td style="text-align: right;">26,2 с</td>
+</tr>
+<tr>
+<td>S04</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">18,6 с</td>
+<td style="text-align: right;">11,1 с</td>
+<td style="text-align: right;">33,9 с</td>
+</tr>
+<tr>
+<td>S05</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">7,6 с</td>
+<td style="text-align: right;">7,0 с</td>
+<td style="text-align: right;">10,2 с</td>
+</tr>
+<tr>
+<td>S06</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">11,1 с</td>
+<td style="text-align: right;">10,0 с</td>
+<td style="text-align: right;">13,9 с</td>
+</tr>
+<tr>
+<td>S07</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">8,6 с</td>
+<td style="text-align: right;">9,5 с</td>
+<td style="text-align: right;">10,8 с</td>
+</tr>
+<tr>
+<td>S08</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">16,6 с</td>
+<td style="text-align: right;">14,4 с</td>
+<td style="text-align: right;">35,3 с</td>
+</tr>
+<tr>
+<td>S09</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">8,2 с</td>
+<td style="text-align: right;">8,1 с</td>
+<td style="text-align: right;">10,6 с</td>
+</tr>
+<tr>
+<td>S10</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">10,3 с</td>
+<td style="text-align: right;">10,7 с</td>
+<td style="text-align: right;">13,6 с</td>
+</tr>
+<tr>
+<td>S11</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">6,9 с</td>
+<td style="text-align: right;">6,8 с</td>
+<td style="text-align: right;">7,3 с</td>
+</tr>
+<tr>
+<td><strong>Всего</strong></td>
+<td style="text-align: right;"><strong>38</strong></td>
+<td style="text-align: right;"><strong>12,6 с</strong></td>
+<td style="text-align: right;"><strong>10,0 с</strong></td>
+<td style="text-align: right;"><strong>35,8 с</strong></td>
+</tr>
+</tbody>
+</table>
+<h2>Аудит каждого хода</h2>
+<p>Все времена ниже — UTC 28 июля 2026 года. <code>In</code> — время сохранения входящего сообщения, <code>Out</code> — время сохранения ответа. Аргументы инструментов очищены от идентификаторов. Для детерминированных маршрутов отдельный tool-duration не инструментирован, поэтому вместо выдуманного числа указан только end-to-end latency.</p>
+<p>Код качества: <code>F</code> — фактичность, <code>S</code> — продажная ценность, <code>I</code> — инициатива, <code>Q</code> — уместный вопрос, <code>P</code> — персонализация, <code>O</code> — обработка возражения, <code>N</code> — следующий шаг, <code>H</code> — отсутствие выдумок, <code>L</code> — язык. <code>+</code> — хорошо, <code>±</code> — частично, <code>−</code> — плохо, <code>—</code> — неприменимо.</p>
+<div class="audit-grid">
+<article class="audit-card">
+<div class="audit-head">
+<strong>S01/1</strong>
+<span>10,1 с</span>
+</div>
+<div class="audit-time">18:30:21 → 18:30:31.083</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>name-gate</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code>, provider ID есть</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/±/+/+/−/—/+/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S01/2</strong>
+<span>8,0 с</span>
+</div>
+<div class="audit-time">18:30:53 → 18:31:01.043</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>showroom-location</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; нерелевантный deterministic route</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/−/−/−/±/—/−/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S01/3</strong>
+<span>35,8 с</span>
+</div>
+<div class="audit-time">18:31:15 → 18:31:50.819</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>z-ai/glm-5.2</code></p></dd>
+<dt>Tool / result</dt><dd><p><code>search_products("office desks", max=800)</code> → OK; <code>search_products("ergonomic chairs", max=800)</code> → OK; <code>advance_stage(greeting→needs_analysis)</code> → OK; наблюдаемое tool-окно ≈0,23 с</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text и 3 product media <code>sent</code>; live SKU/price/stock</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/+/+/+/+/—/+/±/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S02/1</strong>
+<span>9,3 с</span>
+</div>
+<div class="audit-time">18:33:46 → 18:33:55.285</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>name-gate</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/±/+/+/−/—/+/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S02/2</strong>
+<span>9,0 с</span>
+</div>
+<div class="audit-time">18:33:57 → 18:34:06.021</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>showroom-location</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; нерелевантный deterministic route</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/−/−/−/±/—/−/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S02/3</strong>
+<span>15,1 с</span>
+</div>
+<div class="audit-time">18:34:07 → 18:34:22.093</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>verified-policy</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; deterministic escalation</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code>; Telegram HTTP <code>200</code>; escalation позже <code>resolved</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/−/−/−/−/—/±/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S03/1</strong>
+<span>11,1 с</span>
+</div>
+<div class="audit-time">18:34:50 → 18:35:01.139</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>name-gate</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; inline имя/компания не использованы</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/±/+/+/−/—/+/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S03/2</strong>
+<span>26,2 с</span>
+</div>
+<div class="audit-time">18:35:02 → 18:35:28.211</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>z-ai/glm-5.2</code></p></dd>
+<dt>Tool / result</dt><dd><p><code>search_products("private workstation desk with privacy panels")</code> → OK; <code>search_products("enclosed workstation cubicle privacy screen")</code> → OK; ≈0,28 с</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text и product media <code>sent</code>; SKU/price/stock readback</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/+/+/+/+/—/+/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S03/3</strong>
+<span>25,8 с</span>
+</div>
+<div class="audit-time">18:35:30 → 18:35:55.848</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>z-ai/glm-5.2</code></p></dd>
+<dt>Tool / result</dt><dd><p><code>search_products("LUMA 4 person workstation private panels")</code> → OK; <code>search_products("4 person private workstation with divider panels")</code> → OK; ≈0,26 с</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text и product media <code>sent</code>; LUMA/NOVO readback</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/+/+/+/+/—/+/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S04/1</strong>
+<span>11,1 с</span>
+</div>
+<div class="audit-time">18:36:16 → 18:36:27.146</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>name-gate</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/±/+/+/−/—/+/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S04/2</strong>
+<span>10,8 с</span>
+</div>
+<div class="audit-time">18:36:28 → 18:36:38.794</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>product-quantity-clarify</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; intent искажён</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">−/−/−/±/+/—/±/−/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S04/3</strong>
+<span>33,9 с</span>
+</div>
+<div class="audit-time">18:36:40 → 18:37:13.919</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>z-ai/glm-5.2</code></p></dd>
+<dt>Tool / result</dt><dd><p><code>search_products("LUMA four-person workstation private")</code> → OK; <code>search_products("NOVO four-person workstation open")</code> → OK; <code>get_stock(LUMA 9719-4 SKU)</code> → 30; <code>get_stock(NOVO 2400 SKU)</code> → 36; ≈5,45 с</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code>; два независимых stock readback</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/+/+/+/+/—/+/±/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S05/1</strong>
+<span>6,1 с</span>
+</div>
+<div class="audit-time">18:37:38 → 18:37:44.112</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>name-gate</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/±/+/+/−/—/+/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S05/2</strong>
+<span>10,2 с</span>
+</div>
+<div class="audit-time">18:37:45 → 18:37:55.159</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>selection-confirmation</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; предложение ошибочно распознано как товар</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">−/−/−/±/+/—/−/−/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S05/3</strong>
+<span>6,9 с</span>
+</div>
+<div class="audit-time">18:37:56 → 18:38:02.937</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>quote-resume-missing-items</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; рекомендация не выполнена</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">±/−/−/−/+/—/−/±/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S05/4</strong>
+<span>7,1 с</span>
+</div>
+<div class="audit-time">18:38:04 → 18:38:11.062</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>quote-resume-missing-details</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; возражение/cross-sell не обработаны</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">±/−/−/−/+/−/−/±/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S06/1</strong>
+<span>10,0 с</span>
+</div>
+<div class="audit-time">18:38:35 → 18:38:44.969</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>name-gate</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/±/+/+/−/—/+/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S06/2</strong>
+<span>9,6 с</span>
+</div>
+<div class="audit-time">18:38:47 → 18:38:56.600</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>stock-price-options</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; deterministic live inventory readback, duration отдельно не записана</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code>; CH 616 NEW: AED 295, stock 43</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/±/±/+/+/—/+/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S06/3</strong>
+<span>13,9 с</span>
+</div>
+<div class="audit-time">18:38:59 → 18:39:12.868</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>stock-price-options</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; повторный live inventory readback</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code>; 12 из 43 доступны, но добавлен лишний SKU</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/±/−/±/+/—/±/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S07/1</strong>
+<span>9,5 с</span>
+</div>
+<div class="audit-time">18:39:32 → 18:39:41.463</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>name-gate</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/±/+/+/−/—/+/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S07/2</strong>
+<span>10,8 с</span>
+</div>
+<div class="audit-time">18:39:42 → 18:39:52.764</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>verified-policy</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; deterministic escalation вместо no-match</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code>; Telegram HTTP <code>200</code>; escalation позже <code>resolved</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/−/−/−/−/—/±/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S07/3</strong>
+<span>5,7 с</span>
+</div>
+<div class="audit-time">18:39:55 → 18:40:00.670</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>fallback</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет</p></dd>
+<dt>Side effect / readback</dt><dd><p>Escalation fallback <code>sent</code>; provider ID есть</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/−/−/−/−/—/±/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S08/1</strong>
+<span>35,3 с</span>
+</div>
+<div class="audit-time">18:41:07 → 18:41:42.254</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>z-ai/glm-5.2</code></p></dd>
+<dt>Tool / result</dt><dd><p><code>search_products("LUMA 9719-4 workstation walnut", max=6000)</code> → OK; отдельный tool-duration не записан</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text и 3 product media <code>sent</code>; цена/stock readback</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/+/+/+/−/—/+/±/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S08/2</strong>
+<span>17,4 с</span>
+</div>
+<div class="audit-time">18:42:02 → 18:42:19.409</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>selection-confirmation</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; deterministic Zoho selection выбрал неверные модель/количество</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code>; ошибочно LUMA 9719-2 × 8</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">−/−/−/+/−/—/±/−/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S08/3</strong>
+<span>9,7 с</span>
+</div>
+<div class="audit-time">18:43:32 → 18:43:41.721</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>quote-resume-missing-details</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; имя сохранено, но quote-state не снят</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/−/−/−/+/—/−/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S08/4</strong>
+<span>18,0 с</span>
+</div>
+<div class="audit-time">18:43:43 → 18:44:01.034</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>selection-confirmation</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; deterministic Zoho selection/readback</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code>; LUMA 9719-4 × 2, total AED 3 766</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/±/±/+/+/—/±/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S08/5</strong>
+<span>11,5 с</span>
+</div>
+<div class="audit-time">18:44:02 → 18:44:13.477</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>quote-resume-missing-details</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; delivery/assembly вопрос проигнорирован</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">−/−/−/−/+/—/−/±/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S08/6</strong>
+<span>7,7 с</span>
+</div>
+<div class="audit-time">18:44:15 → 18:44:22.688</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>selection-confirmation</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; deterministic Zoho selection/readback</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code>; коррекция LUMA 9719-4 × 3, total AED 5 649</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/±/±/+/+/—/+/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S09/1</strong>
+<span>5,9 с</span>
+</div>
+<div class="audit-time">18:45:13 → 18:45:18.864</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>name-gate</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/±/+/+/−/—/+/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S09/2</strong>
+<span>10,0 с</span>
+</div>
+<div class="audit-time">18:45:36 → 18:45:45.966</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>exact-quote-missing-details</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет; корректный сбор обязательных реквизитов</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/±/+/+/+/—/+/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S09/3</strong>
+<span>10,6 с</span>
+</div>
+<div class="audit-time">18:45:48 → 18:45:58.632</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>exact-quote-deterministic</code></p></dd>
+<dt>Tool / result</dt><dd><p><code>create_quotation(CH 616 NEW black × 4)</code> → FAIL; Zoho contact POST HTTP <code>400</code>; от tool-call до ошибки ≈3,96 с</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code>; Telegram HTTP <code>200</code>; contact/deal/PDF readback = 0; escalation позже <code>resolved</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/−/±/−/+/—/±/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S09/4</strong>
+<span>6,2 с</span>
+</div>
+<div class="audit-time">18:46:00 → 18:46:06.173</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>fallback</code></p></dd>
+<dt>Tool / result</dt><dd><p>повторного tool-call нет</p></dd>
+<dt>Side effect / readback</dt><dd><p>Escalation fallback <code>sent</code>; PDF отсутствует</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/−/−/−/+/—/±/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S10/1</strong>
+<span>6,5 с</span>
+</div>
+<div class="audit-time">18:47:01 → 18:47:07.467</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>name-gate</code></p></dd>
+<dt>Tool / result</dt><dd><p>model-tool нет</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code></p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/±/+/+/−/—/+/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S10/2</strong>
+<span>10,7 с</span>
+</div>
+<div class="audit-time">18:48:03 → 18:48:13.697</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>exact-quote-missing-details</code></p></dd>
+<dt>Tool / result</dt><dd><p><code>lookup_customer/create_deal</code> не вызваны; no-quote intent проигнорирован</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code>; contact/deal readback = 0</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">±/−/−/−/+/—/−/±/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S10/3</strong>
+<span>13,6 с</span>
+</div>
+<div class="audit-time">18:48:15 → 18:48:28.627</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>quote-resume-missing-details</code></p></dd>
+<dt>Tool / result</dt><dd><p><code>lookup_customer/create_deal/advance_stage</code> не вызваны</p></dd>
+<dt>Side effect / readback</dt><dd><p>Text <code>sent</code>; contact/deal/stage side effect отсутствует</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">±/−/−/−/+/—/−/±/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S11/1</strong>
+<span>6,8 с</span>
+</div>
+<div class="audit-time">18:49:51 → 18:49:57.786</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>voice_fallback</code></p></dd>
+<dt>Tool / result</dt><dd><p>transcription provider POST → HTTP <code>400</code>; ≈0,94 с</p></dd>
+<dt>Side effect / readback</dt><dd><p>Fallback <code>sent</code>, provider ID есть; unreadable sentinel сохранён</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/−/−/+/−/—/+/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S11/2</strong>
+<span>7,3 с</span>
+</div>
+<div class="audit-time">18:50:55 → 18:51:02.322</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>voice_fallback</code></p></dd>
+<dt>Tool / result</dt><dd><p>transcription provider POST → HTTP <code>400</code>; ≈0,95 с</p></dd>
+<dt>Side effect / readback</dt><dd><p>Новый assistant row; отдельной Wazzup-отправки нет из-за dedupe</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/−/−/+/−/—/+/+/+</dd>
+</dl>
+</article>
+<article class="audit-card">
+<div class="audit-head">
+<strong>S11/3</strong>
+<span>6,6 с</span>
+</div>
+<div class="audit-time">18:51:14 → 18:51:20.556</div>
+<dl>
+<dt>Route / model</dt><dd><p><code>voice_fallback</code></p></dd>
+<dt>Tool / result</dt><dd><p>transcription provider POST → HTTP <code>400</code>; ≈0,63 с</p></dd>
+<dt>Side effect / readback</dt><dd><p>Новый assistant row; отдельной Wazzup-отправки нет из-за dedupe</p></dd>
+<dt>Quality F/S/I/Q/P/O/N/H/L</dt><dd class="quality-code">+/−/−/+/−/—/+/+/+</dd>
+</dl>
+</article>
+</div>
+<h2>Матрица expected tool → actual tool</h2>
+<table class="data-table">
+<thead>
+<tr>
+<th>Инструмент/маршрут</th>
+<th>Естественный ожидаемый повод</th>
+<th>Фактическое использование</th>
+<th>Оценка</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>search_products</code></td>
+<td>S01–S05, S07, S08: подбор, private-dash, бюджет, no-match</td>
+<td>9 вызовов только в S01, S03, S04, S08</td>
+<td>Корректен там, где вызван; пропущен в Arabic S02, подборе/возражении S05 и no-match S07</td>
+</tr>
+<tr>
+<td><code>get_stock</code></td>
+<td>S04, S06, S09: сравнение, exact SKU, КП</td>
+<td>2 model-tool вызова в S04; S06 и S09 использовали отдельные deterministic live readback</td>
+<td>S04 корректно; S06 дублирует лишний SKU; S09 наличие подтверждено, но дальнейшее КП упало</td>
+</tr>
+<tr>
+<td><code>advance_stage</code></td>
+<td>После discovery и при коммерческом продвижении</td>
+<td>1 вызов в S01</td>
+<td>Сильно недоиспользован; S10 не продвинут</td>
+</tr>
+<tr>
+<td><code>lookup_customer</code></td>
+<td>Перед созданием КП/CRM opportunity в S09/S10</td>
+<td>0 наблюдаемых model-tool вызовов; в S09 был внутренний Zoho contact GET</td>
+<td>Model-tool пропущен; внутренний lookup не привёл к безопасному create/reuse</td>
+</tr>
+<tr>
+<td><code>create_deal</code></td>
+<td>S10: явная просьба записать возможность, бюджет и срок</td>
+<td>0</td>
+<td>Пропущен</td>
+</tr>
+<tr>
+<td><code>create_quotation</code></td>
+<td>S09: явное точное КП после сбора реквизитов</td>
+<td>1, с очищёнными аргументами <code>CH 616 NEW black × 4</code>; ошибка Zoho HTTP <code>400</code></td>
+<td>Выбран уместно, но транзакция не завершена; PDF отсутствует</td>
+</tr>
+<tr>
+<td><code>escalate_to_manager</code></td>
+<td>Только настоящий unsupported/no-match или terminal quote failure</td>
+<td>0 model-tool вызовов; 3 deterministic эскалации в S02, S07, S09</td>
+<td>S09 уместна после terminal failure; S02 лишняя; S07 безопасна, но вместо полезного no-match</td>
+</tr>
+<tr>
+<td>Wazzup product media</td>
+<td>S01/S03/S08 после каталожной рекомендации</td>
+<td>11 media + 11 caption audit rows</td>
+<td>PASS, все media в <code>sent</code></td>
+</tr>
+<tr>
+<td>Voice transcription</td>
+<td>S11</td>
+<td>3 provider POST, все HTTP <code>400</code></td>
+<td>BLOCKED; fallback безопасен, но outbound dedupe неверен</td>
+</tr>
+</tbody>
+</table>
+<h2>Оценка по чек-листу</h2>
+<p>Формат вектора: <code>1/2/3/7 | 4/5/6/8/13 | 9/10/11 | 12/14/15</code>. Значение <code>—</code> означает <code>not applicable</code>. Баллы блоков рассчитаны строго по весам 6/9/9/6 из методики.</p>
+<table class="data-table score-table">
+<thead>
+<tr>
+<th>ID</th>
+<th>Вектор правил</th>
+<th>Блоки: Opening / Discovery / Solution / Conversion</th>
+<th style="text-align: right;">Итог</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>S01</td>
+<td><code>2/2/2/0 \| 2/2/0/2/0 \| 2/2/0 \| 1/1/—</code></td>
+<td><code>4,50 / 5,40 / 6,00 / 3,00</code></td>
+<td style="text-align: right;"><strong>18,90</strong></td>
+</tr>
+<tr>
+<td>S02</td>
+<td><code>2/2/2/0 \| 1/0/0/0/0 \| 0/0/0 \| 1/0/1</code></td>
+<td><code>4,50 / 0,90 / 0,00 / 2,00</code></td>
+<td style="text-align: right;"><strong>7,40</strong></td>
+</tr>
+<tr>
+<td>S03</td>
+<td><code>2/2/1/0 \| 2/2/0/2/0 \| 2/2/0 \| 1/1/—</code></td>
+<td><code>3,75 / 5,40 / 6,00 / 3,00</code></td>
+<td style="text-align: right;"><strong>18,15</strong></td>
+</tr>
+<tr>
+<td>S04</td>
+<td><code>2/2/2/0 \| 2/2/0/2/0 \| 2/2/0 \| 1/1/—</code></td>
+<td><code>4,50 / 5,40 / 6,00 / 3,00</code></td>
+<td style="text-align: right;"><strong>18,90</strong></td>
+</tr>
+<tr>
+<td>S05</td>
+<td><code>2/2/2/0 \| 1/0/0/0/0 \| 0/0/0 \| 1/0/0</code></td>
+<td><code>4,50 / 0,90 / 0,00 / 1,00</code></td>
+<td style="text-align: right;"><strong>6,40</strong></td>
+</tr>
+<tr>
+<td>S06</td>
+<td><code>2/2/2/0 \| 1/1/0/1/— \| 1/—/— \| 1/1/—</code></td>
+<td><code>4,50 / 3,38 / 4,50 / 3,00</code></td>
+<td style="text-align: right;"><strong>15,38</strong></td>
+</tr>
+<tr>
+<td>S07</td>
+<td><code>2/2/2/0 \| 1/0/0/0/— \| 0/0/— \| 1/0/1</code></td>
+<td><code>4,50 / 1,12 / 0,00 / 2,00</code></td>
+<td style="text-align: right;"><strong>7,62</strong></td>
+</tr>
+<tr>
+<td>S08</td>
+<td><code>2/2/0/0 \| 1/1/0/2/0 \| 2/1/0 \| 1/2/—</code></td>
+<td><code>3,00 / 3,60 / 4,50 / 4,50</code></td>
+<td style="text-align: right;"><strong>15,60</strong></td>
+</tr>
+<tr>
+<td>S09</td>
+<td><code>2/2/2/0 \| 1/0/0/1/0 \| 1/—/— \| 1/0/1</code></td>
+<td><code>4,50 / 1,80 / 4,50 / 2,00</code></td>
+<td style="text-align: right;"><strong>12,80</strong></td>
+</tr>
+<tr>
+<td>S10</td>
+<td><code>2/2/2/0 \| 1/0/0/0/0 \| 0/0/— \| 1/0/0</code></td>
+<td><code>4,50 / 0,90 / 0,00 / 1,00</code></td>
+<td style="text-align: right;"><strong>6,40</strong></td>
+</tr>
+<tr>
+<td>S11</td>
+<td><code>0/1/0/0 \| —/—/—/—/— \| —/—/— \| —/—/—</code></td>
+<td><code>0,75 / 0,00 / 0,00 / 0,00</code></td>
+<td style="text-align: right;"><strong>0,75</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Повторяющиеся пробелы чек-листа: Noor почти никогда не обозначает ценность Treejar, не спрашивает профиль бизнеса, не делает искренний комплимент и не предлагает подтверждённый бонус/скидку за комплексный заказ. Главная практическая проблема, однако, не в этих «мягких» правилах, а в потере намерения и преждевременной фиксации quote-state.</p>
+<h2>Дословные диалоги и разбор</h2>
+<p><a class="evidence-anchor" id="evidence-s01"></a></p>
+<h3 class="scenario-heading first-scenario">S01 — EN: офис на 8 человек, бюджет AED 12 000</h3>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Hi! We are furnishing a new office and I need help choosing furniture.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Hello, I'm Noor from Treejar. May I know your name so I can address you properly?</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+My name is Maya, and I am the facilities manager at Cedarline Test Offices.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Treejar showroom is in Dubai. Open the location on Google Maps: https://www.google.com/maps/place/Treejar+Trading/@24.9871463,55.1135981,17z</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+We need desks and ergonomic chairs for 8 employees in Dubai. Our budget is around AED 12,000 total. What would you recommend first?</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Great news, Maya! I found some solid options that fit well within your budget. Here's what I'd recommend:</p>
+<hr/>
+<h3>[Кресла] Ergonomic Chairs (in stock)</h3>
+<ol>
+<li>
+<p><strong>Skyland Operative Chair CH 240 M (Grey)</strong> — AED 440 each
+   - Breathable mesh back + fabric seat, 2D armrests with PU padding, height adjustment, 4-position lock, supports up to 120 kg. Stock: 12 [в наличии]</p>
+</li>
+<li>
+<p><strong>Operative Office Chair CH 616 NEW (Black)</strong> — AED 295 each
+   - Mesh back + fabric seat, height adjustment, plastic armrests, PU castors. Great value option. Stock: 43 [в наличии]</p>
+</li>
+<li>
+<p><strong>SkyLand Visitor Chair CH 240 V (Black)</strong> — AED 380 each
+   - Adjustable comfort, sleek modern design. Stock: 48 [в наличии]</p>
+</li>
+</ol>
+<h3>[Стол] Desk Option</h3>
+<ul>
+<li><strong>Computer Desk COMP CD.1059 (White, 1000×600×750 mm)</strong> — AED 123.08 each</li>
+<li>Compact, elegant, 5-year warranty. <strong>However, only 3 units are currently in stock</strong> and you need 8.</li>
+</ul>
+<hr/>
+<h3>[Бюджет] Budget Estimate (per workstation)</h3>
+<table class="data-table">
+<thead>
+<tr>
+<th>Combo</th>
+<th>Desk + Chair</th>
+<th>Per Person</th>
+<th>× 8 Total</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Best ergonomic</td>
+<td>AED 123.08 + AED 440</td>
+<td>AED 563.08</td>
+<td><strong>AED 4,504.64</strong></td>
+</tr>
+<tr>
+<td>Best value</td>
+<td>AED 123.08 + AED 295</td>
+<td>AED 418.08</td>
+<td><strong>AED 3,344.64</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Both combos are comfortably within your AED 12,000 budget — you'd even have room left for extras like storage or a meeting table!</p>
+<hr/>
+<p>⚠️ <strong>One concern:</strong> The desk model I found only has 3 units available, but you need 8. Would you like me to look into restocking timelines for this desk, or would you prefer alternative desk options? This will help me put together the right recommendation for you.</p>
+<p class="analysis-note"><strong>Разбор:</strong> финальная рекомендация сильная, бюджет посчитан, дефицит стола назван честно. Провал — нерелевантный адрес шоурума после имени. Формулировка про будущий restocking timeline также обещает действие, которого Noor в диалоге не выполнила.</p>
+<p><a class="evidence-anchor" id="evidence-s02"></a></p>
+<h3 class="scenario-heading">S02 — AR: приватные места и кресла для шести сотрудников</h3>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+مرحباً، أحتاج إلى تجهيز مكتب جديد وأريد مساعدتك في اختيار الأثاث.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+مرحبًا، أنا Noor من Treejar. هل يمكنني معرفة اسمك لأخاطبك بشكل مناسب؟</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+اسمي ليان، وأنا مديرة المرافق في شركة Cedarline Test Offices.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+يقع معرض Treejar في دبي. يمكنك فتح الموقع على خرائط Google هنا: https://www.google.com/maps/place/Treejar+Trading/@24.9871463,55.1135981,17z</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+نحتاج إلى محطات عمل خاصة وكراسي مريحة لستة موظفين في دبي، والميزانية ١٠٬٠٠٠ درهم. ماذا تقترحين؟</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+أريد أن أكون دقيقًا، لذلك سيتواصل معك مديرنا لتأكيد هذه المعلومة.</p>
+<p class="analysis-note"><strong>Разбор:</strong> арабский язык и приветствие корректны. Продажная задача не решена: после имени снова появился адрес шоурума, а обычный каталожный запрос ошибочно классифицирован как требующий проверки менеджером.</p>
+<p><a class="evidence-anchor" id="evidence-s03"></a></p>
+<h3 class="scenario-heading">S03 — <code>private-dash/private-desk</code> и актуальное семейство LUMA</h3>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Hi, my name is Omar and I buy for Northstar Test LLC. We need a private-dash setup for 4 staff. What does private-dash map to in your current catalog?</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Hello, I'm Noor from Treejar. May I know your name so I can address you properly?</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+By private-desk I mean each person should have privacy panels or an enclosed private workstation, not an open bench.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Great question, Omar! I should be upfront: we don't have a product literally called "private desk" in our catalog, but here are the <strong>closest alternatives</strong> that provide privacy panels or enclosed workstations:</p>
+<ol>
+<li>
+<p><strong>Single Workstation SKYLAND LUMA 9719-1</strong>
+   - SKU: OF-HAI-Luma-Workstation-RJ 9719-1-Walnut
+   - Price: <strong>491.00 AED</strong> each
+   - Stock: 34 units available
+   - Includes a <strong>screen divider for privacy</strong> and a three-drawer pedestal for storage. This is a dedicated single-person workstation — so for 4 staff you'd need 4 units (total ≈ 1,964 AED).</p>
+</li>
+<li>
+<p><strong>4-Person Workstation SKYLAND NOVO 2400</strong>
+   - SKU: OF-YED-NOVO-Workstation-63LW-1.2T-6-white
+   - Price: <strong>1,813.00 AED</strong> total
+   - Stock: 31 units available
+   - A 4-person face-to-face table with <strong>grey fabric divider panels</strong> for privacy. This covers all 4 staff in one unit.</p>
+</li>
+<li>
+<p><strong>2-Person Workstation SKYLAND NOVO 1200</strong>
+   - SKU: OF-YED-NOVO-Workstation-63LW-1.2T-5-white
+   - Price: <strong>1,029.00 AED</strong> each
+   - Stock: 47 units available
+   - Two-person setup with <strong>privacy panels</strong> per employee. You'd need 2 units for 4 staff (total ≈ 2,058 AED).</p>
+</li>
+</ol>
+<p>All three options provide divider/privacy panels, but they differ in layout — the LUMA gives the most individual privacy (fully separate desks), while the NOVO options are shared benches with dividers.</p>
+<p><strong>One quick question to narrow this down:</strong> Would you prefer 4 fully separate individual desks (most privacy), or would a shared 4-person bench with divider panels be acceptable for your team?</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Do you have LUMA or another current private workstation family for four people? Please use the latest catalog names, not a guessed model.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Thanks for your patience, Omar. To be upfront: the catalog search returned closest alternatives rather than an exact confirmed match for a "private-desk" product family. Here's what I found:</p>
+<h3>Closest Alternatives for a 4-Person Private Workstation</h3>
+<ol>
+<li>
+<p><strong>Four Person Workstation — SKYLAND LUMA 9719-4</strong>
+   - SKU: OF-HAI-Luma-Workstation-RJ 9719-4-Walnut
+   - Price: <strong>1,883.00 AED</strong>
+   - Stock: 30 units available
+   - Key features: Screen dividers for each user, three-drawer mobile pedestals per person, 25mm E1 laminate chipboard tabletop, 40x40mm powder-coated metal U-shaped frames.
+   - This is the LUMA family's 4-person model — each employee gets their own dedicated space with a privacy divider.</p>
+</li>
+<li>
+<p><strong>4 Person Face-to-Face Table — SKYLAND NOVO 2400</strong>
+   - SKU: OF-YED-NOVO-Workstation-63LW-1.2T-6-white
+   - Price: <strong>1,813.00 AED</strong>
+   - Stock: 31 units available
+   - Key features: Grey fabric divider panels for privacy, 25mm melamine-coated tabletop, powder-coated metal legs, integrated cable grommets.</p>
+</li>
+<li>
+<p><strong>Two Person Workstation — SKYLAND LUMA 9719-2</strong> (×2 units for 4 staff)
+   - SKU: OF-HAI-Luma-Workstation-RJ 9719-2-Walnut
+   - Price: <strong>941.00 AED</strong> each (×2 = <strong>1,882.00 AED</strong> total)
+   - Stock: 13 units available
+   - Key features: Screen dividers, mobile pedestals, sturdy metal frames — two 2-person units would give each pair their own enclosed space.</p>
+</li>
+</ol>
+<p>All three include divider panels for privacy. The LUMA 9719-4 is the closest to what you described — a single 4-person workstation with privacy dividers for each staff member.</p>
+<p><strong>One quick question:</strong> Does the LUMA 9719-4's screen-divider style of privacy work for your team, or do you need taller/full-height acoustic panels for more enclosed separation?</p>
+<p class="analysis-note"><strong>Разбор:</strong> один из лучших диалогов. Noor честно уточнила термин, выполнила четыре реальных поиска, использовала актуальные названия, SKU, цены и остатки, затем сузила выбор вопросом. Минус — проигнорировала имя и компанию, уже присутствующие в первом сообщении.</p>
+<p><a class="evidence-anchor" id="evidence-s04"></a></p>
+<h3 class="scenario-heading">S04 — сравнение LUMA 9719-4 и NOVO 2400</h3>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Hello. I want to compare a private LUMA four-person workstation with an open NOVO four-person setup for our design team.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Hello, I'm Noor from Treejar. May I know your name so I can address you properly?</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Nadia</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+I have these product references: Hello. I want to compare a private LUMA four-person workstation. Please confirm the quantity for each item so I can check availability and prepare the next step.</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Please compare privacy, collaboration, footprint and current price, then recommend one for four designers who collaborate often but need some acoustic separation.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Great news, Nadia — both models are in stock and ready to go. Here's a side-by-side comparison based on what the catalog confirms:</p>
+<hr/>
+<h3>1. [Позиция] <strong>LUMA 9719-4 — Four-Person Workstation</strong></h3>
+<ul>
+<li><strong>Price:</strong> 1,883.00 AED | <strong>Stock:</strong> 30 available</li>
+<li><strong>Privacy:</strong> Comes with <strong>screen dividers</strong> between users and a <strong>three-drawer mobile pedestal</strong> for each person — giving each designer a more enclosed, personal zone.</li>
+<li><strong>Collaboration:</strong> Designed to "foster team efficiency" while maintaining dedicated individual spaces — a balance-leaning-toward-privacy layout.</li>
+<li><strong>Footprint / Build:</strong> 25 mm E1 laminate chipboard top with 40×40 mm powder-coated metal U-frames (sturdy, slightly heavier frame).</li>
+<li><strong>Best for:</strong> Teams that lean toward independent focused work with some collaboration.</li>
+</ul>
+<h3>2. [Позиция] <strong>NOVO 2400 — 4-Person Face-to-Face Workstation</strong></h3>
+<ul>
+<li><strong>Price:</strong> 1,813.00 AED | <strong>Stock:</strong> 36 available</li>
+<li><strong>Privacy:</strong> Grey <strong>fabric divider panels</strong> between seats — lighter visual separation than full screens, but still provides a degree of acoustic dampening.</li>
+<li><strong>Collaboration:</strong> Explicitly built for <strong>open-plan offices</strong>; face-to-face seating encourages spontaneous interaction and teamwork.</li>
+<li><strong>Footprint / Build:</strong> 25 mm melamine-coated top with powder-coated metal legs and <strong>integrated cable grommets</strong> for a clean, organized surface.</li>
+<li><strong>Best for:</strong> Teams that prioritize collaboration with light privacy.</li>
+</ul>
+<hr/>
+<h3>[Сводка] Quick Summary</h3>
+<table class="data-table">
+<thead>
+<tr>
+<th>Dimension</th>
+<th>LUMA 9719-4</th>
+<th>NOVO 2400</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Privacy</strong></td>
+<td>Higher (screen dividers + pedestals)</td>
+<td>Moderate (fabric panels)</td>
+</tr>
+<tr>
+<td><strong>Collaboration</strong></td>
+<td>Balanced</td>
+<td>Stronger (open, face-to-face)</td>
+</tr>
+<tr>
+<td><strong>Price</strong></td>
+<td>1,883 AED</td>
+<td>1,813 AED</td>
+</tr>
+<tr>
+<td><strong>Availability</strong></td>
+<td>30 in stock</td>
+<td>36 in stock</td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<h3>[Рекомендация] My Recommendation for Your Design Team</h3>
+<p>Since your four designers <strong>collaborate often but need some acoustic separation</strong>, I'd lean toward the <strong>LUMA 9719-4</strong>. Its screen dividers offer better acoustic and visual privacy per seat, while the shared layout still keeps everyone within arm's reach for teamwork. The individual pedestals also give designers a place to store tools and materials, which is valuable in a creative environment. The difference is only <strong>70 AED</strong> — a small premium for noticeably better separation.</p>
+<p>That said, if your designers work very fluidly and constantly bounce ideas across the table, the NOVO's face-to-face open layout might suit that workflow better.</p>
+<p><strong>One quick question:</strong> Do your designers tend to work in longer focused sprints (where acoustic separation matters more), or do they frequently shift between individual and group work throughout the day? That would help me confirm the best fit.</p>
+<p class="analysis-note"><strong>Разбор:</strong> лучший консультационный ответ прогона. Выполнены два поиска и два точных <code>get_stock</code>; есть осмысленное сравнение и рекомендация под реальную работу команды. Промежуточный ответ после имени искажает исходный запрос и необоснованно требует количество.</p>
+<p><a class="evidence-anchor" id="evidence-s05"></a></p>
+<h3 class="scenario-heading">S05 — 12 рабочих мест, возражение и дешёвая конфигурация</h3>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+I need chairs for 12 call-center staff under AED 400 each and compact desks. Could you help?</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Hello, I'm Noor from Treejar. May I know your name so I can address you properly?</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Samir</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+I also captured these selected items for manager verification:
+- 12 x call-center staff under AED 400 each and compact desks. Could you help?</p>
+<p>Before I prepare the quotation, please confirm the exact catalog item or SKU for: 12 x call-center staff under AED 400 each and compact desks. Could you help?. I will use that to prepare the quotation accurately.</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+They sit for about 8 hours a day, so lumbar support matters. What chair and desk combination would you recommend?</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+I have your details, but I still need the exact item(s) and quantity for each item before I can prepare the quotation.</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+That still feels expensive. Please give me a cheaper configuration and one relevant cross-sell, but keep the total below AED 7,000.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Before I prepare the quotation, please share: company name, or confirm you are buying as an individual; customer email. I need these details to put the correct customer and delivery information on the PDF.</p>
+<p class="analysis-note"><strong>Разбор:</strong> полный провал intent routing. Клиент просил помощь с выбором, но Noor преобразовала предложение в фиктивный товар, преждевременно зафиксировала quote-state, не ответила про поясницу, бюджет, более дешёвую конфигурацию или cross-sell.</p>
+<p><a class="evidence-anchor" id="evidence-s06"></a></p>
+<h3 class="scenario-heading">S06 — точный SKU CH 616 NEW black</h3>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Can you check the exact current price and stock for SKU CH 616 NEW black? I may need 12 units.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Hello, I'm Noor from Treejar. May I know your name so I can address you properly?</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Aisha</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+I found these options for 1 chair:</p>
+<p>Option 1: Operative Office Chair CH 616 NEW black
+- SKU: CH 616 NEW black
+- Price: 295.00 AED each
+- Stock: 43 available</p>
+<p>Option 2: Executive Office Chair CH 616 black
+- SKU: CH 616 black
+- Price: 220.00 AED each
+- Stock: 3 available</p>
+<p>Which option would you prefer? I can prepare a formal quotation after that.</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Please confirm from live inventory whether 12 units of CH 616 NEW black are available and the exact unit price. Do not prepare a quotation yet.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+I found these options for 12 chairs:</p>
+<p>Option 1: Operative Office Chair CH 616 NEW black
+- SKU: CH 616 NEW black
+- Price: 295.00 AED each
+- Stock: 43 available</p>
+<p>Option 2: Executive Office Chair CH 616 black
+- SKU: CH 616 black
+- Price: 220.00 AED each
+- Stock: 3 available</p>
+<p>Which option would you prefer? I can prepare a formal quotation after that.</p>
+<p class="analysis-note"><strong>Разбор:</strong> требуемый SKU подтверждён: 43 штуки по AED 295, значит 12 доступны. Но ответ дважды добавляет похожий, фактически непригодный вариант с остатком 3 и продолжает предлагать КП вопреки явному <code>Do not prepare a quotation yet</code>.</p>
+<p><a class="evidence-anchor" id="evidence-s07"></a></p>
+<h3 class="scenario-heading">S07 — no-match: лабораторные вытяжки и химстойкие столы</h3>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Do you sell laboratory fume hoods and chemical-resistant lab benches for a research facility?</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Hello, I'm Noor from Treejar. May I know your name so I can address you properly?</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Rami</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+I want to be accurate, so our manager will confirm this for you.</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+If there is no exact catalog match, please say so honestly and suggest only relevant office-furniture alternatives that Treejar actually sells.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Thank you for your message! 
+A manager has been notified and will get back to you shortly.
+Please bear with us.</p>
+<p class="analysis-note"><strong>Разбор:</strong> безопасного выдумывания товара нет, но no-match не обработан. Noor не сказала, что точного совпадения не найдено, не предложила релевантные офисные категории и без необходимости создала эскалацию.</p>
+<p><a class="evidence-anchor" id="evidence-s08"></a></p>
+<h3 class="scenario-heading">S08 — память, прерывание и изменение команды с 8 до 12 человек</h3>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+We are furnishing a Dubai office for 8 people. I am considering two LUMA 9719-4 workstations, walnut finish, with a total furniture budget of AED 6,000.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Hello, I'm Noor from Treejar.</p>
+<p>Great news — I found some very close matches in our catalog! I should note upfront that I can't confirm the exact item you referenced, but here are the three closest alternatives, all in walnut finish:</p>
+<hr/>
+<p><strong>1. Four-Person Workstation — SKYLAND LUMA 9719-4</strong>
+- <strong>Price:</strong> AED 1,883.00 each
+- <strong>Stock:</strong> 30 available
+- <strong>Key features:</strong> Four-person layout with screen dividers, three-drawer mobile pedestals per user, 25mm E1 laminate chipboard tabletop, 40×40mm powder-coated metal U-shaped frames.
+- <strong>Your plan:</strong> Two of these would seat all 8 people at <strong>AED 3,766 total</strong> — comfortably within your AED 6,000 budget, leaving ~AED 2,234 for any additional items.</p>
+<p><strong>2. Single Workstation — SKYLAND LUMA 9719-1</strong>
+- <strong>Price:</strong> AED 491.00 each
+- <strong>Stock:</strong> 34 available
+- <strong>Features:</strong> Spacious single work surface, screen divider, three-drawer pedestal. You'd need 8 of these = <strong>AED 3,928 total</strong>.</p>
+<p><strong>3. Two-Person Workstation — SKYLAND LUMA 9719-2</strong>
+- <strong>Price:</strong> AED 941.00 each
+- <strong>Stock:</strong> 13 available
+- <strong>Features:</strong> Compact two-person layout with dividers, mobile pedestals, sturdy metal frames. You'd need 4 of these = <strong>AED 3,764 total</strong>.</p>
+<hr/>
+<p>All three options keep you well within your AED 6,000 budget for 8 people. The <strong>LUMA 9719-4</strong> (Option 1) is the closest to what you described and the most cost-efficient per seat.</p>
+<p>One quick follow-up: would you like me to use the remaining budget (~AED 2,200) to suggest complementary items like office chairs or storage, or would you prefer to keep it to just the workstations?</p>
+<p class="chat customer"><strong>Клиент, повтор из-за неопределённого stdout тестового клиента:</strong><br/>
+We are furnishing a Dubai office for 8 people. I am considering two LUMA 9719-4 workstations, walnut finish, with a total furniture budget of AED 6,000.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Great, I can confirm the selected items from our catalog:</p>
+<ol>
+<li>Two person workstation SKYLAND LUMA 9719-2
+   Quantity: 8
+   Availability: 14 available (Zoho-confirmed)
+   Unit price: 941.00 AED
+   Line total: 7,528.00 AED</li>
+</ol>
+<p>Total: 7,528.00 AED</p>
+<p>Would you like me to prepare a formal quotation for these selected items? I can use this WhatsApp number for the draft. To make the PDF complete, please share: company name, or confirm you are buying as an individual; email; specific delivery address.</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Leila</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Before I prepare the quotation, please share: company name, or confirm you are buying as an individual; specific delivery address; customer email. I need these details to put the correct customer and delivery information on the PDF.</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Please remember: 8 people, two LUMA 9719-4 units, walnut, Dubai, budget AED 6,000. Do not create a quotation yet.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Great, I can confirm the selected items from our catalog:</p>
+<ol>
+<li>Four person workstation SKYLAND LUMA 9719-4
+   Quantity: 2
+   Availability: 30 available (Zoho-confirmed)
+   Unit price: 1,883.00 AED
+   Line total: 3,766.00 AED</li>
+</ol>
+<p>Total: 3,766.00 AED</p>
+<p>Would you like me to prepare a formal quotation for these selected items? I can use this WhatsApp number for the draft. To make the PDF complete, please share: company name, or confirm you are buying as an individual; email.</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Before we continue, do you provide delivery and assembly in Dubai?</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Before I prepare the quotation, please share: company name, or confirm you are buying as an individual; customer email. I need these details to put the correct customer and delivery information on the PDF.</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Correction: the team is now 12 people, so change the requirement to three LUMA 9719-4 units. Summarize the updated requirements and tell me the next step.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Great, I can confirm the selected items from our catalog:</p>
+<ol>
+<li>Four person workstation SKYLAND LUMA 9719-4
+   Quantity: 3
+   Availability: 30 available (Zoho-confirmed)
+   Unit price: 1,883.00 AED
+   Line total: 5,649.00 AED</li>
+</ol>
+<p>Total: 5,649.00 AED</p>
+<p>Would you like me to prepare a formal quotation for these selected items? I can use this WhatsApp number for the draft. To make the PDF complete, please share: company name, or confirm you are buying as an individual; email.</p>
+<p class="analysis-note"><strong>Разбор:</strong> основная модель правильно нашла LUMA 9719-4 и рассчитала два места по четыре человека. После дубликата детерминированный маршрут ошибочно выбрал 8 двухместных LUMA 9719-2 и вышел за бюджет. Явное повторение требования восстановило правильный товар и количество; последующая коррекция на 12 человек тоже обработана верно. Прерывающий вопрос о доставке и сборке полностью проигнорирован, а запрет создавать КП не останавливает предложения перейти к PDF.</p>
+<p><a class="evidence-anchor" id="evidence-s09"></a></p>
+<h3 class="scenario-heading">S09 — полное коммерческое предложение и PDF</h3>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Please prepare a formal quotation for exactly 4 x CH 616 NEW black at the current confirmed price.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Hello, I'm Noor from Treejar. May I know your name so I can address you properly?</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Fatima</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Before I prepare the quotation, please share: company name, or confirm you are buying as an individual; specific delivery address; customer email. I need these details to put the correct customer and delivery information on the PDF.</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Name: Fatima Noor Test. Company: Cedarline E2E 20260728. Email: fatima.noor.e2e.20260728@example.com. Delivery address: Office 1204, Test Tower, Business Bay, Dubai, UAE. Please quote exactly 4 x CH 616 NEW black.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+I couldn't finalize the exact quotation automatically. A manager has been asked to verify exact price and availability before we make a commitment.</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Yes, proceed with the quotation for exactly 4 x CH 616 NEW black. Send the PDF only to this test WhatsApp chat.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Thank you for your message! 
+A manager has been notified and will get back to you shortly.
+Please bear with us.</p>
+<p class="analysis-note"><strong>Разбор:</strong> <code>create_quotation</code> действительно вызван с <code>CH 616 NEW black × 4</code>. После успешных read-only запросов POST создания клиента Zoho Inventory вернул HTTP <code>400</code>; Noor честно не выдумала КП и эскалировала. Однако целевой результат — клиент, сделка/КП, PDF, доставка и readback — не достигнут. В runtime metadata дополнительно видны ошибки извлечения: число из синтетического названия компании попало в кандидат телефона, а адрес был сокращён до первой части.</p>
+<p><a class="evidence-anchor" id="evidence-s10"></a></p>
+<h3 class="scenario-heading">S10 — CRM opportunity без КП</h3>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+We are planning to buy 20 CH 616 NEW black chairs this month and want help moving the project forward, but no quotation yet.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Hello, I'm Noor from Treejar. May I know your name so I can address you properly?</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Yusuf</p>
+<p class="chat customer"><strong>Клиент, повтор из-за неопределённого stdout тестового клиента:</strong><br/>
+Yusuf</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Before I prepare the quotation, please share: company name, or confirm you are buying as an individual; specific delivery address; customer email. I need these details to put the correct customer and delivery information on the PDF.</p>
+<p class="chat customer"><strong>Клиент:</strong><br/>
+Company: Horizon E2E Test LLC. Budget: AED 7,000. Decision expected within two weeks. Please record this sales opportunity and tell me the next commercial step without creating a quotation.</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Before I prepare the quotation, please share: specific delivery address; customer email. I need these details to put the correct customer and delivery information on the PDF.</p>
+<p class="analysis-note"><strong>Разбор:</strong> явные <code>no quotation yet</code> и <code>without creating a quotation</code> проигнорированы. Noor не вызвала <code>lookup_customer</code>, <code>create_deal</code> или <code>advance_stage</code>, не записала возможность и не предложила коммерческий следующий шаг.</p>
+<p><a class="evidence-anchor" id="evidence-s11"></a></p>
+<h3 class="scenario-heading">S11 — голосовой файл</h3>
+<p>Один и тот же валидный публичный FLAC-пример речи был подан трижды с разными входящими message ID.</p>
+<p class="chat customer"><strong>Вход 1 / сохранённая транскрипция:</strong><br/>
+[System: Unreadable voice message (error during processing)]</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Sorry, I couldn't understand the voice message. Could you please type it instead?</p>
+<p class="chat customer"><strong>Вход 2 / сохранённая транскрипция:</strong><br/>
+[System: Unreadable voice message (error during processing)]</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Sorry, I couldn't understand the voice message. Could you please type it instead?</p>
+<p class="chat customer"><strong>Вход 3 / сохранённая транскрипция:</strong><br/>
+[System: Unreadable voice message (error during processing)]</p>
+<p class="chat noor"><strong>Noor:</strong><br/>
+Sorry, I couldn't understand the voice message. Could you please type it instead?</p>
+<p class="analysis-note"><strong>Разбор:</strong> production-обработчик распознал тип <code>voice</code>, но каждый запрос к провайдеру транскрипции получил HTTP <code>400 Bad Request</code>. Безопасный fallback корректен и появляется в БД примерно за 7 секунд. Из трёх разных входящих сообщений Wazzup-аудит содержит только одну исходящую fallback-отправку, поэтому повторная клиентская видимость не доказана. Поскольку файл пришёл не из Wazzup-хранилища, результат нельзя обобщать на provider-originated голосовой файл без отдельного ручного canary.</p>
+<h2>Зафиксированные дефекты</h2>
+<table class="data-table">
+<thead>
+<tr>
+<th>Beads</th>
+<th style="text-align: right;">Приоритет</th>
+<th>Дефект</th>
+<th>Сценарии</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tj-ee5f.6</code></td>
+<td style="text-align: right;">P1</td>
+<td>После name gate исходное намерение превращается в адрес шоурума, искажённое количество или преждевременное КП</td>
+<td><a href="#evidence-s01">S01</a>, <a href="#evidence-s02">S02</a>, <a href="#evidence-s03">S03</a>, <a href="#evidence-s04">S04</a>, <a href="#evidence-s05">S05</a></td>
+</tr>
+<tr>
+<td><code>tj-ee5f.7</code></td>
+<td style="text-align: right;">P1</td>
+<td>Обычный арабский подбор и честный no-match ошибочно эскалируются</td>
+<td><a href="#evidence-s02">S02</a>, <a href="#evidence-s07">S07</a></td>
+</tr>
+<tr>
+<td><code>tj-ee5f.8</code></td>
+<td style="text-align: right;">P1</td>
+<td>Quote-state перехватывает discovery, возражение, прерывание и CRM next-step</td>
+<td><a href="#evidence-s05">S05</a>, <a href="#evidence-s08">S08</a>, <a href="#evidence-s10">S10</a></td>
+</tr>
+<tr>
+<td><code>tj-ee5f.9</code></td>
+<td style="text-align: right;">P1</td>
+<td>Создание клиента Zoho Inventory возвращает <code>400</code>; КП и PDF не создаются</td>
+<td><a href="#evidence-s09">S09</a></td>
+</tr>
+<tr>
+<td><code>tj-ee5f.10</code></td>
+<td style="text-align: right;">P1</td>
+<td>Голос не транскрибируется; разные входящие сообщения дедуплицируют fallback</td>
+<td><a href="#evidence-s11">S11</a></td>
+</tr>
+</tbody>
+</table>
+<p>Дополнительное наблюдение для исправления вместе с <code>tj-ee5f.8</code>: exact-SKU маршрут S06 подтверждает нужный остаток, но навязывает похожую позицию с недостаточным количеством и продолжает предлагать КП после явного запрета.</p>
+<h2>Рекомендации</h2>
+<ol>
+<li>Сначала исправить восстановление pending intent после name gate и запретить автоматический переход в quote-state без явного согласия клиента.</li>
+<li>Затем исправить создание/поиск тестового клиента Zoho Inventory и разбор реквизитов; повторный live-тест КП должен доказать contact → quotation → PDF → Wazzup → readback → безопасную очистку.</li>
+<li>Добавить регрессии на арабский каталог, no-match, возражение, прерывание вопросом и <code>no quotation yet</code>.</li>
+<li>Проверить voice flow на настоящем provider-originated вложении с тестового WhatsApp и отдельно исправить дедупликацию fallback по входящему message ID.</li>
+<li>Для exact-SKU запроса отвечать ровно по запрошенной позиции и количеству; похожие варианты показывать только по запросу или при недостаточном остатке.</li>
+<li>Начать записывать duration/result каждого внешнего инструмента и фактическую стоимость model call в структурированный audit, а не восстанавливать их из текстового лога.</li>
+<li>После исправлений повторить только проваленные сценарии, а затем один связный journey от первого запроса до КП и следующего контакта.</li>
+</ol>
+<h2>Итоговое решение</h2>
+<p>Noor уже умеет выполнять полезную каталоговую консультацию и выдавать сильные, grounded рекомендации, особенно для LUMA/NOVO. Но релиз нельзя считать принятым как полноценный AI sales assistant: пять P1-дефектов затрагивают сохранение намерения, подбор, objection handling, CRM, КП/PDF и голос. Код и production-релиз в рамках этого теста не изменялись; исправления и повторные тесты не выполнялись.</p>
+  </main>
+</body>
+</html>

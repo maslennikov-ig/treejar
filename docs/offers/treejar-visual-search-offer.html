@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Коммерческое предложение: визуальный поиск Noor</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap");
+
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --ink: #16201c;
+      --muted: #5f6f67;
+      --soft: #f3f0e7;
+      --paper: #fffdf7;
+      --line: #d9d1c0;
+      --accent: #0c6b58;
+      --accent-dark: #07473c;
+      --copper: #b86b3d;
+      --green-soft: #e3eee8;
+      --sand: #eee7d9;
+      --warning: #8b4f21;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: #ebe5d8;
+      color: var(--ink);
+      font-family: "Manrope", "Aptos", "Segoe UI", sans-serif;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    body {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .document {
+      max-width: 980px;
+      margin: 0 auto;
+      background: var(--paper);
+      box-shadow: 0 18px 60px rgba(28, 36, 30, 0.18);
+    }
+
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      padding: 18mm 16mm 16mm;
+      position: relative;
+      overflow: hidden;
+      break-after: page;
+    }
+
+    .page:last-child {
+      break-after: auto;
+    }
+
+    .cover {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      background:
+        linear-gradient(135deg, rgba(12, 107, 88, 0.95), rgba(5, 39, 34, 0.96)),
+        radial-gradient(circle at 90% 8%, rgba(184, 107, 61, 0.45), transparent 35%);
+      color: #fffaf0;
+    }
+
+    .cover::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.07) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.07) 1px, transparent 1px);
+      background-size: 24px 24px;
+      opacity: 0.24;
+    }
+
+    .cover > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      border: 1px solid rgba(255, 250, 240, 0.28);
+      border-radius: 999px;
+      padding: 7px 11px;
+      color: rgba(255, 250, 240, 0.86);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .kicker::before {
+      content: "";
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #d99a5a;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      max-width: 760px;
+      margin-top: 40mm;
+      font-family: "Georgia", "Times New Roman", serif;
+      font-size: 46px;
+      line-height: 0.98;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      max-width: 690px;
+      margin-top: 18px;
+      color: rgba(255, 250, 240, 0.82);
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    .cover-meta {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-top: 30px;
+    }
+
+    .cover-card {
+      border: 1px solid rgba(255, 250, 240, 0.22);
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 14px;
+      backdrop-filter: blur(10px);
+    }
+
+    .cover-label {
+      color: rgba(255, 250, 240, 0.62);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .cover-value {
+      font-size: 16px;
+      font-weight: 800;
+    }
+
+    .cover-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      color: rgba(255, 250, 240, 0.72);
+      font-size: 12px;
+    }
+
+    .brand {
+      font-weight: 800;
+      color: #fffaf0;
+      font-size: 18px;
+    }
+
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 16px;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .section {
+      margin-bottom: 17px;
+    }
+
+    h2 {
+      font-family: "Georgia", "Times New Roman", serif;
+      font-size: 23px;
+      line-height: 1.12;
+      margin-bottom: 10px;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      font-size: 14px;
+      line-height: 1.25;
+      margin-bottom: 8px;
+      color: var(--accent-dark);
+      letter-spacing: 0;
+    }
+
+    .lead {
+      color: #33433c;
+      font-size: 14px;
+      max-width: 760px;
+    }
+
+    .highlight {
+      display: grid;
+      grid-template-columns: 1.35fr 0.9fr;
+      gap: 12px;
+      align-items: stretch;
+      margin-top: 14px;
+    }
+
+    .statement {
+      border-radius: 8px;
+      background: var(--green-soft);
+      border: 1px solid #c8dfd3;
+      padding: 14px;
+    }
+
+    .price-box {
+      border-radius: 8px;
+      background: var(--ink);
+      color: #fffaf0;
+      padding: 14px;
+    }
+
+    .price {
+      font-size: 30px;
+      font-weight: 900;
+      line-height: 1;
+      margin: 4px 0 8px;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .price-box .small {
+      color: rgba(255, 250, 240, 0.66);
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: rgba(255, 255, 255, 0.56);
+      color: #35443d;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .card {
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fffaf0;
+      padding: 12px;
+    }
+
+    .card strong {
+      color: var(--accent-dark);
+    }
+
+    .packages {
+      display: grid;
+      grid-template-columns: 0.9fr 1.05fr 0.9fr;
+      gap: 12px;
+    }
+
+    .package {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fffaf0;
+    }
+
+    .package.recommended {
+      border: 2px solid var(--accent);
+      transform: translateY(-2px);
+    }
+
+    .package-title {
+      padding: 11px 12px;
+      background: var(--sand);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .recommended .package-title {
+      background: var(--accent);
+      color: #fffaf0;
+    }
+
+    .package-body {
+      padding: 12px;
+    }
+
+    .package-price {
+      font-size: 21px;
+      line-height: 1;
+      font-weight: 900;
+      margin-bottom: 6px;
+    }
+
+    ul {
+      margin: 10px 0 0;
+      padding-left: 17px;
+    }
+
+    li {
+      margin: 4px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fffaf0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 7px 8px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--sand);
+      color: #35443d;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .num {
+      text-align: right;
+      white-space: nowrap;
+      font-weight: 800;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .flow-step {
+      border: 1px solid #cdded5;
+      background: #f7fbf8;
+      border-radius: 8px;
+      padding: 9px;
+      min-height: 74px;
+      position: relative;
+    }
+
+    .step-no {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fffaf0;
+      font-size: 10px;
+      font-weight: 900;
+      margin-bottom: 7px;
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .timeline-item {
+      border-left: 4px solid var(--accent);
+      background: #fffaf0;
+      border-radius: 0 8px 8px 0;
+      padding: 10px;
+      border-top: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .note {
+      border-left: 4px solid var(--copper);
+      background: #f8eee4;
+      padding: 12px 14px;
+      border-radius: 0 8px 8px 0;
+      color: #3f3329;
+    }
+
+    .footer {
+      position: absolute;
+      left: 16mm;
+      right: 16mm;
+      bottom: 8mm;
+      display: flex;
+      justify-content: space-between;
+      color: #8a948e;
+      font-size: 10px;
+      border-top: 1px solid var(--line);
+      padding-top: 7px;
+    }
+
+    .avoid-break {
+      break-inside: avoid;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .document {
+        max-width: none;
+        box-shadow: none;
+      }
+
+      .page {
+        height: 297mm;
+        min-height: 297mm;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="document">
+    <section class="page cover">
+      <div>
+        <div class="kicker">Коммерческое предложение</div>
+        <h1>Визуальный поиск товаров по фото для Noor</h1>
+        <p class="subtitle">
+          Доработка WhatsApp-бота Treejar: клиент присылает фотографию мебели,
+          Noor находит похожие позиции в каталоге и предлагает релевантные товары
+          с фото, SKU, ценой и следующим шагом к покупке.
+        </p>
+        <div class="cover-meta">
+          <div class="cover-card">
+            <div class="cover-label">Стоимость</div>
+            <div class="cover-value">130 000 ₽</div>
+          </div>
+          <div class="cover-card">
+            <div class="cover-label">Срок</div>
+            <div class="cover-value">1.5-2 недели</div>
+          </div>
+          <div class="cover-card">
+            <div class="cover-label">Объём</div>
+            <div class="cover-value">86 часов</div>
+          </div>
+          <div class="cover-card">
+            <div class="cover-label">Версия</div>
+            <div class="cover-value">1.0</div>
+          </div>
+        </div>
+      </div>
+      <div></div>
+      <div class="cover-footer">
+        <div>
+          <div class="brand">Noor для Treejar</div>
+          <div>Визуальный поиск как отдельная доработка к текущему проекту</div>
+        </div>
+        <div>23 июня 2026</div>
+      </div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Noor Visual Search</span>
+        <span>КП / 23.06.2026</span>
+      </div>
+
+      <div class="section">
+        <h2>Кратко</h2>
+        <p class="lead">
+          В текущем проекте уже есть работа с товарными фотографиями: Noor может
+          отправлять фото товаров из каталога и использовать карточки товаров в
+          диалоге. Новая доработка закрывает другой сценарий: клиент сам отправляет
+          фото, а бот подбирает похожие товары из каталога Treejar.
+        </p>
+        <div class="highlight">
+          <div class="statement">
+            <h3>Рекомендуем реализовать MVP визуального поиска</h3>
+            <p>
+              Это сбалансированный вариант: не просто описать входящую картинку,
+              а встроить полноценный контур поиска по каталогу, с выдачей
+              нескольких вариантов и безопасным fallback на менеджера при низкой
+              уверенности.
+            </p>
+            <div class="chips">
+              <span class="chip">WhatsApp images</span>
+              <span class="chip">Vision model</span>
+              <span class="chip">Catalog similarity</span>
+              <span class="chip">Manager fallback</span>
+            </div>
+          </div>
+          <div class="price-box">
+            <div class="small">Фиксированная стоимость</div>
+            <div class="price">130 000 ₽</div>
+            <p>Срок реализации: 1.5-2 недели после подтверждения и тестовых фото.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Что получит клиент</h2>
+        <div class="grid-3">
+          <div class="card">
+            <h3>Быстрее подбор товара</h3>
+            <p>Клиенту не нужно знать SKU или точное название модели. Достаточно отправить фото похожей мебели.</p>
+          </div>
+          <div class="card">
+            <h3>Меньше ручной работы</h3>
+            <p>Менеджер подключается только когда качество совпадения низкое или нужен нестандартный подбор.</p>
+          </div>
+          <div class="card">
+            <h3>Ближе к продаже</h3>
+            <p>Noor сразу показывает варианты из каталога с фото, SKU, ценой и может продолжить путь к КП.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Как будет работать сценарий</h2>
+        <div class="flow">
+          <div class="flow-step">
+            <div class="step-no">1</div>
+            <h3>Фото от клиента</h3>
+            <p>Wazzup webhook получает изображение в WhatsApp.</p>
+          </div>
+          <div class="flow-step">
+            <div class="step-no">2</div>
+            <h3>Анализ</h3>
+            <p>Noor извлекает тип, форму, материал, цвет и назначение.</p>
+          </div>
+          <div class="flow-step">
+            <div class="step-no">3</div>
+            <h3>Поиск</h3>
+            <p>Система сравнивает фото с каталогом Treejar.</p>
+          </div>
+          <div class="flow-step">
+            <div class="step-no">4</div>
+            <h3>Выдача</h3>
+            <p>Клиент получает 3-5 похожих товаров.</p>
+          </div>
+          <div class="flow-step">
+            <div class="step-no">5</div>
+            <h3>Продажа</h3>
+            <p>Noor уточняет выбор и ведёт к КП или менеджеру.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <span>Treejar / Noor</span>
+        <span>1</span>
+      </div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Scope and Pricing</span>
+        <span>КП / 23.06.2026</span>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Пакеты</h2>
+        <div class="packages">
+          <div class="package">
+            <div class="package-title">
+              <h3>Базовый</h3>
+              <div class="small">Описание фото + текстовый поиск</div>
+            </div>
+            <div class="package-body">
+              <div class="package-price">70 000 ₽</div>
+              <div class="small">36-48 часов</div>
+              <ul>
+                <li>Приём фото из WhatsApp</li>
+                <li>Описание картинки vision-моделью</li>
+                <li>Поиск по текстовому каталогу</li>
+                <li>Ответ с несколькими вариантами</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="package recommended">
+            <div class="package-title">
+              <h3>Рекомендуемый MVP</h3>
+              <div class="small">Полноценный visual search</div>
+            </div>
+            <div class="package-body">
+              <div class="package-price">130 000 ₽</div>
+              <div class="small">86 часов, 1.5-2 недели</div>
+              <ul>
+                <li>Всё из базового варианта</li>
+                <li>Индексация фотографий каталога</li>
+                <li>Поиск похожих товаров по визуальным признакам</li>
+                <li>Пороги уверенности и fallback менеджеру</li>
+                <li>Тесты на реальных сценариях</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="package">
+            <div class="package-title">
+              <h3>Продвинутый</h3>
+              <div class="small">Качество, метрики, тонкая настройка</div>
+            </div>
+            <div class="package-body">
+              <div class="package-price">210 000 ₽</div>
+              <div class="small">115-150 часов</div>
+              <ul>
+                <li>Всё из MVP</li>
+                <li>Метрики качества поиска</li>
+                <li>Админ-отчёт по неудачным совпадениям</li>
+                <li>Переиндексация каталога по расписанию</li>
+                <li>Расширенная настройка на примерах клиента</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Детализация рекомендуемого MVP</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Модуль</th>
+              <th>Результат</th>
+              <th class="num">Часы</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Проектирование сценария</td>
+              <td>Правила: когда искать, когда уточнять, когда передавать менеджеру.</td>
+              <td class="num">6</td>
+            </tr>
+            <tr>
+              <td>Приём изображений из WhatsApp</td>
+              <td>Обработка входящих фото, ограничения размера, ошибки загрузки.</td>
+              <td class="num">8</td>
+            </tr>
+            <tr>
+              <td>Vision-анализ</td>
+              <td>Описание мебели и ключевых признаков для поиска.</td>
+              <td class="num">10</td>
+            </tr>
+            <tr>
+              <td>Индексация фото каталога</td>
+              <td>Создание и обновление визуальных признаков для товаров Treejar.</td>
+              <td class="num">16</td>
+            </tr>
+            <tr>
+              <td>Поиск похожих товаров</td>
+              <td>Ранжирование кандидатов, фильтры по категории и уверенности.</td>
+              <td class="num">12</td>
+            </tr>
+            <tr>
+              <td>Интеграция в диалог Noor</td>
+              <td>Ответ клиенту с 3-5 товарами, фото, SKU, ценой и уточняющим вопросом.</td>
+              <td class="num">12</td>
+            </tr>
+            <tr>
+              <td>Fallback и эскалация</td>
+              <td>Безопасная передача менеджеру, если совпадение ненадёжное.</td>
+              <td class="num">6</td>
+            </tr>
+            <tr>
+              <td>Тестирование</td>
+              <td>Unit/integration-тесты и проверка на наборе реальных фото.</td>
+              <td class="num">10</td>
+            </tr>
+            <tr>
+              <td>Документация и запуск</td>
+              <td>Краткая инструкция, параметры модели, контрольный чеклист.</td>
+              <td class="num">6</td>
+            </tr>
+            <tr>
+              <td><strong>Итого</strong></td>
+              <td><strong>86 часов по ставке 1 500 ₽/ч, округлено до фиксированной цены.</strong></td>
+              <td class="num"><strong>130 000 ₽</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="footer">
+        <span>Treejar / Noor</span>
+        <span>2</span>
+      </div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Delivery Plan</span>
+        <span>КП / 23.06.2026</span>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>План работ</h2>
+        <div class="timeline">
+          <div class="timeline-item">
+            <h3>Дни 1-2</h3>
+            <p>Финализируем правила сценария, собираем 20-50 тестовых фото, проверяем модель.</p>
+          </div>
+          <div class="timeline-item">
+            <h3>Дни 3-6</h3>
+            <p>Делаем обработку входящих фото, визуальные признаки каталога и поиск кандидатов.</p>
+          </div>
+          <div class="timeline-item">
+            <h3>Дни 7-9</h3>
+            <p>Встраиваем результат в диалог Noor, добавляем fallback и аудит решений.</p>
+          </div>
+          <div class="timeline-item">
+            <h3>Дни 10-12</h3>
+            <p>Тестируем, исправляем edge cases, передаём инструкцию и выкатываем в рабочий контур.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Критерии приёмки</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Сценарий</th>
+              <th>Ожидаемый результат</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Клиент присылает фото товара</td>
+              <td>Noor определяет, что это визуальный запрос, и запускает поиск по каталогу.</td>
+            </tr>
+            <tr>
+              <td>В каталоге есть похожие товары</td>
+              <td>Бот отправляет 3-5 релевантных вариантов с фото, SKU, названием и ценой.</td>
+            </tr>
+            <tr>
+              <td>Уверенность низкая</td>
+              <td>Бот не выдумывает совпадение, а задаёт уточнение или передаёт менеджеру.</td>
+            </tr>
+            <tr>
+              <td>Клиент выбирает вариант</td>
+              <td>Noor продолжает стандартный путь: уточнение количества, проверка наличия, КП.</td>
+            </tr>
+            <tr>
+              <td>Ошибка загрузки или неподходящее фото</td>
+              <td>Клиент получает понятный ответ, диалог не ломается.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="footer">
+        <span>Treejar / Noor</span>
+        <span>3</span>
+      </div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Terms and Assumptions</span>
+        <span>КП / 23.06.2026</span>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Что не входит в стоимость</h2>
+        <div class="grid-3">
+          <div class="card">
+            <h3>Ручная разметка датасета</h3>
+            <p>Если потребуется обучать отдельную модель на большом наборе фото, это считается отдельно.</p>
+          </div>
+          <div class="card">
+            <h3>Чистка фото каталога</h3>
+            <p>Замена плохих, отсутствующих или нерелевантных фотографий товаров не входит в MVP.</p>
+          </div>
+          <div class="card">
+            <h3>Гарантия 100% совпадений</h3>
+            <p>Визуальный поиск помогает подобрать похожие товары, но не заменяет экспертный подбор во всех случаях.</p>
+          </div>
+        </div>
+        <div class="note" style="margin-top: 12px;">
+          Также отдельно оплачиваются расходы внешних AI-провайдеров, если они появятся сверх текущего баланса OpenRouter/Google/OpenAI. Точную стоимость эксплуатации фиксируем после теста выбранной модели на реальных фото.
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Риски и как мы их закрываем</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Риск</th>
+              <th>Влияние</th>
+              <th>Митигация</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Похожие модели мебели визуально почти одинаковые</td>
+              <td>Бот может найти правильную категорию, но не точный SKU.</td>
+              <td>Показываем несколько вариантов и просим клиента выбрать, не обещая точное совпадение без подтверждения.</td>
+            </tr>
+            <tr>
+              <td>Не все товары имеют качественные фото</td>
+              <td>Часть каталога будет хуже находиться по изображению.</td>
+              <td>В MVP используем fallback на текстовый поиск и менеджера; список проблемных карточек можно улучшать отдельным этапом.</td>
+            </tr>
+            <tr>
+              <td>Фото клиента содержит комнату, планировку или несколько объектов</td>
+              <td>Модель может выбрать не тот предмет.</td>
+              <td>Noor задаёт уточнение: какой предмет на фото нужно подобрать.</td>
+            </tr>
+            <tr>
+              <td>Изменение тарифов AI-провайдера</td>
+              <td>Месячные расходы могут отличаться от прогноза.</td>
+              <td>Выбираем модель после теста цены/качества и ограничиваем сценарий только входящими фото.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Следующие шаги</h2>
+        <ol>
+          <li>Подтвердить вариант MVP за 130 000 ₽.</li>
+          <li>Передать 20-50 реальных примеров фото, которые клиенты могут присылать в WhatsApp.</li>
+          <li>Согласовать модель и лимит месячных расходов на AI-провайдера.</li>
+          <li>Запустить реализацию и показать первый рабочий прототип в середине спринта.</li>
+        </ol>
+      </div>
+
+      <div class="note">
+        Предложение действительно 14 календарных дней. Доработка считается отдельным этапом развития Noor и не меняет объём ранее согласованного ТЗ.
+      </div>
+
+      <div class="footer">
+        <span>Treejar / Noor</span>
+        <span>4</span>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

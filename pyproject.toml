@@ -144,6 +144,19 @@ filterwarnings = [
     "ignore:No logs or spans will be created until.*:UserWarning:logfire",
 ]
 
+[tool.deptry]
+# tj-4k8. `deptry .` was only green after manually excluding local untracked
+# directories, which made the result depend on whose checkout it ran in. The
+# scan scope is now codified here instead.
+#
+# These three are sibling modules inside scripts/, imported by path, not PyPI
+# packages. deptry reads them as missing dependencies unless told otherwise.
+known_first_party = ["runtime_support", "escalation_guard", "live_test_destination"]
+# Agent and orchestration scratch directories are not part of the package.
+extend_exclude = ["\\.agents", "\\.codex", "\\.superpowers", "\\.worktrees"]
+
 [tool.deptry.per_rule_ignores]
-DEP002 = ["uvicorn", "asyncpg", "openai", "python-multipart", "python-dotenv", "pytest", "pytest-asyncio", "pytest-cov", "pytest-timeout", "ruff", "mypy", "pre-commit", "deptry", "itsdangerous"]
+# `torch` is declared so the CPU wheel is pinned for sentence-transformers;
+# nothing imports it directly.
+DEP002 = ["uvicorn", "asyncpg", "openai", "python-multipart", "python-dotenv", "pytest", "pytest-asyncio", "pytest-cov", "pytest-timeout", "ruff", "mypy", "pre-commit", "deptry", "itsdangerous", "torch"]
 DEP003 = ["starlette", "logfire", "aiohttp"]

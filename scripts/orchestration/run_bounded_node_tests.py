@@ -17,7 +17,6 @@ import time
 from pathlib import Path
 from typing import NoReturn
 
-
 LOCK_CONFLICT = 73
 TIMEOUT = 124
 LEAKED_PROCESS_GROUP = 125
@@ -36,7 +35,11 @@ def canonical_tests(cwd: Path, arguments: list[str]) -> list[str]:
         if value.startswith("-"):
             continue
         candidate = Path(value)
-        resolved = candidate.resolve() if candidate.is_absolute() else (cwd / candidate).resolve()
+        resolved = (
+            candidate.resolve()
+            if candidate.is_absolute()
+            else (cwd / candidate).resolve()
+        )
         tests.append(str(resolved))
     return sorted(set(tests))
 
@@ -74,7 +77,10 @@ def diagnostic(event: str, *, cwd: Path, command: list[str], pgid: int | None) -
         "argv_sha256": argv_digest(command),
         "tests": safe_test_names(cwd, command[3:]),
     }
-    print(f"bounded-node-tests: {event}; {json.dumps(payload, sort_keys=True)}", file=sys.stderr)
+    print(
+        f"bounded-node-tests: {event}; {json.dumps(payload, sort_keys=True)}",
+        file=sys.stderr,
+    )
 
 
 def enable_child_subreaper() -> None:
@@ -173,7 +179,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         args.test_args = args.test_args[1:]
     if not args.test_args or not canonical_tests(Path.cwd(), args.test_args):
         parser.error("at least one Node test file is required")
-    if args.node_timeout_ms < 1 or args.wall_timeout_seconds <= 0 or args.term_grace_seconds <= 0:
+    if (
+        args.node_timeout_ms < 1
+        or args.wall_timeout_seconds <= 0
+        or args.term_grace_seconds <= 0
+    ):
         parser.error("timeouts must be positive")
     return args
 
@@ -187,7 +197,12 @@ def main(argv: list[str] | None = None) -> int:
     identity = lock_identity(cwd, args.test_args)
     args.lock_dir.mkdir(parents=True, exist_ok=True)
     lock_path = args.lock_dir / f"{identity}.lock"
-    command = [args.node, "--test", f"--test-timeout={args.node_timeout_ms}", *args.test_args]
+    command = [
+        args.node,
+        "--test",
+        f"--test-timeout={args.node_timeout_ms}",
+        *args.test_args,
+    ]
 
     with lock_path.open("a+", encoding="utf-8") as lock:
         try:
@@ -214,16 +229,25 @@ def main(argv: list[str] | None = None) -> int:
             except subprocess.TimeoutExpired:
                 diagnostic("deadline exceeded", cwd=cwd, command=command, pgid=pgid)
                 if not terminate_group(pgid, args.term_grace_seconds):
-                    diagnostic("shutdown incomplete", cwd=cwd, command=command, pgid=pgid)
+                    diagnostic(
+                        "shutdown incomplete", cwd=cwd, command=command, pgid=pgid
+                    )
                     return SHUTDOWN_INCOMPLETE
                 process.wait(timeout=args.term_grace_seconds)
                 return TIMEOUT
 
             survivors = group_members(pgid)
             if survivors:
-                diagnostic("surviving process-group members", cwd=cwd, command=command, pgid=pgid)
+                diagnostic(
+                    "surviving process-group members",
+                    cwd=cwd,
+                    command=command,
+                    pgid=pgid,
+                )
                 if not terminate_group(pgid, args.term_grace_seconds):
-                    diagnostic("shutdown incomplete", cwd=cwd, command=command, pgid=pgid)
+                    diagnostic(
+                        "shutdown incomplete", cwd=cwd, command=command, pgid=pgid
+                    )
                     return SHUTDOWN_INCOMPLETE
                 return LEAKED_PROCESS_GROUP
             reap_adopted_children(pgid)

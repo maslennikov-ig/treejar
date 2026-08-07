@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Инструкция для Виктора — восстановление доступа Noor к Zoho</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --green-900: #073d34;
+      --green-800: #075447;
+      --green-700: #0a6b59;
+      --green-100: #e5f1ec;
+      --green-050: #f3f8f6;
+      --ink: #15231f;
+      --muted: #50625c;
+      --line: #cbd8d3;
+      --white: #ffffff;
+      --warning: #7b4915;
+      --warning-bg: #fff5df;
+    }
+
+    html,
+    body {
+      margin: 0;
+      background: #e4e9e7;
+      color: var(--ink);
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    body {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .document {
+      width: 210mm;
+      margin: 0 auto;
+      background: var(--white);
+      box-shadow: 0 8px 24px rgba(7, 61, 52, 0.16);
+    }
+
+    .page {
+      position: relative;
+      width: 210mm;
+      min-height: 297mm;
+      padding: 17mm 18mm 16mm;
+      overflow: hidden;
+      break-after: page;
+      background: var(--white);
+    }
+
+    .page:last-child {
+      break-after: auto;
+    }
+
+    .page::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 7mm;
+      background: var(--green-800);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14mm;
+      color: var(--green-800);
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .brand span:last-child {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      max-width: 168mm;
+      color: var(--green-900);
+      font-size: 31px;
+      line-height: 1.12;
+      letter-spacing: -0.02em;
+      text-wrap: balance;
+    }
+
+    h2 {
+      margin-bottom: 12px;
+      color: var(--green-900);
+      font-size: 22px;
+      line-height: 1.2;
+      letter-spacing: -0.01em;
+      text-wrap: balance;
+    }
+
+    h3 {
+      color: var(--green-900);
+      font-size: 15px;
+      line-height: 1.3;
+    }
+
+    .lead {
+      max-width: 155mm;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.55;
+      text-wrap: pretty;
+    }
+
+    .summary {
+      display: flex;
+      gap: 14px;
+      margin: 24px 0 26px;
+      padding: 15px 16px;
+      border: 1px solid var(--green-700);
+      border-radius: 10px;
+      background: var(--green-050);
+    }
+
+    .summary-mark {
+      flex: 0 0 auto;
+      display: grid;
+      width: 31px;
+      height: 31px;
+      border-radius: 50%;
+      place-items: center;
+      color: var(--white);
+      background: var(--green-700);
+      font-weight: 800;
+    }
+
+    .summary strong {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--green-900);
+    }
+
+    .summary p {
+      color: var(--muted);
+    }
+
+    .prep {
+      margin-bottom: 24px;
+      padding: 15px 0;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .prep h3 {
+      margin-bottom: 8px;
+    }
+
+    .prep ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    .prep li + li {
+      margin-top: 5px;
+    }
+
+    .steps {
+      display: grid;
+      gap: 13px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    .step-number {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      place-items: center;
+      color: var(--white);
+      background: var(--green-800);
+      font-weight: 800;
+    }
+
+    .step p {
+      margin-top: 3px;
+      color: var(--muted);
+    }
+
+    a {
+      color: var(--green-700);
+      font-weight: 700;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+
+    .scope-label {
+      margin: 19px 0 7px;
+      color: var(--green-900);
+      font-weight: 800;
+    }
+
+    .scope {
+      padding: 12px 13px;
+      border-radius: 8px;
+      color: #16332b;
+      background: var(--green-100);
+      font-family: "Cascadia Mono", "Consolas", monospace;
+      font-size: 10px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+
+    .note {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      color: var(--warning);
+      background: var(--warning-bg);
+    }
+
+    .note strong {
+      display: block;
+      margin-bottom: 3px;
+    }
+
+    .handoff {
+      margin-top: 24px;
+      padding: 18px;
+      border-radius: 10px;
+      color: var(--white);
+      background: var(--green-900);
+    }
+
+    .handoff h3 {
+      margin-bottom: 8px;
+      color: var(--white);
+      font-size: 18px;
+    }
+
+    .handoff p {
+      color: #dcebe6;
+    }
+
+    .handoff-example {
+      margin-top: 12px;
+      padding: 11px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      border-radius: 7px;
+      color: var(--white);
+      font-family: "Cascadia Mono", "Consolas", monospace;
+      font-size: 11px;
+      line-height: 1.65;
+    }
+
+    .security {
+      margin-top: 22px;
+    }
+
+    .security h3 {
+      margin-bottom: 10px;
+    }
+
+    .security-list {
+      display: grid;
+      gap: 8px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .security-list li {
+      position: relative;
+      padding-left: 24px;
+      color: var(--muted);
+    }
+
+    .security-list li::before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: var(--green-700);
+      font-weight: 900;
+    }
+
+    .help {
+      margin-top: 22px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+    }
+
+    .help strong {
+      color: var(--green-900);
+    }
+
+    .footer {
+      position: absolute;
+      right: 18mm;
+      bottom: 9mm;
+      left: 18mm;
+      display: flex;
+      justify-content: space-between;
+      color: #70817b;
+      font-size: 10px;
+    }
+
+    @media screen and (max-width: 850px) {
+      .document,
+      .page {
+        width: 100%;
+      }
+
+      .page {
+        min-height: auto;
+        padding: 54px 24px 64px;
+      }
+
+      .footer {
+        position: static;
+        margin-top: 34px;
+      }
+    }
+
+    @media print {
+      html,
+      body {
+        background: var(--white);
+      }
+
+      .document {
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="document">
+    <section class="page">
+      <header class="brand">
+        <span>TREEJAR × NOOR</span>
+        <span>Инструкция для владельца Zoho</span>
+      </header>
+
+      <h1>Виктор, необходимо восстановить доступ Noor к Zoho</h1>
+      <p class="lead">
+        Потребуется создать два временных кода: один для Zoho CRM и один для
+        Zoho Inventory. Все дальнейшие технические действия выполнит наша команда.
+      </p>
+
+      <div class="summary">
+        <div class="summary-mark">2</div>
+        <div>
+          <strong>Что нужно передать нам</strong>
+          <p>Два временных кода с пометками «CRM» и «Inventory». Пароль от Zoho и постоянные ключи передавать не нужно.</p>
+        </div>
+      </div>
+
+      <div class="prep">
+        <h3>Перед началом</h3>
+        <ul>
+          <li>Войдите под владельцем Zoho One с доступом к CRM и Inventory Treejar.</li>
+          <li>Откройте <a href="https://api-console.zoho.com/">api-console.zoho.com</a>.</li>
+          <li>Используйте уже созданные приложения типа <strong>Self Client</strong>.</li>
+        </ul>
+      </div>
+
+      <h2>Код для Zoho CRM</h2>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-number">1</div>
+          <div>
+            <h3>Откройте Self Client для CRM</h3>
+            <p>Если приложений несколько, выберите то, которое используется для интеграции Noor с CRM.</p>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-number">2</div>
+          <div>
+            <h3>Перейдите во вкладку Generate Code</h3>
+            <p>Вставьте scopes из блока ниже без изменений.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="scope-label">CRM scopes</div>
+      <div class="scope">
+        ZohoCRM.modules.contacts.READ,ZohoCRM.modules.contacts.CREATE,ZohoCRM.modules.contacts.UPDATE,ZohoCRM.modules.deals.READ,ZohoCRM.modules.deals.CREATE,ZohoCRM.modules.deals.UPDATE,ZohoCRM.coql.READ,ZohoCRM.modules.notes.READ,ZohoCRM.modules.notes.CREATE,ZohoCRM.settings.modules.READ
+      </div>
+
+      <div class="steps" style="margin-top: 16px;">
+        <div class="step">
+          <div class="step-number">3</div>
+          <div>
+            <h3>Создайте временный код</h3>
+            <p>Выберите максимальный доступный срок действия. В описании можно указать <strong>Noor CRM integration</strong>.</p>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-number">4</div>
+          <div>
+            <h3>Скопируйте код</h3>
+            <p>Если Zoho попросит выбрать приложение или организацию, выберите Treejar CRM. Сохраните код с пометкой <strong>CRM</strong>.</p>
+          </div>
+        </div>
+      </div>
+
+      <footer class="footer">
+        <span>Treejar / Noor · Zoho access recovery</span>
+        <span>Страница 1 из 2</span>
+      </footer>
+    </section>
+
+    <section class="page">
+      <header class="brand">
+        <span>TREEJAR × NOOR</span>
+        <span>Инструкция для владельца Zoho</span>
+      </header>
+
+      <h2>Код для Zoho Inventory</h2>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-number">1</div>
+          <div>
+            <h3>Откройте Self Client для Inventory</h3>
+            <p>Выберите приложение, которое используется для интеграции Noor с Zoho Inventory.</p>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-number">2</div>
+          <div>
+            <h3>Перейдите во вкладку Generate Code</h3>
+            <p>Вставьте scopes из блока ниже без изменений.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="scope-label">Inventory scopes</div>
+      <div class="scope">
+        ZohoInventory.items.READ,ZohoInventory.items.CREATE,ZohoInventory.items.UPDATE,ZohoInventory.salesorders.READ,ZohoInventory.salesorders.CREATE,ZohoInventory.contacts.READ,ZohoInventory.contacts.CREATE,ZohoInventory.settings.READ
+      </div>
+
+      <div class="steps" style="margin-top: 16px;">
+        <div class="step">
+          <div class="step-number">3</div>
+          <div>
+            <h3>Создайте временный код</h3>
+            <p>Выберите максимальный доступный срок действия. В описании можно указать <strong>Noor Inventory integration</strong>.</p>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-number">4</div>
+          <div>
+            <h3>Скопируйте код</h3>
+            <p>Если появится выбор организации, выберите организацию Treejar в Zoho Inventory. Сохраните код с пометкой <strong>Inventory</strong>.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <strong>Почему код временный?</strong>
+        Он нужен только для безопасного получения постоянного refresh token.
+        Сам refresh token после обмена не ограничен выбранными минутами.
+      </div>
+
+      <div class="handoff">
+        <h3>Передайте нам два кода</h3>
+        <p>
+          Отправьте их сразу после создания через согласованный защищённый канал.
+          Формат сообщения:
+        </p>
+        <div class="handoff-example">
+          CRM: временный код<br>
+          Inventory: временный код
+        </div>
+      </div>
+
+      <section class="security">
+        <h3>Важно</h3>
+        <ul class="security-list">
+          <li>Не отправляйте пароль от Zoho.</li>
+          <li>Не отправляйте Client Secret или другие постоянные ключи.</li>
+          <li>Не публикуйте временные коды в общем чате.</li>
+          <li>Не создавайте много кодов подряд: достаточно по одному для CRM и Inventory.</li>
+        </ul>
+      </section>
+
+      <div class="help">
+        <strong>Если нужный Self Client не найден:</strong>
+        сделайте скриншот списка приложений без открытых Client Secret и передайте
+        его нашей команде. Мы подскажем, какое приложение выбрать.
+      </div>
+
+      <footer class="footer">
+        <span>Treejar / Noor · Zoho access recovery</span>
+        <span>Страница 2 из 2</span>
+      </footer>
+    </section>
+  </main>
+</body>
+</html>

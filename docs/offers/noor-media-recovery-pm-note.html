@@ -1,0 +1,1078 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Внутренняя записка: фото и аудио в архиве диалогов</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800;900&display=swap");
+
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --ink: #14201b;
+      --muted: #65726b;
+      --paper: #fffdf7;
+      --cream: #fff9ed;
+      --line: #d8d1c1;
+      --green: #0c6b58;
+      --green-dark: #07473c;
+      --green-deep: #052722;
+      --green-soft: #e3eee8;
+      --green-pale: #f3f8f5;
+      --copper: #b86539;
+      --copper-soft: #f4e2d2;
+      --sand: #eee6d7;
+      --red: #9b3f33;
+      --red-soft: #f6e6e1;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: #e9e3d6;
+      color: var(--ink);
+      font-family: "Manrope", "DejaVu Sans", sans-serif;
+      font-size: 12.5px;
+      line-height: 1.48;
+    }
+
+    body {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .document {
+      width: 210mm;
+      margin: 0 auto;
+      background: var(--paper);
+      box-shadow: 0 18px 60px rgba(28, 36, 30, 0.18);
+    }
+
+    .page {
+      position: relative;
+      width: 210mm;
+      min-height: 297mm;
+      padding: 17mm 16mm 16mm;
+      overflow: hidden;
+      break-after: page;
+      background: var(--paper);
+    }
+
+    .page:last-child {
+      break-after: auto;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1,
+    h2 {
+      font-family: Georgia, "Times New Roman", serif;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 165mm;
+      font-size: 43px;
+      line-height: 1.01;
+      font-weight: 700;
+    }
+
+    h2 {
+      margin-bottom: 9px;
+      font-size: 25px;
+      line-height: 1.12;
+    }
+
+    h3 {
+      margin-bottom: 6px;
+      color: var(--green-dark);
+      font-size: 14px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .cover {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      color: #fffaf0;
+      background:
+        radial-gradient(circle at 89% 10%, rgba(126, 208, 180, 0.2), transparent 33%),
+        linear-gradient(135deg, var(--green) 0%, var(--green-dark) 48%, var(--green-deep) 100%);
+    }
+
+    .cover::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.065) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.065) 1px, transparent 1px);
+      background-size: 25px 25px;
+      opacity: 0.23;
+    }
+
+    .cover::after {
+      content: "";
+      position: absolute;
+      right: -48mm;
+      bottom: -52mm;
+      width: 150mm;
+      height: 150mm;
+      border: 1px solid rgba(255, 250, 240, 0.18);
+      border-radius: 50%;
+    }
+
+    .cover > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .cover-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      padding: 7px 11px;
+      border: 1px solid rgba(255, 250, 240, 0.28);
+      border-radius: 999px;
+      color: rgba(255, 250, 240, 0.88);
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .kicker::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #9ad7c2;
+    }
+
+    .confidential {
+      color: rgba(255, 250, 240, 0.7);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .cover-main {
+      align-self: center;
+      margin-top: -8mm;
+    }
+
+    .cover .subtitle {
+      max-width: 145mm;
+      margin-top: 17px;
+      color: rgba(255, 250, 240, 0.82);
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    .cover-rule {
+      width: 38mm;
+      height: 4px;
+      margin: 19px 0;
+      border-radius: 99px;
+      background: #9ad7c2;
+    }
+
+    .cover-decision {
+      max-width: 155mm;
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1.4;
+    }
+
+    .cover-meta {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 11px;
+      margin-top: 18px;
+    }
+
+    .cover-card {
+      min-height: 24mm;
+      padding: 12px 13px;
+      border: 1px solid rgba(255, 250, 240, 0.22);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .cover-label {
+      margin-bottom: 5px;
+      color: rgba(255, 250, 240, 0.62);
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .cover-value {
+      color: #fffaf0;
+      font-size: 15px;
+      font-weight: 900;
+      line-height: 1.25;
+    }
+
+    .cover-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      color: rgba(255, 250, 240, 0.7);
+      font-size: 11px;
+    }
+
+    .brand {
+      color: #fffaf0;
+      font-size: 18px;
+      font-weight: 900;
+    }
+
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 13px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .lead {
+      max-width: 168mm;
+      color: #33433c;
+      font-size: 14px;
+      line-height: 1.52;
+    }
+
+    .section {
+      margin-bottom: 15px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 11px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 9px;
+    }
+
+    .card {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--cream);
+    }
+
+    .card p {
+      color: #3b4942;
+      font-size: 11.5px;
+    }
+
+    .card-number {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 27px;
+      height: 27px;
+      margin-bottom: 9px;
+      border-radius: 50%;
+      background: var(--green);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .statement {
+      padding: 15px;
+      border: 1px solid #c5ddd1;
+      border-radius: 8px;
+      background: var(--green-soft);
+    }
+
+    .statement strong {
+      color: var(--green-dark);
+    }
+
+    .statement.large {
+      padding: 17px;
+      font-size: 16px;
+      font-weight: 800;
+      line-height: 1.43;
+    }
+
+    .warning {
+      padding: 13px 14px;
+      border-left: 4px solid var(--copper);
+      border-radius: 0 8px 8px 0;
+      background: var(--copper-soft);
+      color: #44342a;
+    }
+
+    .warning strong {
+      color: #6c351e;
+    }
+
+    .danger {
+      padding: 13px 14px;
+      border-left: 4px solid var(--red);
+      border-radius: 0 8px 8px 0;
+      background: var(--red-soft);
+      color: #4a2d28;
+    }
+
+    .decision-strip {
+      display: grid;
+      grid-template-columns: 1.4fr 0.6fr;
+      gap: 12px;
+      margin-top: 13px;
+    }
+
+    .decision-price {
+      padding: 15px;
+      border-radius: 8px;
+      background: var(--ink);
+      color: #fffaf0;
+    }
+
+    .decision-price .label {
+      color: rgba(255, 250, 240, 0.62);
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .decision-price .value {
+      margin: 5px 0 7px;
+      font-size: 34px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .decision-price p {
+      color: rgba(255, 250, 240, 0.75);
+      font-size: 10.5px;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 9px;
+      margin-top: 13px;
+    }
+
+    .stat {
+      min-height: 28mm;
+      padding: 11px;
+      border: 1px solid #cdded5;
+      border-radius: 8px;
+      background: var(--green-pale);
+    }
+
+    .stat-value {
+      margin-bottom: 4px;
+      color: var(--green-dark);
+      font-size: 25px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .stat-label {
+      color: #435149;
+      font-size: 10.5px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .flow-step {
+      min-height: 35mm;
+      padding: 10px;
+      border: 1px solid #cdded5;
+      border-radius: 8px;
+      background: #f8fbf9;
+    }
+
+    .flow-step .no {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      margin-bottom: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 900;
+    }
+
+    .flow-step h3 {
+      font-size: 12px;
+    }
+
+    .flow-step p {
+      color: #44524a;
+      font-size: 10px;
+      line-height: 1.36;
+    }
+
+    .cost-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .cost-card {
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--cream);
+    }
+
+    .cost-card.total {
+      border: 2px solid var(--copper);
+      background: var(--copper-soft);
+      padding: 12px;
+    }
+
+    .cost-label {
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+
+    .cost-value {
+      margin: 7px 0 6px;
+      color: var(--ink);
+      font-size: 27px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .cost-card p {
+      color: #435149;
+      font-size: 10.5px;
+    }
+
+    ul,
+    ol {
+      margin: 8px 0 0;
+      padding-left: 18px;
+    }
+
+    li {
+      margin: 4px 0;
+    }
+
+    .check-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .check-list li {
+      position: relative;
+      margin: 0 0 8px;
+      padding-left: 24px;
+    }
+
+    .check-list li::before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      top: -1px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 17px;
+      height: 17px;
+      border-radius: 50%;
+      background: var(--green-soft);
+      color: var(--green-dark);
+      font-size: 10px;
+      font-weight: 900;
+    }
+
+    .exclude-list li::marker {
+      color: var(--red);
+      font-weight: 900;
+    }
+
+    table {
+      width: 100%;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-collapse: collapse;
+      border-radius: 8px;
+      background: var(--cream);
+    }
+
+    th,
+    td {
+      padding: 8px 9px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: var(--sand);
+      color: #35443d;
+      font-size: 9.5px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .num {
+      text-align: right;
+      white-space: nowrap;
+      font-weight: 900;
+    }
+
+    .recommended-row td {
+      background: var(--green-pale);
+    }
+
+    .quote {
+      padding: 16px 17px;
+      border-radius: 8px;
+      background: var(--ink);
+      color: #fffaf0;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .quote p + p {
+      margin-top: 11px;
+    }
+
+    .final-decision {
+      display: grid;
+      grid-template-columns: 1fr 42mm;
+      gap: 15px;
+      align-items: center;
+      padding: 16px;
+      border-radius: 8px;
+      background: var(--green-soft);
+      border: 1px solid #c5ddd1;
+    }
+
+    .final-mark {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 38mm;
+      height: 38mm;
+      border-radius: 50%;
+      background: var(--green);
+      color: #fff;
+      font-size: 39px;
+      font-weight: 900;
+    }
+
+    .footer {
+      position: absolute;
+      right: 16mm;
+      bottom: 8mm;
+      left: 16mm;
+      display: flex;
+      justify-content: space-between;
+      padding-top: 7px;
+      border-top: 1px solid var(--line);
+      color: #89938d;
+      font-size: 9.5px;
+    }
+
+    .avoid-break {
+      break-inside: avoid;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .document {
+        box-shadow: none;
+      }
+
+      .page {
+        height: 297mm;
+        min-height: 297mm;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="document">
+    <section class="page cover">
+      <div class="cover-top">
+        <div class="kicker">Внутренняя пояснительная записка</div>
+        <div class="confidential">Для проектной команды</div>
+      </div>
+
+      <div class="cover-main">
+        <h1>Фото и аудио в архиве диалогов</h1>
+        <p class="subtitle">
+          Почему восстановление старых вложений будет дорогим, может не дать
+          результата и не требуется для текущей проверки Noor.
+        </p>
+        <div class="cover-rule"></div>
+        <p class="cover-decision">
+          Рекомендация: выбрать 100 содержательных диалогов, которые полностью
+          понятны без фотографий и голосовых сообщений.
+        </p>
+        <div class="cover-meta">
+          <div class="cover-card">
+            <div class="cover-label">Текущий вариант</div>
+            <div class="cover-value">Удорожание 0 ₽</div>
+          </div>
+          <div class="cover-card">
+            <div class="cover-label">Восстановление медиа</div>
+            <div class="cover-value">+54–93 тыс. ₽</div>
+          </div>
+          <div class="cover-card">
+            <div class="cover-label">Главный риск</div>
+            <div class="cover-value">Нет гарантии результата</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cover-footer">
+        <div><span class="brand">Treejar / Noor</span><br>16 июля 2026 года</div>
+        <div>Не отправлять клиенту без адаптации</div>
+      </div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Управленческое решение</span>
+        <span>01 / 06</span>
+      </div>
+
+      <div class="section">
+        <h2>Решение за одну минуту</h2>
+        <p class="lead">
+          Мы не предлагаем клиенту оплачивать восстановление старых фото и
+          аудио. Для текущей задачи есть более простой и надёжный путь.
+        </p>
+        <div class="decision-strip">
+          <div class="statement large">
+            Выбираем референсные и контрольные диалоги, в которых задача клиента
+            и ответы продавца полностью понятны из текста.
+          </div>
+          <div class="decision-price">
+            <div class="label">Изменение цены</div>
+            <div class="value">0 ₽</div>
+            <p>Согласованные пакеты остаются без изменений.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-number">1</div>
+            <h3>Дополнительная стоимость</h3>
+            <p>Восстановление медиа увеличит бюджет минимум на отдельную проверку, а затем на обработку найденных файлов.</p>
+          </div>
+          <div class="card">
+            <div class="card-number">2</div>
+            <h3>Нет гарантии</h3>
+            <p>Старые файлы могли не сохраниться, а связи между вложениями и диалогами могли быть потеряны.</p>
+          </div>
+          <div class="card">
+            <div class="card-number">3</div>
+            <h3>Цель достигается без медиа</h3>
+            <p>Основные запросы, возражения и качество ответов Noor можно проверить на самодостаточных текстовых диалогах.</p>
+          </div>
+          <div class="card">
+            <div class="card-number">4</div>
+            <h3>Фото-поиск всё равно отдельный</h3>
+            <p>Наличие фотографии в архиве не научит Noor находить похожий товар. Для этого нужна отдельная функция.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <div class="warning">
+          <strong>Позиция менеджера:</strong> мы не отказываемся от полезной
+          работы. Мы предлагаем способ получить основной результат без лишних
+          расходов и без риска заплатить за восстановление, которое может не
+          получиться.
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Что делаем с медиа-зависимыми диалогами</h2>
+        <div class="grid-3">
+          <div class="card"><h3>Не удаляем</h3><p>Сохраняем такие обращения в общем анализе корпуса.</p></div>
+          <div class="card"><h3>Отмечаем отдельно</h3><p>Считаем, как часто смысл зависит от фото или голоса.</p></div>
+          <div class="card"><h3>Выносим в будущее</h3><p>Используем как основание для отдельной оценки функций Noor.</p></div>
+        </div>
+      </div>
+
+      <div class="footer"><span>Внутренняя записка / фото и аудио</span><span>2</span></div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Исходные данные</span>
+        <span>02 / 06</span>
+      </div>
+
+      <div class="section">
+        <h2>Что находится в корпусе</h2>
+        <p class="lead">
+          Переданный набор хорошо подходит для анализа текста, но не является
+          архивом файлов WhatsApp.
+        </p>
+        <div class="stat-grid">
+          <div class="stat"><div class="stat-value">1 400</div><div class="stat-label">диалогов в корпусе</div></div>
+          <div class="stat"><div class="stat-value">19 945</div><div class="stat-label">сообщений всего</div></div>
+          <div class="stat"><div class="stat-value">1 358</div><div class="stat-label">диалогов восстановлены из Zoho</div></div>
+          <div class="stat"><div class="stat-value">42</div><div class="stat-label">диалога получены из Wazzup</div></div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <div class="grid-3">
+          <div class="card"><h3>39 изображений</h3><p>Отмечены только в новом потоке Wazzup. Самих файлов в корпусе нет.</p></div>
+          <div class="card"><h3>23 документа</h3><p>Есть отметка о типе сообщения, но нет содержимого и рабочей ссылки.</p></div>
+          <div class="card"><h3>0 отмеченных аудио</h3><p>Голосовые сообщения в текущей выгрузке отдельно не обозначены.</p></div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Почему файл нельзя просто скачать</h2>
+        <div class="flow">
+          <div class="flow-step"><div class="no">1</div><h3>Нет файла</h3><p>В корпусе сохранён текст и иногда тип вложения.</p></div>
+          <div class="flow-step"><div class="no">2</div><h3>Нет ссылки</h3><p>Прямой адрес фотографии или аудио не передан.</p></div>
+          <div class="flow-step"><div class="no">3</div><h3>Нет ID</h3><p>Отсутствует номер исходного сообщения Wazzup.</p></div>
+          <div class="flow-step"><div class="no">4</div><h3>Нет телефона</h3><p>Клиенты заменены обезличенными кодами.</p></div>
+          <div class="flow-step"><div class="no">5</div><h3>Нет гарантии</h3><p>Неизвестно, сохранился ли старый файл в источнике.</p></div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <div class="danger">
+          <strong>Ключевое ограничение:</strong> даже если отдельно получить
+          файлы из Wazzup, может не оказаться надёжного способа определить, к
+          какому из обезличенных диалогов относится каждый файл.
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Что потребуется дополнительно</h2>
+        <div class="grid-2">
+          <div class="card"><h3>Доступ владельца Wazzup</h3><p>Для повторной выгрузки истории и проверки доступности вложений.</p></div>
+          <div class="card"><h3>Исходные записи Zoho</h3><p>Для поиска связей, которые отсутствуют в переданном корпусе.</p></div>
+        </div>
+      </div>
+
+      <div class="footer"><span>Внутренняя записка / исходные данные</span><span>3</span></div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Состав дополнительной работы</span>
+        <span>03 / 06</span>
+      </div>
+
+      <div class="section">
+        <h2>Стоимость возникает не из-за скачивания</h2>
+        <p class="lead">
+          Основная работа — восстановить связи, обработать файлы и вручную
+          проверить, что каждый результат относится к нужной реплике.
+        </p>
+      </div>
+
+      <div class="section avoid-break">
+        <div class="grid-2">
+          <div class="card"><div class="card-number">1</div><h3>Повторная выгрузка</h3><p>Получить доступы, запросить историю Wazzup и исходные записи Zoho.</p></div>
+          <div class="card"><div class="card-number">2</div><h3>Поиск вложений</h3><p>Проверить, какие фотографии, документы и аудио ещё доступны.</p></div>
+          <div class="card"><div class="card-number">3</div><h3>Связь с диалогами</h3><p>Сопоставить файлы по времени, порядку сообщений, сделкам и другим признакам.</p></div>
+          <div class="card"><div class="card-number">4</div><h3>Стабильное хранение</h3><p>Скачать доступные файлы и сохранить их независимо от временных ссылок.</p></div>
+          <div class="card"><div class="card-number">5</div><h3>Обработка</h3><p>Расшифровать голос, описать содержание фото и подготовить данные для анализа.</p></div>
+          <div class="card"><div class="card-number">6</div><h3>Ручная проверка</h3><p>Проверить правильность сопоставления и отметить всё, что восстановить не удалось.</p></div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Что может пойти не так</h2>
+        <div class="grid-3">
+          <div class="card"><h3>Файл удалён</h3><p>Запись о сообщении есть, но само вложение больше не открывается.</p></div>
+          <div class="card"><h3>Связь потеряна</h3><p>Файл найден, но его нельзя уверенно привязать к конкретному диалогу.</p></div>
+          <div class="card"><h3>История неполная</h3><p>Часть периода или чатов отсутствует в доступной выгрузке.</p></div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <div class="danger">
+          <strong>Коммерческий риск:</strong> клиент оплачивает проверку,
+          восстановление и обработку данных, но не гарантированное получение
+          всех старых файлов. Это необходимо проговорить до начала работ.
+        </div>
+      </div>
+
+      <div class="footer"><span>Внутренняя записка / дополнительная работа</span><span>4</span></div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Практическая ценность</span>
+        <span>04 / 06</span>
+      </div>
+
+      <div class="section">
+        <h2>Для текущей цели медиа не обязательно</h2>
+        <p class="lead">
+          Текущий этап должен проверить ответы Noor, найти проблемы и
+          подготовить материалы для продаж. Это можно сделать на диалогах с
+          полным текстовым контекстом.
+        </p>
+      </div>
+
+      <div class="section avoid-break">
+        <div class="grid-2">
+          <div class="statement">
+            <h3>Что нам действительно нужно</h3>
+            <ul class="check-list">
+              <li>понятная задача клиента;</li>
+              <li>товар или категория товара;</li>
+              <li>вопросы о цене, наличии и доставке;</li>
+              <li>возражения и уточняющие вопросы;</li>
+              <li>ответ продавца и следующий шаг;</li>
+              <li>достаточный контекст для оценки Noor.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Что не даёт само восстановление</h3>
+            <ul class="exclude-list">
+              <li>не создаёт поиск похожих товаров;</li>
+              <li>не связывает фото с каталогом;</li>
+              <li>не гарантирует понимание изображения Noor;</li>
+              <li>не заменяет разработку нового сценария;</li>
+              <li>не делает архив полным;</li>
+              <li>не улучшает автоматически ответы бота.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Как выбираем 100 диалогов</h2>
+        <div class="grid-2">
+          <div class="card"><h3>Включаем</h3><p>Диалоги с полным текстовым запросом, разными товарами, вопросами, возражениями и сложными ситуациями.</p></div>
+          <div class="card"><h3>Не включаем в подробный прогон</h3><p>Диалоги, где основной смысл сводится к «как на фото», «посмотрите это» или содержится только в аудио.</p></div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <div class="warning">
+          <strong>Честная граница проверки:</strong> такая выборка покажет
+          качество Noor в текстовых сценариях. Она не будет доказывать, что Noor
+          уже умеет понимать фото, голос или искать похожие товары.
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Что делаем с оставшимися случаями</h2>
+        <div class="grid-3">
+          <div class="card"><h3>Считаем частоту</h3><p>Показываем, насколько часто клиенты используют медиа.</p></div>
+          <div class="card"><h3>Группируем запросы</h3><p>Фото товара, документ, голос, запрос похожего варианта.</p></div>
+          <div class="card"><h3>Оцениваем отдельно</h3><p>Только если клиент подтвердит необходимость новой функции.</p></div>
+        </div>
+      </div>
+
+      <div class="footer"><span>Внутренняя записка / практическая ценность</span><span>5</span></div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Влияние на бюджет</span>
+        <span>05 / 06</span>
+      </div>
+
+      <div class="section">
+        <h2>Цена двух решений</h2>
+        <p class="lead">
+          Рекомендуемый путь сохраняет согласованный бюджет. Попытка
+          восстановления потребует отдельной оплаты ещё до понимания результата.
+        </p>
+      </div>
+
+      <div class="section avoid-break">
+        <div class="cost-grid">
+          <div class="cost-card">
+            <div class="cost-label">Пробная проверка</div>
+            <div class="cost-value">18 000 ₽</div>
+            <p>12 часов. Проверяем 10–15 диалогов. Результат не гарантирован.</p>
+          </div>
+          <div class="cost-card">
+            <div class="cost-label">После успешной проверки</div>
+            <div class="cost-value">36–75 тыс. ₽</div>
+            <p>Ещё 24–50 часов на 100 выбранных диалогов.</p>
+          </div>
+          <div class="cost-card total">
+            <div class="cost-label">Общее удорожание</div>
+            <div class="cost-value">54–93 тыс. ₽</div>
+            <p>Предварительный ориентир, а не фиксированное предложение.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Как изменятся пакеты</h2>
+        <table>
+          <thead>
+            <tr><th>Пакет</th><th class="num">Текущая цена</th><th class="num">С медиа</th><th>Комментарий</th></tr>
+          </thead>
+          <tbody>
+            <tr class="recommended-row"><td><strong>Рекомендуемый путь</strong></td><td class="num">без изменений</td><td class="num">+0 ₽</td><td>Выбираем диалоги без зависимости от вложений.</td></tr>
+            <tr><td>Базовый</td><td class="num">165 000 ₽</td><td class="num">219–258 тыс. ₽</td><td>Только после успешной пробной проверки.</td></tr>
+            <tr><td>Рекомендуемый</td><td class="num">187 500 ₽</td><td class="num">241,5–280,5 тыс. ₽</td><td>Без гарантии восстановления всех файлов.</td></tr>
+            <tr><td>Расширенный</td><td class="num">210 000 ₽</td><td class="num">264–303 тыс. ₽</td><td>Объём по всему архиву оценивается отдельно.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section avoid-break">
+        <div class="danger">
+          <strong>Важно:</strong> эти суммы относятся только к 100 выбранным
+          диалогам. Для восстановления медиа по всему архиву из 1 400 диалогов
+          заранее давать цену нельзя: неизвестны количество файлов, их
+          доступность и качество связей.
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Почему пробный этап не решает проблему</h2>
+        <div class="grid-3">
+          <div class="card"><h3>Он платный</h3><p>Нужно получить доступы и провести реальную техническую проверку.</p></div>
+          <div class="card"><h3>Он может завершиться отказом</h3><p>Проверка может показать, что старые файлы восстановить нельзя.</p></div>
+          <div class="card"><h3>Он не нужен для основной цели</h3><p>Качественную текстовую выборку можно подготовить без него.</p></div>
+        </div>
+      </div>
+
+      <div class="footer"><span>Внутренняя записка / влияние на бюджет</span><span>6</span></div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Коммуникация с клиентом</span>
+        <span>06 / 06</span>
+      </div>
+
+      <div class="section">
+        <h2>Готовая позиция для клиента</h2>
+        <div class="quote">
+          <p>
+            Для качественной проверки Noor мы выберем 100 разнообразных
+            диалогов, которые содержат полный и понятный текстовый контекст.
+            Диалоги, смысл которых зависит от отсутствующей фотографии или
+            голосового сообщения, не будем использовать как контрольные
+            примеры. Мы отдельно учтём их как запрос на будущую работу с
+            изображениями и аудио.
+          </p>
+          <p>
+            Восстановление старых файлов потребует отдельного бюджета и
+            дополнительного времени. При этом мы не можем заранее гарантировать,
+            что файлы сохранились и что каждый из них удастся правильно связать
+            с нужным сообщением. Поэтому рекомендуем не увеличивать стоимость
+            текущего этапа, а использовать диалоги, которые дают полный контекст
+            без вложений.
+          </p>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Что фиксируем внутри команды</h2>
+        <div class="grid-2">
+          <div class="card"><div class="card-number">1</div><h3>Пакеты не меняем</h3><p>Восстановление старых фото и аудио не добавляем в текущий состав работ.</p></div>
+          <div class="card"><div class="card-number">2</div><h3>Выборку фильтруем</h3><p>Берём референсные и контрольные диалоги только с достаточным текстом.</p></div>
+          <div class="card"><div class="card-number">3</div><h3>Медиа учитываем</h3><p>Отмечаем такие запросы отдельной категорией в итоговом отчёте.</p></div>
+          <div class="card"><div class="card-number">4</div><h3>Ничего не обещаем</h3><p>Не заявляем проверку фото-поиска или полноценной работы с голосом.</p></div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <div class="final-decision">
+          <div>
+            <h2>Итоговая рекомендация</h2>
+            <p class="lead">
+              Получаем основной результат текущего этапа без удорожания.
+              К вопросу медиа возвращаемся только как к отдельной разработке,
+              если клиент подтвердит её коммерческую необходимость и бюджет.
+            </p>
+          </div>
+          <div class="final-mark">✓</div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <div class="warning">
+          <strong>Короткая формула для встречи:</strong> дороже, дольше, без
+          гарантии и не нужно для текущей цели — поэтому выбираем содержательные
+          диалоги без зависимости от медиа.
+        </div>
+      </div>
+
+      <div class="footer"><span>Treejar / Noor · внутренняя рекомендация</span><span>7</span></div>
+    </section>
+  </main>
+</body>
+</html>

@@ -23,7 +23,6 @@ import subprocess
 import tomllib
 from typing import Any
 
-
 MANIFEST_SCHEMA = "orchestration-stage/v1"
 LEDGER_SCHEMA = "scope-preservation-ledger/v1"
 ANCHOR_SCHEMA = "scope-criterion-snapshot/v1"
@@ -85,13 +84,13 @@ def _canonical_digest(criteria: list[dict[str, str]]) -> str:
         }
         for item in sorted(criteria, key=lambda item: item["criterion_id"])
     ]
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
-        "utf-8"
-    )
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _safe_repo_file(repo: pathlib.Path, raw: object, label: str) -> tuple[pathlib.Path | None, list[str]]:
+def _safe_repo_file(
+    repo: pathlib.Path, raw: object, label: str
+) -> tuple[pathlib.Path | None, list[str]]:
     if not isinstance(raw, str) or not raw.strip() or raw in {"none", "n/a"}:
         return None, [f"{label} must be a non-empty repo-relative path"]
     relative = pathlib.Path(raw)
@@ -117,7 +116,9 @@ def _safe_repo_file(repo: pathlib.Path, raw: object, label: str) -> tuple[pathli
     return candidate, []
 
 
-def _read_json(path: pathlib.Path, label: str) -> tuple[dict[str, Any] | None, list[str]]:
+def _read_json(
+    path: pathlib.Path, label: str
+) -> tuple[dict[str, Any] | None, list[str]]:
     if path.is_symlink() or not path.is_file():
         return None, [f"{label} file is missing or is a symlink: {path}"]
     try:
@@ -138,27 +139,38 @@ def _token(value: object, label: str) -> list[str]:
 def _token_list(value: object, label: str) -> list[str]:
     if not isinstance(value, list) or not value:
         return [f"{label} must be a non-empty list"]
-    if any(not isinstance(item, str) or not item.strip() or not TOKEN.fullmatch(item) for item in value):
+    if any(
+        not isinstance(item, str) or not item.strip() or not TOKEN.fullmatch(item)
+        for item in value
+    ):
         return [f"{label} must contain only non-empty stable tokens"]
     if len(set(value)) != len(value):
         return [f"{label} must not contain duplicates"]
     return []
 
 
-def _validate_snapshot(document: dict[str, Any], label: str) -> tuple[list[dict[str, str]], list[str]]:
+def _validate_snapshot(
+    document: dict[str, Any], label: str
+) -> tuple[list[dict[str, str]], list[str]]:
     errors: list[str] = []
     snapshot = document.get("scope_snapshot")
     if not isinstance(snapshot, dict):
         return [], [f"{label}: scope_snapshot must be an object"]
-    errors.extend(_token(snapshot.get("source_kind"), f"{label}: scope_snapshot.source_kind"))
-    errors.extend(_token(snapshot.get("source_id"), f"{label}: scope_snapshot.source_id"))
+    errors.extend(
+        _token(snapshot.get("source_kind"), f"{label}: scope_snapshot.source_kind")
+    )
+    errors.extend(
+        _token(snapshot.get("source_id"), f"{label}: scope_snapshot.source_id")
+    )
     if snapshot.get("source_kind") != "beads":
         errors.append(f"{label}: scope_snapshot.source_kind must be 'beads'")
     if snapshot.get("source_id") != document.get("goal_id"):
         errors.append(f"{label}: scope_snapshot.source_id must equal goal_id")
     raw_criteria = snapshot.get("criteria")
     if not isinstance(raw_criteria, list) or not raw_criteria:
-        return [], errors + [f"{label}: scope_snapshot.criteria must be a non-empty list"]
+        return [], errors + [
+            f"{label}: scope_snapshot.criteria must be a non-empty list"
+        ]
     criteria: list[dict[str, str]] = []
     seen: set[str] = set()
     for index, raw in enumerate(raw_criteria):
@@ -172,9 +184,13 @@ def _validate_snapshot(document: dict[str, Any], label: str) -> tuple[list[dict[
         errors.extend(_token(criterion_id, f"{item_label}.criterion_id"))
         if not isinstance(text, str) or not text.strip():
             errors.append(f"{item_label}.text must be non-empty")
-        if not isinstance(text_digest, str) or text_digest != hashlib.sha256(
-            text.encode("utf-8") if isinstance(text, str) else b""
-        ).hexdigest():
+        if (
+            not isinstance(text_digest, str)
+            or text_digest
+            != hashlib.sha256(
+                text.encode("utf-8") if isinstance(text, str) else b""
+            ).hexdigest()
+        ):
             errors.append(f"{item_label}.text_digest does not match text")
         if isinstance(criterion_id, str):
             if criterion_id in seen:
@@ -184,7 +200,9 @@ def _validate_snapshot(document: dict[str, Any], label: str) -> tuple[list[dict[
             criteria.append({"criterion_id": criterion_id, "text_digest": text_digest})
     source_digest = snapshot.get("source_digest")
     if criteria and source_digest != _canonical_digest(criteria):
-        errors.append(f"{label}: scope_snapshot.source_digest does not match exact criterion set")
+        errors.append(
+            f"{label}: scope_snapshot.source_digest does not match exact criterion set"
+        )
     return criteria, errors
 
 
@@ -252,7 +270,9 @@ def _validate_scope_anchor(
             "criteria": anchor.get("criteria"),
         },
     }
-    anchored, anchor_errors = _validate_snapshot(anchor_document, f"{label}: scope anchor")
+    anchored, anchor_errors = _validate_snapshot(
+        anchor_document, f"{label}: scope anchor"
+    )
     errors.extend(anchor_errors)
     anchor_digest = anchor.get("source_digest")
     if manifest.get("scope_anchor_digest") != anchor_digest:
@@ -265,7 +285,9 @@ def _validate_scope_anchor(
         )
     snapshot = manifest.get("scope_snapshot")
     if isinstance(snapshot, dict) and snapshot.get("source_digest") != anchor_digest:
-        errors.append(f"{label}: embedded scope snapshot digest does not match scope anchor")
+        errors.append(
+            f"{label}: embedded scope snapshot digest does not match scope anchor"
+        )
     if require_immutable:
         relative = path.relative_to(repo).as_posix()
         created = _creation_blob(repo, relative)
@@ -288,7 +310,9 @@ def _validate_ledger(
     stage_ids: set[str],
     label: str,
 ) -> list[str]:
-    path, errors = _safe_repo_file(repo, manifest.get("scope_ledger"), f"{label}: scope_ledger")
+    path, errors = _safe_repo_file(
+        repo, manifest.get("scope_ledger"), f"{label}: scope_ledger"
+    )
     if path is None:
         return errors
     ledger, read_errors = _read_json(path, "scope ledger")
@@ -323,18 +347,29 @@ def _validate_ledger(
         disposition = entry.get("disposition")
         target = entry.get("target")
         if disposition not in {"stage", "dependency", "gate"}:
-            errors.append(f"{item_label}.disposition must be stage, dependency, or gate")
+            errors.append(
+                f"{item_label}.disposition must be stage, dependency, or gate"
+            )
         errors.extend(_token(target, f"{item_label}.target"))
         if disposition == "stage" and target not in stage_ids:
             errors.append(f"{item_label}.target stage does not exist: {target!r}")
-        if disposition == "gate" and entry.get("gate_kind") not in ALLOWED_SPLIT_REASONS:
-            errors.append(f"{item_label}.gate_kind must be an allowed material boundary")
+        if (
+            disposition == "gate"
+            and entry.get("gate_kind") not in ALLOWED_SPLIT_REASONS
+        ):
+            errors.append(
+                f"{item_label}.gate_kind must be an allowed material boundary"
+            )
         if disposition in {"dependency", "gate"}:
             if entry.get("boundary_reason") not in ALLOWED_SPLIT_REASONS:
-                errors.append(f"{item_label}.boundary_reason must be an allowed material boundary")
+                errors.append(
+                    f"{item_label}.boundary_reason must be an allowed material boundary"
+                )
             errors.extend(_token(entry.get("boundary_id"), f"{item_label}.boundary_id"))
         if reason in ALLOWED_SPLIT_REASONS:
-            required_disposition = "dependency" if reason == "hard_dependency" else "gate"
+            required_disposition = (
+                "dependency" if reason == "hard_dependency" else "gate"
+            )
             gate_matches = disposition != "gate" or entry.get("gate_kind") == reason
             if (
                 disposition == required_disposition
@@ -352,18 +387,26 @@ def _validate_ledger(
                     evidence_bytes = evidence_path.read_bytes()
                     actual_digest = hashlib.sha256(evidence_bytes).hexdigest()
                     if not evidence_bytes.strip():
-                        errors.append(f"{item_label}.evidence_path must contain material boundary evidence")
+                        errors.append(
+                            f"{item_label}.evidence_path must contain material boundary evidence"
+                        )
                     elif expected_digest != actual_digest:
-                        errors.append(f"{item_label}.evidence_digest does not match evidence bytes")
+                        errors.append(
+                            f"{item_label}.evidence_digest does not match evidence bytes"
+                        )
                     else:
                         material_evidence_found = True
     if actual != expected:
-        errors.append(f"{label}: scope ledger must map the exact criterion set from the source snapshot")
+        errors.append(
+            f"{label}: scope ledger must map the exact criterion set from the source snapshot"
+        )
     if reason in ALLOWED_SPLIT_REASONS and not material_evidence_found:
         work_areas = manifest.get("work_areas")
         diagnostic = (
             "suspicious_micro_stage: "
-            if isinstance(work_areas, list) and work_areas and set(work_areas) <= MICRO_ONLY_WORK_AREAS
+            if isinstance(work_areas, list)
+            and work_areas
+            and set(work_areas) <= MICRO_ONLY_WORK_AREAS
             else ""
         )
         errors.append(
@@ -373,7 +416,9 @@ def _validate_ledger(
     return errors
 
 
-def _validate_manifest(document: dict[str, Any], label: str) -> tuple[list[dict[str, str]], list[str]]:
+def _validate_manifest(
+    document: dict[str, Any], label: str
+) -> tuple[list[dict[str, str]], list[str]]:
     errors: list[str] = []
     if document.get("schema_version") != MANIFEST_SCHEMA:
         errors.append(f"{label}: schema_version must be {MANIFEST_SCHEMA}")
@@ -389,16 +434,34 @@ def _validate_manifest(document: dict[str, Any], label: str) -> tuple[list[dict[
     reason = document.get("stage_boundary_reason")
     if reason not in ALLOWED_REASONS:
         errors.append(f"{label}: invalid stage_boundary_reason {reason!r}")
-    expected_shape = "cohesive_vertical_slice" if reason == SHARED_REASON else "material_boundary_override"
+    expected_shape = (
+        "cohesive_vertical_slice"
+        if reason == SHARED_REASON
+        else "material_boundary_override"
+    )
     if document.get("stage_shape") != expected_shape:
-        errors.append(f"{label}: stage_shape must be {expected_shape!r} for reason {reason!r}")
+        errors.append(
+            f"{label}: stage_shape must be {expected_shape!r} for reason {reason!r}"
+        )
     boundary = document.get("boundary")
     if not isinstance(boundary, dict):
         errors.append(f"{label}: boundary must be an object")
     else:
-        for field in ("subsystems", "risk_models", "test_environments", "acceptance_proofs"):
-            errors.extend(_token_list(boundary.get(field), f"{label}: boundary.{field}"))
-        errors.extend(_token(boundary.get("rollback_boundary"), f"{label}: boundary.rollback_boundary"))
+        for field in (
+            "subsystems",
+            "risk_models",
+            "test_environments",
+            "acceptance_proofs",
+        ):
+            errors.extend(
+                _token_list(boundary.get(field), f"{label}: boundary.{field}")
+            )
+        errors.extend(
+            _token(
+                boundary.get("rollback_boundary"),
+                f"{label}: boundary.rollback_boundary",
+            )
+        )
     work_areas = document.get("work_areas")
     errors.extend(_token_list(work_areas, f"{label}: work_areas"))
     if (
@@ -415,7 +478,9 @@ def _validate_manifest(document: dict[str, Any], label: str) -> tuple[list[dict[
     return snapshot, errors
 
 
-def _artifact_frontmatter(path: pathlib.Path) -> tuple[dict[str, str] | None, list[str]]:
+def _artifact_frontmatter(
+    path: pathlib.Path,
+) -> tuple[dict[str, str] | None, list[str]]:
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
@@ -442,7 +507,9 @@ def _validate_stream_aggregation(
     stage_id = manifest.get("stage_id")
     raw_entries = manifest.get("stream_artifacts")
     if not isinstance(raw_entries, list):
-        return [f"{label}: stream_artifacts must be a list (empty is valid for local stages)"]
+        return [
+            f"{label}: stream_artifacts must be a list (empty is valid for local stages)"
+        ]
     listed_paths: set[str] = set()
     listed_tasks: set[str] = set()
     acceptance_owner = manifest.get("acceptance_owner")
@@ -454,15 +521,23 @@ def _validate_stream_aggregation(
         for field in ("task_id", "stream_owner"):
             errors.extend(_token(entry.get(field), f"{item_label}.{field}"))
         if entry.get("stream_owner") == acceptance_owner:
-            errors.append(f"{item_label}.stream_owner must not substitute for acceptance_owner")
+            errors.append(
+                f"{item_label}.stream_owner must not substitute for acceptance_owner"
+            )
         raw_path = entry.get("artifact_path")
-        artifact_path, path_errors = _safe_repo_file(repo, raw_path, f"{item_label}.artifact_path")
+        artifact_path, path_errors = _safe_repo_file(
+            repo, raw_path, f"{item_label}.artifact_path"
+        )
         errors.extend(path_errors)
         if not isinstance(raw_path, str):
             continue
         expected_parent = f".codex/stages/{stage_id}/artifacts/"
-        if not raw_path.startswith(expected_parent) or pathlib.PurePosixPath(raw_path).parent.as_posix() != expected_parent.rstrip("/"):
-            errors.append(f"{item_label}.artifact_path must be a direct file under {expected_parent}")
+        if not raw_path.startswith(expected_parent) or pathlib.PurePosixPath(
+            raw_path
+        ).parent.as_posix() != expected_parent.rstrip("/"):
+            errors.append(
+                f"{item_label}.artifact_path must be a direct file under {expected_parent}"
+            )
         if raw_path in listed_paths:
             errors.append(f"{item_label}.artifact_path is duplicated")
         listed_paths.add(raw_path)
@@ -512,11 +587,15 @@ def _validate_stream_aggregation(
                 if relative not in listed_paths:
                     errors.append(f"{label}: unlisted v3 stream artifact: {relative}")
     for missing in sorted(listed_paths - actual_paths):
-        errors.append(f"{label}: listed v3 stream artifact is missing or invalid: {missing}")
+        errors.append(
+            f"{label}: listed v3 stream artifact is missing or invalid: {missing}"
+        )
     return errors
 
 
-def _manifest_documents(repo: pathlib.Path) -> tuple[list[tuple[pathlib.Path, dict[str, Any]]], list[str]]:
+def _manifest_documents(
+    repo: pathlib.Path,
+) -> tuple[list[tuple[pathlib.Path, dict[str, Any]]], list[str]]:
     root = repo / ".codex" / "stages"
     if root.is_symlink() or not root.is_dir():
         return [], []
@@ -536,7 +615,11 @@ def validate_goal(repo: pathlib.Path, goal_id: str) -> list[str]:
     selected = [(path, doc) for path, doc in documents if doc.get("goal_id") == goal_id]
     if not selected:
         return errors + [f"stage manifest missing for goal {goal_id!r}"]
-    stage_ids = {str(doc.get("stage_id")) for _, doc in selected if isinstance(doc.get("stage_id"), str)}
+    stage_ids = {
+        str(doc.get("stage_id"))
+        for _, doc in selected
+        if isinstance(doc.get("stage_id"), str)
+    }
     snapshots: dict[str, list[dict[str, str]]] = {}
     snapshot_digests: dict[str, str | None] = {}
     for path, document in selected:
@@ -564,7 +647,9 @@ def validate_goal(repo: pathlib.Path, goal_id: str) -> list[str]:
         if path.parent.name != expected_parent:
             errors.append(f"{label}: stage_id must match parent directory")
 
-    active = [doc.get("stage_id") for _, doc in selected if doc.get("status") == "in_progress"]
+    active = [
+        doc.get("stage_id") for _, doc in selected if doc.get("status") == "in_progress"
+    ]
     if len(active) > 1:
         errors.append(
             f"one_active_implementation_stage violated for goal {goal_id!r}: {active}"
@@ -587,7 +672,10 @@ def validate_goal(repo: pathlib.Path, goal_id: str) -> list[str]:
     for index, (path, document) in enumerate(ordered):
         label = str(path.relative_to(repo))
         reason = document.get("stage_boundary_reason")
-        needs_ledger = document.get("status") == "replan_required" or reason in ALLOWED_SPLIT_REASONS
+        needs_ledger = (
+            document.get("status") == "replan_required"
+            or reason in ALLOWED_SPLIT_REASONS
+        )
         if index > 0 and reason == SHARED_REASON:
             errors.append(
                 f"{label}: suspicious_micro_stage: an adjacent stage needs an allowed material split reason or must be merged"
@@ -605,7 +693,9 @@ def validate_goal(repo: pathlib.Path, goal_id: str) -> list[str]:
                 )
             )
         elif document.get("scope_ledger") not in {"none", "n/a"}:
-            errors.append(f"{label}: ordinary cohesive stage must use scope_ledger 'none'")
+            errors.append(
+                f"{label}: ordinary cohesive stage must use scope_ledger 'none'"
+            )
     return errors
 
 
@@ -647,7 +737,9 @@ def lint_stage(repo: pathlib.Path, stage_id: str) -> list[str]:
     manifest_path = repo / ".codex" / "stages" / stage_id / "stage-manifest.json"
     if not manifest_path.is_file():
         sizing = contract.get("stage_sizing")
-        legacy = sizing.get("legacy_active_stage_id") if isinstance(sizing, dict) else None
+        legacy = (
+            sizing.get("legacy_active_stage_id") if isinstance(sizing, dict) else None
+        )
         if legacy == stage_id:
             return []
         return [
@@ -684,7 +776,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     repo = pathlib.Path.cwd()
-    errors = lint_stage(repo, args.stage) if args.stage else validate_goal(repo, args.goal)
+    errors = (
+        lint_stage(repo, args.stage) if args.stage else validate_goal(repo, args.goal)
+    )
     if args.json:
         print(json.dumps({"ok": not errors, "errors": errors}, indent=2))
     else:

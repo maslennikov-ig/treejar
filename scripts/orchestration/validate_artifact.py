@@ -18,9 +18,8 @@ ensure_tomllib_runtime([str(SCRIPT_PATH), *sys.argv[1:]])
 import json
 import re
 import tomllib
-from typing import TypeAlias
 
-YamlValue: TypeAlias = str | list[str]
+type YamlValue = str | list[str]
 
 REQUIRED_KEYS = {
     "schema_version",
@@ -50,7 +49,13 @@ ALLOWED_SCHEMA_VERSIONS = {
     "orchestration-artifact/v3",
 }
 ALLOWED_STATUSES = {"returned", "accepted", "merged", "blocked"}
-ALLOWED_DELIVERY_METHODS = {"merge", "cherry-pick", "manual integration", "not accepted", "n/a"}
+ALLOWED_DELIVERY_METHODS = {
+    "merge",
+    "cherry-pick",
+    "manual integration",
+    "not accepted",
+    "n/a",
+}
 ALLOWED_ACCEPTED_BY_ORCHESTRATOR = {"yes", "no"}
 ALLOWED_CLEANUP_STATUSES = {"pending", "cleaned", "blocked", "not_applicable"}
 ALLOWED_RISK_LEVELS = {"low", "medium", "high"}
@@ -144,7 +149,9 @@ def list_has_declared_metadata(value: YamlValue | None) -> bool:
     if not isinstance(value, list):
         return False
     return any(
-        item.strip() and not is_placeholder(item) and item.strip().lower() not in {"none", "n/a"}
+        item.strip()
+        and not is_placeholder(item)
+        and item.strip().lower() not in {"none", "n/a"}
         for item in value
     )
 
@@ -161,7 +168,9 @@ def validate_scalar(
     if is_placeholder(value):
         return [f"{path}: unresolved placeholder value: {key}"]
     if allowed is not None and value not in allowed:
-        return [f"{path}: invalid {key!r} value {value!r}; expected one of {sorted(allowed)}"]
+        return [
+            f"{path}: invalid {key!r} value {value!r}; expected one of {sorted(allowed)}"
+        ]
     return []
 
 
@@ -183,16 +192,19 @@ def require_non_placeholder(
 ) -> list[str]:
     value = values.get(field)
     if isinstance(value, str):
-        if value.strip() and not is_placeholder(value) and value.strip().lower() != "n/a":
-            return []
-    elif isinstance(value, list):
-        if any(
-            item.strip()
-            and not is_placeholder(item)
-            and item.strip().lower() not in {"n/a", "none"}
-            for item in value
+        if (
+            value.strip()
+            and not is_placeholder(value)
+            and value.strip().lower() != "n/a"
         ):
             return []
+    elif isinstance(value, list) and any(
+        item.strip()
+        and not is_placeholder(item)
+        and item.strip().lower() not in {"n/a", "none"}
+        for item in value
+    ):
+        return []
     return [f"{path}: foundation artifact requires non-placeholder {field}"]
 
 
@@ -207,7 +219,11 @@ def validate_optional_evidence(
     errors: list[str] = []
     for item in evidence:
         stripped = item.strip()
-        if not stripped or stripped.lower() in {"none", "n/a"} or is_placeholder(stripped):
+        if (
+            not stripped
+            or stripped.lower() in {"none", "n/a"}
+            or is_placeholder(stripped)
+        ):
             continue
         evidence_path = pathlib.PurePosixPath(stripped)
         if evidence_path.is_absolute() or ".." in evidence_path.parts:
@@ -230,26 +246,45 @@ def validate_common_fields(
     if "status" in values:
         errors.extend(validate_scalar(path, "status", values, ALLOWED_STATUSES))
     if "delivery_method" in values:
-        errors.extend(validate_scalar(path, "delivery_method", values, ALLOWED_DELIVERY_METHODS))
+        errors.extend(
+            validate_scalar(path, "delivery_method", values, ALLOWED_DELIVERY_METHODS)
+        )
     if "accepted_by_orchestrator" in values:
-        errors.extend(validate_scalar(path, "accepted_by_orchestrator", values, ALLOWED_ACCEPTED_BY_ORCHESTRATOR))
+        errors.extend(
+            validate_scalar(
+                path,
+                "accepted_by_orchestrator",
+                values,
+                ALLOWED_ACCEPTED_BY_ORCHESTRATOR,
+            )
+        )
     if "cleanup_status" in values:
-        errors.extend(validate_scalar(path, "cleanup_status", values, ALLOWED_CLEANUP_STATUSES))
+        errors.extend(
+            validate_scalar(path, "cleanup_status", values, ALLOWED_CLEANUP_STATUSES)
+        )
     if "risk_level" in values:
         errors.extend(validate_scalar(path, "risk_level", values, ALLOWED_RISK_LEVELS))
     if "verification_tier" in values:
-        errors.extend(validate_scalar(path, "verification_tier", values, ALLOWED_VERIFICATION_TIERS))
+        errors.extend(
+            validate_scalar(
+                path, "verification_tier", values, ALLOWED_VERIFICATION_TIERS
+            )
+        )
 
     for key in sorted(REQUIRED_LIST_KEYS):
         if key in values and not list_is_meaningful(values.get(key)):
-            errors.append(f"{path}: frontmatter key {key!r} must contain at least one non-placeholder item")
+            errors.append(
+                f"{path}: frontmatter key {key!r} must contain at least one non-placeholder item"
+            )
 
     for key in sorted(OPTIONAL_LIST_KEYS):
         value = values.get(key)
         if value is None:
             continue
         if not isinstance(value, list):
-            errors.append(f"{path}: frontmatter key {key!r} must be a list when provided")
+            errors.append(
+                f"{path}: frontmatter key {key!r} must be a list when provided"
+            )
             continue
         for item in value:
             if is_placeholder(item) or item in {"none", "n/a"}:
@@ -260,7 +295,9 @@ def validate_common_fields(
     if values.get("risk_level") == "high":
         tier = values.get("orchestration_level", values.get("verification_tier"))
         if not isinstance(tier, str) or tier == "n/a" or is_placeholder(tier):
-            errors.append(f"{path}: high-risk artifact requires a concrete verification_tier")
+            errors.append(
+                f"{path}: high-risk artifact requires a concrete verification_tier"
+            )
         for key in ("risk_tags", "affected_surfaces", "invariants"):
             if not list_has_declared_metadata(values.get(key)):
                 errors.append(f"{path}: high-risk artifact requires declared {key}")
@@ -341,7 +378,9 @@ def validate_file(path: pathlib.Path) -> list[str]:
             try:
                 contract = tomllib.loads(contract_path.read_text(encoding="utf-8"))
                 baseline = contract.get("baseline")
-                profile = baseline.get("profile") if isinstance(baseline, dict) else None
+                profile = (
+                    baseline.get("profile") if isinstance(baseline, dict) else None
+                )
             except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
                 errors.append(f"{path}: cannot read orchestration contract: {exc}")
         if profile == "balanced-v2.19" and manifest_path.is_file():
@@ -355,20 +394,30 @@ def validate_file(path: pathlib.Path) -> list[str]:
                 except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
                     errors.append(f"{path}: cannot read stage manifest: {exc}")
                 else:
-                    entries = manifest.get("stream_artifacts") if isinstance(manifest, dict) else None
+                    entries = (
+                        manifest.get("stream_artifacts")
+                        if isinstance(manifest, dict)
+                        else None
+                    )
                     try:
                         resolved = path.resolve(strict=True)
                         relative = resolved.relative_to(repo).as_posix()
                     except (OSError, ValueError):
                         relative = ""
-                    matching = [
-                        entry
-                        for entry in entries
-                        if isinstance(entry, dict)
-                        and entry.get("artifact_path") == relative
-                    ] if isinstance(entries, list) else []
+                    matching = (
+                        [
+                            entry
+                            for entry in entries
+                            if isinstance(entry, dict)
+                            and entry.get("artifact_path") == relative
+                        ]
+                        if isinstance(entries, list)
+                        else []
+                    )
                     if len(matching) != 1:
-                        errors.append(f"{path}: v3 artifact is unlisted in owning stage manifest")
+                        errors.append(
+                            f"{path}: v3 artifact is unlisted in owning stage manifest"
+                        )
                     else:
                         entry = matching[0]
                         for field in ("task_id", "stream_owner"):
@@ -384,7 +433,10 @@ def validate_file(path: pathlib.Path) -> list[str]:
 
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
-        print("Usage: validate_artifact.py <artifact.md> [artifact.md ...]", file=sys.stderr)
+        print(
+            "Usage: validate_artifact.py <artifact.md> [artifact.md ...]",
+            file=sys.stderr,
+        )
         return 2
 
     all_errors: list[str] = []

@@ -1,0 +1,1125 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Коммерческое предложение: проверка Noor и подготовка материалов для продаж</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800;900&display=swap");
+
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --ink: #14201b;
+      --muted: #637169;
+      --soft: #f3f0e7;
+      --paper: #fffdf7;
+      --line: #d9d1c0;
+      --accent: #0c6b58;
+      --accent-dark: #07473c;
+      --copper: #b86b3d;
+      --copper-soft: #f3e4d5;
+      --green-soft: #e3eee8;
+      --green-pale: #f2f8f5;
+      --sand: #eee7d9;
+      --cream: #fffaf0;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: #ebe5d8;
+      color: var(--ink);
+      font-family: "Manrope", "Aptos", "Segoe UI", sans-serif;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    body {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .document {
+      max-width: 980px;
+      margin: 0 auto;
+      background: var(--paper);
+      box-shadow: 0 18px 60px rgba(28, 36, 30, 0.18);
+    }
+
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      padding: 18mm 16mm 16mm;
+      position: relative;
+      overflow: hidden;
+      break-after: page;
+      background: var(--paper);
+    }
+
+    .page:last-child {
+      break-after: auto;
+    }
+
+    .cover {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      color: #fffaf0;
+      background:
+        radial-gradient(circle at 88% 8%, rgba(118, 196, 171, 0.18), transparent 34%),
+        linear-gradient(135deg, #0c6b58 0%, #07473c 48%, #052722 100%);
+    }
+
+    .cover::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+      background-size: 24px 24px;
+      opacity: 0.24;
+    }
+
+    .cover::after {
+      content: "";
+      position: absolute;
+      right: -48mm;
+      bottom: -54mm;
+      width: 150mm;
+      height: 150mm;
+      border: 1px solid rgba(255, 250, 240, 0.18);
+      border-radius: 50%;
+    }
+
+    .cover > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      max-width: 760px;
+      margin-top: 36mm;
+      font-family: "Georgia", "Times New Roman", serif;
+      font-size: 45px;
+      line-height: 0.98;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      font-family: "Georgia", "Times New Roman", serif;
+      font-size: 23px;
+      line-height: 1.12;
+      margin-bottom: 10px;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      font-size: 14px;
+      line-height: 1.25;
+      margin-bottom: 7px;
+      color: var(--accent-dark);
+      letter-spacing: 0;
+    }
+
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      border: 1px solid rgba(255, 250, 240, 0.28);
+      border-radius: 999px;
+      padding: 7px 11px;
+      color: rgba(255, 250, 240, 0.86);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .kicker::before {
+      content: "";
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #9ad7c2;
+    }
+
+    .subtitle {
+      max-width: 700px;
+      margin-top: 18px;
+      color: rgba(255, 250, 240, 0.82);
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    .cover-meta {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-top: 30px;
+    }
+
+    .cover-card {
+      border: 1px solid rgba(255, 250, 240, 0.22);
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 14px;
+      backdrop-filter: blur(10px);
+    }
+
+    .cover-label {
+      color: rgba(255, 250, 240, 0.62);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .cover-value {
+      font-size: 15px;
+      font-weight: 900;
+    }
+
+    .cover-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      color: rgba(255, 250, 240, 0.72);
+      font-size: 12px;
+    }
+
+    .brand {
+      font-weight: 900;
+      color: #fffaf0;
+      font-size: 18px;
+    }
+
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 16px;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .section {
+      margin-bottom: 16px;
+    }
+
+    .lead {
+      color: #33433c;
+      font-size: 14px;
+      max-width: 760px;
+    }
+
+    .highlight {
+      display: grid;
+      grid-template-columns: 1.35fr 0.9fr;
+      gap: 12px;
+      align-items: stretch;
+      margin-top: 14px;
+    }
+
+    .statement {
+      border-radius: 8px;
+      background: var(--green-soft);
+      border: 1px solid #c8dfd3;
+      padding: 14px;
+    }
+
+    .price-box {
+      border-radius: 8px;
+      background: var(--ink);
+      color: #fffaf0;
+      padding: 14px;
+    }
+
+    .price {
+      font-size: 31px;
+      font-weight: 900;
+      line-height: 1;
+      margin: 4px 0 8px;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .price-box .small {
+      color: rgba(255, 250, 240, 0.66);
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: rgba(255, 255, 255, 0.58);
+      color: #35443d;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .card {
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--cream);
+      padding: 12px;
+    }
+
+    .card strong {
+      color: var(--accent-dark);
+    }
+
+    .package-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .package {
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--cream);
+      padding: 13px;
+    }
+
+    .package.recommended {
+      border: 2px solid var(--accent);
+      background: var(--green-pale);
+      padding: 12px;
+    }
+
+    .package-tag {
+      display: inline-block;
+      margin-bottom: 9px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: var(--sand);
+      color: var(--accent-dark);
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .recommended .package-tag {
+      background: var(--accent);
+      color: #fffaf0;
+    }
+
+    .package-price {
+      margin: 8px 0 4px;
+      color: var(--ink);
+      font-size: 25px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .package-meta {
+      margin-bottom: 9px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .package ul {
+      padding-left: 16px;
+      font-size: 11px;
+    }
+
+    .package li {
+      margin: 5px 0;
+    }
+
+    .work-list {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .work-item {
+      display: grid;
+      grid-template-columns: 30px 1fr;
+      gap: 9px;
+      border: 1px solid #cdded5;
+      border-radius: 8px;
+      background: #f7fbf8;
+      padding: 10px;
+    }
+
+    .work-item p {
+      font-size: 11px;
+    }
+
+    .script-list {
+      columns: 2;
+      column-gap: 24px;
+      margin-top: 8px;
+    }
+
+    .script-list li {
+      break-inside: avoid;
+      margin: 5px 0;
+    }
+
+    .metric {
+      display: grid;
+      grid-template-columns: 40px 1fr;
+      gap: 10px;
+      align-items: start;
+    }
+
+    .metric-no {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fffaf0;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 7px;
+      margin-top: 12px;
+    }
+
+    .flow-step {
+      border: 1px solid #cdded5;
+      background: #f7fbf8;
+      border-radius: 8px;
+      padding: 8px;
+      min-height: 104px;
+      position: relative;
+    }
+
+    .step-no {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 21px;
+      height: 21px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fffaf0;
+      font-size: 10px;
+      font-weight: 900;
+      margin-bottom: 6px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--cream);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 7px 8px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--sand);
+      color: #35443d;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .num {
+      text-align: right;
+      white-space: nowrap;
+      font-weight: 900;
+    }
+
+    ul {
+      margin: 9px 0 0;
+      padding-left: 17px;
+    }
+
+    li {
+      margin: 4px 0;
+    }
+
+    .two-column-list {
+      columns: 2;
+      column-gap: 22px;
+    }
+
+    .two-column-list li {
+      break-inside: avoid;
+    }
+
+    .score-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .score-card {
+      border: 1px solid #cdded5;
+      border-radius: 8px;
+      padding: 11px;
+      background: #f7fbf8;
+      min-height: 116px;
+    }
+
+    .score-label {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #fffaf0;
+      font-size: 10px;
+      font-weight: 900;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .timeline-item {
+      border-left: 4px solid var(--accent);
+      background: var(--cream);
+      border-radius: 0 8px 8px 0;
+      padding: 10px;
+      border-top: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .note {
+      border-left: 4px solid var(--copper);
+      background: var(--copper-soft);
+      padding: 12px 14px;
+      border-radius: 0 8px 8px 0;
+      color: #3f3329;
+    }
+
+    .final-offer {
+      display: grid;
+      grid-template-columns: 1fr 0.72fr;
+      gap: 14px;
+      border-radius: 8px;
+      background: var(--ink);
+      color: #fffaf0;
+      padding: 16px;
+    }
+
+    .final-offer h2,
+    .final-offer h3 {
+      color: #fffaf0;
+    }
+
+    .final-offer .small {
+      color: rgba(255, 250, 240, 0.66);
+    }
+
+    .final-price {
+      font-size: 38px;
+      line-height: 1;
+      font-weight: 900;
+      margin: 5px 0 8px;
+    }
+
+    .footer {
+      position: absolute;
+      left: 16mm;
+      right: 16mm;
+      bottom: 8mm;
+      display: flex;
+      justify-content: space-between;
+      color: #8a948e;
+      font-size: 10px;
+      border-top: 1px solid var(--line);
+      padding-top: 7px;
+    }
+
+    .avoid-break {
+      break-inside: avoid;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .document {
+        max-width: none;
+        box-shadow: none;
+      }
+
+      .page {
+        height: 297mm;
+        min-height: 297mm;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="document">
+    <section class="page cover">
+      <div>
+        <div class="kicker">Коммерческое предложение</div>
+        <h1>Проверка Noor и подготовка материалов для продаж</h1>
+        <p class="subtitle">
+          Проверим Noor на 100 реальных диалогах. Затем разберём все 1 400
+          WhatsApp-диалогов и подготовим согласованный комплект правил продаж.
+        </p>
+        <div class="cover-meta">
+          <div class="cover-card">
+            <div class="cover-label">Стоимость</div>
+            <div class="cover-value">от 165 000 ₽</div>
+          </div>
+          <div class="cover-card">
+            <div class="cover-label">Варианты</div>
+            <div class="cover-value">3 пакета</div>
+          </div>
+          <div class="cover-card">
+            <div class="cover-label">Основа</div>
+            <div class="cover-value">1 400 диалогов</div>
+          </div>
+          <div class="cover-card">
+            <div class="cover-label">Ставка</div>
+            <div class="cover-value">1 500 ₽ / час</div>
+          </div>
+        </div>
+      </div>
+      <div></div>
+      <div class="cover-footer">
+        <div>
+          <div class="brand">Noor для Treejar</div>
+          <div>Проверка Noor, материалы для продаж и расчёт следующих работ</div>
+        </div>
+        <div>14 июля 2026</div>
+      </div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Предмет предложения</span>
+        <span>КП / 14.07.2026</span>
+      </div>
+
+      <div class="section">
+        <h2>Что предлагаем</h2>
+        <p class="lead">
+          Сначала проверим, как Noor отвечает на реальные обращения клиентов.
+          Затем разберём все диалоги и подготовим единый комплект материалов
+          для продаж. После согласования он станет основой работы Noor.
+        </p>
+        <div class="highlight">
+          <div class="statement">
+            <h3>Что входит во все варианты</h3>
+            <p>
+              Подробно разберём 100 диалогов и проверим на них Noor. Все 1 400
+              диалогов изучим, чтобы найти частые вопросы, возражения и ситуации,
+              для которых нужны понятные правила работы Noor.
+            </p>
+            <div class="chips">
+              <span class="chip">100 диалогов для проверки Noor</span>
+              <span class="chip">Все 1 400 диалогов</span>
+              <span class="chip">Материалы для работы Noor</span>
+              <span class="chip">Расчёт следующих работ</span>
+            </div>
+          </div>
+          <div class="price-box">
+            <div class="small">Проверка Noor</div>
+            <div class="price">135 000 ₽</div>
+            <p>90 часов × 1 500 ₽/час.</p>
+            <p>Во все три пакета дополнительно включён выбранный комплект материалов для продаж.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Какие материалы мы получили</h2>
+        <div class="grid-3">
+          <div class="metric card"><div class="metric-no">1</div><div><h3>1 400 диалогов</h3><p>Реальные обращения и ответы менеджеров Treejar в WhatsApp.</p></div></div>
+          <div class="metric card"><div class="metric-no">2</div><div><h3>19 945 сообщений</h3><p>Материал для выявления языка клиентов, вопросов и возражений.</p></div></div>
+          <div class="metric card"><div class="metric-no">3</div><div><h3>Основной язык - EN</h3><p>1 393 из 1 400 диалогов ведутся на английском языке.</p></div></div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Главный принцип работы</h2>
+        <div class="note">
+          Мы не будем просто копировать ответы менеджеров. В диалогах есть как
+          хорошие, так и неудачные примеры. Поэтому мы возьмём из них реальные
+          вопросы клиентов, а правильные ответы подготовим отдельно. Во время
+          этой работы мы не меняем Noor. Такие изменения посчитаем отдельно.
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Что получит Treejar</h2>
+        <ul class="two-column-list">
+          <li>Отчёт о качестве Noor на 100 реальных диалогах.</li>
+          <li>Список частых запросов по всем 1 400 диалогам.</li>
+          <li>Список проблем, влияющих на продажи и сервис.</li>
+          <li>Карточки основных ситуаций общения с клиентом.</li>
+          <li>Список возражений и согласованные ответы.</li>
+          <li>Правила вопросов, ограничений и передачи менеджеру.</li>
+          <li>Список изменений, которые нужны в Noor.</li>
+          <li>Отдельный расчёт стоимости этих изменений.</li>
+        </ul>
+      </div>
+
+      <div class="footer"><span>Treejar / Noor</span><span>1</span></div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Проверка Noor</span>
+        <span>КП / 14.07.2026</span>
+      </div>
+
+      <div class="section">
+        <h2>Что именно проверим в Noor</h2>
+        <p class="lead">
+          Эта работа входит во все варианты. По итогам клиент увидит, что Noor
+          делает правильно, где ошибается и какие изменения нужны дальше.
+        </p>
+      </div>
+
+      <div class="section avoid-break">
+        <table>
+          <thead><tr><th>Работа</th><th>Что конкретно будет сделано</th><th class="num">Часы / сумма</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Выбор 100 диалогов</strong></td><td>Выберем разные ситуации: вопросы о цене, наличии, доставке, КП, крупных и нестандартных заказах.</td><td class="num">8 ч / 12 000 ₽</td></tr>
+            <tr><td><strong>Что хотел клиент</strong></td><td>По каждому диалогу запишем запрос клиента, уже полученные данные и правильный следующий шаг.</td><td class="num">8 ч / 12 000 ₽</td></tr>
+            <tr><td><strong>Ответы Noor</strong></td><td>Получим ответы Noor на те же сообщения. Реальным клиентам ничего отправлять не будем.</td><td class="num">12 ч / 18 000 ₽</td></tr>
+            <tr><td><strong>Разбор ответов</strong></td><td>Проверим, понял ли Noor клиента, дал ли точный ответ, задал ли нужные вопросы и предложил ли следующий шаг.</td><td class="num">10 ч / 15 000 ₽</td></tr>
+            <tr><td><strong>Важные случаи</strong></td><td>Отдельно проверим цены, остатки, скидки, сроки, КП, жалобы, крупные и необычные заказы.</td><td class="num">14 ч / 21 000 ₽</td></tr>
+            <tr><td><strong>Список проблем</strong></td><td>Разделим проблемы на понятные группы: ответы, правила продаж, каталог, изображения и работа с Zoho или Wazzup.</td><td class="num">12 ч / 18 000 ₽</td></tr>
+            <tr><td><strong>Список нужных изменений</strong></td><td>Напишем, что нужно изменить, насколько это важно и что должен дать каждый результат.</td><td class="num">10 ч / 15 000 ₽</td></tr>
+            <tr><td><strong>Отчёт и расчёт</strong></td><td>Подготовим итоговый отчёт, список изменений в Noor и стоимость следующего этапа.</td><td class="num">16 ч / 24 000 ₽</td></tr>
+            <tr><td><strong>Итого: проверка Noor</strong></td><td>Эта работа входит в каждый вариант.</td><td class="num">90 ч / 135 000 ₽</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Какие проблемы будем искать</h2>
+        <div class="grid-3">
+          <div class="card"><h3>Ошибочный ответ</h3><p>Noor придумал цену, наличие, скидку, характеристику товара или срок.</p></div>
+          <div class="card"><h3>Упущенный клиент</h3><p>Noor не задал нужный вопрос, не предложил следующий шаг или слишком рано позвал менеджера.</p></div>
+          <div class="card"><h3>Нужна новая возможность</h3><p>Для ответа нужна работа с изображением, новый расчёт или помощь менеджера.</p></div>
+        </div>
+      </div>
+
+      <div class="footer"><span>Treejar / Noor</span><span>2</span></div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Материалы для продаж</span>
+        <span>КП / 14.07.2026</span>
+      </div>
+
+      <div class="section">
+        <h2>Что подготовим для работы Noor</h2>
+        <p class="lead">
+          Noor не нужен набор жёстких заученных текстов. Подготовим единый
+          комплект: ситуации, вопросы, возражения, доводы, ограничения и правила
+          передачи менеджеру. Уже существующие документы Treejar проверим,
+          объединим и дополним. Повторный разбор тех же запросов не считаем.
+        </p>
+      </div>
+
+      <div class="section avoid-break">
+        <div class="work-list">
+          <div class="work-item"><div class="metric-no">1</div><div><h3>Карта запросов</h3><p>Соберём частые темы: цена, наличие, подбор, доставка, количество, КП, заказы по размеру и фотографии.</p></div></div>
+          <div class="work-item"><div class="metric-no">2</div><div><h3>Этапы продажи</h3><p>Опишем путь от первого сообщения до заказа, КП, визита или передачи менеджеру.</p></div></div>
+          <div class="work-item"><div class="metric-no">3</div><div><h3>Карточки ситуаций</h3><p>Для основных случаев запишем цель, вопросы, подходящий ответ и следующий шаг.</p></div></div>
+          <div class="work-item"><div class="metric-no">4</div><div><h3>Уточняющие вопросы</h3><p>Определим, какие данные Noor должен получить для разных запросов клиента.</p></div></div>
+          <div class="work-item"><div class="metric-no">5</div><div><h3>Возражения и ответы</h3><p>Подготовим ответы на «дорого», просьбу о скидке, отсутствие товара, сравнение и срочную доставку.</p></div></div>
+          <div class="work-item"><div class="metric-no">6</div><div><h3>Доводы Treejar</h3><p>Укажем, какие преимущества компании подходят к конкретной задаче клиента.</p></div></div>
+          <div class="work-item"><div class="metric-no">7</div><div><h3>Правила и ограничения</h3><p>Зафиксируем обещания, проверки, повторные обращения и передачу менеджеру.</p></div></div>
+          <div class="work-item"><div class="metric-no">8</div><div><h3>Согласование</h3><p>Передадим комплект Treejar и внесём число раундов правок выбранного пакета.</p></div></div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Что будет в каждой карточке ситуации</h2>
+        <table>
+          <tbody>
+            <tr><td><strong>Когда использовать</strong></td><td>В какой ситуации нужны эти правила.</td></tr>
+            <tr><td><strong>Цель разговора</strong></td><td>Что нужно получить: подбор, КП, визит, заказ или помощь менеджера.</td></tr>
+            <tr><td><strong>Что спросить</strong></td><td>Какие данные нужны: товар, количество, бюджет, срок, адрес, компания и контакт.</td></tr>
+            <tr><td><strong>Что ответить</strong></td><td>Готовые фразы и подходящие доводы в пользу Treejar.</td></tr>
+            <tr><td><strong>Что нельзя обещать</strong></td><td>Какие данные нужно сначала проверить или согласовать.</td></tr>
+            <tr><td><strong>Как закончить</strong></td><td>Что предложить клиенту дальше и когда позвать менеджера.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="footer"><span>Treejar / Noor</span><span>3</span></div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Ситуации и правила</span>
+        <span>КП / 14.07.2026</span>
+      </div>
+
+      <div class="section">
+        <h2>Какие ситуации опишем</h2>
+        <p class="lead">
+          Точный охват зависит от выбранного варианта. Ниже перечислены ситуации,
+          для которых Noor получит согласованные правила поведения.
+        </p>
+      </div>
+
+      <div class="section avoid-break">
+        <ol class="script-list">
+          <li><strong>Первый контакт:</strong> приветствие, определение запроса и удобного формата общения.</li>
+          <li><strong>Запрос цены:</strong> уточнение товара, количества и данных, необходимых для корректного ответа.</li>
+          <li><strong>Наличие товара:</strong> подтверждение конкретной позиции или предложение ближайшей альтернативы.</li>
+          <li><strong>Подбор мебели:</strong> выяснение задачи, бюджета, количества, стиля и срока.</li>
+          <li><strong>Запрос по фотографии:</strong> уточнение требований и корректная реакция, если визуальный поиск недоступен.</li>
+          <li><strong>Комплектация офиса:</strong> сбор потребностей по рабочим местам, помещениям, доставке и установке.</li>
+          <li><strong>Кастомный заказ:</strong> размеры, материалы, цвет, количество, срок и обязательная проверка возможности.</li>
+          <li><strong>Доставка и установка:</strong> адрес, желаемая дата, объём, этаж, сборка и ограничения.</li>
+          <li><strong>Посещение шоурума:</strong> цель визита, интересующие товары, дата и контакт.</li>
+          <li><strong>Коммерческое предложение:</strong> сбор реквизитов, состава заказа и подтверждение следующего шага.</li>
+          <li><strong>Цена и скидка:</strong> работа с возражением без выдуманных скидок и неподтверждённых условий.</li>
+          <li><strong>Нет в наличии:</strong> альтернативы, ожидание поставки или передача менеджеру.</li>
+          <li><strong>Срочный запрос:</strong> проверка реального срока и предложение выполнимого варианта.</li>
+          <li><strong>Крупный заказ:</strong> задача, срок, бюджет, ответственный со стороны клиента и передача менеджеру.</li>
+          <li><strong>Повторный контакт:</strong> напоминание о КП, уточнение решения и согласование даты следующего шага.</li>
+          <li><strong>Передача менеджеру:</strong> причина передачи и полный набор уже собранной информации.</li>
+          <li><strong>Жалоба или негатив:</strong> корректная фиксация проблемы и быстрая передача ответственному сотруднику.</li>
+          <li><strong>Непрофильный запрос:</strong> вежливое ограничение и возврат к услугам Treejar.</li>
+        </ol>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Отдельно про изображения</h2>
+        <div class="note">
+          В комплект входит правильная реакция Noor на фотографию: что уточнить,
+          какие параметры собрать и когда передать запрос менеджеру. Функция
+          автоматического поиска похожего товара по изображению в стоимость
+          пакетов не входит и оценивается как отдельная разработка.
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Что именно согласует Treejar</h2>
+        <div class="grid-3">
+          <div class="card"><h3>Логику продажи</h3><p>Какие вопросы обязательны и к какому результату ведём клиента.</p></div>
+          <div class="card"><h3>Тексты ответов</h3><p>Тон, доводы в пользу Treejar и допустимые варианты ответа.</p></div>
+          <div class="card"><h3>Правила компании</h3><p>Скидки, сроки, заказы по размеру, помощь менеджера и запрещённые обещания.</p></div>
+        </div>
+      </div>
+
+      <div class="footer"><span>Treejar / Noor</span><span>4</span></div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Ответ на главный вопрос</span>
+        <span>КП / 14.07.2026</span>
+      </div>
+
+      <div class="section">
+        <h2>Почему не просто загрузить все диалоги в Claude?</h2>
+        <p class="lead">
+          Мы будем использовать Claude или другую подходящую модель, чтобы
+          быстрее группировать запросы и готовить первые варианты материалов.
+          Но полный подготовленный файл занимает около 21 МБ. Это ориентировочно
+          несколько миллионов токенов, тогда как даже большое контекстное окно
+          Claude вмещает до 1 млн. Поэтому корпус нужно сокращать и делить.
+        </p>
+        <div class="note">
+          Стоимость складывается не из цены одного запроса к Claude. Клиент
+          оплачивает проверку Noor, ручной контроль важных случаев, согласованные
+          правила продаж, готовые материалы и точную оценку следующих работ.
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <div class="grid-2">
+          <div class="card"><h3>Одного запроса недостаточно</h3><p>В контекст должны поместиться сами диалоги, наши правила, задание модели и её будущий ответ. Весь комплект одновременно не помещается.</p></div>
+          <div class="card"><h3>Части нужно объединить</h3><p>После нескольких прогонов необходимо убрать повторы и противоречия, сравнить выводы и собрать единые правила для всех ситуаций.</p></div>
+          <div class="card"><h3>Диалоги не являются эталоном</h3><p>В них есть как удачные, так и неудачные ответы. Простое копирование перенесёт старые ошибки в Noor.</p></div>
+          <div class="card"><h3>Итог сделки часто не виден</h3><p>Только примерно в 14% переписок виден результат внутри WhatsApp. Остальные могли продолжиться по телефону, почте или на встрече.</p></div>
+          <div class="card"><h3>Часть контекста отсутствует</h3><p>В выгрузке нет самих фотографий, звонков, личных чатов и встреч. Модель не может честно восстановить то, чего нет в данных.</p></div>
+          <div class="card"><h3>Правила нельзя придумать</h3><p>Скидки, сроки, гарантии, заказы по размеру и полномочия Noor должен подтвердить Treejar.</p></div>
+          <div class="card"><h3>Нужно проверить самого Noor</h3><p>Claude может описать диалоги, но это не покажет, как Noor отвечает на них сейчас и где именно требуется изменение.</p></div>
+          <div class="card"><h3>Результат нужно согласовать</h3><p>Все документы должны быть непротиворечивыми, проверенными на важных случаях и утверждёнными ответственным со стороны Treejar.</p></div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Где модель действительно помогает</h2>
+        <div class="grid-3">
+          <div class="card"><h3>Сортировка</h3><p>Собрать похожие запросы и возражения.</p></div>
+          <div class="card"><h3>Черновики</h3><p>Быстро подготовить первые варианты ответов.</p></div>
+          <div class="card"><h3>Экономия времени</h3><p>Сократить рутинную работу; это уже учтено в часах.</p></div>
+        </div>
+      </div>
+
+      <div class="footer"><span>Treejar / Noor</span><span>5</span></div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Частые вопросы</span>
+        <span>КП / 14.07.2026</span>
+      </div>
+
+      <div class="section">
+        <h2>Что ещё важно знать до начала</h2>
+      </div>
+
+      <div class="section avoid-break">
+        <table>
+          <tbody>
+            <tr><td><strong>Почему Noor проверяем на 100 диалогах, а не на всех 1 400?</strong></td><td>Все 1 400 диалогов используем для карты запросов и возражений. На 100 разных диалогах подробно прогоняем Noor и вручную проверяем его ответы. Это позволяет глубоко проверить качество без оплаты 1 400 одинаково подробных прогонов.</td></tr>
+            <tr><td><strong>Почему нельзя взять ответы лучших менеджеров?</strong></td><td>Из переписки часто не видно, закончилась ли продажа успешно. Кроме того, даже хороший ответ человека может содержать неподтверждённую цену, скидку или договорённость, которую нельзя автоматически разрешать Noor.</td></tr>
+            <tr><td><strong>Зачем готовить документы до изменений в Noor?</strong></td><td>Сначала Treejar должен подтвердить, как именно нужно продавать: что спрашивать, что обещать и когда подключать менеджера. Без этого любые изменения в боте будут строиться на предположениях.</td></tr>
+            <tr><td><strong>Почему изменения в Noor считаются отдельно?</strong></td><td>После проверки могут потребоваться разные работы: обновление информации, изменение правил, доработка кода, каталога, изображений или связей с Zoho и Wazzup. До проверки их объём неизвестен.</td></tr>
+            <tr><td><strong>Почему нужно участие Treejar?</strong></td><td>Только Treejar может утвердить скидки, сроки, гарантии, условия оплаты, правила нестандартных заказов и допустимые обещания клиенту.</td></tr>
+            <tr><td><strong>Что останется у клиента?</strong></td><td>Отчёт, карта запросов, согласованный комплект материалов для продаж, контрольные ситуации для проверки Noor, список необходимых изменений и расчёт следующего этапа.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Из чего складывается цена</h2>
+        <div class="grid-3">
+          <div class="card"><h3>Проверка Noor</h3><p>90 часов: прогон, оценка, важные случаи, отчёт и расчёт изменений.</p></div>
+          <div class="card"><h3>Материалы для продаж</h3><p>20, 35 или 50 часов в зависимости от полноты выбранного комплекта.</p></div>
+          <div class="card"><h3>Без повторной оплаты</h3><p>Один раз найденные запросы и проблемы повторно в часы не включаем.</p></div>
+        </div>
+      </div>
+
+      <div class="footer"><span>Treejar / Noor</span><span>6</span></div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Варианты участия</span>
+        <span>КП / 14.07.2026</span>
+      </div>
+
+      <div class="section">
+        <h2>Три пакета на выбор</h2>
+        <p class="lead">
+          В каждый вариант входит проверка Noor: 90 часов / 135 000 ₽.
+          Дополнительные часы относятся только к подготовке и согласованию
+          материалов для продаж. Пакеты отличаются полнотой этого комплекта.
+        </p>
+      </div>
+
+      <div class="section avoid-break">
+        <div class="package-grid">
+          <div class="package">
+            <span class="package-tag">Базовый</span>
+            <h3>Основной комплект для Noor</h3>
+            <div class="package-price">165 000 ₽</div>
+            <div class="package-meta">90 ч проверка + 20 ч материалы · 7-10 рабочих дней</div>
+            <ul>
+              <li>проверка Noor по 100 диалогам;</li>
+              <li>карта основных запросов;</li>
+              <li>6 главных ситуаций;</li>
+              <li>10 ключевых возражений и ответы;</li>
+              <li>обязательные вопросы и ограничения;</li>
+              <li>правила передачи менеджеру;</li>
+              <li>15 контрольных ситуаций;</li>
+              <li>1 раунд правок;</li>
+            </ul>
+          </div>
+          <div class="package recommended">
+            <span class="package-tag">Рекомендуемый</span>
+            <h3>Полный стандарт продаж Noor</h3>
+            <div class="package-price">187 500 ₽</div>
+            <div class="package-meta">90 ч проверка + 35 ч материалы · 9-12 рабочих дней</div>
+            <ul>
+              <li>всё из базового пакета;</li>
+              <li>единый стандарт продаж Noor;</li>
+              <li>10-12 основных ситуаций;</li>
+              <li>возражения, доводы и тон общения;</li>
+              <li>вопросы, ограничения, передача и повторные обращения;</li>
+              <li>30 контрольных ситуаций;</li>
+              <li>2 раунда правок;</li>
+              <li>подробный список изменений для Noor.</li>
+            </ul>
+          </div>
+          <div class="package">
+            <span class="package-tag">Расширенный</span>
+            <h3>Расширенный стандарт продаж</h3>
+            <div class="package-price">210 000 ₽</div>
+            <div class="package-meta">90 ч проверка + 50 ч материалы · 10-14 рабочих дней</div>
+            <ul>
+              <li>всё из рекомендуемого пакета;</li>
+              <li>крупные, нестандартные и сложные запросы;</li>
+              <li>расширенный список возражений;</li>
+              <li>правила для разных типов клиентов;</li>
+              <li>список пробелов в информации;</li>
+              <li>50 контрольных ситуаций;</li>
+              <li>3 раунда правок;</li>
+              <li>подробная связь правил с изменениями Noor.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Сравнение пакетов</h2>
+        <table>
+          <thead><tr><th>Результат</th><th>Базовый</th><th>Рекомендуемый</th><th>Расширенный</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Проверка Noor на 100 диалогах</strong></td><td>Входит</td><td>Входит</td><td>Входит</td></tr>
+            <tr><td><strong>Разбор всех 1 400 диалогов</strong></td><td>Входит</td><td>Входит</td><td>Входит</td></tr>
+            <tr><td><strong>Стандарт продаж Noor</strong></td><td>Основной</td><td>Полный</td><td>Расширенный</td></tr>
+            <tr><td><strong>Описанные ситуации</strong></td><td>6 основных</td><td>10-12</td><td>+ сложные случаи</td></tr>
+            <tr><td><strong>Возражения и ответы</strong></td><td>10 ключевых</td><td>Расширенные</td><td>Полный список</td></tr>
+            <tr><td><strong>Раунды согласования</strong></td><td>1</td><td>2</td><td>3</td></tr>
+            <tr><td><strong>Контрольные ситуации для проверки Noor</strong></td><td>15</td><td>30</td><td>50</td></tr>
+            <tr><td><strong>Список изменений для Noor</strong></td><td>Краткий</td><td>Подробный</td><td>Расширенный</td></tr>
+            <tr><td><strong>Итог</strong></td><td><strong>110 ч / 165 000 ₽</strong></td><td><strong>125 ч / 187 500 ₽</strong></td><td><strong>140 ч / 210 000 ₽</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="footer"><span>Treejar / Noor</span><span>7</span></div>
+    </section>
+
+    <section class="page">
+      <div class="page-header">
+        <span>Результаты и условия</span>
+        <span>КП / 14.07.2026</span>
+      </div>
+
+      <div class="section">
+        <h2>Итоговые материалы</h2>
+        <div class="grid-2">
+          <div class="card"><h3>Отчёт по проверке Noor</h3><p>Что Noor понимает правильно, где ошибается и какие проблемы влияют на продажи.</p></div>
+          <div class="card"><h3>Список запросов клиентов</h3><p>Частые темы, вопросы и возражения по всем 1 400 диалогам.</p></div>
+          <div class="card"><h3>Стандарт продаж Noor</h3><p>Ситуации, вопросы, возражения, доводы и следующие шаги.</p></div>
+          <div class="card"><h3>Правила для Noor</h3><p>Что можно сообщать, что нужно подтвердить и когда требуется менеджер.</p></div>
+          <div class="card"><h3>Список изменений для Noor</h3><p>Что нужно изменить, чтобы Noor работал по согласованным правилам.</p></div>
+          <div class="card"><h3>Расчёт следующего этапа</h3><p>Отдельная стоимость добавления материалов и других изменений в Noor.</p></div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Что нужно от Treejar</h2>
+        <div class="grid-3">
+          <div class="card"><h3>Правила компании</h3><p>Скидки, доставка, оплата, заказы по размеру, гарантии и помощь менеджера.</p></div>
+          <div class="card"><h3>Ответственный за согласование</h3><p>Один представитель, который подтверждает правила и формулировки материалов.</p></div>
+          <div class="card"><h3>Обратная связь</h3><p>Консолидированные комментарии по каждому раунду в течение 2 рабочих дней.</p></div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Что не входит в эти пакеты</h2>
+        <div class="note">
+          В цену не входит: внесение изменений в Noor; изменение его инструкций
+          и информации; разработка поиска товаров по фотографии; доработка
+          каталога, Zoho или Wazzup; установка обновлений в рабочую версию Noor;
+          проверка на реальных клиентах в WhatsApp; перевод и проверка текстов
+          носителем арабского языка. Эти работы посчитаем отдельно.
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <h2>Следующий шаг</h2>
+        <div class="final-offer">
+          <div>
+            <h2>Выбрать пакет и начать этап</h2>
+            <p>
+              После выбора пакета фиксируем состав материалов, ответственного за
+              согласование и дату старта. По итогам клиент получает утверждённую
+              основу для отдельного этапа изменений в Noor.
+            </p>
+          </div>
+          <div>
+            <div class="small">Рекомендуемый вариант</div>
+            <div class="final-price">187 500 ₽</div>
+            <p class="small">125 часов × 1 500 ₽/час.</p>
+            <p class="small">Срок: 9-12 рабочих дней.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="section avoid-break">
+        <div class="note">
+          Результат этой работы - отчёт, согласованный стандарт продаж и точная стоимость
+          следующего этапа. Следующий этап начнётся только после отдельного
+          согласования и оплаты.
+        </div>
+      </div>
+
+      <div class="footer"><span>Предложение действительно 14 дней</span><span>8</span></div>
+    </section>
+  </main>
+</body>
+
+</html>

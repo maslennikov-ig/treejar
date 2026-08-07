@@ -20,7 +20,7 @@ import json
 import subprocess
 import tomllib
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 ALLOWED_STATUS = {"returned", "blocked"}
 ALLOWED_VERIFY = {"passed", "failed", "blocked"}
@@ -37,7 +37,9 @@ def require_string(value: object, name: str) -> str:
     return value
 
 
-def resolve_runtime_path(repo_root: pathlib.Path, inbox: dict, key: str) -> pathlib.Path:
+def resolve_runtime_path(
+    repo_root: pathlib.Path, inbox: dict, key: str
+) -> pathlib.Path:
     raw_path = pathlib.Path(require_string(inbox.get(key), f"completion_inbox.{key}"))
     scope = inbox.get("scope", "repo_root")
     if scope == "git_common_dir":
@@ -103,9 +105,13 @@ def require_v219_stream_aggregation(
     if not manifest_path.is_file():
         if legacy == stage_id:
             return
-        raise SystemExit(f"new v2.19 delegated stage {stage_id!r} requires a stage manifest")
+        raise SystemExit(
+            f"new v2.19 delegated stage {stage_id!r} requires a stage manifest"
+        )
     if metadata.get("schema_version") != "orchestration-artifact/v3":
-        raise SystemExit("newly reported delegated artifacts in a v2.19 stage must use orchestration-artifact/v3")
+        raise SystemExit(
+            "newly reported delegated artifacts in a v2.19 stage must use orchestration-artifact/v3"
+        )
     expected_manifest = f".codex/stages/{stage_id}/stage-manifest.json"
     if metadata.get("stage_manifest") != expected_manifest:
         raise SystemExit("artifact stage_manifest does not match the owning stage")
@@ -118,16 +124,22 @@ def require_v219_stream_aggregation(
         raise SystemExit(f"cannot read owning stage manifest: {exc}") from exc
     entries = manifest.get("stream_artifacts") if isinstance(manifest, dict) else None
     relative = artifact.relative_to(repo_root).as_posix()
-    matching = [
-        entry
-        for entry in entries
-        if isinstance(entry, dict)
-        and entry.get("artifact_path") == relative
-        and entry.get("task_id") == metadata.get("task_id")
-        and entry.get("stream_owner") == stream_owner
-    ] if isinstance(entries, list) else []
+    matching = (
+        [
+            entry
+            for entry in entries
+            if isinstance(entry, dict)
+            and entry.get("artifact_path") == relative
+            and entry.get("task_id") == metadata.get("task_id")
+            and entry.get("stream_owner") == stream_owner
+        ]
+        if isinstance(entries, list)
+        else []
+    )
     if len(matching) != 1:
-        raise SystemExit("v3 artifact is unlisted or mismatched in the owning stage manifest")
+        raise SystemExit(
+            "v3 artifact is unlisted or mismatched in the owning stage manifest"
+        )
 
 
 def require_exact_artifact(
@@ -138,7 +150,9 @@ def require_exact_artifact(
     raw_artifact: str,
 ) -> pathlib.Path:
     workspace = contract.get("workspace")
-    current_stage = workspace.get("current_stage_id") if isinstance(workspace, dict) else None
+    current_stage = (
+        workspace.get("current_stage_id") if isinstance(workspace, dict) else None
+    )
     if current_stage != stage_id:
         raise SystemExit(
             f"reported stage {stage_id!r} does not match workspace.current_stage_id {current_stage!r}"
@@ -150,7 +164,9 @@ def require_exact_artifact(
         candidate = repo_root / candidate
     for component in (candidate, *candidate.parents):
         if component.is_symlink():
-            raise SystemExit(f"artifact path may not traverse a symlink: {raw_artifact}")
+            raise SystemExit(
+                f"artifact path may not traverse a symlink: {raw_artifact}"
+            )
         if component == repo_root:
             break
     try:
@@ -229,16 +245,16 @@ def main(argv: list[str]) -> int:
     contract = load_contract()
     inbox = contract.get("completion_inbox")
     if not isinstance(inbox, dict):
-        raise SystemExit("missing [completion_inbox] section in .codex/orchestrator.toml")
+        raise SystemExit(
+            "missing [completion_inbox] section in .codex/orchestrator.toml"
+        )
 
     events_file = resolve_runtime_path(repo_root, inbox, "events_file")
     if exact_identity_required(contract):
         artifact_path = require_exact_artifact(
             repo_root, contract, args.task, args.stage, args.artifact
         )
-        require_runtime_path(
-            repo_root, inbox, "events_file", events_file, args.stage
-        )
+        require_runtime_path(repo_root, inbox, "events_file", events_file, args.stage)
         artifact_display = artifact_path.relative_to(repo_root).as_posix()
     else:
         artifact_path = pathlib.Path(args.artifact)
@@ -250,7 +266,7 @@ def main(argv: list[str]) -> int:
 
     payload = {
         "event_id": str(uuid.uuid4()),
-        "reported_at": datetime.now(timezone.utc).isoformat(),
+        "reported_at": datetime.now(UTC).isoformat(),
         "task_id": args.task,
         "stage_id": args.stage,
         "stream_id": args.task,
