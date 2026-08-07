@@ -341,6 +341,49 @@ def test_a_rewrite_that_moves_a_verified_fact_is_rejected(
     ), reason
 
 
+def test_a_number_already_said_in_the_conversation_is_not_invented() -> None:
+    """The S10 shape, and the first live run rejected every one of them.
+
+    sales-opportunity's own text names the opportunity and the next step, not
+    the line items. A model recapping the quantity, price and SKU the customer
+    chose two turns earlier looked like a fabricator to the first version of
+    this guard, so the template shipped every time.
+    """
+
+    verified = (
+        "I recorded and verified this as a CRM sales opportunity. The next "
+        "commercial step is to confirm the delivery plan. No quotation created."
+    )
+    candidate = (
+        "Recorded, Yusuf — the 20 x CH 616 NEW black at AED 5900.00 is now a "
+        "verified opportunity in our CRM. No quotation created. Next is the "
+        "delivery plan; shall we look at it this week?"
+    )
+    history = [
+        "user: We want 20 of the CH 616 NEW black.",
+        "assistant: 20 x CH 616 NEW black, AED 295.00 each, AED 5900.00 total.",
+    ]
+
+    assert (
+        engine_module._verified_prose_rejection(
+            candidate=candidate,
+            verified_text=verified,
+            customer_text="Record it as an opportunity.",
+            already_said="\n".join(history),
+        )
+        is None
+    )
+    # Without the conversation, the same reply reads as invention.
+    assert (
+        engine_module._verified_prose_rejection(
+            candidate=candidate,
+            verified_text=verified,
+            customer_text="Record it as an opportunity.",
+        )
+        is not None
+    )
+
+
 def test_a_rejection_names_the_values_and_never_the_prose() -> None:
     """A rejection is otherwise invisible: the reply is still correct.
 

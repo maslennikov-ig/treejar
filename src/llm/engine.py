@@ -3394,13 +3394,20 @@ def _verified_prose_rejection(
     candidate: str,
     verified_text: str,
     customer_text: str,
+    already_said: str = "",
 ) -> str | None:
     """Why the rewrite was not accepted, or None if it was.
 
     The route has already computed and written the facts. The model is only
     being asked for the sentence around them, so every number and SKU the route
-    produced must survive, and no new one may appear. A number the customer
-    themselves used is not new -- "for our team of eight" is theirs to restate.
+    produced must survive, and no new one may appear.
+
+    "New" means new to the conversation, not new to the route's own reply. The
+    first live run rejected every sales-opportunity rewrite for "inventing" the
+    quantity, unit price and SKU the customer had chosen two turns earlier: the
+    route's text names the opportunity and the next step, not the line items,
+    so a model recapping them looked like a fabricator. Anything already said
+    in this conversation is the model's to restate.
 
     The reason names the offending values, never the prose. Without it a
     rejection is invisible: the customer still gets a correct reply, so the
@@ -3413,7 +3420,10 @@ def _verified_prose_rejection(
     produced = _verified_prose_numbers(candidate)
     if dropped := required - produced:
         return f"dropped numbers {sorted(map(str, dropped))}"
-    if invented := produced - required - _verified_prose_numbers(customer_text):
+    said = _verified_prose_numbers(customer_text) | _verified_prose_numbers(
+        already_said
+    )
+    if invented := produced - required - said:
         return f"invented numbers {sorted(map(str, invented))}"
     if lost_skus := _verified_prose_skus(verified_text) - _verified_prose_skus(
         candidate
@@ -3431,12 +3441,14 @@ def _verified_prose_holds(
     candidate: str,
     verified_text: str,
     customer_text: str,
+    already_said: str = "",
 ) -> bool:
     return (
         _verified_prose_rejection(
             candidate=candidate,
             verified_text=verified_text,
             customer_text=customer_text,
+            already_said=already_said,
         )
         is None
     )
@@ -3506,6 +3518,7 @@ async def _verified_prose_response(
         candidate=candidate,
         verified_text=verified_text,
         customer_text=customer_text,
+        already_said="\n".join(deps.recent_history or ()),
     )
     if rejection is not None:
         logger.warning(
