@@ -23,21 +23,20 @@ from src.integrations.notifications.telegram import TelegramClient
 from src.quality.schemas import BlockScore, EvaluationResult, RedFlagItem
 from src.services.customer_identity import format_owner_identity_block
 from src.services.daily_summary import DailySummaryData, calculate_daily_summary
-from src.services.owner_review_formatters import format_detailed_quality_review
-from src.services.report_localization import (
+from src.services.owner_presentation import (
+    format_quality_rating,
+    format_report_trigger,
+    format_sales_stage,
     owner_na,
     owner_unknown,
-    translate_quality_block_name,
-    translate_quality_rating,
-    translate_red_flag_explanation,
-    translate_red_flag_title,
-    translate_report_trigger,
-    translate_sales_stage,
+    red_flag_explanation,
+    red_flag_title,
 )
+from src.services.owner_review_formatters import format_detailed_quality_review
 
 logger = logging.getLogger(__name__)
 _ESCALATION_CONTEXT_LIMIT = 500
-_ESCALATION_CONTEXT_OMISSION = "… Ранний контекст скрыт …"
+_ESCALATION_CONTEXT_OMISSION = "… Earlier context hidden …"
 
 
 def _format_escalation_context_tail(context: str) -> str:
@@ -133,7 +132,7 @@ def format_escalation_message(
     """
     # Format phone with + prefix for tel: link if not already prefixed
     phone_display = phone if phone.startswith("+") else f"+{phone}"
-    translated_reason = translate_report_trigger(
+    translated_reason = format_report_trigger(
         reason,
         surface="escalation_alert",
         module="notifications",
@@ -144,18 +143,18 @@ def format_escalation_message(
         .replace(">", "&gt;")
     )
     msg = (
-        "🚨 <b>Эскалация</b>\n\n"
-        f'📞 <b>Телефон клиента:</b> <a href="tel:{phone_display}">{phone_display}</a>\n'
-        f"<b>Основание:</b> {safe_reason}\n"
-        f"<b>UUID диалога:</b> <code>{conversation_id}</code>\n"
+        "🚨 <b>Escalation</b>\n\n"
+        f'📞 <b>Customer phone:</b> <a href="tel:{phone_display}">{phone_display}</a>\n'
+        f"<b>Reason:</b> {safe_reason}\n"
+        f"<b>Conversation UUID:</b> <code>{conversation_id}</code>\n"
     )
 
     if context:
         # Preserve the latest actionable lines before escaping for Telegram HTML.
         safe_context = escape(_format_escalation_context_tail(context))
-        msg += f"\n<b>Контекст:</b>\n<i>{safe_context}</i>\n"
+        msg += f"\n<b>Context:</b>\n<i>{safe_context}</i>\n"
 
-    msg += "\nМенеджер уведомлён и должен проверить этот диалог."
+    msg += "\nThe manager has been notified and should review this conversation."
     return msg
 
 
@@ -177,7 +176,7 @@ def format_catalog_mismatch_message(
     safe_slug = escape(treejar_slug.strip())
     detail_block = ""
     if detail and detail.strip():
-        detail_block = f"\n<b>Детали:</b> {escape(detail.strip())}\n"
+        detail_block = f"\n<b>Details:</b> {escape(detail.strip())}\n"
     issue_text = (
         escape(issue.strip())
         if issue and issue.strip()
@@ -194,7 +193,7 @@ def format_catalog_mismatch_message(
         f"<b>Treejar slug:</b> <code>{safe_slug}</code>\n"
         f"<b>Issue:</b> {issue_text}"
         f"{detail_block}"
-        "\nНужна проверка site/customer team."
+        "\nThe site/customer team needs to check this."
     )
 
 
@@ -250,15 +249,11 @@ def format_red_flag_warning_message(
         conversation_created_at=conversation_created_at,
         last_activity_at=last_activity_at,
     )
-    stage_label = translate_sales_stage(
-        sales_stage,
-        surface="red_flag_warning",
-        module="notifications",
-    )
+    stage_label = format_sales_stage(sales_stage)
     red_flag_lines = "\n".join(
         "• "
-        f"<b>{escape(translate_red_flag_title(flag.code, flag.title, surface='red_flag_warning', module='notifications'))}</b>: "
-        f"{escape(translate_red_flag_explanation(flag.code, flag.explanation, surface='red_flag_warning', module='notifications'))}"
+        f"<b>{escape(red_flag_title(flag.code, flag.title))}</b>: "
+        f"{escape(red_flag_explanation(flag.code, flag.explanation))}"
         for flag in flags
     )
     evidence_quotes: list[str] = []
@@ -273,21 +268,21 @@ def format_red_flag_warning_message(
             break
     evidence_block = _format_bullets(
         evidence_quotes,
-        fallback="Прямые цитаты из диалога не зафиксированы.",
+        fallback="No direct quotes from the conversation were recorded.",
     )
     action_text = escape(
         recommended_action.strip()
-        or "Срочно проверить диалог и отправить корректирующее сообщение."
+        or "Review the conversation urgently and send a corrective message."
     )
 
     return (
-        "🚨 <b>Критический сигнал</b>\n\n"
-        f"<b>UUID диалога:</b> <code>{conversation_id}</code>\n"
+        "🚨 <b>Critical signal</b>\n\n"
+        f"<b>Conversation UUID:</b> <code>{conversation_id}</code>\n"
         f"{identity_block}\n"
-        f"<b>Текущий этап:</b> {escape(stage_label)}\n\n"
-        f"<b>Критические сигналы:</b>\n{red_flag_lines}\n\n"
-        f"<b>Доказательства:</b>\n{evidence_block}\n\n"
-        f"<b>Рекомендуемое действие:</b> {action_text}"
+        f"<b>Current stage:</b> {escape(stage_label)}\n\n"
+        f"<b>Critical signals:</b>\n{red_flag_lines}\n\n"
+        f"<b>Evidence:</b>\n{evidence_block}\n\n"
+        f"<b>Recommended action:</b> {action_text}"
     )
 
 
@@ -311,21 +306,13 @@ def format_final_quality_review_message(
         if result.rating == "satisfactory"
         else "🟢"
     )
-    rating_label = translate_quality_rating(
-        result.rating,
-        surface="quality_final_review",
-        module="notifications",
-    )
-    trigger_label = translate_report_trigger(
+    rating_label = format_quality_rating(result.rating)
+    trigger_label = format_report_trigger(
         trigger,
         surface="quality_final_review",
         module="notifications",
     )
-    stage_label = translate_sales_stage(
-        sales_stage,
-        surface="quality_final_review",
-        module="notifications",
-    )
+    stage_label = format_sales_stage(sales_stage)
     identity_block = format_owner_identity_block(
         phone=phone,
         customer_name=customer_name,
@@ -334,66 +321,64 @@ def format_final_quality_review_message(
         last_activity_at=last_activity_at,
     )
     breakdown_lines = "\n".join(
-        "• "
-        f"{escape(translate_quality_block_name(block.block_name, surface='quality_final_review', module='notifications'))}: "
-        f"{escape(_format_quality_block_score(block))}"
+        f"• {escape(block.block_name)}: {escape(_format_quality_block_score(block))}"
         for block in result.block_scores
     )
     diagnostics = result.diagnostics
     coverage_line = (
-        f"<b>Покрытие:</b> {diagnostics.applicable_rules}/15 правил, "
-        f"{diagnostics.applicable_blocks}/4 блоков"
+        f"<b>Coverage:</b> {diagnostics.applicable_rules}/15 rules, "
+        f"{diagnostics.applicable_blocks}/4 blocks"
     )
     score_line = (
-        "<b>Оценка:</b> не опубликована — ошибка покрытия оценщика"
+        "<b>Score:</b> not published — evaluator coverage error"
         if diagnostics.low_coverage
-        else f"<b>Оценка:</b> {result.total_score:.1f}/30 ({escape(rating_label)})"
+        else f"<b>Score:</b> {result.total_score:.1f}/30 ({escape(rating_label)})"
     )
     evidence_quotes = _collect_evidence_quotes(result)
     strengths_block = _format_bullets(
         result.strengths,
-        fallback="Явно выраженные сильные стороны не зафиксированы.",
+        fallback="No clearly stated strengths were recorded.",
     )
     weaknesses_block = _format_bullets(
         result.weaknesses,
-        fallback="Существенные проблемы по диалогу не зафиксированы.",
+        fallback="No material problems with the conversation were recorded.",
     )
     evidence_block = _format_bullets(
         evidence_quotes,
-        fallback="Цитаты из диалога не зафиксированы.",
+        fallback="No quotes from the conversation were recorded.",
     )
     recommendations_block = _format_bullets(
         result.recommendations,
-        fallback="Дополнительные рекомендации не зафиксированы.",
+        fallback="No additional recommendations were recorded.",
     )
     next_best_action = escape(
         result.next_best_action.strip()
-        or "Проверить диалог вручную и определить следующий шаг по клиенту."
+        or "Review the conversation manually and decide the next step with the customer."
     )
 
     return (
-        f"{rating_emoji} <b>Оценка качества</b>\n\n"
+        f"{rating_emoji} <b>Quality review</b>\n\n"
         f"{score_line}\n"
         f"{coverage_line}\n"
-        f"<b>Основание:</b> {escape(trigger_label)}\n"
-        f"<b>UUID диалога:</b> <code>{conversation_id}</code>\n"
+        f"<b>Reason:</b> {escape(trigger_label)}\n"
+        f"<b>Conversation UUID:</b> <code>{conversation_id}</code>\n"
         f"{identity_block}\n"
-        f"<b>Текущий этап:</b> {escape(stage_label)}\n\n"
-        f"<b>Взвешенная разбивка</b>\n{breakdown_lines}\n\n"
-        f"<b>Что сделано хорошо</b>\n{strengths_block}\n\n"
-        f"<b>Что ухудшило диалог</b>\n{weaknesses_block}\n\n"
-        f"<b>Доказательства</b>\n{evidence_block}\n\n"
-        f"<b>Рекомендации</b>\n{recommendations_block}\n\n"
-        f"<b>Следующее действие</b>\n• {next_best_action}"
+        f"<b>Current stage:</b> {escape(stage_label)}\n\n"
+        f"<b>Weighted breakdown</b>\n{breakdown_lines}\n\n"
+        f"<b>What went well</b>\n{strengths_block}\n\n"
+        f"<b>What weakened the conversation</b>\n{weaknesses_block}\n\n"
+        f"<b>Evidence</b>\n{evidence_block}\n\n"
+        f"<b>Recommendations</b>\n{recommendations_block}\n\n"
+        f"<b>Next action</b>\n• {next_best_action}"
     )
 
 
 def _format_optional_quality(score: float | None) -> str:
-    return "н/д" if score is None else f"{score:.1f}/30"
+    return owner_na() if score is None else f"{score:.1f}/30"
 
 
 def _format_optional_rate(rate: float | None) -> str:
-    return "н/д" if rate is None else f"{rate:.1f}%"
+    return owner_na() if rate is None else f"{rate:.1f}%"
 
 
 def format_low_manager_score_alert_message(
@@ -416,29 +401,25 @@ def format_low_manager_score_alert_message(
         .replace("<", "&lt;")
         .replace(">", "&gt;")
     )
-    rating_label = translate_quality_rating(
-        rating,
-        surface="manager_low_score_alert",
-        module="notifications",
-    )
+    rating_label = format_quality_rating(rating)
     return (
-        "⚠️ <b>Низкая оценка менеджера</b>\n"
-        f"<b>Эскалация:</b> {escalation_id}\n"
-        f"<b>Менеджер:</b> {manager_label}\n"
-        f"<b>Оценка:</b> {score}/20 ({rating_label})\n"
-        f"<b>Кратко:</b> {safe_summary}"
+        "⚠️ <b>Low manager score</b>\n"
+        f"<b>Escalation:</b> {escalation_id}\n"
+        f"<b>Manager:</b> {manager_label}\n"
+        f"<b>Score:</b> {score}/20 ({rating_label})\n"
+        f"<b>In brief:</b> {safe_summary}"
     )
 
 
 def format_daily_summary(metrics: DailySummaryData) -> str:
     """Format daily dashboard metrics as HTML for Telegram."""
     return (
-        "📊 <b>Ежедневная сводка</b>\n\n"
-        f"<b>Диалоги:</b> {metrics.total_conversations}\n"
-        f"<b>Уникальные клиенты:</b> {metrics.unique_customers}\n"
-        f"<b>Эскалации:</b> {metrics.escalation_count}\n"
-        f"<b>Средняя оценка качества:</b> {_format_optional_quality(metrics.avg_quality_score)}\n"
-        f"<b>Конверсия (7д):</b> {_format_optional_rate(metrics.conversion_rate_7d)}\n"
+        "📊 <b>Daily summary</b>\n\n"
+        f"<b>Conversations:</b> {metrics.total_conversations}\n"
+        f"<b>Unique customers:</b> {metrics.unique_customers}\n"
+        f"<b>Escalations:</b> {metrics.escalation_count}\n"
+        f"<b>Average quality score:</b> {_format_optional_quality(metrics.avg_quality_score)}\n"
+        f"<b>Conversion (7d):</b> {_format_optional_rate(metrics.conversion_rate_7d)}\n"
     )
 
 

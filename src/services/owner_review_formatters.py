@@ -9,31 +9,31 @@ from typing import Any
 from uuid import UUID
 
 from src.services.customer_identity import format_owner_identity_block
-from src.services.report_localization import (
+from src.services.owner_presentation import (
+    format_criterion_status,
+    format_quality_rating,
+    format_report_trigger,
+    format_sales_stage,
     owner_na,
-    translate_criterion_status,
-    translate_quality_rating,
-    translate_quality_rule_name,
-    translate_report_trigger,
-    translate_sales_stage,
+    quality_rule_name,
 )
 
 _QUALITY_RECOMMENDATIONS: dict[int, str] = {
-    1: "Начать диалог с приветствия, имени клиента и краткого представления компании.",
-    2: "Удерживать вежливый и профессиональный тон с первого сообщения.",
-    3: "Сразу уточнять, как удобно обращаться к клиенту.",
-    4: "Поддерживать дружелюбный тон и показывать, что запрос клиента услышан.",
-    5: "Явно проявлять интерес к задаче клиента и его контексту.",
-    6: "Добавлять уместную признательность или короткий комплимент по запросу клиента.",
-    7: "Чётко формулировать ценность Treejar именно для этого клиента.",
-    8: "Задавать больше уточняющих вопросов до предложения решения.",
-    9: "Сильнее связывать ответы с конкретной задачей клиента.",
-    10: "Предлагать комплексное решение только после достаточной диагностики.",
-    11: "Использовать скидку, пакетное предложение или бонус, когда это уместно.",
-    12: "Собрать недостающие контактные данные для CRM и следующего шага.",
-    13: "Уточнить детали бизнеса клиента, чтобы предложение было точнее.",
-    14: "Подтвердить договорённости и зафиксировать следующий шаг явно.",
-    15: "Согласовать дату и время следующего контакта с клиентом.",
+    1: "Open with a greeting, the customer's name and a brief introduction of the company.",
+    2: "Hold a polite and professional tone from the first message.",
+    3: "Ask straight away how the customer prefers to be addressed.",
+    4: "Keep a friendly tone and show that the customer's request was heard.",
+    5: "Show explicit interest in the customer's job and their context.",
+    6: "Add an apt note of appreciation or a short compliment on the customer's request.",
+    7: "State Treejar's value clearly, for this customer specifically.",
+    8: "Ask more clarifying questions before proposing a solution.",
+    9: "Tie the answers more tightly to the customer's specific job.",
+    10: "Propose a comprehensive solution only after enough diagnosis.",
+    11: "Use a discount, bundle or bonus where it fits.",
+    12: "Collect the missing contact details for the CRM and the next step.",
+    13: "Establish the customer's business in more detail so the offer lands closer.",
+    14: "Confirm what was agreed and record the next step explicitly.",
+    15: "Agree a date and time for the next contact with the customer.",
 }
 
 
@@ -64,12 +64,7 @@ def _normalize_criteria(criteria: Sequence[Any]) -> list[dict[str, Any]]:
                 "rule_number": rule_number,
                 "score": score,
                 "max_score": max_score,
-                "label": translate_quality_rule_name(
-                    rule_number,
-                    rule_name,
-                    surface="quality_review",
-                    module="owner_review_formatters",
-                ),
+                "label": quality_rule_name(rule_number, rule_name),
             }
         )
     return sorted(
@@ -83,10 +78,10 @@ def _normalize_criteria(criteria: Sequence[Any]) -> list[dict[str, Any]]:
 
 def _recommendation_for_rule(rule_number: int | None) -> str:
     if rule_number is None:
-        return "Уточнить, где именно просел диалог, и скорректировать следующий шаг."
+        return "Pin down where the conversation slipped and adjust the next step."
     return _QUALITY_RECOMMENDATIONS.get(
         rule_number,
-        "Уточнить проблемный критерий и скорректировать следующий шаг.",
+        "Pin down the failing criterion and adjust the next step.",
     )
 
 
@@ -114,39 +109,30 @@ def format_detailed_quality_review(
     conversation_created_at: datetime | None = None,
     last_activity_at: datetime | None = None,
 ) -> str:
-    """Render a deterministic owner-facing quality review in Russian.
+    """Render a deterministic owner-facing quality review.
 
     The output is intentionally derived from structured criteria rather than from
-    free-form LLM prose so older English summaries do not leak into Telegram.
+    free-form LLM prose, so the report reads the same however the judge phrased
+    its narrative.
     """
     del summary
 
     normalized = _normalize_criteria(criteria)
-    rating_label = translate_quality_rating(
-        rating,
-        surface="quality_review",
-        module="owner_review_formatters",
-    )
+    rating_label = format_quality_rating(rating)
     stage_label = (
-        owner_na()
-        if current_stage is None
-        else translate_sales_stage(
-            current_stage,
-            surface="quality_review",
-            module="owner_review_formatters",
-        )
+        owner_na() if current_stage is None else format_sales_stage(current_stage)
     )
     trigger_label = (
         owner_na()
         if trigger is None
-        else translate_report_trigger(
+        else format_report_trigger(
             trigger,
             surface="quality_review",
             module="owner_review_formatters",
         )
     )
 
-    breakdown_lines = ["<b>Взвешенная разбивка</b>"]
+    breakdown_lines = ["<b>Weighted breakdown</b>"]
     if normalized:
         for item in normalized:
             rule_number = item["rule_number"]
@@ -155,7 +141,7 @@ def format_detailed_quality_review(
                 "• "
                 f"{rule_prefix}{escape(item['label'])}: "
                 f"{item['score']}/{item['max_score']} "
-                f"({escape(translate_criterion_status(item['score']))})"
+                f"({escape(format_criterion_status(item['score']))})"
             )
     else:
         breakdown_lines.append(f"• {owner_na()}")
@@ -181,7 +167,7 @@ def format_detailed_quality_review(
     next_best_action = (
         deduped_recommendations[0]
         if deduped_recommendations
-        else "Поддерживать текущий уровень качества и масштабировать удачные практики."
+        else "Hold the current quality level and scale what is working."
     )
     identity_block = format_owner_identity_block(
         phone=phone,
@@ -192,40 +178,40 @@ def format_detailed_quality_review(
     )
 
     lines = [
-        "⚠️ <b>Оценка качества</b>",
-        f"<b>UUID диалога:</b> <code>{escape(str(conversation_id))}</code>",
+        "⚠️ <b>Quality review</b>",
+        f"<b>Conversation UUID:</b> <code>{escape(str(conversation_id))}</code>",
         identity_block,
-        f"<b>Оценка:</b> {score:.1f}/30 ({escape(rating_label)})",
-        f"<b>Основание:</b> {escape(trigger_label)}",
-        f"<b>Текущий этап:</b> {escape(stage_label)}",
+        f"<b>Score:</b> {score:.1f}/30 ({escape(rating_label)})",
+        f"<b>Reason:</b> {escape(trigger_label)}",
+        f"<b>Current stage:</b> {escape(stage_label)}",
         "",
     ]
     lines.extend(breakdown_lines)
     lines.append("")
     lines.extend(
         _render_list(
-            "Что сделано хорошо",
+            "What went well",
             strengths,
-            empty_text="Явно выраженные сильные стороны не зафиксированы.",
+            empty_text="No clearly stated strengths were recorded.",
         )
     )
     lines.append("")
     lines.extend(
         _render_list(
-            "Что ухудшило диалог",
+            "What weakened the conversation",
             weaknesses,
-            empty_text="Критичных провалов по критериям не выявлено.",
+            empty_text="No critical failures against the criteria were found.",
         )
     )
     lines.append("")
     lines.extend(
         _render_list(
-            "Рекомендации",
+            "Recommendations",
             deduped_recommendations,
-            empty_text="Поддерживать текущий стандарт качества.",
+            empty_text="Hold the current quality standard.",
         )
     )
     lines.append("")
-    lines.append("<b>Следующее действие</b>")
+    lines.append("<b>Next action</b>")
     lines.append(f"• {escape(next_best_action)}")
     return "\n".join(lines)

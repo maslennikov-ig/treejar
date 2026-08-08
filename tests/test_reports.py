@@ -57,9 +57,9 @@ def test_format_report_text_contains_key_fields() -> None:
     assert "11.9%" in text
     assert "22.5" in text
     assert "Executive Desk" in text
-    assert "Недельный отчёт" in text
-    assert "Диалоги" in text
-    assert "клиент недоволен" in text
+    assert "Weekly report" in text
+    assert "Conversations" in text
+    assert "customer unhappy" in text
 
 
 def test_format_report_text_localizes_manager_metrics() -> None:
@@ -74,15 +74,15 @@ def test_format_report_text_localizes_manager_metrics() -> None:
         avg_manager_score=12.5,
         avg_manager_response_time_seconds=1800,
         manager_deal_conversion_rate=25.0,
-        top_managers=[{"name": "Анна", "avg_score": 15.5}],
+        top_managers=[{"name": "Anna", "avg_score": 15.5}],
     )
 
     text = format_report_text(report)
 
-    assert "Показатели менеджеров" in text
-    assert "Средний балл" in text
-    assert "Среднее время ответа" in text
-    assert "Лучшие" in text
+    assert "Manager metrics" in text
+    assert "Average score" in text
+    assert "Average response time" in text
+    assert "Top performers" in text
 
 
 def test_format_report_text_contains_final_acceptance_fields() -> None:
@@ -116,12 +116,12 @@ def test_format_report_text_contains_final_acceptance_fields() -> None:
 
     text = format_report_text(report)
 
-    assert "Отказы" in text
+    assert "Refusals" in text
     assert "3 (15.0%)" in text
-    assert "Обратная связь" in text
+    assert "Feedback" in text
     assert "4.5/5" in text
     assert "75.0%" in text
-    assert "Контроль LLM расходов" in text
+    assert "LLM cost control" in text
     assert "$0.1234" in text
     assert "$0.0123" in text
     assert "cache" in text.lower()
@@ -206,7 +206,7 @@ def test_format_report_text_empty_report() -> None:
     now = datetime.now(tz=UTC)
     report = ReportData(period_start=now, period_end=now)
     text = format_report_text(report)
-    assert "Недельный отчёт" in text
+    assert "Weekly report" in text
     assert "0" in text
 
 

@@ -30,7 +30,7 @@ from src.models.feedback import Feedback
 from src.models.llm_attempt import LLMAttempt
 from src.models.message import Message
 from src.models.quality_review import QualityReview
-from src.services.report_localization import translate_report_trigger
+from src.services.owner_presentation import format_report_trigger
 
 logger = logging.getLogger(__name__)
 
@@ -410,65 +410,65 @@ async def generate_report(
 def format_report_text(data: ReportData) -> str:
     """Format report as HTML text for Telegram."""
     lines = [
-        "📈 <b>Недельный отчёт</b>",
+        "📈 <b>Weekly report</b>",
         f"<i>{data.period_start.strftime('%Y-%m-%d')} — {data.period_end.strftime('%Y-%m-%d')}</i>",
         "",
-        f"<b>Диалоги:</b> {data.total_conversations} ({data.conversations_per_day} в день)",
-        f"<b>Уникальные клиенты:</b> {data.unique_customers}",
-        f"<b>Сделки:</b> {data.total_deals}",
-        f"<b>Конверсия:</b> {data.conversion_rate}%",
-        f"<b>Отказы:</b> {data.refusal_count} ({data.refusal_rate}%)",
-        f"<b>Средний чек:</b> {data.avg_deal_value} AED",
-        f"<b>Средняя оценка качества:</b> {data.avg_quality_score}/30",
-        f"<b>Эскалации:</b> {data.escalation_count}",
+        f"<b>Conversations:</b> {data.total_conversations} ({data.conversations_per_day} per day)",
+        f"<b>Unique customers:</b> {data.unique_customers}",
+        f"<b>Deals:</b> {data.total_deals}",
+        f"<b>Conversion:</b> {data.conversion_rate}%",
+        f"<b>Refusals:</b> {data.refusal_count} ({data.refusal_rate}%)",
+        f"<b>Average deal value:</b> {data.avg_deal_value} AED",
+        f"<b>Average quality score:</b> {data.avg_quality_score}/30",
+        f"<b>Escalations:</b> {data.escalation_count}",
     ]
 
     if data.escalation_reasons:
         lines.append("")
-        lines.append("<b>Основные причины эскалации:</b>")
+        lines.append("<b>Main escalation reasons:</b>")
         for reason, count in list(data.escalation_reasons.items())[:5]:
             lines.append(
-                f"  • {translate_report_trigger(reason, surface='weekly_report', module='reports')}: {count}"
+                f"  • {format_report_trigger(reason, surface='weekly_report', module='reports')}: {count}"
             )
 
     if data.top_products:
         lines.append("")
-        lines.append("<b>Топ товаров:</b>")
+        lines.append("<b>Top products:</b>")
         for prod in data.top_products[:5]:
             lines.append(
-                f"  • {prod['name']} ({prod['sku']}): {prod['mentions']} упоминаний"
+                f"  • {prod['name']} ({prod['sku']}): {prod['mentions']} mentions"
             )
 
     if data.manager_reviews_count > 0:
         lines.append("")
-        lines.append("📊 <b>Показатели менеджеров</b>")
+        lines.append("📊 <b>Manager metrics</b>")
         # Convert seconds to minutes for display
         response_time_min = round(data.avg_manager_response_time_seconds / 60, 1)
-        lines.append(f"  Средний балл: {data.avg_manager_score}/20")
-        lines.append(f"  Среднее время ответа: {response_time_min} мин")
-        lines.append(f"  Конверсия в сделку: {data.manager_deal_conversion_rate}%")
-        lines.append(f"  Оценок: {data.manager_reviews_count}")
+        lines.append(f"  Average score: {data.avg_manager_score}/20")
+        lines.append(f"  Average response time: {response_time_min} min")
+        lines.append(f"  Deal conversion: {data.manager_deal_conversion_rate}%")
+        lines.append(f"  Reviews: {data.manager_reviews_count}")
         if data.top_managers:
             top_names = ", ".join(
                 f"{m['name']} ({m['avg_score']})" for m in data.top_managers[:3]
             )
-            lines.append(f"  Лучшие: {top_names}")
+            lines.append(f"  Top performers: {top_names}")
 
     lines.append("")
-    lines.append("🧾 <b>Обратная связь</b>")
-    lines.append(f"  Отзывов: {data.feedback_count}")
-    lines.append(f"  Средняя оценка: {data.avg_feedback_rating}/5")
-    lines.append(f"  Доставка: {data.avg_delivery_rating}/5")
-    lines.append(f"  Готовы рекомендовать: {data.feedback_recommend_rate}%")
-    lines.append(f"  NPS-подобный показатель: {data.feedback_nps_score}%")
+    lines.append("🧾 <b>Feedback</b>")
+    lines.append(f"  Responses: {data.feedback_count}")
+    lines.append(f"  Average rating: {data.avg_feedback_rating}/5")
+    lines.append(f"  Delivery: {data.avg_delivery_rating}/5")
+    lines.append(f"  Would recommend: {data.feedback_recommend_rate}%")
+    lines.append(f"  NPS-like score: {data.feedback_nps_score}%")
 
     lines.append("")
-    lines.append("💸 <b>Контроль LLM расходов</b>")
-    lines.append(f"  Чат: ${data.llm_cost_usd:.4f}")
+    lines.append("💸 <b>LLM cost control</b>")
+    lines.append(f"  Chat: ${data.llm_cost_usd:.4f}")
     lines.append(
-        f"  QA: ${data.qa_llm_cost_usd:.4f} ({data.qa_llm_attempts_count} попыток)"
+        f"  QA: ${data.qa_llm_cost_usd:.4f} ({data.qa_llm_attempts_count} attempts)"
     )
-    lines.append(f"  Бюджетных блокировок QA: {data.qa_budget_blocked_count}")
+    lines.append(f"  QA budget blocks: {data.qa_budget_blocked_count}")
     lines.append(
         "  QA usage: "
         f"prompt {data.qa_prompt_tokens}, "

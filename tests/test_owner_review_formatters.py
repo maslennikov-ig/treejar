@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 
-def test_format_detailed_quality_review_localizes_old_criteria_and_uses_russian_fallbacks() -> (
+def test_format_detailed_quality_review_renames_old_criteria_and_uses_fallbacks() -> (
     None
 ):
     from src.services.owner_review_formatters import format_detailed_quality_review
@@ -27,22 +27,26 @@ def test_format_detailed_quality_review_localizes_old_criteria_and_uses_russian_
         summary="Old English summary should not define the layout",
     )
 
-    assert "Оценка качества" in text
-    assert "Взвешенная разбивка" in text
-    assert "Что сделано хорошо" in text
-    assert "Что ухудшило диалог" in text
-    assert "Рекомендации" in text
-    assert "Следующее действие" in text
-    assert "приветствие" in text
-    assert "иная причина" in text
-    assert "Greeting" not in text
+    from src.quality.schemas import RULE_NAMES
+
+    assert "Quality review" in text
+    assert "Weighted breakdown" in text
+    assert "What went well" in text
+    assert "What weakened the conversation" in text
+    assert "Recommendations" in text
+    assert "Next action" in text
+    assert "<b>Current stage:</b> Greeting" in text
+    assert "other reason" in text
+
+    # The rule number names the criterion, so a review stored with whatever
+    # wording an older judge used still renders under today's canonical name.
+    assert RULE_NAMES[1] in text
+    assert RULE_NAMES[8] in text
     assert "Clarifying questions" not in text
     assert "Old English summary should not define the layout" not in text
 
 
-def test_format_detailed_quality_review_uses_russian_na_labels_when_context_missing() -> (
-    None
-):
+def test_format_detailed_quality_review_uses_na_labels_when_context_missing() -> None:
     from src.services.owner_review_formatters import format_detailed_quality_review
 
     text = format_detailed_quality_review(
@@ -55,8 +59,8 @@ def test_format_detailed_quality_review_uses_russian_na_labels_when_context_miss
         summary=None,
     )
 
-    assert "<b>Основание:</b> н/д" in text
-    assert "<b>Текущий этап:</b> н/д" in text
+    assert "<b>Reason:</b> n/a" in text
+    assert "<b>Current stage:</b> n/a" in text
 
 
 def test_format_detailed_quality_review_selects_next_best_action_from_weakest_rule() -> (
@@ -81,5 +85,5 @@ def test_format_detailed_quality_review_selects_next_best_action_from_weakest_ru
         summary=None,
     )
 
-    assert "Следующее действие" in text
-    assert "согласовать дату и время следующего контакта" in text.lower()
+    assert "Next action" in text
+    assert "agree a date and time for the next contact" in text.lower()
