@@ -57,8 +57,12 @@ not granted.
   catalog turn; a new always-on directive forbids a reply that only restates the
   customer or states intent, and makes Noor perform the next step her tools can
   do; the consultative opening now also carries rules 9, 10 and a verified
-  package -- never a discount. The two dialogue-side changes are unmeasured and
-  need a deploy. `docs/reports/2026-08-08-less-caution-more-selling.md`.
+  package -- never a discount. `docs/reports/2026-08-08-less-caution-more-selling.md`.
+- **Production runs `a830001` as of 2026-08-08.** Owner-authorised push and
+  deploy; CI green, `/opt/noor/.release-sha` reads back `a830001`, `noor-app-1`
+  and `noor-worker-1` restarted, health ok. Every dialogue directive written
+  since `14881b5` is therefore live and still **unmeasured**: the next
+  acceptance run is the first that will see any of them.
 - **No published figure was ever real.** Every mean published 2026-08-07 was
   normalised twice (`808b07d` moved the /30 into `calculate_weighted_score`; the
   reports kept the manual 30/24 on top), so 18.0/18.5/18.2 were really
@@ -78,30 +82,24 @@ not granted.
 - Instrument: `scripts/e2e_acceptance/score_uncertainty.py`, 22 tests. Reads either
   score-file shape onto one /30 axis, states the interval its repeats justify, and
   refuses a verdict without repeats.
+
 ## Local verification
 
-- `tj-swgu.9`, 2026-08-07: Ruff and format over 411 files, Mypy over 167
-  sources, Pytest `3259 passed, 19 skipped`, and
-  `scripts/orchestration/run_process_verification.sh` OK. Earlier per-stage and
-  per-child figures are superseded by this one.
+- 2026-08-08 at `a830001`: Ruff and format over 347 files, Mypy over 167 sources,
+  Pytest `3336 passed, 19 skipped`, `run_process_verification.sh` OK, and the
+  same gates green in CI before the deploy. Supersedes earlier figures.
 
 ## Active work
 
-- Review children `R-01..R-16`, `R-19`, and `R-20` are closed. `tj-ee5f.12`
-  and `.14` are closed; parent `.7` and `.8` remain open only because their
-  acceptance also requires a separately authorized release-bound production
-  retest.
+- Review children `R-01..R-16`, `R-19`, `R-20`, `tj-ee5f.12` and `.14` are
+  closed; `.7` and `.8` stay open only for their release-bound acceptance.
 - `tj-ee5f.13`: future paid isolated core/background comparison; depends on
-  `.7`, `.8`, `.12`, and `.14`.
-- `tj-ee5f.1`: later winner-only release-bound production acceptance.
-- `tj-ee5f.5`: blocked on the provider-confirmed Wazzup terminal-status bug.
+  `.7`, `.8`, `.12`, and `.14`. `.1`: later winner-only release-bound
+  acceptance. `.5`: blocked on the provider-confirmed Wazzup status bug.
 
-Accepted design and executable plan:
-
-- `docs/superpowers/specs/2026-08-07-model-written-prose-over-verified-facts-design.md`
-- `docs/superpowers/plans/2026-08-07-model-written-prose-over-verified-facts.md`
-- `docs/superpowers/specs/2026-08-03-noor-e2e-remediation-and-model-comparison-spec.md`
-- `docs/superpowers/plans/2026-08-03-noor-e2e-remediation-and-model-comparison.md`
+Accepted design and executable plan, in `docs/superpowers/`:
+`specs|plans/2026-08-07-model-written-prose-over-verified-facts*` and
+`specs|plans/2026-08-03-noor-e2e-remediation-and-model-comparison*`.
 
 ## Constraints
 
@@ -119,14 +117,13 @@ Next stage id: `tj-ee5f`
 The paid comparison has since run under `tj-feet.8` and the main model was
 switched, so the battle this section used to point at is done.
 
-Recommended action: epic `tj-2m5m`. `.1`, `.2`, `.4` and `.5` are written and
-green; `.3` is now folded into them, since nothing in the working tree has ever
-met a live conversation. Everything left needs the same thing: **deploy
-authority, then one repeated run** -- k runs per scenario, panel-scored, against
-the stored `5656c82` baseline of 13.4. Fix `tj-r1vk` before that run or S09 and
-S10 will be scored on a polluted conversation again. `tj-ee5f.1` is the same
-production pass seen from the older stage; do not fold the bounded
-product-runtime `R-17` defer into either.
+Recommended action: epic `tj-2m5m`. `.1` and `.2` are closed; `.3`, `.4` and
+`.5` are written, deployed and unmeasured, and all three now wait on the same
+thing -- **one repeated run against `a830001`**, k runs per scenario,
+panel-scored, compared with the stored `5656c82` baseline of 13.4. Fix `tj-r1vk`
+first or S09 and S10 will be scored on a polluted conversation again.
+`tj-ee5f.1` is the same production pass seen from the older stage; do not fold
+the bounded product-runtime `R-17` defer into either.
 
 ## Stage tj-feet
 
@@ -157,9 +154,11 @@ battle behind it.
 
 ## Approval gates
 
-No authority is currently granted for paid OpenRouter calls, model
-configuration changes, push, deploy, staging/production mutation or readback,
-test-only business effects, or real-user messaging.
+Push and deploy were granted once on 2026-08-08 and spent on `a830001`; they are
+closed again. No authority is currently granted for paid OpenRouter calls, model
+configuration changes, push, deploy, further staging/production mutation,
+test-only business effects, or real-user messaging. An acceptance run against
+the deployed runtime is live traffic and needs its own grant.
 
 ## Explicit defers
 
