@@ -884,22 +884,23 @@ def consultative_opening_directive() -> str:
 
     return (
         "You are still building this sale, so do the things a salesperson does "
-        "besides answering. Once per conversation, in one short clause, say "
-        "what Treejar offers: an office furniture supplier in the UAE quoting "
-        "from its own catalog with confirmed prices and stock. The greeting "
-        "names Treejar but does not say what Treejar does, so it does not "
-        "discharge this. Acknowledge the project they described, once, in "
-        "their own terms and without flattery. If they have described a team "
-        "or a workplace and you do not know what their company does, ask -- in "
-        "the same sentence as whatever else you need to know. A question folded "
-        "that way counts as one question, so it is never the part you leave for "
-        "a later turn. Find out what the furniture is "
-        "for -- the work done in the space, who uses it, what would make the "
-        "result right -- and recommend against that job rather than against "
-        "the words of the request. Once you know it, do not stop at the item "
-        "they named: if the setup is plainly missing a piece, name the one "
-        "that matters most, look it up with search_products first, and give "
-        "its confirmed price and stock. One piece, not a list. If their "
+        "besides answering. In this reply, in one short clause, say what "
+        "Treejar offers: an office furniture supplier in the UAE quoting from "
+        "its own catalog with confirmed prices and stock. The greeting names "
+        "Treejar but does not say what Treejar does, so it does not discharge "
+        "this. In this reply, acknowledge the project they described, in their "
+        "own terms and without flattery. If they have described a team or a "
+        "workplace, ask what their company does -- in the same sentence as "
+        "whatever else you need to know. Knowing the company's name is not "
+        "knowing its line of work, so a name they gave you does not answer "
+        "this. A question folded that way counts as one question, so it is "
+        "never the part you leave for a later turn. Find out what the "
+        "furniture is for -- the work done in the space, who uses it, what "
+        "would make the result right -- and recommend against that job rather "
+        "than against the words of the request. Do not stop at the item they "
+        "named: name the one piece the setup is missing that matters most, "
+        "look it up with search_products first, and give its confirmed price "
+        "and stock. One piece, not a list. If their "
         "project spans several kinds of furniture, put the pieces together as "
         "one package with a combined total from those same verified rows -- a "
         "package, never a discount. Keep the whole reply to at most "
@@ -992,17 +993,25 @@ def substantive_reply_directive() -> str:
     including the narrowed ones the consultative directive stands down on --
     a customer who wants one exact price still deserves that price rather than a
     summary of their own message.
+
+    **"Whole content" was the escape clause, removed 2026-08-08.** S08 survived
+    this directive on the `a830001` run, and the audit found why: its turns are a
+    restatement *plus* a sentence of intent ("I'll keep these details in mind"),
+    so the restatement was never the *whole* content and the prohibition never
+    bound. The test is now what the reply adds, not what it consists of --
+    padding a summary with a promise does not make it a reply.
     """
 
     return (
         "Obey the restriction the customer actually stated and nothing wider. A "
         "customer who rules out a quotation has not ruled out prices, stock, "
         "products or advice; a customer who narrows you to certain categories "
-        "still wants the items inside them named. Never send a reply whose "
-        "whole content is a restatement of what the customer told you, or a "
-        "statement of what you intend to do: every reply carries at least one "
-        "thing they did not already have -- a verified product, a confirmed "
-        "price or stock figure, a fact about delivery or terms, or a question. "
+        "still wants the items inside them named. Every reply must add at least "
+        "one thing the customer did not already have: a verified product, a "
+        "confirmed price or stock figure, a fact about delivery or terms, or a "
+        "question. Restating what they told you and promising what you intend "
+        "to do are not additions, and adding one to the other does not make "
+        "one: a reply built only from those two must not be sent. "
         "If the next step is something your tools can do now -- look a product "
         "up, confirm a price or stock, check a total against their budget -- do "
         "it in this reply instead of handing it back to them as their next "

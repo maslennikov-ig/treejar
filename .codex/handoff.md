@@ -13,22 +13,20 @@ not granted.
   which is why DNS, the pooler, REST and the MCP failed at once and looked like a
   network fault. Production is Postgres in the `noor-db-1` container on
   `noor-server` (ssh config entry), reached as `db:5432` over the compose
-  network, so no laptop-reachable URL exists. `.env.noor` and the dead `supabase`
-  MCP server were removed 2026-08-08.
-- **No real customer has ever written Russian.** Counted 2026-08-08 in
-  production: of 69 real-phone conversations **0** carry Cyrillic and 6 Arabic;
-  all 28 Cyrillic messages in the 435 total are our own harness. 0 of 69 puts the
-  95% ceiling near 4.3% -- "no evidence", not "impossible". `tj-4e5j.2`.
+  network, so no laptop-reachable URL exists.
+- **No real customer has ever written Russian.** Counted 2026-08-08: of 69
+  real-phone conversations **0** carry Cyrillic and 6 Arabic; all 28 Cyrillic
+  messages are our own harness. 0 of 69 puts the 95% ceiling near 4.3% -- "no
+  evidence", not "impossible". `tj-4e5j.2`.
 - **The catalogue is written with Cyrillic lookalikes, and that is load-bearing.**
   7 of 920 SKUs begin with Cyrillic `СН`; 132 names use Cyrillic `х` as the
-  dimension separator. The homoglyph maps in `src/llm/engine.py` and
-  `src/dialogue/catalog_refs.py` are what let a customer typing Latin `CH 135`
-  reach SKU `СН 135`; `tests/test_catalog_homoglyphs.py` guards it.
+  dimension separator. The homoglyph maps in `engine.py` and `catalog_refs.py`
+  let a customer typing Latin `CH 135` reach SKU `СН 135`;
+  `tests/test_catalog_homoglyphs.py` guards it.
 - **The main model is Luna, and all three layers now say so.** `system_configs`,
   `src/core/config.py` and the production `.env` all name `openai/gpt-5.6-luna`
   as of 2026-08-08. For three days only the database row did, while the source
-  said `z-ai/glm-5.2` -- shadowed, so nothing misbehaved and everyone was misled.
-  `tj-uidf`.
+  said `z-ai/glm-5.2` -- shadowed, so everyone was misled. `tj-uidf`.
 - **Two judges, do not confuse them.** Acceptance measurement is a blind Claude
   reader panel, never a paid model; an external judge belongs only to the runtime
   `ai_quality_controls` feature. Compare within one instrument only -- two
@@ -36,72 +34,80 @@ not granted.
 - **Acceptance stands at 15.4; the gap to 24.0 is 8.6.** Measured on `a830001`
   2026-08-08: S01-S08 three times each, S09/S10 once, 52 blind scorings. Paired
   against the corrected `5656c82` baseline of 13.4 the delta is **+1.95 +/- 1.58**
-  -- real, but thinner than it looks: this panel disagreed with itself by a mean
-  of 2.86 against the previous panel's sd 0.9, probably from 26 packets each
-  instead of 10 (`tj-2m5m.9`). Generation noise is the smaller source, a
-  within-scenario sd of **0.84**.
+  -- real, but thin: this panel disagreed with itself by a mean of 2.86 against
+  the previous panel's sd 0.9, probably from 26 packets each instead of 10
+  (`tj-2m5m.9`). Generation noise is smaller, a within-scenario sd of **0.84**.
   `docs/reports/2026-08-08-the-first-run-that-saw-the-directives.md`.
-- **Rules 6, 7 and 13 did not move on a live run, and the cause was the wording.**
-  The value proposition and the company question appear 0 times in all 26
-  transcripts. Not a deploy gap, not an early return, not the tool layer -- all
-  three checked. Rule 7's directive said "if you have not already said it", which
-  `opening_guard.py`'s mandatory "Hello, I'm Noor from Treejar." satisfies inside
-  the same reply; rule 13's was starved by "at most one question ... or leave it
-  for the next turn", since a product question is always more urgent. Both
-  escape clauses removed 2026-08-08, two tests encode it, and the fix is a
-  hypothesis until the next run. Rule 11 broke zero for the first time in 70+
-  scorings (0.33) and rule 15 doubled (0.50), so the mechanism works when the
-  instruction has nothing to excuse itself with. `tj-2m5m.8`.
-- **`6a14f2f` and `5656c82` tie; the deltas inside them (S05 +3.2, S07 -3.3) came
-  from one generation per side and are not evidence. `tj-2m5m.6` is P2.**
+- **Rules die on their own escape clauses, and four did.** The value proposition
+  and the company question appear 0 times in all 26 transcripts of the live run;
+  not a deploy gap, not an early return, not the tool layer, all checked.
+  **A condition on the world is a guard; a condition on what Noor thinks she
+  already did is a leak**, since she is both actor and judge. Removed 2026-08-08:
+  "if you have not already said it" (rule 7 -- `opening_guard.py` puts "Hello,
+  I'm Noor from Treejar." in the same reply); "at most one question ... leave it
+  for the next turn" (starved rule 13 forever); "you do not know what their
+  company does" (a name is not a line of work); "whose **whole content** is a
+  restatement" (why S08 survived -- an echo plus a promise). Five tests hold them
+  out; all unmeasured. Rules 11 and 15 moved, having nothing to hide behind.
+  `tj-2m5m.8`.
+- **The model is not over-constrained, measured.** Directives are 2 353 chars
+  against a 6 929-char base prompt, and repeated runs of one scenario differ at
+  0.34 character similarity. The least repetitive scenario (S07, 0.12) scores
+  highest and the most repetitive (S08, 0.63) nearly lowest.
+- **`6a14f2f` and `5656c82` tie; the deltas inside them came from one generation
+  per side and are not evidence.**
   `docs/reports/2026-08-08-did-the-build-regress.md`.
 - **Owner decision 2026-08-08: generation stays varied.** `PATH_CORE_CHAT` is
   not pinned to temperature 0 -- a bot that always writes the same sentence stops
-  selling, and each customer sees one conversation anyway. The price is k runs
-  per scenario per side, measured at a within-scenario sd of 0.84.
+  selling, and each customer sees one conversation. The price is k runs per
+  scenario per side.
 - **Less caution, more selling, 2026-08-08.** Rule 3 stands down when the
   customer signs their opening message; rule 11 needs a two-family order; an
-  always-on directive forbids a reply that only restates the customer or states
-  intent, and sends Noor to her tools for the next step; the consultative opening
+  always-on directive forbids a reply that adds nothing; the consultative opening
   carries rules 9, 10 and a verified package -- never a discount.
   `docs/reports/2026-08-08-less-caution-more-selling.md`.
-- **Production runs `a830001` as of 2026-08-08.** Owner-authorised push, deploy
-  and acceptance run; CI green, `/opt/noor/.release-sha` reads back `a830001`,
-  health ok. Both authorities are spent and closed again.
+- **Production runs `a830001`** (2026-08-08, owner-authorised push, deploy and
+  run; readback matched, health ok). The escape-clause fixes after it are
+  committed and **not deployed**.
 - **`tj-r1vk` is closed.** S09 and S10 need the real protected chat, so the
   runner now calls the product's own reset before each: the old conversation is
-  renamed `#archived-`, closed and its escalations resolved, a fresh one opens,
-  nothing is deleted. Verified over all 26 transcripts of the run.
+  archived and closed, a fresh one opens, nothing is deleted. Verified over all
+  26 transcripts.
 - **No figure published 2026-08-07 was real**: normalised twice by `808b07d`
-  plus a manual 30/24, so 18.0/18.5/18.2 were 15.8/16.1/16.1, from a judge
-  reading four points generous at sd 3.8. `tj-swgu.13`, closed.
+  plus a manual 30/24, so 18.0/18.5/18.2 were 15.8/16.1/16.1. `tj-swgu.13`.
 - **The rule.** No movement smaller than its own uncertainty is evidence.
+- **The test is partly wrong, and it is not the bot's fault.** Against 74 real
+  production openings: 34% are a bare greeting and 12% exceed 100 chars, where
+  80% of ours do and none is a bare greeting. Length is fine, the real median
+  being 2 customer turns. The rubric is worse -- a manager's scorecard for a
+  complete sales call -- and S06 answers its customer perfectly, scoring 7.35 of
+  30 because that customer forbade what the checklist rewards. `tj-2m5m.10`,
+  `.11`, both needing an owner decision.
 - **glm-5.2 adopted for the runtime judge, on its sd**: k=5 on the stored
-  `5656c82` transcripts, sd 1.3 and mean 11.2 +/- 0.4 against incumbent
-  deepseek-v4-flash's 3.8. Cost argues the other way ($0.0114 against $0.0045
-  per evaluation); the argument is independence, since Luna writes the replies
-  and a judge sharing its model is measuring itself. See the glm52 report.
+  `5656c82` transcripts, sd 1.3 against incumbent deepseek-v4-flash's 3.8. Cost
+  argues the other way; the argument is independence, since Luna writes the
+  replies and a judge sharing its model is measuring itself. See that report.
 - **`ai_quality_controls` names `deepseek/deepseek-v4-flash`** in production, all
   three scopes `disabled`, moved off the delisted `xiaomi/mimo-v2-flash` on
   2026-08-08. Pointing the row at glm-5.2 and enabling `bot_qa` is a separate,
   unrequested change.
-- Instrument: `scripts/e2e_acceptance/score_uncertainty.py`, 22 tests. Reads either
-  score-file shape onto one /30 axis, states the interval its repeats justify, and
-  refuses a verdict without repeats.
+- Instrument: `scripts/e2e_acceptance/score_uncertainty.py`, 22 tests. Reads
+  either score-file shape onto one /30 axis and refuses a verdict without
+  repeats.
 
 ## Local verification
 
-- 2026-08-08 at `a830001`: Ruff and format over 347 files, Mypy over 167 sources,
-  Pytest `3336 passed, 19 skipped`, `run_process_verification.sh` OK, and the
-  same gates green in CI before the deploy. Supersedes earlier figures.
+- 2026-08-08 at `bf7b920` plus the escape-clause fixes: Ruff and format over 347
+  files, Mypy over 167 sources, Pytest `3341 passed, 19 skipped`,
+  `run_process_verification.sh` OK. Supersedes earlier figures.
 
 ## Active work
 
 - Review children `R-01..R-16`, `R-19`, `R-20`, `tj-ee5f.12` and `.14` are
   closed; `.7` and `.8` stay open only for their release-bound acceptance.
-- `tj-ee5f.13`: future paid isolated core/background comparison; depends on
-  `.7`, `.8`, `.12`, and `.14`. `.1`: later winner-only release-bound
-  acceptance. `.5`: blocked on the provider-confirmed Wazzup status bug.
+  `.13`: future paid isolated core/background comparison, depends on `.7`, `.8`,
+  `.12`, `.14`. `.1`: later winner-only release-bound acceptance. `.5`: blocked
+  on the provider-confirmed Wazzup status bug.
 
 Accepted design and executable plan, in `docs/superpowers/`:
 `specs|plans/2026-08-07-model-written-prose-over-verified-facts*` and
@@ -120,13 +126,13 @@ Accepted design and executable plan, in `docs/superpowers/`:
 
 Next stage id: `tj-ee5f`
 
-Recommended action: epic `tj-2m5m`. Two escape clauses are removed and untested;
-the next run is what decides them, and it should split the reader load first
-(`tj-2m5m.9`) or it will not be able to see a two-point move. S08's echo is the
-remaining unexplained defect. `tj-ee5f.1` is the same production pass seen from
-the older stage; do not fold the bounded product-runtime `R-17` defer into it.
-The paid comparison ran under `tj-feet.8` and the model was switched, so the
-battle this section used to point at is done.
+Recommended action: epic `tj-2m5m`. Four escape clauses are removed and
+untested. Before the next run, settle `tj-2m5m.10` and `.11` -- the scenarios
+and the rubric are both wrong in ways that change what the number means -- then
+split the reader load (`tj-2m5m.9`), or a two-point move stays invisible. Read
+two transcripts by eye every round: both findings that mattered this week came
+from reading, not from the number. `tj-ee5f.1` is the same production pass seen
+from the older stage; do not fold the bounded `R-17` defer into it.
 
 ## Stage tj-feet
 
@@ -142,26 +148,23 @@ decision is live policy and is recorded nowhere else:
   all four the capacity rule.
   `docs/reports/2026-08-06-claim-contract-gaps-closed.md`.
 
-Run `scripts/orchestration/repin_traceability_sources.py` after moving current
-state.
+Run `repin_traceability_sources.py` after moving current state.
 
 ## Starter prompt for next orchestrator
 
 Use $orchestrator-stage for the active `tj-ee5f` stage. Read `AGENTS.md`,
 `.codex/orchestrator.toml`, this handoff, the stage summary and manifest, the
-accepted remediation artifacts, the model-comparison specification, and Beads
-`.1`, `.5`, `.7`, `.8`, `.13`, `.13.9`, and `.14`. Preserve frozen
-`AC-01..AC-30`. A challenger decision does not authorize a model-config change,
-and the free exact-provider metadata preflight does not authorize the paid
-battle behind it.
+accepted remediation artifacts, and Beads `.1`, `.5`, `.7`, `.8`, `.13`,
+`.13.9`, `.14`. Preserve frozen `AC-01..AC-30`. A challenger decision does not
+authorize a model-config change.
 
 ## Approval gates
 
-Push and deploy were granted once on 2026-08-08 and spent on `a830001`; they are
-closed again. No authority is currently granted for paid OpenRouter calls, model
-configuration changes, push, deploy, further staging/production mutation,
-test-only business effects, or real-user messaging. An acceptance run against
-the deployed runtime is live traffic and needs its own grant.
+Push, deploy and one acceptance run were granted on 2026-08-08 and spent; all
+are closed again. No authority is currently granted for paid OpenRouter calls,
+model configuration changes, push, deploy, production mutation, test-only
+business effects, or real-user messaging. An acceptance run is live traffic and
+needs its own grant each time.
 
 ## Explicit defers
 
@@ -179,19 +182,16 @@ the deployed runtime is live traffic and needs its own grant.
   rewritten.
 - Registering `repin_traceability_sources.py` in the `AGENTS.md` Operational
   State inventory. Tried and reverted: `AGENTS.md` is pinned as `repo-contract`
-  in the same frozen registry, so a one-line addition breaks three manifest
-  tests and needs a deliberate re-pin of another stream's provenance.
-- `tj-feet.10` stays off. The owner approved enabling it conditional on the
-  confirming round backing the projection; the round measured `12/42` turns
-  rewritten against a projected `1/37`, so the condition was not met. Option
-  (b), a structured main output removing the second call, is still unbuilt and
-  still the more attractive of the two.
-- `codex/tj-feet` and `codex/tj-ee5f-quality-model-battle` both edit
-  `.codex/handoff.md`; the other stream's edits are uncommitted in its own
-  worktree and will need reconciling at merge.
+  in the same frozen registry, so one added line breaks three manifest tests.
+- `tj-feet.10` stays off: the owner's condition was the confirming round backing
+  the projection, and it measured `12/42` turns rewritten against a projected
+  `1/37`. Option (b), a structured main output removing the second call, is
+  unbuilt and still the more attractive of the two.
+- `codex/tj-feet` and `codex/tj-ee5f-quality-model-battle` both edit this
+  handoff; the other stream's edits are uncommitted in its own worktree.
 - `tj-ee5f.13.9` / product-runtime `R-17`: validate and centralize model ids,
-  reasoning capabilities, and cache-control support in `src/core/config.py` and
-  `src/llm/safety.py`. Separate from `.14`, which must not be read as implying it.
+  reasoning capabilities and cache-control support in `config.py` and
+  `safety.py`. Separate from `.14`, which must not be read as implying it.
 - `tj-ee5f.5`: after Wazzup announces its fix, run one bounded protected
   `sent -> delivered -> read` proof.
 - S09 and S10 ran once, not three times: repeating them multiplies real business

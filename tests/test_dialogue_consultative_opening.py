@@ -161,6 +161,31 @@ def test_the_company_question_is_folded_rather_than_deferred() -> None:
     assert "at most one question" in lowered
 
 
+def test_no_move_is_gated_on_what_noor_thinks_she_already_did() -> None:
+    """The audit rule, 2026-08-08.
+
+    A condition on the world is a guard; a condition on the assistant's own
+    past behaviour or judgement is where a rule dies quietly, because the model
+    is both the actor and the judge of whether it already acted. Two rules died
+    that way before anyone noticed. These clauses stay out.
+    """
+
+    lowered = consultative_opening_directive().casefold()
+
+    for escape in (
+        "once per conversation",
+        "if you have not already",
+        "you do not know what their company does",
+        "plainly missing",
+        "once you know it",
+    ):
+        assert escape not in lowered, escape
+
+    # And the two that replaced them are anchored to this reply, not to memory.
+    assert lowered.count("in this reply") >= 2
+    assert "knowing the company's name is not knowing its line of work" in lowered
+
+
 def test_the_directive_bounds_itself_against_the_reply_it_shares_a_turn_with() -> None:
     """Two directives can fire on one turn, and both want a question. Without
     this bound the customer gets an interrogation instead of an answer."""
@@ -286,8 +311,22 @@ def test_the_substantive_directive_separates_the_ban_from_the_silence() -> None:
 def test_the_substantive_directive_forbids_the_bulleted_echo() -> None:
     lowered = substantive_reply_directive().casefold()
 
-    assert "restatement of what the customer told you" in lowered
-    assert "at least one thing they did not already have" in lowered
+    assert "add at least one thing the customer did not already have" in lowered
+
+
+def test_padding_an_echo_with_a_promise_is_still_an_echo() -> None:
+    """The escape clause S08 walked through, removed 2026-08-08.
+
+    Its turns are a restatement plus "I'll keep these details in mind", so the
+    restatement was never the *whole* content and the prohibition never bound.
+    The test is now what the reply adds, not what it consists of.
+    """
+
+    lowered = substantive_reply_directive().casefold()
+
+    assert "whole content" not in lowered
+    assert "adding one to the other does not make" in lowered
+    assert "must not be sent" in lowered
 
 
 def test_the_substantive_directive_does_noors_own_next_step() -> None:
