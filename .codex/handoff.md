@@ -16,18 +16,15 @@ not granted.
   compose network, so no laptop-reachable URL exists. `.env.noor` and the dead
   `supabase` MCP server were removed 2026-08-08.
 - **No real customer has ever written Russian.** Counted 2026-08-08 over the
-  production database: 435 conversations, 2099 customer messages. Split by
-  whether the conversation carries a real phone or a synthetic test id --
-  real customers 69 conversations, **0** with Cyrillic, 6 with Arabic; test
-  traffic 366 conversations, 15 with Cyrillic. All 28 Cyrillic messages are our
-  own harness. Honest bound: 0 of 69 puts the 95% ceiling near 4.3%, so the claim
-  is "no evidence", not "impossible". `tj-4e5j.2`.
+  production database: of 69 real-phone conversations, **0** carry Cyrillic and 6
+  carry Arabic; all 28 Cyrillic messages in the 435 total are our own harness.
+  0 of 69 puts the 95% ceiling near 4.3%, so the claim is "no evidence", not
+  "impossible". `tj-4e5j.2`.
 - **The catalogue is written with Cyrillic lookalikes, and that is load-bearing.**
   7 of 920 SKUs begin with Cyrillic `СН`; 132 names use Cyrillic `х` as the
   dimension separator. The homoglyph maps in `src/llm/engine.py` and
   `src/dialogue/catalog_refs.py` are what let a customer typing Latin `CH 135`
-  reach SKU `СН 135`. Removed during this epic on the reasoning above, restored
-  once the catalogue was measured; `tests/test_catalog_homoglyphs.py` guards it.
+  reach SKU `СН 135`; `tests/test_catalog_homoglyphs.py` guards it.
 - **The main model is Luna, and all three layers now say so.** `system_configs`,
   `src/core/config.py` and the production `.env` all name `openai/gpt-5.6-luna`
   as of 2026-08-08. For three days only the database row did, while the source
@@ -39,28 +36,41 @@ not granted.
   precise instrument: sd **0.9** to glm-5.2's **1.3**. Compare within one
   instrument only -- two judges, or two differently-prompted panels, share no
   noise estimate. Between-panel drift measured 2026-08-08 is about 0.3.
-- **Acceptance stands at 12.6 +/- 0.4; the gap to 24.0 is 11.4.** Two blind
-  readers, both stored builds, 2026-08-08. It is precision, not accuracy: a bias
-  the readers share is invisible to it. Protocol in
-  `docs/reports/2026-08-07-repeated-scoring-and-the-second-reader.md`.
-- **The build did not regress, and a real regression hid inside the flat mean.**
-  `6a14f2f` 12.6 and `5656c82` 12.6, delta -0.0 +/- 0.6. Inside it S05 gained 3.2
-  and **S07 lost 3.3** -- its closing turn went from three verified products with
-  prices to a restatement of the instruction. `tj-2m5m.6` (P0).
-  `docs/reports/2026-08-08-did-the-build-regress.md`.
+- **Acceptance stands at 13.4; the gap to 24.0 is 10.6.** Two blind readers over
+  both stored builds read 12.6 +/- 0.4; correcting rules 3 and 11 below moves
+  `5656c82` to 13.4 and `6a14f2f` to 13.6 without a reader changing a judgement.
+  Precision, not accuracy: a bias the readers share is invisible to it. Protocol
+  in `docs/reports/2026-08-07-repeated-scoring-and-the-second-reader.md`.
+- **The build did not regress, and the per-scenario deltas inside it are not
+  evidence.** `6a14f2f` and `5656c82` tie. S05 +3.2 and S07 -3.3 were each
+  measured from one generation per side, and generation is stochastic by owner
+  decision, so both stand as observations only. `tj-2m5m.6` is P2 and blocked on
+  `tj-2m5m.7`. `docs/reports/2026-08-08-did-the-build-regress.md`.
+- **Owner decision 2026-08-08: generation stays varied.** `PATH_CORE_CHAT` is
+  not pinned to temperature 0 -- a bot that always writes the same sentence stops
+  selling, and each customer sees one conversation anyway. The price is that
+  comparison needs k runs per scenario per side. `8b8635f` ran S05 three times:
+  template turn byte-identical, every model-written turn different, turn 4 in the
+  error fallback twice of three.
+- **Less caution, more selling, 2026-08-08.** Rule 3 stands down when the
+  customer signs their opening message; rule 11 needs a two-family order, not any
+  catalog turn; a new always-on directive forbids a reply that only restates the
+  customer or states intent, and makes Noor perform the next step her tools can
+  do; the consultative opening now also carries rules 9, 10 and a verified
+  package -- never a discount. The two dialogue-side changes are unmeasured and
+  need a deploy. `docs/reports/2026-08-08-less-caution-more-selling.md`.
 - **No published figure was ever real.** Every mean published 2026-08-07 was
   normalised twice (`808b07d` moved the /30 into `calculate_weighted_score`; the
   reports kept the manual 30/24 on top), so 18.0/18.5/18.2 were really
-  15.8/16.1/16.1 -- from a judge reading four points generous at sd 3.8. Honest
-  readings are 12.6. `tj-swgu.13`, closed.
+  15.8/16.1/16.1 -- from a judge reading four points generous at sd 3.8.
+  `tj-swgu.13`, closed.
 - **The rule.** No movement smaller than its own uncertainty is evidence about
   code: +/- 3.3 for the old judge, +/- 0.4 here.
 - **glm-5.2 adopted for the runtime judge, on its sd**: k=5 on the stored
   `5656c82` transcripts, sd 1.3 and mean 11.2 +/- 0.4 against incumbent
-  deepseek-v4-flash's 3.8. Cost argues the other way: at the `PATH_QUALITY_FINAL`
-  ceiling deepseek $0.0045, Luna $0.0064, glm-5.2 $0.0114, Opus $0.2800. The
-  argument is independence -- Luna writes the replies, and a judge sharing a model
-  with the thing it grades is measuring itself. See the glm52-as-judge report.
+  deepseek-v4-flash's 3.8. Cost argues the other way ($0.0114 against $0.0045
+  per evaluation); the argument is independence, since Luna writes the replies
+  and a judge sharing its model is measuring itself. See the glm52 report.
 - **`ai_quality_controls` names `deepseek/deepseek-v4-flash`** in production, all
   three scopes `disabled`, moved off the delisted `xiaomi/mimo-v2-flash` on
   2026-08-08. Pointing the row at glm-5.2 and enabling `bot_qa` is a separate,
@@ -109,16 +119,14 @@ Next stage id: `tj-ee5f`
 The paid comparison has since run under `tj-feet.8` and the main model was
 switched, so the battle this section used to point at is done.
 
-Recommended action: epic `tj-2m5m`, which holds the per-criterion diagnosis of
-the gap. `.3` first -- `consultative_opening_directive` targets rules 6, 7 and 13
-and is not in any measured build, so a panel read of the current build comes
-before writing anything new. Then `.1` and `.2` (applicability: rule 3 is charged
-when the customer already gave their name; rule 11 asks for a discount policy
-forbids), `.5`, and `.4`, the real defect. `tj-r1vk` before any fresh run.
-
-`tj-ee5f.1` is the same production pass seen from the older stage. Do not fold
-the bounded product-runtime `R-17` defer into either. Fix `tj-r1vk` before the
-next run or S09 and S10 will be scored on a polluted conversation again.
+Recommended action: epic `tj-2m5m`. `.1`, `.2`, `.4` and `.5` are written and
+green; `.3` is now folded into them, since nothing in the working tree has ever
+met a live conversation. Everything left needs the same thing: **deploy
+authority, then one repeated run** -- k runs per scenario, panel-scored, against
+the stored `5656c82` baseline of 13.4. Fix `tj-r1vk` before that run or S09 and
+S10 will be scored on a polluted conversation again. `tj-ee5f.1` is the same
+production pass seen from the older stage; do not fold the bounded
+product-runtime `R-17` defer into either.
 
 ## Stage tj-feet
 
@@ -143,14 +151,9 @@ Use $orchestrator-stage for the active `tj-ee5f` stage. Read `AGENTS.md`,
 `.codex/orchestrator.toml`, this handoff, the stage summary and manifest, the
 accepted remediation artifacts, the model-comparison specification, and Beads
 `.1`, `.5`, `.7`, `.8`, `.13`, `.13.9`, and `.14`. Preserve frozen
-`AC-01..AC-30`. Ask separately before any paid OpenRouter call, model-config
-change, push, deploy, production readback, external side effect, or live
-message.
-
-A later task may run the free exact-provider metadata preflight. It must request
-exact current authority before the bounded paid battle. A challenger decision
-does not authorize a model-config change. Push, deploy, production readback,
-Zoho/PDF/Wazzup actions, and live messages remain separate authority gates.
+`AC-01..AC-30`. A challenger decision does not authorize a model-config change,
+and the free exact-provider metadata preflight does not authorize the paid
+battle behind it.
 
 ## Approval gates
 
@@ -160,13 +163,11 @@ test-only business effects, or real-user messaging.
 
 ## Explicit defers
 
-- `tj-swgu.14` is one slice of four. Rules 6, 7 and 13 have a directive; rule
-  11 does not and is still zero in ten of ten. An incentive is a commercial
-  commitment nobody has authorised and the sibling comparison directive forbids
-  one outright, so the honest form of rule 11 is a verified bundle rather than
-  a discount. That is an owner decision, not a prompt change.
-- The `tj-swgu.14` directive has never met a live conversation. Its effect is a
-  headroom estimate, not a measurement, until a run produces new transcripts.
+- Rule 11 was settled on 2026-08-08: the owner declined a discount, so the
+  directive offers a package of verified rows at their combined total instead,
+  and the rubric charges the rule only on a two-family order. No directive
+  written since `tj-swgu.14` has met a live conversation; every effect claimed
+  for them is a headroom estimate until a deploy and a repeated run.
 - `tj-swgu` has no stage scaffold: `.codex/stages/tj-swgu/` does not exist and
   `workspace.current_stage_id` is still `tj-feet`, so `check_stage_ready.py` and
   `run_stage_closeout.py` both refuse the stage. Pre-existing, and left alone
@@ -178,13 +179,12 @@ test-only business effects, or real-user messaging.
 - Registering `repin_traceability_sources.py` in the `AGENTS.md` Operational
   State inventory. Tried and reverted: `AGENTS.md` is pinned as `repo-contract`
   in the same frozen registry, so a one-line addition breaks three manifest
-  tests and needs a deliberate re-pin of another stream's provenance. Owned by
-  `tj-ee5f`, with the design question behind it.
+  tests and needs a deliberate re-pin of another stream's provenance.
 - `tj-feet.10` stays off. The owner approved enabling it conditional on the
   confirming round backing the projection; the round measured `12/42` turns
-  still rewritten against a projected `1/37`, so the condition was not met and
-  the switch was not touched. Option (b), a structured main output removing the
-  second call, was not built and is still the more attractive of the two.
+  rewritten against a projected `1/37`, so the condition was not met. Option
+  (b), a structured main output removing the second call, is still unbuilt and
+  still the more attractive of the two.
 - `codex/tj-feet` and `codex/tj-ee5f-quality-model-battle` both edit
   `.codex/handoff.md`; the other stream's edits are uncommitted in its own
   worktree and will need reconciling at merge.
