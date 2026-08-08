@@ -11,6 +11,7 @@ Verifies:
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
@@ -79,13 +80,14 @@ def test_rating_poor() -> None:
     assert compute_manager_rating(8.9) == "poor"
 
 
-def test_manager_evaluator_prompt_requires_russian_human_readable_output() -> None:
-    """Manager judge prompt must require Russian output for human-readable fields."""
+def test_manager_evaluator_prompt_requires_english_human_readable_output() -> None:
+    """Manager judge prompt must require English output for human-readable fields."""
     from src.quality.manager_evaluator import MANAGER_EVALUATION_PROMPT
 
-    assert "русском" in MANAGER_EVALUATION_PROMPT.lower()
+    assert "in english" in MANAGER_EVALUATION_PROMPT.lower()
     assert "summary" in MANAGER_EVALUATION_PROMPT
     assert "comment" in MANAGER_EVALUATION_PROMPT.lower()
+    assert not re.search(r"[Ѐ-ӿ]", MANAGER_EVALUATION_PROMPT)
 
 
 @pytest.mark.asyncio
@@ -147,7 +149,7 @@ async def test_evaluate_manager_conversation_passes_expected_llm_safety_kwargs()
     run_result = MagicMock()
     run_result.output = ManagerEvaluationResult(
         criteria=criteria,
-        summary="Кратко: ok",
+        summary="In brief: ok",
         total_score=10.0,
         rating="satisfactory",
     )
@@ -236,7 +238,7 @@ async def test_manager_summary_mode_focuses_post_escalation_with_prior_context()
     run_result = MagicMock()
     run_result.output = ManagerEvaluationResult(
         criteria=criteria,
-        summary="Кратко: ok",
+        summary="In brief: ok",
         total_score=10.0,
         rating="satisfactory",
     )
@@ -313,7 +315,7 @@ async def test_disabled_manager_transcript_mode_skips_provider_call() -> None:
     mock_agent.run.assert_not_awaited()
     assert evaluation.total_score == 0.0
     assert evaluation.rating == "poor"
-    assert "Недостаточно данных" in evaluation.summary
+    assert "Insufficient data" in evaluation.summary
     assert metrics.message_count == 1
 
 

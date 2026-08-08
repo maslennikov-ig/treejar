@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 QualityRating = Literal["excellent", "good", "satisfactory", "poor"]
 RedFlagCode = Literal[
@@ -117,6 +118,28 @@ class EvaluationResult(BaseModel):
     block_scores: list[BlockScore] = Field(default_factory=list)
     diagnostics: EvaluationDiagnostics = Field(default_factory=EvaluationDiagnostics)
 
+    @field_validator("block_scores", "diagnostics", mode="before")
+    @classmethod
+    def _accept_stringified_json(cls, value: Any, info: ValidationInfo) -> Any:
+        """Take a nested object the judge handed back as a JSON string.
+
+        `z-ai/glm-5.2` returns `diagnostics` as a string containing JSON rather
+        than as an object. `judge_agent` runs with `retries=0`, so that single
+        quirk is a terminal failure and no score comes back at all -- which is
+        how the model presented as unusable when tj-4e5j.7 first ran it.
+
+        Both fields are recomputed by `finalize_evaluation_result` from the
+        criteria, so whatever the judge sends here is discarded. Being strict
+        about the shape of a value we throw away buys nothing and costs the
+        whole evaluation.
+        """
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except ValueError:
+                return [] if info.field_name == "block_scores" else {}
+        return value
+
 
 class RedFlagItem(BaseModel):
     """A critical realtime warning signal."""
@@ -154,6 +177,18 @@ def _clean_items(items: list[str], fallback: str) -> list[str]:
     return cleaned or [fallback]
 
 
+# Both build_summary_text and finalize_evaluation_result fall back to these, and
+# they used to be spelled out twice apiece. One copy, so a reworded placeholder
+# cannot drift between the summary a manager reads and the record it is built
+# from.
+NO_STRENGTHS_RECORDED = "No clearly stated strengths were recorded."
+NO_WEAKNESSES_RECORDED = "No material problems with the conversation were recorded."
+NO_RECOMMENDATIONS_RECORDED = "No additional recommendations were recorded."
+NO_NEXT_BEST_ACTION = (
+    "Review the conversation manually and decide the next step with the customer."
+)
+
+
 def build_summary_text(
     strengths: list[str],
     weaknesses: list[str],
@@ -162,32 +197,20 @@ def build_summary_text(
 ) -> str:
     """Create a deterministic narrative summary from sectioned findings."""
     summary_lines = [
-        "Что сделано хорошо:",
+        "What went well:",
+        *[f"- {item}" for item in _clean_items(strengths, NO_STRENGTHS_RECORDED)],
+        "",
+        "What weakened the conversation:",
+        *[f"- {item}" for item in _clean_items(weaknesses, NO_WEAKNESSES_RECORDED)],
+        "",
+        "Recommendations:",
         *[
             f"- {item}"
-            for item in _clean_items(
-                strengths, "Явно выраженные сильные стороны не зафиксированы."
-            )
+            for item in _clean_items(recommendations, NO_RECOMMENDATIONS_RECORDED)
         ],
         "",
-        "Что ухудшило диалог:",
-        *[
-            f"- {item}"
-            for item in _clean_items(
-                weaknesses, "Существенные проблемы по диалогу не зафиксированы."
-            )
-        ],
-        "",
-        "Рекомендации:",
-        *[
-            f"- {item}"
-            for item in _clean_items(
-                recommendations, "Дополнительные рекомендации не зафиксированы."
-            )
-        ],
-        "",
-        "Следующее действие:",
-        f"- {next_best_action.strip() or 'Проверить диалог вручную и определить следующий шаг по клиенту.'}",
+        "Next action:",
+        f"- {next_best_action.strip() or NO_NEXT_BEST_ACTION}",
     ]
     return "\n".join(summary_lines)
 
@@ -368,19 +391,10 @@ def finalize_evaluation_result(
         blocking_reasons=effective_blockers,
         signals=effective_signals,
     )
-    strengths = _clean_items(
-        result.strengths, "Явно выраженные сильные стороны не зафиксированы."
-    )
-    weaknesses = _clean_items(
-        result.weaknesses, "Существенные проблемы по диалогу не зафиксированы."
-    )
-    recommendations = _clean_items(
-        result.recommendations, "Дополнительные рекомендации не зафиксированы."
-    )
-    next_best_action = (
-        result.next_best_action.strip()
-        or "Проверить диалог вручную и определить следующий шаг по клиенту."
-    )
+    strengths = _clean_items(result.strengths, NO_STRENGTHS_RECORDED)
+    weaknesses = _clean_items(result.weaknesses, NO_WEAKNESSES_RECORDED)
+    recommendations = _clean_items(result.recommendations, NO_RECOMMENDATIONS_RECORDED)
+    next_best_action = result.next_best_action.strip() or NO_NEXT_BEST_ACTION
 
     return result.model_copy(
         update={

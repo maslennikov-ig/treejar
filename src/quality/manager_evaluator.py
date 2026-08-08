@@ -54,43 +54,43 @@ _MANAGER_MODEL_NAME = model_name_for_path(PATH_QUALITY_MANAGER)
 # Manager Evaluation Prompt (10 criteria from manager-evaluation-criteria.md)
 # ---------------------------------------------------------------------------
 
-MANAGER_EVALUATION_PROMPT = """Ты эксперт по оценке качества менеджерских диалогов Treejar.
-Твоя задача — оценить диалог между менеджером и клиентом после эскалации.
+MANAGER_EVALUATION_PROMPT = """You are a Treejar expert in evaluating the quality of manager conversations.
+Your task is to evaluate a conversation between a manager and a customer after an escalation.
 
-Менеджер подключился после передачи от AI-бота Noor. Ниже будут переданы причина эскалации,
-контекст и сам диалог.
+The manager took over after a handoff from the AI bot Noor. The escalation reason,
+the context and the conversation itself are supplied below.
 
-Оцени каждый из 10 критериев по шкале 0-2:
-- 2 = критерий полностью выполнен
-- 1 = выполнен частично
-- 0 = не выполнен или нарушен
+Score each of the 10 criteria on a 0-2 scale:
+- 2 = the criterion is fully met
+- 1 = partially met
+- 0 = not met or violated
 
-## Критерии оценки
+## Evaluation criteria
 
-1. Быстрый подхват: менеджер продолжил разговор с места, где остановился бот.
-2. Использование контекста: менеджер использовал собранные ботом данные о клиенте.
-3. Профессиональный тон: вежливый, грамотный, деловой стиль общения.
-4. Решение проблемы: обработан конкретный запрос/проблема, из-за которой была эскалация.
-5. Проактивность: предложены дополнительные решения, альтернативы или кросс-сейл.
-6. Работа с возражениями: обработаны возражения вроде «дорого», «нет в наличии», сравнение с конкурентами.
-7. Движение к закрытию: предложены КП, follow-up или конкретный следующий шаг.
-8. Полнота информации: даны цены, наличие, сроки доставки, условия.
-9. Сбор данных: запрошены компания, email, должность для CRM/коммерческого предложения.
-10. Закрытие и follow-up: зафиксирован итог и следующий конкретный шаг.
+1. Fast pickup: the manager continued the conversation from where the bot left off.
+2. Use of context: the manager used the customer data the bot had collected.
+3. Professional tone: polite, literate, businesslike communication style.
+4. Problem resolution: the specific request/problem that caused the escalation was handled.
+5. Proactivity: additional solutions, alternatives or cross-sell were offered.
+6. Objection handling: objections such as "too expensive", "out of stock", or competitor comparisons were handled.
+7. Movement towards closing: a quotation, follow-up or concrete next step was offered.
+8. Completeness of information: prices, availability, delivery times and terms were given.
+9. Data collection: company, email and role were requested for the CRM/quotation.
+10. Closing and follow-up: the outcome and the next concrete step were recorded.
 
-## Инструкции
+## Instructions
 
-- Будь объективен. Приводи точные цитаты или фрагменты диалога в `comment`, если это evidence.
-- Оцени КАЖДЫЙ критерий. Если он отсутствует, ставь 0.
-- Верни РОВНО 10 оценок критериев (`rule_number` от 1 до 10).
-- Поле `rating` должно использовать только canonical значения: `excellent`, `good`, `satisfactory`, `poor`.
-- Все человекочитаемые текстовые поля (`summary`, `rule_name`, `comment`) пиши на русском языке.
-- Допускается оставлять точные цитаты клиента/диалога на исходном языке, если это evidence.
-- `summary` оформи на русском в 3 коротких строках с такими префиксами:
-  `Кратко:`
-  `Что мешало результату:`
-  `Рекомендации:`
-- `total_score` = сумма всех 10 оценок (максимум 20).
+- Be objective. Cite exact quotes or conversation fragments in `comment` when they are the evidence.
+- Score EVERY criterion. If it is absent, score it 0.
+- Return EXACTLY 10 criterion scores (`rule_number` from 1 to 10).
+- The `rating` field must use only the canonical values: `excellent`, `good`, `satisfactory`, `poor`.
+- Write every human-readable text field (`summary`, `rule_name`, `comment`) in English.
+- Exact customer/conversation quotes may stay in their original language when they are evidence.
+- Write `summary` in English as 3 short lines with these prefixes:
+  `In brief:`
+  `What held the outcome back:`
+  `Recommendations:`
+- `total_score` = the sum of all 10 scores (maximum 20).
 """
 
 # ---------------------------------------------------------------------------
@@ -118,9 +118,9 @@ manager_judge_agent: Agent[None, ManagerEvaluationResult] = Agent(
 )
 
 INSUFFICIENT_MANAGER_SUMMARY = (
-    "Кратко: Недостаточно данных для AI-оценки.\n"
-    "Что мешало результату: transcript content недоступен для этого режима.\n"
-    "Рекомендации: Проверить диалог вручную при необходимости."
+    "In brief: Insufficient data for an AI evaluation.\n"
+    "What held the outcome back: transcript content is unavailable in this mode.\n"
+    "Recommendations: Review the conversation manually if needed."
 )
 
 
@@ -168,7 +168,7 @@ def _insufficient_manager_evaluation() -> ManagerEvaluationResult:
             rule_number=rule_number,
             rule_name=f"Rule {rule_number}",
             score=0,
-            comment="Недостаточно данных: transcript content недоступен для оценки.",
+            comment="Insufficient data: transcript content is unavailable for evaluation.",
         )
         for rule_number in range(1, 11)
     ]
@@ -325,9 +325,9 @@ async def evaluate_manager_conversation(
     metrics = await calculate_manager_metrics(escalation, conversation, db)
 
     escalation_context = (
-        f"Причина эскалации: {escalation.reason}\n"
-        f"Заметки по эскалации: {escalation.notes or 'н/д'}\n"
-        f"Менеджер: {escalation.assigned_to or 'не указан'}\n"
+        f"Escalation reason: {escalation.reason}\n"
+        f"Escalation notes: {escalation.notes or 'n/a'}\n"
+        f"Manager: {escalation.assigned_to or 'not specified'}\n"
     )
     summary_text = None
     if mode != AIQualityTranscriptMode.FULL:
@@ -365,7 +365,9 @@ async def evaluate_manager_conversation(
     if context.insufficient_evidence:
         return _insufficient_manager_evaluation(), metrics
 
-    user_prompt = f"Оцени диалог менеджера после эскалации.\n\n{context.prompt}"
+    user_prompt = (
+        f"Evaluate the manager's conversation after the escalation.\n\n{context.prompt}"
+    )
 
     logger.info(
         "Evaluating manager for escalation %s (%d post-escalation messages)",

@@ -71,8 +71,39 @@ def _default_qa_model() -> str:
     return model_name_for_path(PATH_QUALITY_FINAL)
 
 
-def is_glm5_model(model_name: str) -> bool:
-    return is_glm5_model_name(model_name)
+# The guard is about rate, not family. OpenRouter list prices read 2026-08-08,
+# costed on the PATH_QUALITY_FINAL ceiling of 16k input / 8k output tokens.
+# Treat the figures as a snapshot: glm-5.2 moved from $0.0137 to $0.0114 inside
+# one day, so the ordering is the durable part, not the decimals.
+#
+#   deepseek/deepseek-v4-flash  $0.0045   1.0x
+#   openai/gpt-5.6-luna         $0.0064   1.4x   the model that writes the replies
+#   z-ai/glm-5.2                $0.0114   2.5x
+#   z-ai/glm-5                  $0.0356   8.0x
+#   z-ai/glm-5.1                $0.0392   8.7x
+#   z-ai/glm-5-turbo            $0.0512  11.4x
+#   anthropic/claude-opus-5     $0.2800  62.5x
+#
+# glm-5.2 is the one member of the family cheap enough to run as a repeated
+# gate: 3x cheaper than glm-5 and 25x cheaper than a single Opus read. Note it
+# is dearer than Luna, so cost is not the argument for it. The argument is that
+# Luna writes the customer-facing replies, and a judge that shares a model with
+# the thing it grades is measuring itself. Adoption still rests on variance
+# (tj-4e5j.7), not on price -- but neither is a reason to make an admin tick an
+# override box.
+_AFFORDABLE_QA_MODEL_VARIANTS = frozenset({"glm-5.2"})
+
+
+def _model_variant(model_name: str) -> str:
+    """Strip the OpenRouter provider prefix and any ``:free``/``:nitro`` suffix."""
+    return model_name.strip().lower().rsplit("/", 1)[-1].split(":", 1)[0]
+
+
+def is_expensive_qa_model(model_name: str) -> bool:
+    """True when a QA model costs enough to warrant an explicit admin override."""
+    if not is_glm5_model_name(model_name):
+        return False
+    return _model_variant(model_name) not in _AFFORDABLE_QA_MODEL_VARIANTS
 
 
 class AIQualityScopeConfig(BaseModel):
@@ -102,8 +133,8 @@ class AIQualityScopeConfig(BaseModel):
             raise ValueError(
                 "full transcript mode requires full_transcript_warning_override"
             )
-        if is_glm5_model(self.model) and not self.glm5_warning_override:
-            raise ValueError("GLM-5 QA model requires glm5_warning_override")
+        if is_expensive_qa_model(self.model) and not self.glm5_warning_override:
+            raise ValueError("expensive QA model requires glm5_warning_override")
         if (
             self.max_calls_per_run > 0
             and self.max_calls_per_day > 0
@@ -219,14 +250,14 @@ def warnings_for_ai_quality_config(
                     ),
                 )
             )
-        if is_glm5_model(scope_settings.model):
+        if is_expensive_qa_model(scope_settings.model):
             warnings.append(
                 AIQualityWarning(
                     scope=scope,
                     code="glm5_qa",
                     message=(
-                        "GLM-5 is expensive for QA automation and requires an "
-                        "explicit admin override."
+                        f"{scope_settings.model} is expensive for QA automation "
+                        "and requires an explicit admin override."
                     ),
                 )
             )

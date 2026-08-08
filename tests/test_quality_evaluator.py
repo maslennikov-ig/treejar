@@ -5,6 +5,7 @@ TDD: Tests written first, then implementation.
 
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -435,7 +436,7 @@ def _quality_message(role: str, content: str) -> SimpleNamespace:
     ("language", "customer_text"),
     [
         ("ar", "أحتاج تجهيز مكتب لفريقي"),
-        ("ru", "Нужно подобрать мебель для команды"),
+        ("ar", "أحتاج أثاثاً للفريق"),
     ],
 )
 def test_rule_applicability_uses_typed_catalog_state_for_any_language(
@@ -460,7 +461,7 @@ def test_rule_applicability_uses_typed_catalog_state_for_any_language(
     assessment = _build_applicability_assessment(
         [
             _quality_message("user", customer_text),
-            _quality_message("assistant", "Ответ на языке клиента"),
+            _quality_message("assistant", "A reply in the customer's language"),
         ],
         "needs_analysis",
         conversation,
@@ -489,8 +490,10 @@ def test_rule_applicability_distinguishes_quote_decline_from_collection() -> Non
 
     assessment = _build_applicability_assessment(
         [
-            _quality_message("user", "Нет, коммерческое предложение не нужно"),
-            _quality_message("assistant", "Понял, продолжаем без КП."),
+            _quality_message("user", "No, I do not need a quotation"),
+            _quality_message(
+                "assistant", "Understood, we continue without a quotation."
+            ),
         ],
         "solution",
         conversation,
@@ -656,8 +659,8 @@ def test_rule_applicability_reads_only_canonical_quote_workflow(
 
     assessment = _build_applicability_assessment(
         [
-            _quality_message("user", "Каноническое состояние"),
-            _quality_message("assistant", "Состояние учтено"),
+            _quality_message("user", "Canonical state"),
+            _quality_message("assistant", "State recorded"),
         ],
         "solution",
         conversation,
@@ -778,13 +781,15 @@ def test_evaluator_prompt_contains_all_rules() -> None:
         assert str(i) in EVALUATION_PROMPT, f"Rule {i} missing from evaluator prompt"
 
 
-def test_evaluator_prompt_requires_russian_human_readable_output() -> None:
-    """Judge prompt must force owner-facing text fields to be returned in Russian."""
-    from src.quality.evaluator import EVALUATION_PROMPT
+def test_evaluator_prompt_requires_english_human_readable_output() -> None:
+    """Judge prompt must force owner-facing text fields to be returned in English."""
+    from src.quality.evaluator import EVALUATION_PROMPT, RED_FLAG_PROMPT
 
-    assert "русском" in EVALUATION_PROMPT.lower()
+    assert "in english" in EVALUATION_PROMPT.lower()
     assert "summary" in EVALUATION_PROMPT
     assert "comment" in EVALUATION_PROMPT.lower()
+    assert not re.search(r"[Ѐ-ӿ]", EVALUATION_PROMPT)
+    assert not re.search(r"[Ѐ-ӿ]", RED_FLAG_PROMPT)
 
 
 @pytest.mark.asyncio
@@ -882,7 +887,7 @@ async def test_evaluate_conversation_infers_sales_stage_when_missing() -> None:
     assert deps.rule_applicability[1] is True
     assert deps.rule_applicability[12] is False
     prompt = mock_agent.run.call_args[0][0]
-    assert "Текущий этап продаж: greeting" in prompt
+    assert "Current sales stage: greeting" in prompt
 
 
 @pytest.mark.asyncio
@@ -1164,7 +1169,7 @@ async def test_disabled_transcript_mode_skips_final_provider_call() -> None:
     assert result.total_score == 0.0
     assert result.rating == "poor"
     assert all(criterion.n_a for criterion in result.criteria)
-    assert "Недостаточно данных" in result.summary
+    assert "Insufficient data" in result.summary
 
 
 @pytest.mark.asyncio
@@ -1198,7 +1203,7 @@ async def test_disabled_transcript_mode_skips_red_flag_provider_call() -> None:
 
     mock_agent.run.assert_not_awaited()
     assert result.flags == []
-    assert "Недостаточно данных" in result.recommended_action
+    assert "Insufficient data" in result.recommended_action
 
 
 # =============================================================================
@@ -1302,3 +1307,55 @@ async def test_api_returns_504_on_timeout() -> None:
                 json={"conversation_id": str(conv_id)},
             )
     assert response.status_code == 504
+
+
+def test_a_judge_may_hand_back_nested_objects_as_json_strings() -> None:
+    """z-ai/glm-5.2 returns `diagnostics` as a string, and retries are off.
+
+    `judge_agent` runs with `retries=0`, so one shape quirk in a field that is
+    recomputed downstream anyway loses the whole evaluation. tj-4e5j.7 hit this
+    on the first call and the model looked unusable until the cause was read.
+    """
+    import json
+
+    from src.quality.schemas import CriterionScore, EvaluationResult
+
+    criteria = [
+        CriterionScore(rule_number=i, rule_name=f"r{i}", score=1, comment="c")
+        for i in range(1, 16)
+    ]
+
+    parsed = EvaluationResult(
+        criteria=criteria,
+        summary="s",
+        total_score=1.0,
+        rating="poor",
+        diagnostics=json.dumps(
+            {"applicable_rules": 12, "applicable_blocks": 3, "status": "complete"}
+        ),
+    )
+
+    assert parsed.diagnostics.applicable_rules == 12
+    assert parsed.diagnostics.status == "complete"
+
+
+def test_an_unparseable_nested_string_falls_back_rather_than_failing() -> None:
+    """The value is discarded by finalize_evaluation_result either way."""
+    from src.quality.schemas import CriterionScore, EvaluationResult
+
+    criteria = [
+        CriterionScore(rule_number=i, rule_name=f"r{i}", score=1, comment="c")
+        for i in range(1, 16)
+    ]
+
+    result = EvaluationResult(
+        criteria=criteria,
+        summary="s",
+        total_score=1.0,
+        rating="poor",
+        diagnostics="not json at all",
+        block_scores="also not json",
+    )
+
+    assert result.diagnostics.applicable_rules == 0
+    assert result.block_scores == []

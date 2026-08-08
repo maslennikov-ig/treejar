@@ -193,6 +193,11 @@ class LLMPathPolicy:
     max_attempts: int = 1
     notify_on_failure: bool = True
     notify_on_budget_block: bool = True
+    # None leaves the provider default in place. A path that scores rather than
+    # writes should pin this: sampling noise in a judge is measurement error,
+    # and it is indistinguishable from the code movement the judge is there to
+    # detect.
+    temperature: float | None = None
 
 
 _POLICIES: dict[str, LLMPathPolicy] = {
@@ -223,6 +228,11 @@ _POLICIES: dict[str, LLMPathPolicy] = {
         total_tokens_limit=24000,
         request_limit=1,
         max_attempts=2,
+        # The harness's own judge in scripts/e2e_acceptance/evaluators.py has
+        # always refused anything but 0; the deployed one ran at the provider
+        # default and carried +/- 3.3 at one pass for it. Free lever, and it
+        # changes the instrument, so it lands before the re-baseline.
+        temperature=0.0,
     ),
     PATH_QUALITY_RED_FLAGS: LLMPathPolicy(
         path=PATH_QUALITY_RED_FLAGS,
@@ -444,6 +454,8 @@ def model_settings_for_path(
         "max_tokens": policy.max_tokens,
         "timeout": policy.timeout_seconds,
     }
+    if policy.temperature is not None:
+        settings_payload["temperature"] = policy.temperature
     if provider == OPENROUTER_PROVIDER_NAME and model_name is not None:
         extra_body = _openrouter_extra_body(
             model_name=model_name,
@@ -493,6 +505,11 @@ def _merge_model_settings(
     current_timeout = merged.get("timeout")
     if current_timeout is None:
         merged["timeout"] = policy.timeout_seconds
+
+    # A pinned temperature is policy, not a default: a caller must not be able
+    # to hand the judge back its sampling noise.
+    if policy.temperature is not None:
+        merged["temperature"] = policy.temperature
 
     if provider == OPENROUTER_PROVIDER_NAME:
         generated_extra_body = _openrouter_extra_body(

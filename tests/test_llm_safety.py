@@ -688,3 +688,48 @@ def test_omitting_usage_limits_yields_exactly_the_path_policy() -> None:
     assert merged.output_tokens_limit == policy.output_tokens_limit
     assert merged.total_tokens_limit == policy.total_tokens_limit
     assert merged.request_limit == policy.request_limit
+
+
+def test_the_quality_judge_scores_at_temperature_zero() -> None:
+    """Sampling noise in a judge is measurement error.
+
+    The harness's own bounded judge in scripts/e2e_acceptance/evaluators.py has
+    always refused anything but 0. The deployed judge ran at the provider
+    default and carried +/- 3.3 at one pass for it, against a threshold gap of
+    7.9 points -- noise large enough to hide the movement it exists to detect.
+    """
+    from src.llm.safety import (
+        PATH_QUALITY_FINAL,
+        model_settings_for_path,
+        policy_for_path,
+    )
+
+    assert policy_for_path(PATH_QUALITY_FINAL).temperature == 0.0
+    assert model_settings_for_path(PATH_QUALITY_FINAL)["temperature"] == 0.0
+
+
+def test_a_caller_cannot_hand_the_judge_back_its_sampling_noise() -> None:
+    """A pinned temperature is policy, not a default the call site may raise."""
+    from src.llm.safety import PATH_QUALITY_FINAL, _merge_model_settings
+
+    merged = _merge_model_settings(
+        PATH_QUALITY_FINAL,
+        {"temperature": 0.9},
+        model_name="z-ai/glm-5.2",
+        provider="openrouter",
+        cache_telemetry_enabled=False,
+    )
+
+    assert merged["temperature"] == 0.0
+
+
+def test_paths_without_a_pinned_temperature_keep_the_provider_default() -> None:
+    """Only a path that scores rather than writes should pin one."""
+    from src.llm.safety import (
+        PATH_CORE_CHAT,
+        model_settings_for_path,
+        policy_for_path,
+    )
+
+    assert policy_for_path(PATH_CORE_CHAT).temperature is None
+    assert "temperature" not in model_settings_for_path(PATH_CORE_CHAT)

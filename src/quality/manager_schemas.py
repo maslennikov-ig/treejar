@@ -12,6 +12,22 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+# The owner-facing short name for each of the ten criteria, mirroring RULE_NAMES
+# in src/quality/schemas.py. These are the criteria of MANAGER_EVALUATION_PROMPT
+# said in a few words, for a report where the full sentence will not fit.
+MANAGER_RULE_NAMES: dict[int, str] = {
+    1: "Fast pickup after the bot.",
+    2: "Used the context already collected.",
+    3: "Professional tone.",
+    4: "Resolved the reason for the escalation.",
+    5: "Proactivity and additional options.",
+    6: "Objection handling.",
+    7: "Movement towards closing.",
+    8: "Completeness of information.",
+    9: "Collected data for the CRM/quotation.",
+    10: "Recorded the outcome and the next step.",
+}
+
 
 class ManagerCriterionScore(BaseModel):
     """Score for a single manager evaluation criterion (0-2 scale)."""

@@ -189,7 +189,7 @@ async def test_job_skips_low_score_telegram_alert_for_other_inbound_phone(
     new_callable=AsyncMock,
 )
 @patch("src.services.notifications.send_telegram_message", new_callable=AsyncMock)
-async def test_job_formats_low_score_telegram_alert_in_russian(
+async def test_job_formats_low_score_telegram_alert_in_english(
     mock_send_telegram: AsyncMock,
     mock_should_send: AsyncMock,
     mock_get_unreviewed: AsyncMock,
@@ -205,7 +205,7 @@ async def test_job_formats_low_score_telegram_alert_in_russian(
     mock_already_reviewed.return_value = False
     mock_should_send.return_value = True
     mock_evaluate.return_value = (
-        SimpleNamespace(total_score=4.2, rating="poor", summary="Слабая передача"),
+        SimpleNamespace(total_score=4.2, rating="poor", summary="Weak handoff"),
         SimpleNamespace(),
     )
 
@@ -243,11 +243,11 @@ async def test_job_formats_low_score_telegram_alert_in_russian(
     mock_save_review.assert_awaited_once()
     mock_send_telegram.assert_awaited_once()
     message = mock_send_telegram.await_args.args[0]
-    assert "Низкая оценка менеджера" in message
-    assert "Менеджер" in message
-    assert "не указан" in message
-    assert "плохо" in message
-    assert "Кратко" in message
+    assert "Low manager score" in message
+    assert "Manager" in message
+    assert "not specified" in message
+    assert "Poor" in message
+    assert "In brief" in message
 
 
 @pytest.mark.asyncio
