@@ -9,17 +9,16 @@ not granted.
 
 ## Current truth
 
-- **Production is not on Supabase.** The project `vlxgzhbtnwysaqonvlte` is
-  INACTIVE, which is why DNS, the pooler, REST and the MCP failed at once and
-  looked like a network fault. Production is Postgres in the `noor-db-1`
-  container on `noor-server` (ssh config entry), reached as `db:5432` over the
-  compose network, so no laptop-reachable URL exists. `.env.noor` and the dead
-  `supabase` MCP server were removed 2026-08-08.
-- **No real customer has ever written Russian.** Counted 2026-08-08 over the
-  production database: of 69 real-phone conversations, **0** carry Cyrillic and 6
-  carry Arabic; all 28 Cyrillic messages in the 435 total are our own harness.
-  0 of 69 puts the 95% ceiling near 4.3%, so the claim is "no evidence", not
-  "impossible". `tj-4e5j.2`.
+- **Production is not on Supabase.** Project `vlxgzhbtnwysaqonvlte` is INACTIVE,
+  which is why DNS, the pooler, REST and the MCP failed at once and looked like a
+  network fault. Production is Postgres in the `noor-db-1` container on
+  `noor-server` (ssh config entry), reached as `db:5432` over the compose
+  network, so no laptop-reachable URL exists. `.env.noor` and the dead `supabase`
+  MCP server were removed 2026-08-08.
+- **No real customer has ever written Russian.** Counted 2026-08-08 in
+  production: of 69 real-phone conversations **0** carry Cyrillic and 6 Arabic;
+  all 28 Cyrillic messages in the 435 total are our own harness. 0 of 69 puts the
+  95% ceiling near 4.3% -- "no evidence", not "impossible". `tj-4e5j.2`.
 - **The catalogue is written with Cyrillic lookalikes, and that is load-bearing.**
   7 of 920 SKUs begin with Cyrillic `СН`; 132 names use Cyrillic `х` as the
   dimension separator. The homoglyph maps in `src/llm/engine.py` and
@@ -28,48 +27,51 @@ not granted.
 - **The main model is Luna, and all three layers now say so.** `system_configs`,
   `src/core/config.py` and the production `.env` all name `openai/gpt-5.6-luna`
   as of 2026-08-08. For three days only the database row did, while the source
-  said `z-ai/glm-5.2` -- shadowed, so nothing misbehaved and every reader was
-  misled. `tj-uidf`.
+  said `z-ai/glm-5.2` -- shadowed, so nothing misbehaved and everyone was misled.
+  `tj-uidf`.
 - **Two judges, do not confuse them.** Acceptance measurement is a blind Claude
   reader panel, never a paid model; an external judge belongs only to the runtime
-  `ai_quality_controls` feature, which runs unattended. The panel is also the more
-  precise instrument: sd **0.9** to glm-5.2's **1.3**. Compare within one
-  instrument only -- two judges, or two differently-prompted panels, share no
-  noise estimate. Between-panel drift measured 2026-08-08 is about 0.3.
-- **Acceptance stands at 13.4; the gap to 24.0 is 10.6.** Two blind readers over
-  both stored builds read 12.6 +/- 0.4; correcting rules 3 and 11 below moves
-  `5656c82` to 13.4 and `6a14f2f` to 13.6 without a reader changing a judgement.
-  Precision, not accuracy: a bias the readers share is invisible to it. Protocol
-  in `docs/reports/2026-08-07-repeated-scoring-and-the-second-reader.md`.
-- **The build did not regress, and the per-scenario deltas inside it are not
-  evidence.** `6a14f2f` and `5656c82` tie. S05 +3.2 and S07 -3.3 were each
-  measured from one generation per side, and generation is stochastic by owner
-  decision, so both stand as observations only. `tj-2m5m.6` is P2 and blocked on
-  `tj-2m5m.7`. `docs/reports/2026-08-08-did-the-build-regress.md`.
+  `ai_quality_controls` feature. Compare within one instrument only -- two
+  judges, or two differently-prompted panels, share no noise estimate.
+- **Acceptance stands at 15.4; the gap to 24.0 is 8.6.** Measured on `a830001`
+  2026-08-08: S01-S08 three times each, S09/S10 once, 52 blind scorings. Paired
+  against the corrected `5656c82` baseline of 13.4 the delta is **+1.95 +/- 1.58**
+  -- real, but thinner than it looks, because this panel disagreed with itself by
+  a mean of 2.86 points against the previous panel's sd 0.9, probably from
+  scoring 26 packets each instead of 10. Generation noise, finally measured, is
+  the smaller one: within-scenario sd **0.84** over three runs.
+  `docs/reports/2026-08-08-the-first-run-that-saw-the-directives.md`.
+- **Rules 6, 7 and 13 did not move on a live run.** Rule 13 is 0.00 across all 22
+  applicable scorings and rule 7 is 0.08 of 2, unchanged from before the
+  directive that names all three in plain English. Something drops the
+  instruction before the reply or loses it against a competing one; S08's
+  bulleted echo survives its own directive the same way. Next investigation,
+  and it now has evidence. Rule 11 broke zero for the first time in 70+ scorings
+  (0.33) and rule 15 doubled (0.50), so the mechanism works when it lands.
+- **`6a14f2f` and `5656c82` tie; the deltas inside them (S05 +3.2, S07 -3.3) came
+  from one generation per side and are not evidence. `tj-2m5m.6` is P2.**
+  `docs/reports/2026-08-08-did-the-build-regress.md`.
 - **Owner decision 2026-08-08: generation stays varied.** `PATH_CORE_CHAT` is
   not pinned to temperature 0 -- a bot that always writes the same sentence stops
-  selling, and each customer sees one conversation anyway. The price is that
-  comparison needs k runs per scenario per side. `8b8635f` ran S05 three times:
-  template turn byte-identical, every model-written turn different, turn 4 in the
-  error fallback twice of three.
+  selling, and each customer sees one conversation anyway. The price is k runs
+  per scenario per side, measured at a within-scenario sd of 0.84.
 - **Less caution, more selling, 2026-08-08.** Rule 3 stands down when the
   customer signs their opening message; rule 11 needs a two-family order, not any
   catalog turn; a new always-on directive forbids a reply that only restates the
   customer or states intent, and makes Noor perform the next step her tools can
   do; the consultative opening now also carries rules 9, 10 and a verified
   package -- never a discount. `docs/reports/2026-08-08-less-caution-more-selling.md`.
-- **Production runs `a830001` as of 2026-08-08.** Owner-authorised push and
-  deploy; CI green, `/opt/noor/.release-sha` reads back `a830001`, `noor-app-1`
-  and `noor-worker-1` restarted, health ok. Every dialogue directive written
-  since `14881b5` is therefore live and still **unmeasured**: the next
-  acceptance run is the first that will see any of them.
-- **No published figure was ever real.** Every mean published 2026-08-07 was
-  normalised twice (`808b07d` moved the /30 into `calculate_weighted_score`; the
-  reports kept the manual 30/24 on top), so 18.0/18.5/18.2 were really
-  15.8/16.1/16.1 -- from a judge reading four points generous at sd 3.8.
-  `tj-swgu.13`, closed.
-- **The rule.** No movement smaller than its own uncertainty is evidence about
-  code: +/- 3.3 for the old judge, +/- 0.4 here.
+- **Production runs `a830001` as of 2026-08-08.** Owner-authorised push, deploy
+  and acceptance run; CI green, `/opt/noor/.release-sha` reads back `a830001`,
+  health ok. Both authorities are spent and closed again.
+- **`tj-r1vk` is closed.** S09 and S10 need the real protected chat, so the
+  runner now calls the product's own reset before each: the old conversation is
+  renamed `#archived-`, closed and its escalations resolved, a fresh one opens,
+  nothing is deleted. Verified over all 26 transcripts of the run.
+- **No figure published 2026-08-07 was real**: normalised twice by `808b07d`
+  plus a manual 30/24, so 18.0/18.5/18.2 were 15.8/16.1/16.1, from a judge
+  reading four points generous at sd 3.8. `tj-swgu.13`, closed.
+- **The rule.** No movement smaller than its own uncertainty is evidence.
 - **glm-5.2 adopted for the runtime judge, on its sd**: k=5 on the stored
   `5656c82` transcripts, sd 1.3 and mean 11.2 +/- 0.4 against incumbent
   deepseek-v4-flash's 3.8. Cost argues the other way ($0.0114 against $0.0045
@@ -117,13 +119,14 @@ Next stage id: `tj-ee5f`
 The paid comparison has since run under `tj-feet.8` and the main model was
 switched, so the battle this section used to point at is done.
 
-Recommended action: epic `tj-2m5m`. `.1` and `.2` are closed; `.3`, `.4` and
-`.5` are written, deployed and unmeasured, and all three now wait on the same
-thing -- **one repeated run against `a830001`**, k runs per scenario,
-panel-scored, compared with the stored `5656c82` baseline of 13.4. Fix `tj-r1vk`
-first or S09 and S10 will be scored on a polluted conversation again.
-`tj-ee5f.1` is the same production pass seen from the older stage; do not fold
-the bounded product-runtime `R-17` defer into either.
+Recommended action: epic `tj-2m5m`, and the next question is no longer what to
+write but **why written directives do not reach the reply**. Rules 6, 7 and 13
+are flat after a live run, and S08's echo survives a directive aimed at it,
+while rules 11 and 15 moved. Find the difference between the two groups before
+writing another word of prompt. Second: the panel needs its precision back --
+2.86 mean reader disagreement over 26 packets each is not a usable instrument;
+split the load. `tj-ee5f.1` is the same production pass seen from the older
+stage; do not fold the bounded product-runtime `R-17` defer into either.
 
 ## Stage tj-feet
 
@@ -169,12 +172,11 @@ the deployed runtime is live traffic and needs its own grant.
   for them is a headroom estimate until a deploy and a repeated run.
 - `tj-swgu` has no stage scaffold: `.codex/stages/tj-swgu/` does not exist and
   `workspace.current_stage_id` is still `tj-feet`, so `check_stage_ready.py` and
-  `run_stage_closeout.py` both refuse the stage. Pre-existing, and left alone
-  here: creating it means writing another stream's manifest and ledger. Whoever
-  closes `tj-swgu` has to scaffold it first.
-- Correcting the superseded 18.0/18.5/18.2 figures where they are quoted
-  outside this handoff is `tj-swgu.13`, and belongs with `tj-swgu.12`. Sealed
-  rounds are superseded, never rewritten.
+  `run_stage_closeout.py` both refuse the stage. Whoever closes `tj-swgu` has to
+  scaffold it first, which means writing another stream's manifest and ledger.
+- Correcting the superseded 18.0/18.5/18.2 figures quoted outside this handoff
+  is `tj-swgu.13`, with `tj-swgu.12`. Sealed rounds are superseded, never
+  rewritten.
 - Registering `repin_traceability_sources.py` in the `AGENTS.md` Operational
   State inventory. Tried and reverted: `AGENTS.md` is pinned as `repo-contract`
   in the same frozen registry, so a one-line addition breaks three manifest
@@ -189,11 +191,10 @@ the deployed runtime is live traffic and needs its own grant.
   worktree and will need reconciling at merge.
 - `tj-ee5f.13.9` / product-runtime `R-17`: validate and centralize model ids,
   reasoning capabilities, and cache-control support in `src/core/config.py` and
-  `src/llm/safety.py`. Harness capability evidence is complete; product-runtime
-  cleanup is separate and must not be implied by `.14`.
+  `src/llm/safety.py`. Separate from `.14`, which must not be read as implying it.
 - `tj-ee5f.5`: after Wazzup announces its fix, run one bounded protected
   `sent -> delivered -> read` proof.
-- Paid comparison, model configuration, push, deploy, production readback, and
-  winner-only S01-S10 acceptance are future authority boundaries.
-- Existing raw production/model evidence remains protected outside Git.
-- Repository-history privacy cleanup remains a separate destructive decision.
+- S09 and S10 ran once, not three times: repeating them multiplies real business
+  effects (a PDF to the test chat, a CRM opportunity) nobody has authorised.
+- Existing raw production/model evidence stays protected outside Git, and
+  repository-history privacy cleanup is a separate destructive decision.
