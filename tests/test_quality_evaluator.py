@@ -468,8 +468,125 @@ def test_rule_applicability_uses_typed_catalog_state_for_any_language(
     )
 
     assert assessment.language == language
-    assert all(assessment.rule_applicability[rule] for rule in (8, 9, 10, 11))
+    assert all(assessment.rule_applicability[rule] for rule in (8, 9, 10))
+    assert assessment.rule_applicability[11] is False
     assert "catalog" in assessment.signals
+
+
+def test_rule_11_needs_a_comprehensive_order_not_merely_a_catalog_turn() -> None:
+    """The incentive guideline is written for a multi-family fit-out."""
+
+    from src.quality.evaluator import _build_applicability_assessment
+
+    def _assess(planning: dict[str, object]) -> dict[int, bool]:
+        conversation = SimpleNamespace(
+            language="en",
+            metadata_={
+                "dialogue_kernel": {
+                    "state": {
+                        "version": 1,
+                        "active_flow": "product_selection",
+                        "slots": {"pending_product_refs": ["requested-family"]},
+                    }
+                },
+                "catalog_planning_v1": planning,
+            },
+        )
+        return _build_applicability_assessment(
+            [
+                _quality_message("user", "We are furnishing an office"),
+                _quality_message("assistant", "Here is what Treejar carries"),
+            ],
+            "needs_analysis",
+            conversation,
+        ).rule_applicability
+
+    assert _assess({"families": ["workspace"]})[11] is False
+    assert _assess({"families": ["seating", "workspace"]})[11] is True
+    assert _assess({"families": ["workspace"], "complete_coverage": True})[11] is True
+
+
+def test_rule_11_stays_inapplicable_without_a_catalog_signal() -> None:
+    from src.quality.evaluator import _build_applicability_assessment
+
+    conversation = SimpleNamespace(
+        language="en",
+        metadata_={"catalog_planning_v1": {"families": ["seating", "workspace"]}},
+    )
+
+    assessment = _build_applicability_assessment(
+        [
+            _quality_message("user", "Do you deliver to Dubai?"),
+            _quality_message("assistant", "Yes, we deliver in Dubai."),
+        ],
+        "greeting",
+        conversation,
+    )
+
+    assert assessment.rule_applicability[11] is False
+    assert "comprehensive_order" not in assessment.signals
+
+
+def test_rule_3_stands_down_when_the_customer_signed_the_first_message() -> None:
+    from src.quality.evaluator import _build_applicability_assessment
+
+    conversation = SimpleNamespace(
+        language="en",
+        metadata_={"customer_name": "Leila"},
+    )
+
+    assessment = _build_applicability_assessment(
+        [
+            _quality_message("user", "My name is Leila. We furnish a Dubai office."),
+            _quality_message("assistant", "Hello, I'm Noor from Treejar."),
+        ],
+        "greeting",
+        conversation,
+    )
+
+    assert assessment.rule_applicability[3] is False
+    assert "name_given_unprompted" in assessment.signals
+    assert assessment.rule_applicability[1] is True
+    assert assessment.rule_applicability[2] is True
+
+
+def test_rule_3_still_applies_when_the_name_arrives_after_the_opening() -> None:
+    """A name volunteered later does not excuse an opening that never asked."""
+
+    from src.quality.evaluator import _build_applicability_assessment
+
+    conversation = SimpleNamespace(
+        language="en",
+        metadata_={"customer_name": "Leila"},
+    )
+
+    assessment = _build_applicability_assessment(
+        [
+            _quality_message("user", "We furnish a Dubai office."),
+            _quality_message("assistant", "Hello, I'm Noor from Treejar."),
+            _quality_message("user", "By the way, my name is Leila."),
+        ],
+        "greeting",
+        conversation,
+    )
+
+    assert assessment.rule_applicability[3] is True
+    assert "name_given_unprompted" not in assessment.signals
+
+
+def test_rule_3_applies_when_no_name_is_known_at_all() -> None:
+    from src.quality.evaluator import _build_applicability_assessment
+
+    assessment = _build_applicability_assessment(
+        [
+            _quality_message("user", "We furnish a Dubai office."),
+            _quality_message("assistant", "Hello, I'm Noor from Treejar."),
+        ],
+        "greeting",
+        SimpleNamespace(language="en", metadata_={}),
+    )
+
+    assert assessment.rule_applicability[3] is True
 
 
 def test_rule_applicability_distinguishes_quote_decline_from_collection() -> None:

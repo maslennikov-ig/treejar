@@ -223,6 +223,8 @@ _FOLLOWUP_FLOWS = frozenset({"follow_up", "followup", "next_step"})
 _CATALOG_TOOLS = frozenset({"search_products", "get_stock", "recommend_products"})
 _CRM_TOOLS = frozenset({"lookup_customer", "create_deal"})
 _FOLLOWUP_TOOLS = frozenset({"schedule_follow_up", "schedule_followup"})
+_CATALOG_PLANNING_KEY = "catalog_planning_v1"
+_COMPREHENSIVE_ORDER_FAMILIES = 2
 INSUFFICIENT_EVIDENCE_NEXT_ACTION = "Insufficient data for AI evaluation: transcript content is unavailable in this mode."
 INSUFFICIENT_REDFLAG_ACTION = "Insufficient data for red-flag evaluation: transcript content is unavailable in this mode."
 
@@ -290,6 +292,57 @@ def _assistant_messages(messages: Sequence[Message]) -> list[Message]:
 
 def _customer_message_count(messages: Sequence[Message]) -> int:
     return sum(message.role == "user" for message in messages)
+
+
+def _name_offered_before_the_assistant_spoke(
+    messages: Sequence[Message], customer_name: str | None
+) -> bool:
+    """Did the customer sign their opening message before anyone could ask?
+
+    Rule 3 asks whether the assistant found out how to address the customer.
+    Where the customer opens with "My name is Leila", there is nothing left to
+    ask, and charging the rule marks a correct reply down for skipping a
+    question that would have been rude.
+
+    Deliberately narrow. Only the messages before the assistant's first turn
+    count: a name volunteered later does not excuse an opening that never
+    asked for one.
+    """
+
+    name = (customer_name or "").strip()
+    if not name:
+        return False
+    folded = name.casefold()
+    for message in messages:
+        if message.role == "assistant":
+            return False
+        if folded in (message.content or "").casefold():
+            return True
+    return False
+
+
+def _comprehensive_order(metadata: Mapping[str, Any]) -> bool:
+    """Is this the complex order the incentive guideline is written about?
+
+    The source guideline offers a bundle "при комплексном заказе" -- on a
+    comprehensive order -- not on every conversation that touches the catalog.
+    A fit-out spanning two or more product families is that order; a customer
+    pricing one SKU is not, and asking the assistant to sweeten that is asking
+    for a discount three separate places in the runtime forbid.
+    """
+
+    planning = metadata.get(_CATALOG_PLANNING_KEY)
+    if not isinstance(planning, Mapping):
+        return False
+    if planning.get("complete_coverage") is True:
+        return True
+    families = planning.get("families")
+    if not isinstance(families, list | tuple):
+        return False
+    named = {
+        str(family).strip().casefold() for family in families if str(family).strip()
+    }
+    return len(named) >= _COMPREHENSIVE_ORDER_FAMILIES
 
 
 def _conversation_from_messages(messages: Sequence[Message]) -> Any | None:
@@ -475,9 +528,15 @@ def _build_applicability_assessment(
         or _STAGE_RANK.get(sales_stage, 0) >= _STAGE_RANK[SalesStage.CLOSING.value]
     )
 
+    name_already_given = _name_offered_before_the_assistant_spoke(
+        messages, state.slots.customer_name
+    )
+    comprehensive_order = catalog and _comprehensive_order(metadata)
+
     rules = {rule_number: False for rule_number in range(1, 16)}
-    for rule_number in (1, 2, 3):
+    for rule_number in (1, 2):
         rules[rule_number] = opening
+    rules[3] = opening and not name_already_given
     rules[4] = opening and customer_turns > 0
     rules[5] = opening and customer_turns > 0
     rules[6] = opening and discovery
@@ -485,7 +544,7 @@ def _build_applicability_assessment(
     rules[8] = discovery
     rules[9] = catalog
     rules[10] = catalog
-    rules[11] = catalog
+    rules[11] = comprehensive_order
     rules[12] = quote_started or crm
     rules[13] = company_context
     rules[14] = confirmed_next_step
@@ -498,6 +557,10 @@ def _build_applicability_assessment(
         signals.add("discovery")
     if catalog:
         signals.add("catalog")
+    if comprehensive_order:
+        signals.add("comprehensive_order")
+    if name_already_given:
+        signals.add("name_given_unprompted")
     if quote_started:
         signals.add("quote_started")
     if quote_created:
