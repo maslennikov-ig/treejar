@@ -844,9 +844,18 @@ def consultative_opening_directive() -> str:
     and 2 are a perfect twenty of twenty. Nothing here is a catalog, tool or
     rewrite failure: these are sentences the model does not say.
 
-    Rule 11 is deliberately absent. An incentive is a commercial commitment
-    nobody has authorised, and the sibling directive forbids one outright; the
-    honest form of that rule is a verified bundle, which is a separate decision.
+    Rules 9 and 10 joined it on 2026-08-08, on the owner's decision that Noor
+    may widen past the literal request from the catalog. They cost 4.48 points
+    between them and share this trigger exactly: both are the work a salesperson
+    does once the job is understood, and both must stand down for the customer
+    who has already narrowed. One directive rather than three keeps the "at most
+    one question" bound shared, which is what stops the reply becoming an
+    interrogation.
+
+    Rule 11 arrives here in its honest form only. A discount is a commercial
+    commitment nobody has authorised and the sibling directive forbids one
+    outright; a package of verified rows quoted at their combined total commits
+    nothing, and is what the source guideline asks for on a comprehensive order.
 
     It lives here rather than in the product system prompt, which the stage
     contract freezes.
@@ -860,11 +869,122 @@ def consultative_opening_directive() -> str:
         "confirmed prices and stock. Thank the customer or acknowledge the "
         "project they described, once, in their own terms and without "
         "flattery. If they have described a team or a workplace and you do not "
-        "know what their company does, ask. Keep the whole reply to at most "
+        "know what their company does, ask. Find out what the furniture is "
+        "for -- the work done in the space, who uses it, what would make the "
+        "result right -- and recommend against that job rather than against "
+        "the words of the request. Once you know it, do not stop at the item "
+        "they named: if the setup is plainly missing a piece, name the one "
+        "that matters most, look it up with search_products first, and give "
+        "its confirmed price and stock. One piece, not a list. If their "
+        "project spans several kinds of furniture, put the pieces together as "
+        "one package with a combined total from those same verified rows -- a "
+        "package, never a discount. Keep the whole reply to at most "
         "one question: if you are already asking one for another reason, fold "
         "this into it or leave it for the next turn. None of this comes before "
         "answering what they asked. Never state a service, term or capability "
         "you have not verified, and never offer a discount or a bonus."
+    )
+
+
+_QUOTATION_WORD = r"(?:quotation|quote|proforma|offer)"
+
+_RESUME_VERB = (
+    r"(?:pick\s+(?:this|it)\s+up|revisit|reconnect|touch\s+base|speak|talk"
+    r"|circle\s+back|follow\s+up|decide|order|buy)"
+)
+
+_PURCHASE_DEFERRED_RE = re.compile(
+    r"(?:\bnot\s+ready\b|\bnot\s+(?:buying|purchasing|ordering)\b"
+    r"|\bnot\s+yet\s+(?:ready|buying|ordering|deciding)\b"
+    r"|\bno\s+rush\b|\bin\s+no\s+hurry\b"
+    r"|\bhold\s+off\b|\bput\s+(?:this|it)\s+on\s+hold\b"
+    r"|\b(?:need\s+to\s+)?think\s+(?:it\s+over|about\s+it)\b"
+    r"|\b(?:discuss|review|check)\s+(?:it\s+)?(?:internally|with\s+(?:my|the)\s+"
+    r"(?:team|manager|management|board|partner|partners))\b"
+    rf"|\b(?:get|come)\s+back\s+to\s+you\b|\bdo\s+not\s+create\s+a\s+{_QUOTATION_WORD}\b"
+    # "the no-quotation instruction" is the same refusal, restated.
+    rf"|\bno[\s-]+{_QUOTATION_WORD}\b|\bwithout\s+a\s+{_QUOTATION_WORD}\b"
+    r"|\bwaiting\s+for\s+(?:budget\s+)?approval\b|\bbudget\s+is\s+not\s+approved\b"
+    # A date alone says nothing: "we need 20 chairs next week" is a deadline,
+    # not a deferral. Only a date the customer attaches to talking again counts.
+    rf"|\b{_RESUME_VERB}(?:\s+\w+){{0,3}}\s+(?:next|later\s+this)\s+"
+    r"(?:week|month|quarter)\b"
+    r"|لسنا\s+مستعدين|لا\s+نريد\s+عرض\s+سعر|بدون\s+عرض\s+سعر"
+    r"|سنعود\s+إليك)",
+    re.IGNORECASE,
+)
+
+
+def defers_the_purchase(customer_text: str) -> bool:
+    """Has the customer said, in some form, "not now"?
+
+    Read over the customer request like every detector in this module, never
+    over the reply. Rule 15 -- agree a date and time for the next contact when
+    the customer is not buying today -- scored 0.25 of 2 across the stored
+    transcripts and is the second-largest single loss on the checklist. It has
+    no trigger of its own because deferral is not a question; it is a mood in
+    the customer's own sentence.
+    """
+
+    text = str(customer_text)
+    if not text.strip():
+        return False
+    return bool(_PURCHASE_DEFERRED_RE.search(text))
+
+
+def next_contact_directive() -> str:
+    """Close the turn on a date, not on an open ending.
+
+    Deliberately narrow: it proposes a time and asks the customer to confirm
+    it. Writing anything into a calendar is a tool call the runtime owns, and
+    a promise about a follow-up nobody scheduled is exactly the unverified
+    commitment the contract exists to stop.
+    """
+
+    return (
+        "The customer has told you they are not buying today. Do not leave the "
+        "conversation open-ended: propose one specific time to speak again -- a "
+        "named day, and a morning or afternoon -- and ask them to confirm it "
+        "or name a better one. Say in one clause what you will bring to it, "
+        "and keep it to something you can actually deliver from the catalog. "
+        "Do not claim anything has been scheduled, booked or entered anywhere "
+        "unless a tool call in this conversation did it."
+    )
+
+
+def substantive_reply_directive() -> str:
+    """Never send a turn that only says what the customer already said.
+
+    The defect this answers is visible without a judge. In S08 the customer
+    opens with a restriction -- "do not create a quotation" -- and three of the
+    four assistant turns that follow are a bulleted restatement of the
+    customer's own requirement, with no product, no price and no question. The
+    closing turn proposes as the customer's next step ("verify whether three
+    units fit within AED 6,000") an action Noor holds the tools to perform. The
+    behaviour is identical in both stored builds, so it is a standing defect
+    rather than sampling noise.
+
+    Two failures, one cause: obedience generalised past what was asked. A ban on
+    a quotation became a ban on selling. This directive applies to every turn,
+    including the narrowed ones the consultative directive stands down on --
+    a customer who wants one exact price still deserves that price rather than a
+    summary of their own message.
+    """
+
+    return (
+        "Obey the restriction the customer actually stated and nothing wider. A "
+        "customer who rules out a quotation has not ruled out prices, stock, "
+        "products or advice; a customer who narrows you to certain categories "
+        "still wants the items inside them named. Never send a reply whose "
+        "whole content is a restatement of what the customer told you, or a "
+        "statement of what you intend to do: every reply carries at least one "
+        "thing they did not already have -- a verified product, a confirmed "
+        "price or stock figure, a fact about delivery or terms, or a question. "
+        "If the next step is something your tools can do now -- look a product "
+        "up, confirm a price or stock, check a total against their budget -- do "
+        "it in this reply instead of handing it back to them as their next "
+        "step. Every figure you give still comes from a row you verified this "
+        "turn."
     )
 
 

@@ -46,11 +46,14 @@ from src.dialogue.claim_contract import (
     assumption_eligible_paths,
     comparison_consultation_directive,
     consultative_opening_directive,
+    defers_the_purchase,
     earns_consultative_opening,
+    next_contact_directive,
     requests_product_comparison,
     requests_sizing_judgement,
     row_from_catalog_product,
     sizing_assumption_directive,
+    substantive_reply_directive,
 )
 from src.dialogue.order_guards import (
     is_order_selection_blocked,
@@ -418,9 +421,18 @@ def _turn_runtime_directives(*texts: str, sales_stage: str = "") -> tuple[str, .
     the checklist rules behind it are a phase of the conversation rather than a
     request. It stands down on every turn the others would stand down on, so a
     customer who has narrowed to one exact item is left alone by all of them.
+
+    The substantive-reply directive is the exception and carries no trigger at
+    all. It does not sell anything; it forbids a reply that is only an echo of
+    the customer's own message, and a narrowed customer needs that guarantee
+    more than anyone, not less.
     """
     candidates = tuple(dict.fromkeys(text for text in texts if text))
     directives: list[str] = []
+    if candidates:
+        directives.append(substantive_reply_directive())
+    if any(defers_the_purchase(text) for text in candidates):
+        directives.append(next_contact_directive())
     if any(_CROSS_SELL_REQUEST_RE.search(text) for text in candidates):
         directives.extend(CROSS_SELL_VERIFICATION_DIRECTIVES)
     if any(requests_sizing_judgement(text) for text in candidates):

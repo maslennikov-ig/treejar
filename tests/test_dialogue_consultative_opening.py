@@ -20,7 +20,10 @@ import pytest
 
 from src.dialogue.claim_contract import (
     consultative_opening_directive,
+    defers_the_purchase,
     earns_consultative_opening,
+    next_contact_directive,
+    substantive_reply_directive,
 )
 
 # --- the trigger ------------------------------------------------------------
@@ -146,5 +149,120 @@ def test_the_directive_unlocks_no_fact_and_no_commercial_term() -> None:
     assert "you have not verified" in lowered
 
 
+def test_the_directive_carries_the_job_and_the_widening() -> None:
+    """Rules 9 and 10, added 2026-08-08 on the owner's decision that Noor may
+    widen past the literal request from the catalog."""
+
+    lowered = consultative_opening_directive().casefold()
+
+    # Rule 9, the job to be done rather than the words of the request.
+    assert "what the furniture is for" in lowered
+    assert "rather than against the words of the request" in lowered
+    # Rule 10, one missing piece, verified before it is named.
+    assert "do not stop at the item they named" in lowered
+    assert "search_products" in lowered
+    assert "one piece, not a list" in lowered
+
+
+def test_the_widening_is_a_package_and_never_a_discount() -> None:
+    """Rule 11's honest form. A combined total over verified rows commits
+    nothing; a discount is a commercial commitment nobody has authorised."""
+
+    lowered = consultative_opening_directive().casefold()
+
+    assert "one package with a combined total" in lowered
+    assert "a package, never a discount" in lowered
+    assert "never offer a discount or a bonus" in lowered
+
+
 def test_the_directive_does_not_grow_the_product_system_prompt() -> None:
-    assert len(consultative_opening_directive()) < 900
+    """Raised from 900 on 2026-08-08 when rules 9, 10 and 11 joined it. One
+    directive on a shared trigger beats three, but it is not free."""
+
+    assert len(consultative_opening_directive()) < 1500
+
+
+# --- not buying today -------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "request_text",
+    [
+        "We are not ready to order yet, but keep the details.",
+        "Do not create a quotation for now.",
+        "Please continue without a quotation.",
+        # S08 turn 5, where the refusal is restated rather than repeated.
+        "Correction: the team is now twelve. Keep the no-quotation instruction.",
+        "I need to discuss it internally before we commit.",
+        "Let me think about it and I will get back to you.",
+        "We are waiting for budget approval.",
+        "Let us pick this up next month.",
+        "لسنا مستعدين للشراء الآن.",
+        "بدون عرض سعر من فضلك.",
+    ],
+)
+def test_a_customer_who_is_not_buying_today_earns_a_next_contact(
+    request_text: str,
+) -> None:
+    assert defers_the_purchase(request_text) is True
+
+
+@pytest.mark.parametrize(
+    "request_text",
+    [
+        "Please prepare a formal quotation for exactly four CH 616 NEW black chairs.",
+        "We need chairs for twelve call-center staff below AED 400 each.",
+        "Do you deliver and assemble in Dubai?",
+        "We plan to buy twenty CH 616 NEW black chairs this month.",
+        # A date is a deadline until the customer attaches it to talking again.
+        "We need 20 chairs for next week, what options do you have?",
+        "Delivery has to land next month at the latest.",
+        "",
+        "   ",
+    ],
+)
+def test_a_customer_who_is_still_buying_is_not_pushed_into_a_calendar(
+    request_text: str,
+) -> None:
+    assert defers_the_purchase(request_text) is False
+
+
+def test_the_next_contact_directive_proposes_a_time_and_promises_nothing() -> None:
+    lowered = next_contact_directive().casefold()
+
+    assert "propose one specific time" in lowered
+    assert "confirm it" in lowered
+    # A follow-up nobody scheduled is the unverified commitment the contract
+    # exists to stop.
+    assert "unless a tool call in this conversation did it" in lowered
+
+
+# --- the reply that says nothing --------------------------------------------
+
+
+def test_the_substantive_directive_separates_the_ban_from_the_silence() -> None:
+    """S08's defect in one sentence: a ban on a quotation became a ban on
+    selling."""
+
+    lowered = substantive_reply_directive().casefold()
+
+    assert "the restriction the customer actually stated and nothing wider" in lowered
+    assert "has not ruled out prices" in lowered
+
+
+def test_the_substantive_directive_forbids_the_bulleted_echo() -> None:
+    lowered = substantive_reply_directive().casefold()
+
+    assert "restatement of what the customer told you" in lowered
+    assert "at least one thing they did not already have" in lowered
+
+
+def test_the_substantive_directive_does_noors_own_next_step() -> None:
+    """S08's closing turn proposes as the customer's next step an action Noor
+    holds the tools to perform."""
+
+    lowered = substantive_reply_directive().casefold()
+
+    assert "your tools can do now" in lowered
+    assert "instead of handing it back to them" in lowered
+    assert "a row you verified this turn" in lowered

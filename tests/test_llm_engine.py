@@ -26,7 +26,9 @@ from pydantic_ai.tools import ToolDefinition
 from src.dialogue.claim_contract import (
     comparison_consultation_directive,
     consultative_opening_directive,
+    next_contact_directive,
     sizing_assumption_directive,
+    substantive_reply_directive,
 )
 from src.dialogue.runner import DialogueKernelResult
 from src.dialogue.state import DialogueDecision, DialogueState, QuoteConsent
@@ -2460,9 +2462,12 @@ async def test_process_message_non_candidate_uses_full_tool_mode(
     assert mock_run.await_count == 1
     deps = mock_run.await_args.kwargs["deps"]
     assert deps.tool_mode == "full"
-    # An opening turn now carries exactly one directive, and only that one:
-    # this is the `tj-swgu.14` change, and the turn earns nothing else.
-    assert deps.runtime_directives == (consultative_opening_directive(),)
+    # An opening turn carries the always-on substantive-reply directive and the
+    # consultative opening it earns from the stage, and nothing else.
+    assert deps.runtime_directives == (
+        substantive_reply_directive(),
+        consultative_opening_directive(),
+    )
 
 
 @pytest.mark.asyncio
@@ -22799,8 +22804,26 @@ def test_the_frozen_product_prompt_did_not_grow_to_carry_it() -> None:
     assert "search_products before naming it" not in BASE_SYSTEM_PROMPT
 
 
-def test_an_ordinary_turn_adds_nothing() -> None:
-    assert engine_module._turn_runtime_directives("Please send me 20 chairs.") == ()
+def test_an_ordinary_turn_adds_nothing_it_has_not_earned() -> None:
+    """Only the unconditional one survives.
+
+    The substantive-reply directive carries no trigger by design: it forbids a
+    reply that is nothing but an echo of the customer's own message, and that
+    guarantee belongs to every turn, including the narrowed ones the selling
+    directives stand down on.
+    """
+
+    assert engine_module._turn_runtime_directives("Please send me 20 chairs.") == (
+        substantive_reply_directive(),
+    )
+
+
+def test_a_customer_who_defers_earns_a_date_and_nothing_else() -> None:
+    directives = engine_module._turn_runtime_directives(
+        "We are not ready to order yet, so please continue without a quotation.",
+    )
+
+    assert directives == (substantive_reply_directive(), next_contact_directive())
 
 
 def test_the_cross_sell_directive_still_fires_from_the_same_seam() -> None:
