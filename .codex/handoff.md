@@ -36,38 +36,38 @@ not granted.
 - **Two judges, do not confuse them.** Acceptance measurement is a blind Claude
   reader panel, never a paid model; an external judge belongs only to the runtime
   `ai_quality_controls` feature, which runs unattended. The panel is also the more
-  precise instrument: sd **0.9** to glm-5.2's **1.3** on the same ten transcripts.
-  **Acceptance stands at 12.3 +/- 0.3, gap to 24.0 is 11.7.** Panel compares to
-  panel, never across judges: two judges share no noise estimate.
+  precise instrument: sd **0.9** to glm-5.2's **1.3**. Compare within one
+  instrument only -- two judges, or two differently-prompted panels, share no
+  noise estimate. Between-panel drift measured 2026-08-08 is about 0.3.
+- **Acceptance stands at 12.6 +/- 0.4; the gap to 24.0 is 11.4.** Two blind
+  readers, both stored builds, 2026-08-08. It is precision, not accuracy: a bias
+  the readers share is invisible to it. Protocol in
+  `docs/reports/2026-08-07-repeated-scoring-and-the-second-reader.md`.
+- **The build did not regress, and a real regression hid inside the flat mean.**
+  `6a14f2f` 12.6 and `5656c82` 12.6, delta -0.0 +/- 0.6. Inside it S05 gained 3.2
+  and **S07 lost 3.3** -- its closing turn went from three verified products with
+  prices to a restatement of the instruction. `tj-2m5m.6` (P0).
+  `docs/reports/2026-08-08-did-the-build-regress.md`.
+- **No published figure was ever real.** Every mean published 2026-08-07 was
+  normalised twice (`808b07d` moved the /30 into `calculate_weighted_score`; the
+  reports kept the manual 30/24 on top), so 18.0/18.5/18.2 were really
+  15.8/16.1/16.1 -- from a judge reading four points generous at sd 3.8. Honest
+  readings are 12.6. `tj-swgu.13`, closed.
+- **The rule.** No movement smaller than its own uncertainty is evidence about
+  code: +/- 3.3 for the old judge, +/- 0.4 here.
 - **glm-5.2 adopted for the runtime judge, on its sd**: k=5 on the stored
-  `5656c82` transcripts 2026-08-08, sd 1.3 and mean 11.2 +/- 0.4 against incumbent
-  deepseek-v4-flash's 3.8. Cost argues the other way and is not the reason.
-  `docs/reports/2026-08-08-glm52-as-judge-at-k5.md`.
+  `5656c82` transcripts, sd 1.3 and mean 11.2 +/- 0.4 against incumbent
+  deepseek-v4-flash's 3.8. Cost argues the other way: at the `PATH_QUALITY_FINAL`
+  ceiling deepseek $0.0045, Luna $0.0064, glm-5.2 $0.0114, Opus $0.2800. The
+  argument is independence -- Luna writes the replies, and a judge sharing a model
+  with the thing it grades is measuring itself. See the glm52-as-judge report.
 - **`ai_quality_controls` names `deepseek/deepseek-v4-flash`** in production, all
   three scopes `disabled`, moved off the delisted `xiaomi/mimo-v2-flash` on
   2026-08-08. Pointing the row at glm-5.2 and enabling `bot_qa` is a separate,
   unrequested change.
-- **Cost is not the argument for glm-5.2.** Per evaluation at the
-  `PATH_QUALITY_FINAL` ceiling: deepseek-v4-flash $0.0045, Luna $0.0064, glm-5.2
-  $0.0114, Opus $0.2800 -- dearer than the model it judges. The argument is
-  independence: Luna writes the replies, and a judge sharing a model with the
-  thing it grades is measuring itself.
-- **Every mean published on 2026-08-07 was normalised twice** (`tj-swgu.13`,
-  closed). `808b07d` moved the /30 normalisation into `calculate_weighted_score`
-  on 2026-08-03 and the reports kept the old manual 30/24 on top. The real
-  figures are `c977b07` 15.8, `6a14f2f` 16.1, `5656c82` **16.1** -- never 18.0,
-  18.5, 18.2.
-- **The panel: 12.3 +/- 0.3** at 95%, five independent blind readers over the ten
-  transcripts, same criteria and applicability map, product's own weighting: 50
-  scorings, df 40, pooled sd 0.9, per-reader means 13.2, 12.0, 12.2, 11.8, 12.3.
-  Precision, not accuracy: the five share a model family and a prompt, so a shared
-  bias is invisible to it. Protocol and caveats in
-  `docs/reports/2026-08-07-repeated-scoring-and-the-second-reader.md`.
-- **The rule.** No movement smaller than its own uncertainty is evidence about
-  code; the bound is the instrument's, +/- 3.3 for the old judge, +/- 0.3 here.
-- Instrument: `scripts/e2e_acceptance/score_uncertainty.py`, 22 tests. Reads
-  either score-file shape onto one /30 axis, states the interval its repeats
-  justify, compares two runs paired, and refuses a verdict without repeats.
+- Instrument: `scripts/e2e_acceptance/score_uncertainty.py`, 22 tests. Reads either
+  score-file shape onto one /30 axis, states the interval its repeats justify, and
+  refuses a verdict without repeats.
 ## Local verification
 
 - `tj-swgu.9`, 2026-08-07: Ruff and format over 411 files, Mypy over 167
