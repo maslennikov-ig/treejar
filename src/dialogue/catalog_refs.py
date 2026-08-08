@@ -10,6 +10,13 @@ from sqlalchemy import select
 
 from src.models.product import Product
 
+# The Treejar catalogue itself is written with Cyrillic lookalikes, so this map
+# is load-bearing rather than defensive. Measured in production 2026-08-08:
+# 7 of 920 SKUs literally begin with Cyrillic "СН" -- Skyland chairs such as
+# "СН 135 black" -- and 132 product names use Cyrillic "х" as the dimension
+# separator, as in "1000х500х754". A customer typing Latin "CH 135" must still
+# reach the row whose SKU is Cyrillic, and vice versa. Deleting this map silently
+# unmatches those products; tj-4e5j nearly did exactly that.
 _HOMOGLYPHS = str.maketrans(
     {
         "А": "A",
