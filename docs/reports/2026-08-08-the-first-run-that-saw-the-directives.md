@@ -81,14 +81,49 @@ and a discount never was.
 **Rule 15 doubled** where it applies, so proposing a named day instead of an
 open ending lands.
 
-**Rules 6, 7 and 13 did not move at all.** This is the finding worth acting on.
-They are the three the 2026-08-07 directive was written for, they have now had a
-live run, and rule 13 is still **0.00 across all 22 scorings where it applies**
-while rule 7 sits at 0.08 of 2. The directive names all three in plain English
-and Noor says none of them. Writing more directive text is not the answer;
-something is either dropping the instruction before it reaches the model or
-losing it against a stronger competing one. That is the next investigation, and
-it now has evidence instead of a hypothesis.
+**Rules 6, 7 and 13 did not move at all.** They are the three the 2026-08-07
+directive was written for, they have now had a live run, and rule 13 is still
+**0.00 across all 22 scorings where it applies** while rule 7 sits at 0.08 of 2.
+Searched directly rather than through the readers: across all 26 transcripts the
+value proposition appears **0 times** and the company question **0 times**. That
+is total absence, not partial compliance, and it turned out to have a mechanical
+cause — see the next section.
+
+## Why: two escape clauses, both mine
+
+Ruled out first, in order. **Not a deploy gap:** both directives are present in
+`/opt/noor` at `a830001`, checked inside the running container. **Not an early
+return:** the `_turn_runtime_directives` call site sits directly under the main
+`try:` in `process_message`, not in a rare branch, and the scenarios that miss
+the moves carry the plain `openai/gpt-5.6-luna` label with no route suffix, so
+they took none of the earlier returns. **Not the tool layer:** the v4 runtime
+evidence shows `search_products` returning on the same turns.
+
+The cause was in the directive's own wording.
+
+**Rule 7 was self-cancelling.** `src/llm/opening_guard.py` prepends
+"Hello, I'm Noor from Treejar." to every first turn. The directive said *"if you
+have not already said it in this conversation, say what Treejar is"* — a
+condition the guaranteed opening satisfies inside the very reply the directive
+is trying to change. It asked for something it had already excused.
+
+**Rule 13 was starved by its own bound.** *"Keep the whole reply to at most one
+question: if you are already asking one for another reason, fold this into it or
+leave it for the next turn."* There is always a more urgent product question, so
+the company question was always the one deferred — on every turn, forever.
+
+Both are now fixed. Naming Treejar and saying what Treejar offers are stated as
+different acts, with the greeting explicitly not discharging the second. The
+company question rides in the same sentence as whatever else Noor needs to know
+and counts as one question. The bound itself stays: the transcripts are not
+interrogations, and that is the bound working.
+
+Two tests encode the finding so it cannot come back, and the fix is a hypothesis
+until the next run measures it — the target is the value proposition and the
+company question no longer being 0 of 26.
+
+Rule 6 sits in the same family but had no hard escape clause, so it is not
+explained by this.
 
 ## S08, unchanged
 
@@ -100,8 +135,9 @@ by handing back a next step Noor holds the tools to perform:
 > three walnut units, then check whether the total fits within the AED 6,000
 > budget
 
-It scored +1.95, so something moved, but the specific defect did not. Same
-conclusion as rules 6, 7 and 13: the instruction is not reaching the reply.
+It scored +1.95, so something moved, but the specific defect did not. This one is
+**not** explained by the escape clauses above: `substantive_reply_directive` has
+no condition to satisfy and fires on all four of S08's turns. It stays open.
 
 One false lead worth recording. The per-turn `runtime_execution_evidence`
 reports `tool_names: null` on every turn of every scenario — which looks like

@@ -120,12 +120,45 @@ def test_the_directive_names_the_three_moves_that_scored_zero() -> None:
     lowered = directive.casefold()
 
     # Rule 7, zero in ten of ten.
-    assert "treejar is" in lowered
+    assert "what treejar offers" in lowered
     assert "one short clause" in lowered
     # Rule 6, four of twenty.
-    assert "thank" in lowered
+    assert "acknowledge the project" in lowered
     # Rule 13, zero in five of five where it applies.
     assert "what their company does" in lowered
+
+
+def test_the_value_proposition_is_not_discharged_by_the_greeting() -> None:
+    """The escape clause that made rule 7 unreachable, removed 2026-08-08.
+
+    `src/llm/opening_guard.py` prepends "Hello, I'm Noor from Treejar." to every
+    first turn, so "if you have not already said it" was satisfied by the same
+    reply the directive was asking to change. Naming the company and saying what
+    it offers are different acts, and the directive must say so.
+    """
+
+    lowered = consultative_opening_directive().casefold()
+
+    assert "if you have not already said it" not in lowered
+    assert "does not discharge this" in lowered
+    assert "the greeting names treejar" in lowered
+
+
+def test_the_company_question_is_folded_rather_than_deferred() -> None:
+    """The starvation that made rule 13 unreachable, removed 2026-08-08.
+
+    There is always a more urgent product question, so "leave it for the next
+    turn" deferred the company question on every turn forever. Folding it into
+    the same sentence costs nothing and is how a salesperson asks it anyway.
+    """
+
+    lowered = consultative_opening_directive().casefold()
+
+    assert "in the same sentence as whatever else you need to know" in lowered
+    assert "counts as one question" in lowered
+    assert "leave it for the next turn" not in lowered
+    # The bound itself stays: the transcripts were never interrogations.
+    assert "at most one question" in lowered
 
 
 def test_the_directive_bounds_itself_against_the_reply_it_shares_a_turn_with() -> None:
@@ -179,7 +212,7 @@ def test_the_directive_does_not_grow_the_product_system_prompt() -> None:
     """Raised from 900 on 2026-08-08 when rules 9, 10 and 11 joined it. One
     directive on a shared trigger beats three, but it is not free."""
 
-    assert len(consultative_opening_directive()) < 1500
+    assert len(consultative_opening_directive()) < 1700
 
 
 # --- not buying today -------------------------------------------------------

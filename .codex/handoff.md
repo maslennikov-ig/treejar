@@ -36,18 +36,22 @@ not granted.
 - **Acceptance stands at 15.4; the gap to 24.0 is 8.6.** Measured on `a830001`
   2026-08-08: S01-S08 three times each, S09/S10 once, 52 blind scorings. Paired
   against the corrected `5656c82` baseline of 13.4 the delta is **+1.95 +/- 1.58**
-  -- real, but thinner than it looks, because this panel disagreed with itself by
-  a mean of 2.86 points against the previous panel's sd 0.9, probably from
-  scoring 26 packets each instead of 10. Generation noise, finally measured, is
-  the smaller one: within-scenario sd **0.84** over three runs.
+  -- real, but thinner than it looks: this panel disagreed with itself by a mean
+  of 2.86 against the previous panel's sd 0.9, probably from 26 packets each
+  instead of 10 (`tj-2m5m.9`). Generation noise is the smaller source, a
+  within-scenario sd of **0.84**.
   `docs/reports/2026-08-08-the-first-run-that-saw-the-directives.md`.
-- **Rules 6, 7 and 13 did not move on a live run.** Rule 13 is 0.00 across all 22
-  applicable scorings and rule 7 is 0.08 of 2, unchanged from before the
-  directive that names all three in plain English. Something drops the
-  instruction before the reply or loses it against a competing one; S08's
-  bulleted echo survives its own directive the same way. Next investigation,
-  and it now has evidence. Rule 11 broke zero for the first time in 70+ scorings
-  (0.33) and rule 15 doubled (0.50), so the mechanism works when it lands.
+- **Rules 6, 7 and 13 did not move on a live run, and the cause was the wording.**
+  The value proposition and the company question appear 0 times in all 26
+  transcripts. Not a deploy gap, not an early return, not the tool layer -- all
+  three checked. Rule 7's directive said "if you have not already said it", which
+  `opening_guard.py`'s mandatory "Hello, I'm Noor from Treejar." satisfies inside
+  the same reply; rule 13's was starved by "at most one question ... or leave it
+  for the next turn", since a product question is always more urgent. Both
+  escape clauses removed 2026-08-08, two tests encode it, and the fix is a
+  hypothesis until the next run. Rule 11 broke zero for the first time in 70+
+  scorings (0.33) and rule 15 doubled (0.50), so the mechanism works when the
+  instruction has nothing to excuse itself with. `tj-2m5m.8`.
 - **`6a14f2f` and `5656c82` tie; the deltas inside them (S05 +3.2, S07 -3.3) came
   from one generation per side and are not evidence. `tj-2m5m.6` is P2.**
   `docs/reports/2026-08-08-did-the-build-regress.md`.
@@ -56,11 +60,11 @@ not granted.
   selling, and each customer sees one conversation anyway. The price is k runs
   per scenario per side, measured at a within-scenario sd of 0.84.
 - **Less caution, more selling, 2026-08-08.** Rule 3 stands down when the
-  customer signs their opening message; rule 11 needs a two-family order, not any
-  catalog turn; a new always-on directive forbids a reply that only restates the
-  customer or states intent, and makes Noor perform the next step her tools can
-  do; the consultative opening now also carries rules 9, 10 and a verified
-  package -- never a discount. `docs/reports/2026-08-08-less-caution-more-selling.md`.
+  customer signs their opening message; rule 11 needs a two-family order; an
+  always-on directive forbids a reply that only restates the customer or states
+  intent, and sends Noor to her tools for the next step; the consultative opening
+  carries rules 9, 10 and a verified package -- never a discount.
+  `docs/reports/2026-08-08-less-caution-more-selling.md`.
 - **Production runs `a830001` as of 2026-08-08.** Owner-authorised push, deploy
   and acceptance run; CI green, `/opt/noor/.release-sha` reads back `a830001`,
   health ok. Both authorities are spent and closed again.
@@ -116,17 +120,13 @@ Accepted design and executable plan, in `docs/superpowers/`:
 
 Next stage id: `tj-ee5f`
 
-The paid comparison has since run under `tj-feet.8` and the main model was
-switched, so the battle this section used to point at is done.
-
-Recommended action: epic `tj-2m5m`, and the next question is no longer what to
-write but **why written directives do not reach the reply**. Rules 6, 7 and 13
-are flat after a live run, and S08's echo survives a directive aimed at it,
-while rules 11 and 15 moved. Find the difference between the two groups before
-writing another word of prompt. Second: the panel needs its precision back --
-2.86 mean reader disagreement over 26 packets each is not a usable instrument;
-split the load. `tj-ee5f.1` is the same production pass seen from the older
-stage; do not fold the bounded product-runtime `R-17` defer into either.
+Recommended action: epic `tj-2m5m`. Two escape clauses are removed and untested;
+the next run is what decides them, and it should split the reader load first
+(`tj-2m5m.9`) or it will not be able to see a two-point move. S08's echo is the
+remaining unexplained defect. `tj-ee5f.1` is the same production pass seen from
+the older stage; do not fold the bounded product-runtime `R-17` defer into it.
+The paid comparison ran under `tj-feet.8` and the model was switched, so the
+battle this section used to point at is done.
 
 ## Stage tj-feet
 

@@ -857,19 +857,43 @@ def consultative_opening_directive() -> str:
     outright; a package of verified rows quoted at their combined total commits
     nothing, and is what the source guideline asks for on a comprehensive order.
 
+    **Two escape clauses removed on 2026-08-08, after the first live run.** The
+    `a830001` measurement found the value proposition and the company question
+    in **0 of 26** transcripts -- not partial compliance, total absence -- while
+    rules 11 and 15 moved on the same run. The difference was in the wording, and
+    both faults were mine:
+
+    - "If you have not already said it in this conversation, say what Treejar
+      is" was self-cancelling. `src/llm/opening_guard.py` prepends
+      "Hello, I'm Noor from Treejar." to every first turn, so the model has
+      already named Treejar in the same reply the directive is asking it to. The
+      condition is satisfied before it is read. Naming the company and saying
+      what it offers are now stated as different acts.
+    - "Keep the whole reply to at most one question ... or leave it for the next
+      turn" permanently starved rule 13. There is always a more urgent product
+      question, so the company question was always the one deferred, every turn.
+      It now rides in the same sentence, counted as one question, which is how a
+      salesperson asks it anyway.
+
+    The bound itself stays: the transcripts are not interrogations, and that is
+    the bound working.
+
     It lives here rather than in the product system prompt, which the stage
     contract freezes.
     """
 
     return (
         "You are still building this sale, so do the things a salesperson does "
-        "besides answering. If you have not already said it in this "
-        "conversation, say in one short clause what Treejar is: an office "
-        "furniture supplier in the UAE quoting from its own catalog with "
-        "confirmed prices and stock. Thank the customer or acknowledge the "
-        "project they described, once, in their own terms and without "
-        "flattery. If they have described a team or a workplace and you do not "
-        "know what their company does, ask. Find out what the furniture is "
+        "besides answering. Once per conversation, in one short clause, say "
+        "what Treejar offers: an office furniture supplier in the UAE quoting "
+        "from its own catalog with confirmed prices and stock. The greeting "
+        "names Treejar but does not say what Treejar does, so it does not "
+        "discharge this. Acknowledge the project they described, once, in "
+        "their own terms and without flattery. If they have described a team "
+        "or a workplace and you do not know what their company does, ask -- in "
+        "the same sentence as whatever else you need to know. A question folded "
+        "that way counts as one question, so it is never the part you leave for "
+        "a later turn. Find out what the furniture is "
         "for -- the work done in the space, who uses it, what would make the "
         "result right -- and recommend against that job rather than against "
         "the words of the request. Once you know it, do not stop at the item "
@@ -879,8 +903,7 @@ def consultative_opening_directive() -> str:
         "project spans several kinds of furniture, put the pieces together as "
         "one package with a combined total from those same verified rows -- a "
         "package, never a discount. Keep the whole reply to at most "
-        "one question: if you are already asking one for another reason, fold "
-        "this into it or leave it for the next turn. None of this comes before "
+        "one question, counting a folded pair as one. None of this comes before "
         "answering what they asked. Never state a service, term or capability "
         "you have not verified, and never offer a discount or a bonus."
     )
