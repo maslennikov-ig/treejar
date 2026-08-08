@@ -45,7 +45,6 @@ KEEP_PATHS=(
     ".coverage"
     ".env"
     ".env.dev"
-    ".env.noor"
     ".hotfix-backups"
     ".mcp.json"
     ".ruff_cache"

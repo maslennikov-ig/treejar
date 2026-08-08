@@ -100,7 +100,7 @@ async def test_escalation_with_pdf_sends_document(
     doc_call = mock_tg.send_document.call_args
     assert doc_call.kwargs.get("file_bytes") == FAKE_PDF_BYTES
     assert doc_call.kwargs.get("filename") == "quotation_SO-001.pdf"
-    assert doc_call.kwargs.get("caption") == "📄 Коммерческое предложение на проверку"
+    assert doc_call.kwargs.get("caption") == "📄 Quotation for review"
     # Inline keyboard should also be sent
     mock_tg.send_message_with_inline_keyboard.assert_awaited_once()
 
@@ -568,7 +568,7 @@ async def test_order_decision_double_click_is_idempotent(
     )
 
     mock_tg_client.answer_callback_query.assert_awaited_once_with(
-        "cb-dup", "⚠️ Уже обработано"
+        "cb-dup", "⚠️ Already processed"
     )
     mock_tg_client.edit_message_reply_markup.assert_not_awaited()
     mock_wazzup.send_media.assert_not_awaited()

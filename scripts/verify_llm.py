@@ -51,7 +51,7 @@ async def main():
             print(f"✅ Created test conversation: {conversation_id}")
 
             # Call the process_message workflow
-            query = "Какие у вас есть компьютерные столы?"
+            query = "What computer desks do you have?"
             print(f"\nSending agent query: '{query}'")
 
             from unittest.mock import AsyncMock

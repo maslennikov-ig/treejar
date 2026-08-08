@@ -13,7 +13,7 @@ def _payload() -> dict[str, object]:
         "items": [
             {
                 "id": "exact-sku",
-                "title": "Точный SKU <CH-410>",
+                "title": "Exact SKU <CH-410>",
                 "status": "passed",
                 "note": "",
             },
@@ -21,13 +21,13 @@ def _payload() -> dict[str, object]:
                 "id": "quotation-approval",
                 "title": "Quotation <approval>",
                 "status": "failed",
-                "note": "Ожидал <b>approval</b>, получил generic escalation & noise",
+                "note": "Expected <b>approval</b>, got generic escalation & noise",
             },
             {
                 "id": "arabic",
                 "title": "Arabic sanity",
                 "status": "not_tested",
-                "note": "Оставили на потом",
+                "note": "Left for later",
             },
         ],
     }
@@ -72,11 +72,11 @@ async def test_public_client_self_test_submit_sends_escaped_telegram_summary(
     message = send.await_args.args[0]
     assert "Owner &lt;script&gt;" in message
     assert "Ready &amp; reviewed" in message
-    assert "Пройдено: 1" in message
-    assert "Неверно: 1" in message
-    assert "Не проверено: 1" in message
+    assert "Passed: 1" in message
+    assert "Incorrect: 1" in message
+    assert "Not tested: 1" in message
     assert "Quotation &lt;approval&gt;" in message
-    assert "Ожидал &lt;b&gt;approval&lt;/b&gt;" in message
+    assert "Expected &lt;b&gt;approval&lt;/b&gt;" in message
     assert "generic escalation &amp; noise" in message
     assert "<script>" not in message
     assert "<b>approval</b>" not in message
@@ -103,11 +103,11 @@ async def test_client_self_test_submit_sends_escaped_telegram_summary(
     message = send.await_args.args[0]
     assert "Owner &lt;script&gt;" in message
     assert "Ready &amp; reviewed" in message
-    assert "Пройдено: 1" in message
-    assert "Неверно: 1" in message
-    assert "Не проверено: 1" in message
+    assert "Passed: 1" in message
+    assert "Incorrect: 1" in message
+    assert "Not tested: 1" in message
     assert "Quotation &lt;approval&gt;" in message
-    assert "Ожидал &lt;b&gt;approval&lt;/b&gt;" in message
+    assert "Expected &lt;b&gt;approval&lt;/b&gt;" in message
     assert "generic escalation &amp; noise" in message
     assert "<script>" not in message
     assert "<b>approval</b>" not in message

@@ -135,7 +135,7 @@ async def main() -> None:
             "channelId": WAZZUP_CHANNEL_ID,
             "chatType": "whatsapp",
             "chatId": user_whatsapp_phone,
-            "text": "🧪 Тестовый PDF (INTEG-PDF-002) — реальные данные из Zoho Inventory со скидкой 15% Wholesale",
+            "text": "🧪 Test PDF (INTEG-PDF-002) -- real Zoho Inventory data with a 15% wholesale discount",
         }
         resp2 = await http.post(
             "https://api.wazzup24.com/v3/message",

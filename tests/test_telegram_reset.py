@@ -84,7 +84,7 @@ async def test_reset_command_sends_preview_and_does_not_mutate_db(
     telegram.send_message_with_inline_keyboard.assert_awaited_once()
     text = telegram.send_message_with_inline_keyboard.await_args.args[0]
     buttons = telegram.send_message_with_inline_keyboard.await_args.args[1]
-    assert "Клиенту ничего не отправится" in text
+    assert "Nothing will be sent to the customer" in text
     assert "2" in text
     assert buttons[0][0]["callback_data"].startswith("reset_confirm:")
     assert buttons[0][1]["callback_data"].startswith("reset_cancel:")
@@ -131,7 +131,7 @@ async def test_reset_command_invalid_phone_returns_usage(
 
     assert handled is True
     telegram.send_message.assert_awaited_once()
-    assert "Использование" in telegram.send_message.await_args.args[0]
+    assert "Usage" in telegram.send_message.await_args.args[0]
     assert "&lt;country-code-and-number&gt;" in telegram.send_message.await_args.args[0]
 
 
@@ -205,7 +205,7 @@ async def test_reset_confirm_by_same_user_executes_reset(
     )
     telegram.edit_message_reply_markup.assert_awaited_once_with(-100123456789, 55)
     sent_text = telegram.send_message.await_args.args[0]
-    assert "Готово" in sent_text
+    assert "Done" in sent_text
     assert str(new_conv.id) in sent_text
 
 
@@ -290,4 +290,4 @@ async def test_reset_cancel_deletes_pending_token_without_mutation(
         "✅ Reset cancelled",
     )
     telegram.edit_message_reply_markup.assert_awaited_once_with(-100123456789, 55)
-    assert "отменён" in telegram.send_message.await_args.args[0]
+    assert "cancelled" in telegram.send_message.await_args.args[0]

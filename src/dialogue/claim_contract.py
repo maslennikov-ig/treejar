@@ -797,6 +797,77 @@ def comparison_consultation_directive() -> str:
     )
 
 
+_OPENING_STAGES = frozenset({"greeting", "qualifying", "needs_analysis"})
+
+_TRANSACTIONAL_NARROWING_RE = re.compile(
+    r"(?:\b(?:do\s+not|don'?t)\s+(?:suggest|offer|recommend|include|add|propose)\b"
+    r"|\bno\s+(?:other\s+)?alternatives?\b|\bno\s+upsell\b"
+    r"|\bonly\s+(?:these|those|that|this)\b|\bnothing\s+else\b"
+    rf"|\bexactly\s+{_COUNT_WORD}\b"
+    r"|\bexact\s+(?:live\s+)?(?:sku|price|item|model|quantity)\b"
+    r"|بدون\s+بدائل|لا\s+تقترح)",
+    re.IGNORECASE,
+)
+
+
+def earns_consultative_opening(customer_text: str, *, sales_stage: str) -> bool:
+    """Is this a turn where a salesperson would still be building the sale?
+
+    Read over the **customer request** and the typed stage, never over the
+    reply, like the two detectors above it.
+
+    Coarse on purpose. Rules 6, 7 and 13 of the checklist are not shaped like a
+    request -- nobody asks to be thanked or to hear what Treejar is -- so there
+    is no phrase to trigger on, only a phase of the conversation. The precision
+    lives in the directive, where each of the three moves carries its own
+    condition. The stand-down is the same principle as the comparison
+    detector's: a customer who has narrowed to one exact item is not asking to
+    be sold to, and consulting anyway answers the checklist instead of them.
+    """
+
+    text = str(customer_text)
+    if not text.strip():
+        return False
+    if sales_stage.strip().casefold() not in _OPENING_STAGES:
+        return False
+    return not _TRANSACTIONAL_NARROWING_RE.search(text)
+
+
+def consultative_opening_directive() -> str:
+    """The three sentences Noor never says.
+
+    Measured on 2026-08-07 over all ten stored acceptance transcripts, scored
+    criterion by criterion. Rule 7, Treejar's value proposition, is zero in ten
+    of ten. Rule 11, an incentive, is zero in ten of ten. Rule 13, asking what
+    the customer's company does, is zero in five of five where it applies. Rule
+    6, a compliment or thanks, is four of a possible twenty. Meanwhile rules 1
+    and 2 are a perfect twenty of twenty. Nothing here is a catalog, tool or
+    rewrite failure: these are sentences the model does not say.
+
+    Rule 11 is deliberately absent. An incentive is a commercial commitment
+    nobody has authorised, and the sibling directive forbids one outright; the
+    honest form of that rule is a verified bundle, which is a separate decision.
+
+    It lives here rather than in the product system prompt, which the stage
+    contract freezes.
+    """
+
+    return (
+        "You are still building this sale, so do the things a salesperson does "
+        "besides answering. If you have not already said it in this "
+        "conversation, say in one short clause what Treejar is: an office "
+        "furniture supplier in the UAE quoting from its own catalog with "
+        "confirmed prices and stock. Thank the customer or acknowledge the "
+        "project they described, once, in their own terms and without "
+        "flattery. If they have described a team or a workplace and you do not "
+        "know what their company does, ask. Keep the whole reply to at most "
+        "one question: if you are already asking one for another reason, fold "
+        "this into it or leave it for the next turn. None of this comes before "
+        "answering what they asked. Never state a service, term or capability "
+        "you have not verified, and never offer a discount or a bonus."
+    )
+
+
 def assumption_eligible_paths(
     withheld_field_paths: tuple[str, ...],
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:

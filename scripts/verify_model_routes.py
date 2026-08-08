@@ -242,7 +242,7 @@ def build_fast_payload(model: str) -> dict[str, Any]:
             },
             {
                 "role": "user",
-                "content": "Мне нужно 12 кресел AX-E1. Есть ли они в наличии?",
+                "content": "I need 12 AX-E1 chairs. Do you have them in stock?",
             },
         ],
         "temperature": 0.0,

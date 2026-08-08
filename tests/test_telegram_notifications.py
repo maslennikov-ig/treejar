@@ -140,7 +140,7 @@ async def test_sync_telegram_webhook_uses_current_expected_secret_token() -> Non
         assert call.kwargs["allowed_updates"] == ["message", "callback_query"]
         mock_client.set_my_commands.assert_awaited_once()
         commands = mock_client.set_my_commands.await_args.args[0]
-        assert {"command": "admin", "description": "Войти в Noor CRM"} in commands
+        assert {"command": "admin", "description": "Open Noor CRM"} in commands
     finally:
         settings.telegram_bot_token = original_token
         settings.domain = original_domain
@@ -305,25 +305,25 @@ async def test_notify_escalation_formats_html() -> None:
     assert "<b>" in msg
     # Phone should be shown in full (I3 fix: managers need to contact clients)
     assert "+971501234567" in msg
-    assert "Эскалация" in msg
-    assert "Телефон клиента" in msg
-    assert "запрошен менеджер" in msg
-    assert "Менеджер уведомлён" in msg
+    assert "Escalation" in msg
+    assert "Customer phone" in msg
+    assert "manager requested" in msg
+    assert "The manager has been notified" in msg
 
 
 @pytest.mark.asyncio
-async def test_notify_escalation_unknown_reason_uses_russian_fallback() -> None:
+async def test_notify_escalation_unknown_reason_is_shown_verbatim() -> None:
     """Unknown English reasons should not leak into owner-facing escalation alerts."""
     from src.services.notifications import format_escalation_message
 
     conv_id = uuid4()
-    with patch("src.services.report_localization.logfire.info") as mock_logfire:
+    with patch("src.services.owner_presentation.logfire.info") as mock_logfire:
         msg = format_escalation_message(
             "+971501234567", conv_id, "Mystery escalation cause"
         )
 
     assert "Mystery escalation cause" not in msg
-    assert "иная причина" in msg
+    assert "other reason" in msg
     mock_logfire.assert_called_once()
 
 
@@ -345,7 +345,7 @@ async def test_notify_escalation_long_context_preserves_last_user_message() -> N
 
     assert latest_user in msg
     assert "Earlier product table" not in msg
-    assert "Ранний контекст скрыт" in msg
+    assert "Earlier context hidden" in msg
 
 
 @pytest.mark.asyncio
@@ -403,26 +403,26 @@ async def test_notify_quality_alert_formats_html() -> None:
     )
     assert "<b>" in msg
     assert "8.0" in msg
-    assert "Оценка качества" in msg
-    assert "Телефон клиента" in msg
-    assert "Имя клиента" in msg
-    assert "Входящий номер" in msg
-    assert "Начат (UAE)" in msg
-    assert "Последняя активность (UAE)" in msg
+    assert "Quality review" in msg
+    assert "Customer phone" in msg
+    assert "Customer name" in msg
+    assert "Inbound number" in msg
+    assert "Started (UAE)" in msg
+    assert "Last activity (UAE)" in msg
     assert "Acme" in msg
     assert "+971551220665" in msg
     assert "09.04.2026 13:00" in msg
     assert "09.04.2026 14:15" in msg
-    assert "Взвешенная разбивка" in msg
-    assert "Что сделано хорошо" in msg
-    assert "Что ухудшило диалог" in msg
-    assert "Рекомендации" in msg
-    assert "Следующее действие" in msg
-    assert "плохо" in msg
-    assert "Текущий этап" in msg
-    assert "квалификация" in msg
-    assert "Основание" in msg
-    assert "оценка ниже порога" in msg
+    assert "Weighted breakdown" in msg
+    assert "What went well" in msg
+    assert "What weakened the conversation" in msg
+    assert "Recommendations" in msg
+    assert "Next action" in msg
+    assert "Poor" in msg
+    assert "Current stage" in msg
+    assert "Qualifying" in msg
+    assert "Reason" in msg
+    assert "score below threshold" in msg
 
 
 @pytest.mark.asyncio
@@ -448,21 +448,21 @@ async def test_red_flag_warning_formatting() -> None:
                 evidence=["Hello, how can I help?", "Tell me what you need."],
             )
         ],
-        recommended_action="Отправить корректирующий follow-up и представиться заново.",
+        recommended_action="Send a corrective follow-up and reintroduce yourself.",
     )
-    assert "🚨 <b>Критический сигнал</b>" in msg
-    assert "UUID диалога" in msg
+    assert "🚨 <b>Critical signal</b>" in msg
+    assert "Conversation UUID" in msg
     assert "+971501234567" in msg
-    assert "Имя клиента" in msg
+    assert "Customer name" in msg
     assert "Acme" in msg
-    assert "Входящий номер" in msg
+    assert "Inbound number" in msg
     assert "09.04.2026 13:00" in msg
     assert "09.04.2026 14:00" in msg
-    assert "приветствие" in msg
-    assert "Нет идентификации" in msg
-    assert "Ассистент не представился как Noor из Treejar" in msg
+    assert "Greeting" in msg
+    assert "No identification" in msg
+    assert "The assistant did not introduce itself as Noor from Treejar" in msg
     assert "Hello, how can I help?" in msg
-    assert "Рекомендуемое действие" in msg
+    assert "Recommended action" in msg
 
 
 @pytest.mark.asyncio
@@ -581,22 +581,22 @@ async def test_final_quality_review_formatting() -> None:
         trigger="idle 3h",
         result=result,
     )
-    assert "🟢 <b>Оценка качества</b>" in msg
-    assert "Оценка:</b> 24.5/30 (хорошо)" in msg
-    assert "Основание:</b> нет ответа 3 часа" in msg
-    assert "Имя клиента:</b> Acme" in msg
-    assert "Входящий номер:</b> +971551220665" in msg
-    assert "Начат (UAE):</b> 09.04.2026 13:30" in msg
-    assert "Последняя активность (UAE):</b> 09.04.2026 14:45" in msg
-    assert "Открытие и доверие: 7.5/7.5" in msg
-    assert "Контакт и выявление потребностей: 8.8/11.25" in msg
-    assert "Конверсия и следующий шаг: н/д" in msg
+    assert "🟢 <b>Quality review</b>" in msg
+    assert "Score:</b> 24.5/30 (Good)" in msg
+    assert "Reason:</b> no reply for 3 hours" in msg
+    assert "Customer name:</b> Acme" in msg
+    assert "Inbound number:</b> +971551220665" in msg
+    assert "Started (UAE):</b> 09.04.2026 13:30" in msg
+    assert "Last activity (UAE):</b> 09.04.2026 14:45" in msg
+    assert "Opening &amp; Trust: 7.5/7.5" in msg
+    assert "Relationship &amp; Discovery: 8.8/11.25" in msg
+    assert "Conversion &amp; Next Step: n/a" in msg
     assert "7.5/6" not in msg
     assert "0.0/6" not in msg
-    assert "Что сделано хорошо" in msg
-    assert "Что ухудшило диалог" in msg
-    assert "Рекомендации" in msg
-    assert "Следующее действие" in msg
+    assert "What went well" in msg
+    assert "What weakened the conversation" in msg
+    assert "Recommendations" in msg
+    assert "Next action" in msg
 
 
 @pytest.mark.asyncio
@@ -652,8 +652,8 @@ async def test_low_coverage_quality_review_publishes_diagnostic_not_score() -> N
         result=result,
     )
 
-    assert "Оценка:</b> не опубликована — ошибка покрытия оценщика" in msg
-    assert "Покрытие:</b> 4/15 правил, 1/4 блоков" in msg
+    assert "Score:</b> not published — evaluator coverage error" in msg
+    assert "Coverage:</b> 4/15 rules, 1/4 blocks" in msg
     assert "6.0/30" not in msg
 
 
@@ -780,7 +780,7 @@ async def test_notify_quality_alert_calls_telegram() -> None:
             rating="poor",
             summary="Bad",
             phone="+971501234567",
-            customer_name="не указано",
+            customer_name="not specified",
             inbound_channel_phone="+971551220665",
             conversation_created_at=datetime(2026, 4, 9, 9, 0, tzinfo=UTC),
             last_activity_at=datetime(2026, 4, 9, 10, 0, tzinfo=UTC),
@@ -818,9 +818,9 @@ async def test_notify_daily_summary_formats_metrics() -> None:
     assert "42" in msg
     assert "22.5" in msg
     assert "11.0%" in msg
-    assert "Ежедневная сводка" in msg
-    assert "Диалоги" in msg
-    assert "Средняя оценка качества" in msg
+    assert "Daily summary" in msg
+    assert "Conversations" in msg
+    assert "Average quality score" in msg
     assert "LLM Cost" not in msg
 
 
@@ -836,8 +836,8 @@ async def test_notify_daily_summary_formats_na_values() -> None:
     )
 
     msg = format_daily_summary(metrics)
-    assert "<b>Средняя оценка качества:</b> н/д" in msg
-    assert "<b>Конверсия (7д):</b> н/д" in msg
+    assert "<b>Average quality score:</b> n/a" in msg
+    assert "<b>Conversion (7d):</b> n/a" in msg
     assert "LLM Cost" not in msg
 
 

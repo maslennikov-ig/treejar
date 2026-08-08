@@ -353,11 +353,10 @@ def test_order_runtime_keeps_valid_order_with_incidental_blocker_words() -> None
     ]
 
 
-def test_order_runtime_blocks_localized_price_inquiries() -> None:
+def test_order_runtime_blocks_arabic_price_inquiries() -> None:
     for text in (
         "ما هو سعر 2 CH 616؟",
         "هل يتوفر 2 CH 616 في المخزون؟",
-        "Сколько стоит 2 CH 616?",
     ):
         result = run_order_runtime(text=text, metadata={})
 

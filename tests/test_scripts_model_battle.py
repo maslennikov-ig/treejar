@@ -1543,16 +1543,27 @@ def test_sales_scoring_blocks_ungrounded_numbers_and_wrong_language() -> None:
     assert score["passed"] is False
     assert extract_numeric_tokens("AED 1,450 and 15%") == {"1450", "15"}
 
-    russian = score_sales_response(
-        content="Модель AX-E1 доступна по подтверждённым фактам.",
+    english = score_sales_response(
+        content="The AX-E1 model is available per the verified facts.",
         required_phrases=("AX-E1",),
         forbidden_phrases=(),
         expected_tools=(),
         observed_tools=(),
-        expected_language="ru",
+        expected_language="en",
         allowed_numbers=set(),
     )
-    assert russian["language_ok"] is True
+    assert english["language_ok"] is True
+
+    mismatched = score_sales_response(
+        content="The AX-E1 model is available per the verified facts.",
+        required_phrases=("AX-E1",),
+        forbidden_phrases=(),
+        expected_tools=(),
+        observed_tools=(),
+        expected_language="ar",
+        allowed_numbers=set(),
+    )
+    assert mismatched["language_ok"] is False
 
 
 def test_numbered_list_markers_are_not_treated_as_commercial_facts() -> None:

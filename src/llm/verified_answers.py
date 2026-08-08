@@ -222,11 +222,6 @@ _SOCIAL_GREETING_PHRASES = frozenset(
         "good morning",
         "good afternoon",
         "good evening",
-        "добрый день",
-        "доброе утро",
-        "добрый вечер",
-        "здравствуйте",
-        "привет",
         "مرحبا",
         "اهلا",
         "أهلا",
@@ -243,8 +238,6 @@ _SOCIAL_GRATITUDE_PHRASES = frozenset(
         "thanks",
         "thank you",
         "thx",
-        "спасибо",
-        "благодарю",
         "شكرا",
         "شكراً",
     }
@@ -254,9 +247,6 @@ _SOCIAL_GOODBYE_PHRASES = frozenset(
         "bye",
         "goodbye",
         "see you",
-        "пока",
-        "до свидания",
-        "увидимся",
         "مع السلامة",
     }
 )
@@ -266,10 +256,6 @@ _SOCIAL_ASSIST_OPENER_PHRASES = frozenset(
         "i need help",
         "need help",
         "can you help",
-        "подскажите",
-        "помогите",
-        "нужна помощь",
-        "мне нужна помощь",
         "مساعدة",
         "اريد مساعدة",
         "أريد مساعدة",
@@ -286,11 +272,6 @@ _SOCIAL_FILLER_TOKENS = frozenset(
         "please",
         "pls",
         "treejar",
-        "ассистент",
-        "бот",
-        "пожалуйста",
-        "подскажите",
-        "скажите",
     }
 )
 _SOCIAL_ASSIST_TOKENS = frozenset(
@@ -299,9 +280,6 @@ _SOCIAL_ASSIST_TOKENS = frozenset(
         "assist",
         "assistance",
         "help",
-        "подскажите",
-        "помогите",
-        "помощь",
         "مساعدة",
     }
 )
@@ -316,15 +294,6 @@ _LOW_RISK_FACT_QUESTION_TERMS = (
     "are there",
     "can you",
     "could you",
-    "у вас",
-    "есть ли",
-    "где",
-    "что",
-    "кто",
-    "когда",
-    "какой",
-    "какая",
-    "какие",
     "هل",
     "أين",
     "وين",
@@ -382,11 +351,6 @@ _QUOTE_PROPOSAL_PHRASES = (
     "proforma invoice",
     "pro forma invoice",
     "invoice",
-    "коммерческое предложение",
-    "счет",
-    "счёт",
-    "проформа",
-    "инвойс",
 )
 _PROPOSAL_CONTEXT_TERMS = (
     "business",
@@ -396,34 +360,8 @@ _PROPOSAL_CONTEXT_TERMS = (
     "quote",
     "for me",
 )
-_RU_QUOTE_NOUN_PATTERN = (
-    r"(?:"
-    r"коммерческ(?:ое|ого|ому|им|ом|ие|их|ими)\s+"
-    r"предложени(?:е|я|ю|ем|и|й|ям|ями|ях)|"
-    r"кп|"
-    r"сч[её]т(?:а|у|ом|е|ы|ов|ам|ами|ах)?|"
-    r"инвойс(?:а|у|ом|е|ы|ов|ам|ами|ах)?"
-    r")"
-)
-_RU_QUOTE_HOLD_END = (
-    r"(?:\s+(?:сейчас|пока|ещ[её]|на\s+данном\s+этапе))?"
-    r"(?=\s*(?:[.!?;,:—–]|-{1,2}|$))"
-)
-_RU_QUOTE_PREFIX_HOLD_PATTERN = (
-    r"\b(?:(?:я\s+не\s+хочу|мы\s+не\s+хотим)|"
-    r"(?:(?:мне|нам)\s+)?не\s+"
-    r"(?:хочу|хотим|нужно|надо|нужен|нужна|нужны))\s+"
-    rf"{_RU_QUOTE_NOUN_PATTERN}{_RU_QUOTE_HOLD_END}"
-)
-_RU_QUOTE_NOUN_FIRST_HOLD_PATTERN = (
-    rf"\b{_RU_QUOTE_NOUN_PATTERN}\s+"
-    r"(?:(?:я\s+не\s+хочу|мы\s+не\s+хотим)|"
-    r"(?:(?:мне|нам)\s+)?не\s+"
-    r"(?:хочу|хотим|нужно|надо|нужен|нужна|нужны))"
-    rf"{_RU_QUOTE_HOLD_END}"
-)
 _QUOTE_HOLD_RE = re.compile(
-    rf"(?:"
+    r"(?:"
     r"\b(?:keep|maintain|preserve)\s+(?:the\s+)?"
     r"(?:no[\s-]+(?:quote|quotation)|(?:quote|quotation)[\s-]+hold)"
     r"(?:\s+(?:instruction|request))?\b|"
@@ -443,9 +381,7 @@ _QUOTE_HOLD_RE = re.compile(
     r"(?:بدون|لا)\s+(?:إنشاء|اعداد|إعداد|ارسال|إرسال)?\s*"
     r"(?:عرض\s+سعر|عرض\s+رسمي)|"
     r"(?:لا|لن)\s+(?:أريد|اريد|أحتاج|احتاج)\s+"
-    r"(?:عرض\s+سعر|عرض\s+رسمي|فاتورة\s+مبدئية)|"
-    rf"{_RU_QUOTE_PREFIX_HOLD_PATTERN}|"
-    rf"{_RU_QUOTE_NOUN_FIRST_HOLD_PATTERN}"
+    r"(?:عرض\s+سعر|عرض\s+رسمي|فاتورة\s+مبدئية)"
     r")",
     re.IGNORECASE,
 )
@@ -513,9 +449,6 @@ _TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
         "delivered",
         "shipping",
         "ship",
-        "доставка",
-        "доставить",
-        "доставляете",
         "lead time",
         "timeline",
         "deadline",
@@ -529,13 +462,10 @@ _TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
         "installed",
         "setup",
         "assembly",
-        "установка",
-        "монтаж",
-        "сборка",
         "logistics",
         "تركيب",
     ),
-    "warranty": ("warranty", "guarantee", "guaranty", "гарантия", "ضمان"),
+    "warranty": ("warranty", "guarantee", "guaranty", "ضمان"),
     "returns": (
         "return",
         "refund",
@@ -543,9 +473,6 @@ _TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
         "cancel",
         "returns",
         "refunds",
-        "возврат",
-        "обмен",
-        "отмена",
         "إرجاع",
         "استرجاع",
     ),
@@ -557,9 +484,6 @@ _TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
         "credit",
         "invoice",
         "installment",
-        "оплата",
-        "условия оплаты",
-        "рассрочка",
         "net 30",
         "net 60",
         "دفع",
@@ -901,8 +825,6 @@ def is_quote_or_proposal_request(query: str) -> bool:
     if any(phrase in normalized for phrase in _QUOTE_PROPOSAL_PHRASES):
         return True
     if "quotation" in normalized or "quote" in normalized:
-        return True
-    if re.search(r"(?<![а-яa-z0-9])кп(?![а-яa-z0-9])", normalized):
         return True
     return "proposal" in normalized and any(
         term in normalized for term in _PROPOSAL_CONTEXT_TERMS

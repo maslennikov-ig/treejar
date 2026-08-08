@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 """
-bot_test_suite.py — Полный тест-сьют Noor-бота.
+bot_test_suite.py -- the full Noor bot test suite.
 
-Тестирует бота напрямую через process_message() с MockMessagingProvider,
-минуя WhatsApp/Wazzup полностью. Каждый сценарий использует изолированный
-уникальный phone, чтобы контексты не пересекались.
+Drives the bot directly through process_message() with MockMessagingProvider,
+bypassing WhatsApp/Wazzup entirely. Each scenario uses an isolated, unique
+phone so the contexts never overlap.
 
-Запуск:
-    # Полный прогон:
+Usage:
+    # Full run:
     uv run python scripts/bot_test_suite.py
 
-    # Только конкретная группа:
+    # A single group:
     uv run python scripts/bot_test_suite.py --group escalation
 
-    # Только один тест:
+    # A single test:
     uv run python scripts/bot_test_suite.py --test 2.1
 
-    # Подробный вывод (все ответы бота):
+    # Verbose output (every bot reply):
     uv run python scripts/bot_test_suite.py --verbose
 
-    # Сохранить результаты в файл:
+    # Save the results to a file:
     uv run python scripts/bot_test_suite.py --output results.json
 """
 
@@ -315,7 +315,7 @@ class TestSuite:
     # ─── GROUP 1: Basic Mechanics ─────────────────────────────────────────────
 
     async def test_1_1_first_contact(self) -> dict:
-        """Новый клиент получает приветствие."""
+        """A new customer gets a greeting."""
         phone = self._phone("1_1")
         await cleanup_phone(phone)
         try:
@@ -338,7 +338,7 @@ class TestSuite:
             await cleanup_phone(phone)
 
     async def test_1_2_empty_message_ignored(self) -> dict:
-        """Пустое сообщение не вызывает LLM (проверяем через webhook-логику)."""
+        """An empty message does not call the LLM (checked through the webhook logic)."""
         # This test validates the chat.py logic, not process_message directly
         # We just verify that an empty string doesn't crash
         phone = self._phone("1_2")
@@ -358,7 +358,7 @@ class TestSuite:
     # ─── GROUP 2: Product Search & Stock ─────────────────────────────────────
 
     async def test_2_1_product_search_en(self) -> dict:
-        """Бот находит товары по запросу на английском."""
+        """The bot finds products from an English query."""
         phone = self._phone("2_1")
         await cleanup_phone(phone)
         try:
@@ -389,7 +389,7 @@ class TestSuite:
             await cleanup_phone(phone)
 
     async def test_2_2_stock_check(self) -> dict:
-        """Бот проверяет остатки товара (инструмент get_stock)."""
+        """The bot checks stock (the get_stock tool)."""
         phone = self._phone("2_2")
         await cleanup_phone(phone)
         try:
@@ -417,7 +417,7 @@ class TestSuite:
             await cleanup_phone(phone)
 
     async def test_2_3_product_search_arabic(self) -> dict:
-        """Бот отвечает на арабском и ищет товары по арабскому запросу."""
+        """The bot answers in Arabic and searches products from an Arabic query."""
         phone = self._phone("2_3")
         await cleanup_phone(phone)
         try:
@@ -433,7 +433,7 @@ class TestSuite:
             await cleanup_phone(phone)
 
     async def test_2_4_no_hallucination_unknown_product(self) -> dict:
-        """Бот не галлюцинирует по несуществующим товарам."""
+        """The bot does not hallucinate products that do not exist."""
         phone = self._phone("2_4")
         await cleanup_phone(phone)
         try:
@@ -456,7 +456,7 @@ class TestSuite:
             await cleanup_phone(phone)
 
     async def test_2_5_cross_sell_recommendations(self) -> dict:
-        """Бот предлагает сопутствующие товары."""
+        """The bot suggests related products."""
         phone = self._phone("2_5")
         await cleanup_phone(phone)
         try:
@@ -472,7 +472,7 @@ class TestSuite:
     # ─── GROUP 3: Sales Funnel ────────────────────────────────────────────────
 
     async def test_3_1_sales_stage_progression(self) -> dict:
-        """Стадия продажи двигается вперёд по мере диалога."""
+        """The sales stage advances as the conversation goes on."""
         phone = self._phone("3_1")
         await cleanup_phone(phone)
         stages = []
@@ -497,7 +497,7 @@ class TestSuite:
             await cleanup_phone(phone)
 
     async def test_3_2_order_status_no_deal(self) -> dict:
-        """Бот корректно отвечает клиенту без сделки."""
+        """The bot answers correctly for a customer with no deal."""
         phone = self._phone("3_2")
         await cleanup_phone(phone)
         try:
@@ -527,7 +527,7 @@ class TestSuite:
     # ─── GROUP 4: Escalation ──────────────────────────────────────────────────
 
     async def test_4_1_explicit_human_request(self) -> dict:
-        """Клиент просит живого человека — эскалация срабатывает."""
+        """The customer asks for a human -- the escalation fires."""
         phone = self._phone("4_1")
         await cleanup_phone(phone)
         try:
@@ -562,7 +562,7 @@ class TestSuite:
             await cleanup_phone(phone)
 
     async def test_4_2_wholesale_b2b_escalation(self) -> dict:
-        """B2B/оптовый запрос триггерит эскалацию."""
+        """A B2B/wholesale request triggers an escalation."""
         phone = self._phone("4_2")
         await cleanup_phone(phone)
         try:
@@ -580,7 +580,7 @@ class TestSuite:
             await cleanup_phone(phone)
 
     async def test_4_3_refund_request_escalation(self) -> dict:
-        """Запрос возврата триггерит эскалацию."""
+        """A refund request triggers an escalation."""
         phone = self._phone("4_3")
         await cleanup_phone(phone)
         try:
@@ -597,7 +597,7 @@ class TestSuite:
             await cleanup_phone(phone)
 
     async def test_4_4_frustrated_customer_escalation(self) -> dict:
-        """Сильное недовольство клиента триггерит эскалацию."""
+        """Strong customer dissatisfaction triggers an escalation."""
         phone = self._phone("4_4")
         await cleanup_phone(phone)
         try:
@@ -615,7 +615,7 @@ class TestSuite:
             await cleanup_phone(phone)
 
     async def test_4_5_sample_request_escalation(self) -> dict:
-        """Запрос образца товара триггерит эскалацию."""
+        """A product sample request triggers an escalation."""
         phone = self._phone("4_5")
         await cleanup_phone(phone)
         try:
@@ -632,7 +632,7 @@ class TestSuite:
             await cleanup_phone(phone)
 
     async def test_4_6_no_escalation_normal_question(self) -> dict:
-        """Обычный вопрос НЕ вызывает эскалацию."""
+        """An ordinary question does NOT trigger an escalation."""
         phone = self._phone("4_6")
         await cleanup_phone(phone)
         try:
@@ -650,7 +650,7 @@ class TestSuite:
             await cleanup_phone(phone)
 
     async def test_4_7_legal_threat_escalation(self) -> dict:
-        """Угроза судебным иском триггерит эскалацию."""
+        """A threat of legal action triggers an escalation."""
         phone = self._phone("4_7")
         await cleanup_phone(phone)
         try:
@@ -668,7 +668,7 @@ class TestSuite:
             await cleanup_phone(phone)
 
     async def test_4_8_bot_silent_after_escalation(self) -> dict:
-        """После эскалации бот не отвечает на следующие сообщения (через chat.py)."""
+        """After an escalation the bot stops answering (through chat.py)."""
         # Note: This tests the chat.py escalation guard, not process_message directly
         # We check that the escalation status persists
         phone = self._phone("4_8")
@@ -695,7 +695,7 @@ class TestSuite:
     # ─── GROUP 5: PII & Safety ────────────────────────────────────────────────
 
     async def test_5_1_pii_not_leaked_in_db_logs(self) -> dict:
-        """PII маскируется до входа в LLM (проверяем через успешный ответ)."""
+        """PII is masked before the LLM sees it (checked through a successful reply)."""
         phone = self._phone("5_1")
         await cleanup_phone(phone)
         try:
@@ -711,7 +711,7 @@ class TestSuite:
     # ─── GROUP 6: Multi-language ──────────────────────────────────────────────
 
     async def test_6_1_full_arabic_flow(self) -> dict:
-        """Полный диалог на арабском языке."""
+        """A full conversation in Arabic."""
         phone = self._phone("6_1")
         await cleanup_phone(phone)
         try:
@@ -731,7 +731,7 @@ class TestSuite:
             await cleanup_phone(phone)
 
     async def test_6_2_language_detection_switches(self) -> dict:
-        """Бот переключает язык ответа при смене языка клиента."""
+        """The bot switches reply language when the customer switches."""
         phone = self._phone("6_2")
         await cleanup_phone(phone)
         try:
@@ -755,7 +755,7 @@ class TestSuite:
     # ─── GROUP 7: Referral Codes ──────────────────────────────────────────────
 
     async def test_7_1_referral_code_generation(self) -> dict:
-        """Бот генерирует реферальный код по запросу."""
+        """The bot generates a referral code on request."""
         phone = self._phone("7_1")
         await cleanup_phone(phone)
         try:
@@ -775,7 +775,7 @@ class TestSuite:
     # ─── GROUP 8: Feedback Flow ───────────────────────────────────────────────
 
     async def test_8_1_feedback_collection(self) -> dict:
-        """Бот собирает обратную связь через инструмент save_feedback."""
+        """The bot collects feedback through the save_feedback tool."""
         from sqlalchemy import select
 
         from src.core.database import async_session_factory
@@ -840,7 +840,7 @@ class TestSuite:
     # ─── GROUP 9: Follow-up Cron ──────────────────────────────────────────────
 
     async def test_9_1_followup_sends_for_inactive(self) -> dict:
-        """Follow-up отправляется для неактивных разговоров."""
+        """A follow-up is sent for inactive conversations."""
 
         from src.core.database import async_session_factory
         from src.models.conversation import Conversation
@@ -889,7 +889,7 @@ class TestSuite:
             await cleanup_phone(phone)
 
     async def test_9_2_no_followup_when_escalated(self) -> dict:
-        """Follow-up НЕ отправляется при активной эскалации."""
+        """A follow-up is NOT sent while an escalation is active."""
         from src.core.database import async_session_factory
         from src.models.conversation import Conversation
         from src.schemas.common import EscalationStatus, SalesStage
@@ -942,135 +942,135 @@ class TestSuite:
             # (test_id, name, group, coro_method)
             (
                 "1.1",
-                "Первый контакт — приветствие",
+                "First contact -- greeting",
                 "basic",
                 self.test_1_1_first_contact,
             ),
             (
                 "1.2",
-                "Пустое сообщение игнорируется",
+                "Empty message is ignored",
                 "basic",
                 self.test_1_2_empty_message_ignored,
             ),
-            ("2.1", "Поиск товаров (EN)", "products", self.test_2_1_product_search_en),
-            ("2.2", "Проверка остатков", "products", self.test_2_2_stock_check),
+            ("2.1", "Product search (EN)", "products", self.test_2_1_product_search_en),
+            ("2.2", "Stock check", "products", self.test_2_2_stock_check),
             (
                 "2.3",
-                "Поиск товаров (AR)",
+                "Product search (AR)",
                 "products",
                 self.test_2_3_product_search_arabic,
             ),
             (
                 "2.4",
-                "Нет галлюцинаций",
+                "No hallucinations",
                 "products",
                 self.test_2_4_no_hallucination_unknown_product,
             ),
             (
                 "2.5",
-                "Cross-sell рекомендации",
+                "Cross-sell recommendations",
                 "products",
                 self.test_2_5_cross_sell_recommendations,
             ),
             (
                 "3.1",
-                "Прогресс по стадиям продажи",
+                "Sales stage progression",
                 "sales",
                 self.test_3_1_sales_stage_progression,
             ),
             (
                 "3.2",
-                "Статус заказа — нет сделки",
+                "Order status -- no deal",
                 "sales",
                 self.test_3_2_order_status_no_deal,
             ),
             (
                 "4.1",
-                "Эскалация — запрос живого человека",
+                "Escalation -- human requested",
                 "escalation",
                 self.test_4_1_explicit_human_request,
             ),
             (
                 "4.2",
-                "Эскалация — B2B/оптовый запрос",
+                "Escalation -- B2B/wholesale request",
                 "escalation",
                 self.test_4_2_wholesale_b2b_escalation,
             ),
             (
                 "4.3",
-                "Эскалация — запрос возврата",
+                "Escalation -- refund request",
                 "escalation",
                 self.test_4_3_refund_request_escalation,
             ),
             (
                 "4.4",
-                "Эскалация — сильное недовольство",
+                "Escalation -- strong dissatisfaction",
                 "escalation",
                 self.test_4_4_frustrated_customer_escalation,
             ),
             (
                 "4.5",
-                "Эскалация — образец товара",
+                "Escalation -- product sample",
                 "escalation",
                 self.test_4_5_sample_request_escalation,
             ),
             (
                 "4.6",
-                "НЕТ эскалации — обычный вопрос",
+                "NO escalation -- ordinary question",
                 "escalation",
                 self.test_4_6_no_escalation_normal_question,
             ),
             (
                 "4.7",
-                "Эскалация — угроза судом",
+                "Escalation -- legal threat",
                 "escalation",
                 self.test_4_7_legal_threat_escalation,
             ),
             (
                 "4.8",
-                "Бот молчит после эскалации",
+                "Bot stays silent after escalation",
                 "escalation",
                 self.test_4_8_bot_silent_after_escalation,
             ),
             (
                 "5.1",
-                "PII маскировка не ломает ответ",
+                "PII masking does not break the reply",
                 "security",
                 self.test_5_1_pii_not_leaked_in_db_logs,
             ),
             (
                 "6.1",
-                "Полный диалог на арабском",
+                "Full conversation in Arabic",
                 "multilang",
                 self.test_6_1_full_arabic_flow,
             ),
             (
                 "6.2",
-                "Переключение языка mid-диалог",
+                "Language switch mid-conversation",
                 "multilang",
                 self.test_6_2_language_detection_switches,
             ),
             (
                 "7.1",
-                "Генерация реферального кода",
+                "Referral code generation",
                 "referral",
                 self.test_7_1_referral_code_generation,
             ),
             (
                 "8.1",
-                "Сбор обратной связи",
+                "Feedback collection",
                 "feedback",
                 self.test_8_1_feedback_collection,
             ),
             (
                 "9.1",
-                "Follow-up для неактивных разговоров",
+                "Follow-up for inactive conversations",
                 "followup",
                 self.test_9_1_followup_sends_for_inactive,
             ),
             (
                 "9.2",
-                "Нет follow-up при эскалации",
+                "No follow-up during escalation",
                 "followup",
                 self.test_9_2_no_followup_when_escalated,
             ),

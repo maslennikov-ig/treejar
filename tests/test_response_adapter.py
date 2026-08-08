@@ -110,7 +110,7 @@ async def test_adapt_manager_response_normalizes_unsupported_customer_language_t
         new=AsyncMock(return_value=SimpleNamespace(output="Polished answer")),
     ) as mock_run:
         await adapt_manager_response(
-            question="Можно скидку?",
+            question="Can I get a discount?",
             draft="Offer alternatives, no discount approved.",
             language="ru",
         )

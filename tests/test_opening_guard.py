@@ -35,7 +35,7 @@ def test_first_turn_unknown_customer_does_not_answer_embedded_question() -> None
 
 def test_first_turn_russian_response_adds_identity_and_name_question_only() -> None:
     response = apply_opening_guard(
-        "Да, у нас есть эргономичные кресла.",
+        "Yes, we do have ergonomic chairs.",
         language="Russian",
         is_first_turn=True,
         customer_name=None,
@@ -45,7 +45,7 @@ def test_first_turn_russian_response_adds_identity_and_name_question_only() -> N
         "Hello, I'm Noor from Treejar. "
         "May I know your name so I can address you properly?"
     )
-    assert "эргономичные кресла" not in response
+    assert "ergonomic chairs" not in response
 
 
 def test_first_turn_english_keeps_business_answer_when_customer_name_known() -> None:

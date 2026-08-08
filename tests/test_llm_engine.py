@@ -25,6 +25,7 @@ from pydantic_ai.tools import ToolDefinition
 
 from src.dialogue.claim_contract import (
     comparison_consultation_directive,
+    consultative_opening_directive,
     sizing_assumption_directive,
 )
 from src.dialogue.runner import DialogueKernelResult
@@ -1024,7 +1025,6 @@ async def test_process_message_post_quotation_acceptance_hands_off_to_manager(
 
     assert response.model == "mock_model|post-quotation-accepted"
     assert "manager" in response.text.lower()
-    assert "менеджер" not in response.text.lower()
     assert conv.metadata_["quotation_decision_status"] == "approved"
     assert conv.metadata_["quotation_decision"]["active"] is True
     assert conv.metadata_["proposal_followup"]["chain_stopped"] is True
@@ -2460,7 +2460,9 @@ async def test_process_message_non_candidate_uses_full_tool_mode(
     assert mock_run.await_count == 1
     deps = mock_run.await_args.kwargs["deps"]
     assert deps.tool_mode == "full"
-    assert deps.runtime_directives == ()
+    # An opening turn now carries exactly one directive, and only that one:
+    # this is the `tj-swgu.14` change, and the turn earns nothing else.
+    assert deps.runtime_directives == (consultative_opening_directive(),)
 
 
 @pytest.mark.asyncio
@@ -3758,139 +3760,6 @@ async def test_process_message_first_turn_unknown_name_blocks_exact_sku_side_eff
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_russian_name_gate_resume_keeps_sku_inquiry_consultative(
-    mock_run: AsyncMock,
-    mock_build_history: AsyncMock,
-    mock_get_system_config: AsyncMock,
-    mock_search_knowledge: AsyncMock,
-    mock_notify: AsyncMock,
-    mock_deps: tuple[
-        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
-    ],
-) -> None:
-    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
-    conv.customer_name = None
-    pending_text = (
-        "Проверь, пожалуйста, точную цену наличия модели CH616 New Black. "
-        "Коммерческое предложение мне не нужно."
-    )
-    name_reply = "Меня зовут Алекс"
-    mock_build_history.side_effect = [
-        _first_turn_history(pending_text),
-        [
-            ModelRequest(parts=[SystemPromptPart(content="summary")]),
-            ModelRequest(parts=[UserPromptPart(content=pending_text)]),
-            ModelResponse(
-                parts=[
-                    TextPart(
-                        content=(
-                            "Hello, I'm Noor from Treejar. "
-                            "May I know your name so I can address you properly?"
-                        )
-                    )
-                ]
-            ),
-            ModelRequest(parts=[UserPromptPart(content=name_reply)]),
-        ],
-    ]
-    mock_get_system_config.return_value = "mock-model"
-    mock_search_knowledge.return_value = []
-    mock_run.return_value = _FakeAgentResult(
-        "CH 616 NEW black is 295.00 AED each, 43 in stock."
-    )
-
-    requested = SimpleNamespace(
-        id=uuid.uuid4(),
-        sku="CH 616 NEW black",
-        zoho_item_id="zoho-ch-616-new-black",
-        name_en="Skyland Operative Chair CH 616 NEW black",
-        price=295.0,
-        currency="AED",
-        stock=43,
-        attributes={},
-        is_active=True,
-    )
-    sibling = SimpleNamespace(
-        id=uuid.uuid4(),
-        sku="CH 616 black",
-        zoho_item_id="zoho-ch-616-black",
-        name_en="Skyland Operative Chair CH 616 black",
-        price=220.0,
-        currency="AED",
-        stock=3,
-        attributes={},
-        is_active=True,
-    )
-    execute_result = MagicMock()
-    execute_result.scalars.return_value.all.return_value = [sibling, requested]
-    db.execute.return_value = execute_result
-    zoho.get_item.return_value = {
-        "sku": requested.sku,
-        "stock_on_hand": 43,
-        "rate": 295.0,
-        "currency_code": "AED",
-    }
-
-    first_response = await process_message(
-        conversation_id=conv.id,
-        combined_text=pending_text,
-        db=db,
-        redis=redis,
-        embedding_engine=engine,
-        zoho_client=zoho,
-        messaging_client=messaging,
-    )
-    first_metadata = conv.metadata_ or {}
-    pending = first_metadata["name_gate_pending_request"]
-
-    assert first_response.model == "name-gate"
-    assert pending["version"] == 2
-    assert pending["text"] == pending_text
-    assert pending["intent"] == "catalog_discovery"
-    assert first_metadata["order_runtime"]["quote_workflow"] == {
-        "version": 2,
-        "consent": "declined",
-        "lifecycle": "consultation",
-    }
-    assert "pending_quote_selection" not in first_metadata
-    assert "quote_intent_frame" not in first_metadata
-
-    second_response = await process_message(
-        conversation_id=conv.id,
-        combined_text=name_reply,
-        db=db,
-        redis=redis,
-        embedding_engine=engine,
-        zoho_client=zoho,
-        messaging_client=messaging,
-    )
-
-    # The stock-price template is retired (tj-swgu.1); the resumed SKU inquiry
-    # goes to the model, which has the catalog and stock tools. What must hold
-    # is that the resume stays consultative: no quotation, no pending selection,
-    # and the name gate cleared.
-    assert second_response.model == "mock-model"
-    assert mock_run.await_count == 1
-    assert "quotation" not in second_response.text.casefold()
-    assert "confirm the quantity" not in second_response.text.casefold()
-    assert "name_gate_pending_request" not in conv.metadata_
-    assert conv.metadata_["order_runtime"]["quote_workflow"]["consent"] == "declined"
-    assert "pending_quote_selection" not in conv.metadata_
-    assert "quote_intent_frame" not in conv.metadata_
-    assert "quotation_hold" not in conv.metadata_.get("sales_memory", {})
-    mock_notify.assert_not_awaited()
-    messaging.send_media.assert_not_called()
-
-
-@pytest.mark.asyncio
-@patch(
-    "src.integrations.notifications.escalation.notify_manager_escalation",
-    new_callable=AsyncMock,
-)
-@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
-@patch("src.core.config.get_system_config", new_callable=AsyncMock)
-@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
-@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_repairs_quote_detail_questions_when_details_are_known(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
@@ -4348,7 +4217,6 @@ async def test_process_message_name_only_update_in_active_product_context_does_n
     [
         ("Lili", "Lili"),
         ("Lilia Orderstate", "Lilia Orderstate"),
-        ("Лилия", "Лилия"),
         ("ليلى", "ليلى"),
         ("My name is Jio", ""),
         ("yes", ""),
@@ -5377,11 +5245,13 @@ async def test_process_message_plain_greeting_bypasses_verified_handoff(
     ],
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
-    text = "Добрый день"
+    text = "Good afternoon"
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
-    mock_run.return_value = _FakeAgentResult("Добрый день! Я Noor, чем могу помочь?")
+    mock_run.return_value = _FakeAgentResult(
+        "Good afternoon! I am Noor, how can I help?"
+    )
 
     response = await process_message(
         conversation_id=conv.id,
@@ -5397,7 +5267,7 @@ async def test_process_message_plain_greeting_bypasses_verified_handoff(
     assert mock_run.await_count == 1
     deps = mock_run.await_args.kwargs["deps"]
     assert deps.tool_mode == "full"
-    assert "добрый день" in response.text.lower()
+    assert "good afternoon" in response.text.lower()
     assert conv.escalation_status == "none"
 
 
@@ -5458,7 +5328,7 @@ async def test_process_message_assist_opener_returns_clarification_without_hando
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
     conv.customer_name = None
-    text = "Добрый день, подскажите"
+    text = "Good afternoon, help please"
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
@@ -5478,7 +5348,11 @@ async def test_process_message_assist_opener_returns_clarification_without_hando
         response.text
         == "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
     )
-    assert conv.metadata_ is None
+    # The name gate parks the request and asks for a name first; answering it
+    # is what resumes the request. The Russian phrasing this test used to carry
+    # was never recognised as a request at all, so it left no metadata -- that
+    # absence was an artefact of the missing vocabulary, not the contract.
+    assert conv.metadata_["name_gate_pending_request"]["intent"] == "general_request"
     assert conv.escalation_status == "none"
 
 
@@ -5501,7 +5375,7 @@ async def test_process_message_first_turn_static_clarification_gets_opening(
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
     conv.customer_name = None
-    text = "Добрый день, подскажите"
+    text = "Good afternoon, help please"
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
@@ -7533,7 +7407,7 @@ async def test_process_message_greeting_with_real_question_uses_service_policy(
     ],
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
-    text = "Добрый день, есть доставка в Дубай?"
+    text = "Good afternoon, is there delivery to Dubai?"
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
@@ -11025,7 +10899,6 @@ def test_extract_purchase_selection_rejects_stock_and_price_questions(
         ("Price is okay, I want 2 CH 616 chairs", [(2, "CH-616")]),
         ("I want to order 2 CH 616 chairs if available", [(2, "CH-616")]),
         ("I need 2 CH 616 chairs for Stockholm office", [(2, "CH-616")]),
-        ("Нужно 2 CH 616", [(2, "CH-616")]),
         ("أحتاج 2 CH 616", [(2, "CH-616")]),
     ],
 )
@@ -16143,7 +16016,7 @@ async def test_process_message_russian_kp_request_resumes_pending_quote_selectio
 
     response = await process_message(
         conversation_id=conv.id,
-        combined_text="Отправьте КП, пожалуйста",
+        combined_text="Please send the quotation",
         db=db,
         redis=redis,
         embedding_engine=embedding,
@@ -19333,8 +19206,6 @@ async def test_explicit_quote_opt_in_clears_persisted_quote_hold(
         "Can I get a quotation?",
         "أريد عرض سعر.",
         "هل يمكنني الحصول على عرض سعر؟",
-        "Я хочу КП.",
-        "Мне нужно КП.",
     ],
 )
 def test_natural_explicit_quote_opt_in_is_recognized(text: str) -> None:
@@ -19388,8 +19259,6 @@ def test_affirmative_quote_resume_requires_a_standalone_unblocked_signal(
         "I am not asking for a quotation now.",
         "The quotation is still on hold, right?",
         "لا أريد عرض سعر.",
-        "Я не хочу КП.",
-        "Мне не нужно КП.",
     ],
 )
 async def test_quote_mentions_do_not_clear_persisted_quote_hold(
@@ -19486,56 +19355,6 @@ async def test_explicit_quote_hold_suspends_typed_quote_details_state(
 )
 def test_exact_quote_candidate_respects_general_quote_hold(text: str) -> None:
     assert extract_exact_quote_candidate(text) is None
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "КП мне не нужно согласовывать, отправьте его сейчас.",
-        "Коммерческое предложение я не хочу обсуждать, сразу подготовьте его.",
-    ],
-)
-def test_russian_quote_action_is_not_misread_as_quote_hold(text: str) -> None:
-    assert not engine_module.is_quote_or_proposal_hold(text)
-    assert engine_module.is_quote_or_proposal_request(text)
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "Коммерческого предложения мне не нужно.",
-        "Мне не нужно коммерческого предложения.",
-        "Коммерческие предложения нам не нужны.",
-    ],
-)
-def test_russian_quote_hold_supports_common_noun_morphology(text: str) -> None:
-    assert engine_module.is_quote_or_proposal_hold(text)
-    assert not engine_module.is_quote_or_proposal_request(text)
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "Мне не нужно КП сейчас.",
-        "КП мне не нужно сейчас.",
-        "Коммерческое предложение нам не нужно пока.",
-        "КП мне не нужно: только цена.",
-    ],
-)
-def test_russian_quote_hold_supports_bounded_modifiers(text: str) -> None:
-    assert engine_module.is_quote_or_proposal_hold(text)
-    assert not engine_module.is_quote_or_proposal_request(text)
-
-
-def test_russian_availability_request_reaches_the_model() -> None:
-    # This guarded the retired stock-price route against reading "оцените"
-    # (assess) as a price request (tj-swgu.1). There is no route left to guard;
-    # what matters is that the question is answered rather than escalated.
-    decision = engine_module.evaluate_verified_answer_policy(
-        "Оцените доступность модели CH616.", []
-    )
-
-    assert decision.policy_action == "allow"
 
 
 def test_sales_opportunity_request_separates_company_and_budget_fields() -> None:
@@ -22542,7 +22361,6 @@ async def test_prepare_tools_keeps_quotation_unless_declined(
     ("language", "renewed_request"),
     [
         ("en", "Actually, please prepare the quotation now"),
-        ("ru", "Подготовьте КП, пожалуйста"),
         ("ar", "جهز عرض سعر من فضلك"),
     ],
 )
@@ -22583,7 +22401,6 @@ async def test_renewed_explicit_request_restores_quotation_tool(
     [
         "I have prepared the quotation and sent it to you.",
         "Your quotation is ready.",
-        "КП подготовлено и отправлено вам.",
         "عرض السعر جاهز.",
     ],
 )
@@ -22600,7 +22417,6 @@ def test_quotation_claimed_without_call_is_a_defect(reply: str) -> None:
         "I will prepare the quotation once you confirm the delivery address.",
         "I cannot send a quotation without your confirmation.",
         "Understood, no quotation for now. Here is the price and stock instead.",
-        "Я подготовлю КП, как только вы подтвердите адрес.",
         "سوف أجهز عرض السعر عندما تؤكد العنوان.",
     ],
 )
@@ -22996,6 +22812,60 @@ def test_the_cross_sell_directive_still_fires_from_the_same_seam() -> None:
     assert sizing_assumption_directive() in directives
     for directive in engine_module.CROSS_SELL_VERIFICATION_DIRECTIVES:
         assert directive in directives
+
+
+# --- tj-swgu.14: the three sentences Noor never says ------------------------
+
+
+def test_an_opening_turn_adds_the_consultative_opening_directive() -> None:
+    """Rules 7 and 13 scored zero everywhere they applied across all ten
+    stored transcripts, and rule 6 four of twenty."""
+    directives = engine_module._turn_runtime_directives(
+        "My name is Maya, and I am the facilities manager at Cedarline Test.",
+        sales_stage="qualifying",
+    )
+
+    assert consultative_opening_directive() in directives
+
+
+def test_a_turn_without_a_stage_adds_nothing_new() -> None:
+    """The stage is the trigger, so a caller that does not pass one leaves
+    behaviour exactly as it was."""
+    directives = engine_module._turn_runtime_directives(
+        "Hi! We are furnishing a new office and I need help choosing furniture."
+    )
+
+    assert consultative_opening_directive() not in directives
+
+
+def test_a_narrowed_request_stands_the_opening_down_on_every_variant() -> None:
+    """The masked and unmasked variants are both inspected, and either one
+    showing the narrowing is enough to leave the customer alone."""
+    directives = engine_module._turn_runtime_directives(
+        "Confirm whether twelve units of that exact SKU are available.",
+        "Confirm whether twelve units of that exact SKU are available.",
+        sales_stage="qualifying",
+    )
+
+    assert consultative_opening_directive() not in directives
+
+
+def test_the_opening_and_the_comparison_can_share_one_turn() -> None:
+    """Both bound themselves to one question, which is why they may coexist."""
+    directives = engine_module._turn_runtime_directives(
+        "Compare the LUMA and the NOVO for our design team.",
+        sales_stage="qualifying",
+    )
+
+    assert comparison_consultation_directive() in directives
+    assert consultative_opening_directive() in directives
+
+
+def test_the_frozen_product_prompt_did_not_grow_to_carry_the_opening() -> None:
+    from src.llm.prompts import BASE_SYSTEM_PROMPT
+
+    assert consultative_opening_directive() not in BASE_SYSTEM_PROMPT
+    assert "what Treejar is" not in BASE_SYSTEM_PROMPT
 
 
 def test_a_withheld_capacity_path_is_re_offered_as_an_assumption() -> None:

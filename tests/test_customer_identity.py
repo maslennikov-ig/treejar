@@ -124,7 +124,7 @@ async def test_resolve_owner_customer_name_returns_placeholder_when_missing() ->
         crm_client=crm_client,
     )
 
-    assert result == "не указано"
+    assert result == "not specified"
 
 
 @pytest.mark.asyncio
@@ -143,7 +143,7 @@ async def test_resolve_owner_customer_name_fails_soft_on_cache_and_crm_errors() 
         crm_client=crm_client,
     )
 
-    assert result == "не указано"
+    assert result == "not specified"
 
 
 def test_format_owner_identity_block_converts_to_uae_and_uses_placeholders() -> None:
@@ -164,11 +164,11 @@ def test_format_owner_identity_block_converts_to_uae_and_uses_placeholders() -> 
         ),
     )
 
-    assert "<b>Телефон клиента:</b> не указан" in msg
-    assert "<b>Имя клиента:</b> не указано" in msg
-    assert "<b>Входящий номер:</b> не указан" in msg
-    assert "<b>Начат (UAE):</b> 09.04.2026 13:05" in msg
-    assert "<b>Последняя активность (UAE):</b> 09.04.2026 14:15" in msg
+    assert "<b>Customer phone:</b> not specified" in msg
+    assert "<b>Customer name:</b> not specified" in msg
+    assert "<b>Inbound number:</b> not specified" in msg
+    assert "<b>Started (UAE):</b> 09.04.2026 13:05" in msg
+    assert "<b>Last activity (UAE):</b> 09.04.2026 14:15" in msg
     assert "None" not in msg
     assert "2026-04-09T09:05:00" not in msg
 

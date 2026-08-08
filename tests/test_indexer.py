@@ -7,6 +7,7 @@ index_documents function tests."""
 
 from __future__ import annotations
 
+import re
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -150,7 +151,7 @@ class TestParseSalesRules:
 
     @pytest.mark.unit
     def test_well_formatted_table_yields_expected_chunks(self) -> None:
-        """A file with two valid table rows must produce 2 bilingual chunks."""
+        """A file with two valid table rows must produce 2 English chunks."""
         content = (
             "# Sales Dialogue Guidelines\n\n"
             "| # | Rule (RU) | Explanation (RU) | Rule (EN) | Explanation (EN) |\n"
@@ -161,15 +162,20 @@ class TestParseSalesRules:
         path = _write_tmp(content)
         result = _parse_sales_rules(path)
 
-        # Expect exactly 2 bilingual rule chunks (no extra-rules bullet points)
+        # Expect exactly 2 rule chunks (no extra-rules bullet points)
         assert len(result) == 2
         assert result[0]["title"] == "Rule 1: Always greet"
-        assert result[0]["language"] == "bilingual"
+        assert result[0]["language"] == "en"
         assert result[1]["title"] == "Rule 2: Listen"
 
     @pytest.mark.unit
-    def test_chunk_contains_bilingual_content(self) -> None:
-        """Each rule chunk's content must include both the EN and RU text."""
+    def test_chunk_carries_only_the_english_columns(self) -> None:
+        """The source table is bilingual; only its English half is indexed.
+
+        The knowledge base feeds the model, and the product speaks English and
+        Arabic. Indexing the Russian half put Russian in front of the model for
+        no reader who wanted it.
+        """
         content = (
             "| # | Rule (RU) | Explanation (RU) | Rule (EN) | Explanation (EN) |\n"
             "| - | --------- | ---------------- | --------- | ---------------- |\n"
@@ -182,13 +188,19 @@ class TestParseSalesRules:
         chunk_content = result[0]["content"]
         assert "Smile" in chunk_content
         assert "Customer feels warmth" in chunk_content
-        assert "Улыбайся" in chunk_content
-        assert "Клиент должен чувствовать тепло" in chunk_content
+        assert "Улыбайся" not in chunk_content
+        assert "Клиент должен чувствовать тепло" not in chunk_content
+        assert result[0]["language"] == "en"
 
     @pytest.mark.unit
     def test_extra_rules_bullet_captured(self) -> None:
-        """Lines starting with known Russian bullet prefixes must be collected
-        into an 'Additional Rules' chunk."""
+        """The trailing notes reach the knowledge base in English.
+
+        These three are the only part of the guidelines with no English column.
+        The document is a frozen requirement in the acceptance traceability
+        manifest, so it is not edited to add one; the Russian line is the key and
+        the indexer holds the rendering.
+        """
         content = (
             "| # | Rule (RU) | Explanation (RU) | Rule (EN) | Explanation (EN) |\n"
             "| - | --------- | ---------------- | --------- | ---------------- |\n"
@@ -204,10 +216,11 @@ class TestParseSalesRules:
         assert "Additional Rules" in titles
 
         additional = next(c for c in result if c["title"] == "Additional Rules")
-        assert additional["language"] == "ru"
-        assert "Добавить правило о follow-up" in additional["content"]
-        assert "Делать фоллоу ап после встречи" in additional["content"]
-        assert "Наша задача — закрыть сделку" in additional["content"]
+        assert additional["language"] == "en"
+        assert not re.search(r"[Ѐ-ӿ]", additional["content"])
+        assert "different price brackets" in additional["content"]
+        assert "one day, three days and seven days" in additional["content"]
+        assert "produce the quote as" in additional["content"]
 
     @pytest.mark.unit
     def test_header_row_is_not_treated_as_rule(self) -> None:
@@ -257,21 +270,26 @@ class TestParseCompanyValues:
 
     @pytest.mark.unit
     def test_emoji_numbered_values_parsed_correctly(self) -> None:
-        """Emoji-numbered headings (1️⃣, 2️⃣) must produce one chunk each."""
+        """Emoji-numbered headings (1️⃣, 2️⃣) must produce one chunk each.
+
+        Only the document's English section is indexed, so the fixture carries
+        the heading that opens it.
+        """
         content = (
-            "# Ценности компании\n\n"
-            "1️⃣ **Честность**\n"
-            "Мы всегда честны с клиентами.\n\n"
-            "2️⃣ **Качество**\n"
-            "Мы обеспечиваем высокое качество продуктов.\n"
+            "# Company values\n\n"
+            "## **🎯 Treejar Values (EN, sorted by priority)**\n\n"
+            "1️⃣ **Honesty**\n"
+            "We are always honest with customers.\n\n"
+            "2️⃣ **Quality**\n"
+            "We deliver high product quality.\n"
         )
         path = _write_tmp(content)
         result = _parse_company_values(path)
 
         assert len(result) == 2
         titles = [c["title"] for c in result]
-        assert "Честность" in titles
-        assert "Качество" in titles
+        assert "Honesty" in titles
+        assert "Quality" in titles
 
     @pytest.mark.unit
     def test_language_detection_switches_to_en(self) -> None:
@@ -303,7 +321,7 @@ class TestParseCompanyValues:
     @pytest.mark.unit
     def test_chunk_source_and_category(self) -> None:
         """Every chunk must have source='values' and category='company_values'."""
-        content = "1️⃣ **Integrity**\nWe always act with integrity.\n"
+        content = "## **🎯 Treejar Values (EN, sorted by priority)**\n\n1️⃣ **Integrity**\nWe always act with integrity.\n"
         path = _write_tmp(content)
         result = _parse_company_values(path)
 
@@ -342,6 +360,7 @@ class TestParseCompanyValues:
         """A value heading with no following body text must not appear as a
         chunk."""
         content = (
+            "## **🎯 Treejar Values (EN, sorted by priority)**\n\n"
             "1️⃣ **EmptyValue**\n2️⃣ **RealValue**\nThis value has a real description.\n"
         )
         path = _write_tmp(content)

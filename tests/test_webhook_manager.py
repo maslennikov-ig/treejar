@@ -520,7 +520,7 @@ async def test_faq_manager_reply_uses_combined_call_and_requires_confirmation() 
         "Delivery takes 3-5 business days in the UAE."
     )
     sent_texts = [call.args[0] for call in telegram.send_message.await_args_list]
-    assert any("Требуется подтверждение админа" in text for text in sent_texts)
+    assert any("Admin confirmation is required" in text for text in sent_texts)
 
 
 @pytest.mark.asyncio
@@ -577,8 +577,8 @@ async def test_faq_manager_reply_falls_back_to_private_reply_when_candidate_llm_
     mock_review.assert_not_awaited()
     sent_texts = [call.args[0] for call in telegram.send_message.await_args_list]
     assert any("Delivery takes 3-5 business days." in text for text in sent_texts)
-    assert any("кандидат для Базы Знаний не создан" in text for text in sent_texts)
-    assert not any("Ошибка при обработке ответа" in text for text in sent_texts)
+    assert any("no knowledge base candidate was created" in text for text in sent_texts)
+    assert not any("Error while processing the reply" in text for text in sent_texts)
 
 
 @pytest.mark.asyncio
@@ -604,8 +604,8 @@ async def test_a_late_manager_reply_is_not_swallowed() -> None:
 
     telegram.send_message.assert_awaited_once()
     sent = telegram.send_message.await_args[0][0]
-    assert "не ушёл" in sent
-    assert "ещё раз" in sent
+    assert "was not sent" in sent
+    assert "again" in sent
 
 
 @pytest.mark.asyncio
@@ -622,7 +622,7 @@ async def test_ordinary_group_chatter_gets_no_reply() -> None:
         patch("src.api.telegram_webhook.redis_client", redis),
         patch("src.api.telegram_webhook._get_telegram_client", return_value=telegram),
     ):
-        await _handle_manager_reply({"chat": {"id": 42}, "text": "обед в 14?"})
+        await _handle_manager_reply({"chat": {"id": 42}, "text": "lunch at 14?"})
 
     telegram.send_message.assert_not_awaited()
 

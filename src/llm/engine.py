@@ -45,6 +45,8 @@ from src.dialogue.claim_contract import (
     apply_contract,
     assumption_eligible_paths,
     comparison_consultation_directive,
+    consultative_opening_directive,
+    earns_consultative_opening,
     requests_product_comparison,
     requests_sizing_judgement,
     row_from_catalog_product,
@@ -227,12 +229,6 @@ BARE_NAME_GATE_REJECT_PHRASES = frozenset(
         "thanks",
         "thank you",
         "go ahead",
-        "да",
-        "нет",
-        "ок",
-        "окей",
-        "хорошо",
-        "спасибо",
         "نعم",
         "لا",
         "حسنا",
@@ -293,19 +289,6 @@ BARE_NAME_GATE_REJECT_TOKENS = frozenset(
         "workstation",
         "workstations",
         "xten",
-        "доставка",
-        "кресло",
-        "мебель",
-        "нужно",
-        "нужен",
-        "нужна",
-        "нужны",
-        "сборка",
-        "склад",
-        "стол",
-        "столы",
-        "цена",
-        "шкаф",
         "كرسي",
         "مكتب",
         "طاولة",
@@ -423,12 +406,18 @@ _VERIFIED_CATALOG_FIELD_MAX_CHARS = 256
 _CROSS_SELL_REQUEST_RE = re.compile(r"\bcross(?:-|\s)?sell\b", re.IGNORECASE)
 
 
-def _turn_runtime_directives(*texts: str) -> tuple[str, ...]:
+def _turn_runtime_directives(*texts: str, sales_stage: str = "") -> tuple[str, ...]:
     """Directives this customer turn earns, in one place.
 
-    Both are demand-side: they read the customer request, never the generated
-    reply. PII masking rewrites the text, so each variant is inspected — a
-    headcount survives masking, but the surrounding wording may not.
+    All of them are demand-side: they read the customer request and the typed
+    stage, never the generated reply. PII masking rewrites the text, so each
+    variant is inspected — a headcount survives masking, but the surrounding
+    wording may not.
+
+    The consultative opening is the one that reads the stage as well, because
+    the checklist rules behind it are a phase of the conversation rather than a
+    request. It stands down on every turn the others would stand down on, so a
+    customer who has narrowed to one exact item is left alone by all of them.
     """
     candidates = tuple(dict.fromkeys(text for text in texts if text))
     directives: list[str] = []
@@ -438,6 +427,10 @@ def _turn_runtime_directives(*texts: str) -> tuple[str, ...]:
         directives.append(sizing_assumption_directive())
     if any(requests_product_comparison(text) for text in candidates):
         directives.append(comparison_consultation_directive())
+    if candidates and all(
+        earns_consultative_opening(text, sales_stage=sales_stage) for text in candidates
+    ):
+        directives.append(consultative_opening_directive())
     return tuple(directives)
 
 
@@ -470,12 +463,6 @@ _QUOTE_REQUEST_TERMS = (
     "proforma invoice",
     "pro forma invoice",
     "invoice",
-    "кп",
-    "коммерческое предложение",
-    "счет",
-    "счёт",
-    "проформа",
-    "инвойс",
 )
 _EXPLICIT_QUOTE_OPT_IN_RE = re.compile(
     r"(?:"
@@ -496,13 +483,7 @@ _EXPLICIT_QUOTE_OPT_IN_RE = re.compile(
     r"(?:أريد|اريد|أحتاج|احتاج)\s+"
     r"(?:عرض\s+سعر|عرض\s+رسمي|فاتورة\s+مبدئية)|"
     r"هل\s+(?:يمكنني|يمكننا)\s+الحصول\s+على\s+"
-    r"(?:عرض\s+سعر|عرض\s+رسمي|فاتورة\s+مبدئية)|"
-    r"(?:подготовьте|создайте|сформируйте|отправьте|пришлите).{0,32}"
-    r"(?:коммерческое\s+предложение|кп|сч[её]т|инвойс)|"
-    r"(?:я|мы)\s+(?:хочу|хотим)\s+"
-    r"(?:коммерческое\s+предложение|кп|сч[её]т|инвойс)|"
-    r"(?:мне|нам)\s+(?:нужно|нужен|нужна)\s+"
-    r"(?:коммерческое\s+предложение|кп|сч[её]т|инвойс)"
+    r"(?:عرض\s+سعر|عرض\s+رسمي|فاتورة\s+مبدئية)"
     r")",
     re.IGNORECASE,
 )
@@ -525,8 +506,7 @@ _QUOTE_RESUME_PRICE_OBJECTION_RE = re.compile(
     r"cost\s+is\s+(?:too\s+)?high|cheaper|lower\s+price)\b|"
     r"(?:غالي|أرخص|ارخص|سعر\s+أقل|سعر\s+اقل)|"
     r"(?:(?:السعر|سعر|التكلفة|تكلفة).{0,16}(?:مرتفع|عالي)|"
-    r"(?:مرتفع|عالي).{0,16}(?:السعر|سعر|التكلفة|تكلفة))|"
-    r"(?:дорого|дешевле|низкая\s+цена)",
+    r"(?:مرتفع|عالي).{0,16}(?:السعر|سعر|التكلفة|تكلفة))",
     re.IGNORECASE,
 )
 _QUOTE_RESUME_CLAUSE_SPLIT_RE = re.compile(
@@ -537,28 +517,23 @@ _QUOTE_RESUME_DETAIL_REVISION_RE = re.compile(
     r"\b(?:change|update|replace|switch)\s+(?:only\s+)?(?:the\s+)?"
     r"(?:delivery\s+)?(?:address|email|phone|company|name)\b|"
     r"(?:غيّر|غير|بدل|استبدل)\s+(?:فقط\s+)?"
-    r"(?:عنوان(?:\s+التسليم)?|البريد|الهاتف|الشركة|الاسم)|"
-    r"(?:изменить|сменить|заменить)\s+(?:только\s+)?"
-    r"(?:адрес|почту|телефон|компанию|имя)",
+    r"(?:عنوان(?:\s+التسليم)?|البريد|الهاتف|الشركة|الاسم)",
     re.IGNORECASE,
 )
 _QUOTE_RESUME_PRODUCT_REVISION_ACTION_RE = re.compile(
     r"\b(?:show|recommend|suggest|find|replace|switch|swap)\b|"
-    r"(?:اعرض|اقترح|رشح|استبدل|بدل|غيّر|غير)|"
-    r"(?:покажи|посоветуй|предложи|найди|замени)",
+    r"(?:اعرض|اقترح|رشح|استبدل|بدل|غيّر|غير)",
     re.IGNORECASE,
 )
 _QUOTE_RESUME_PRODUCT_REVISION_MODIFIER_RE = re.compile(
     r"\b(?:another|different|alternative|instead)\b|"
-    r"(?:بديل|خيار\s+آخر|خيار\s+اخر|آخر|اخر|أخرى|اخرى|مختلف)|"
-    r"(?:другой|альтернатив|вместо)",
+    r"(?:بديل|خيار\s+آخر|خيار\s+اخر|آخر|اخر|أخرى|اخرى|مختلف)",
     re.IGNORECASE,
 )
 _QUOTE_RESUME_PRODUCT_REFUSAL_RE = re.compile(
     r"\b(?:not\s+this|not\s+suitable|do\s+not\s+want|"
     r"don['’]?t\s+want|dont\s+want|no\s+longer\s+want)\b|"
-    r"(?:ليس|غير\s+مناسب|لا\s+أريد|لا\s+اريد)|"
-    r"(?:не\s+этот|не\s+подходит|не\s+хочу)",
+    r"(?:ليس|غير\s+مناسب|لا\s+أريد|لا\s+اريد)",
     re.IGNORECASE,
 )
 _QUOTE_RESUME_ANAPHORIC_PRODUCT_RE = re.compile(
@@ -732,7 +707,6 @@ _EXACT_ITEM_FULFILLMENT_BOUNDARY_RE = re.compile(
 )
 _PURCHASE_SELECTION_TRIGGER_RE = re.compile(
     r"\b(?:buy|purchase|order|proceed|take|confirm|need|want|would\s+like|like)\b"
-    r"|(?:нужно|нужны|хочу|заказать|возьму)"
     r"|(?:أحتاج|احتاج|أريد|اريد|اطلب|أطلب)",
     re.IGNORECASE,
 )
@@ -866,8 +840,8 @@ _MIXED_SERVICE_TERMS = (
     "setup",
 )
 _SHORT_AFFIRMATION_RE = re.compile(
-    r"^\s*(?:yes|yes please|yeah|yep|sure|ok|okay|proceed|go ahead|"
-    r"да|давайте|хорошо|ок|окей|конечно)\s*[.!?]*\s*$",
+    r"^\s*(?:yes|yes please|yeah|yep|sure|ok|okay|proceed|go ahead)"
+    r"\s*[.!?]*\s*$",
     re.IGNORECASE,
 )
 _SERVICE_CONFIRMATION_TERMS = (
@@ -877,9 +851,6 @@ _SERVICE_CONFIRMATION_TERMS = (
     "install",
     "setup",
     "service",
-    "сборк",
-    "монтаж",
-    "установ",
 )
 
 _POST_QUOTATION_ACCEPTANCE_EXACT = frozenset(
@@ -899,13 +870,6 @@ _POST_QUOTATION_ACCEPTANCE_EXACT = frozenset(
         "proceed",
         "please proceed",
         "you can proceed",
-        "да",
-        "ок",
-        "хорошо",
-        "устраивает",
-        "можно оформлять",
-        "согласен",
-        "согласна",
         "نعم",
         "موافق",
         "تمام",
@@ -921,9 +885,6 @@ _POST_QUOTATION_GENERIC_ACCEPTANCE_EXACT = frozenset(
         "okay",
         "works",
         "fine",
-        "да",
-        "ок",
-        "хорошо",
         "نعم",
         "تمام",
         "اوكي",
@@ -938,9 +899,6 @@ _POST_QUOTATION_ACCEPTANCE_PHRASES = (
     "please go ahead",
     "let's proceed",
     "lets proceed",
-    "можно оформлять",
-    "меня устраивает",
-    "нас устраивает",
     "العرض مناسب",
     "نوافق على العرض",
 )
@@ -962,8 +920,6 @@ _POST_QUOTATION_APPROVAL_PROMPT_CUES = (
     "quotation suit",
     "proposal suit",
     "offer suit",
-    "устраивает ли",
-    "если предложение устраивает",
     "هل يناسبك العرض",
 )
 _MIXED_PRODUCT_TERMS = (
@@ -993,6 +949,13 @@ _MIXED_PRODUCT_TERMS = (
     "أثاث",
     "اثاث",
 )
+# The Treejar catalogue itself is written with Cyrillic lookalikes, so this map
+# is load-bearing rather than defensive. Measured in production 2026-08-08:
+# 7 of 920 SKUs literally begin with Cyrillic "СН" -- Skyland chairs such as
+# "СН 135 black" -- and 132 product names use Cyrillic "х" as the dimension
+# separator, as in "1000х500х754". A customer typing Latin "CH 135" must still
+# reach the row whose SKU is Cyrillic, and vice versa. Deleting this map silently
+# unmatches those products; tj-4e5j nearly did exactly that.
 _SKU_HOMOGLYPH_TRANSLATION = str.maketrans(
     {
         "А": "A",
@@ -1021,6 +984,7 @@ _SKU_HOMOGLYPH_TRANSLATION = str.maketrans(
         "у": "y",
     }
 )
+
 _ACTIVE_PRODUCT_MEDIA_AUDIT_STATUSES = (
     "pending",
     "sent",
@@ -1560,8 +1524,7 @@ def _catalog_decision_defects(text: str, deps: SalesDeps) -> tuple[str, ...]:
     no_quote_created = re.search(
         r"(?:\bno\s+(?:formal\s+)?(?:quotation|quote).{0,24}\bcreated\b|"
         r"\b(?:quotation|quote).{0,24}\bnot\s+created\b|"
-        r"لم\s+يتم\s+إنشاء\s+عرض\s+سعر|"
-        r"(?:кп|коммерческ\w*\s+предложен\w*).{0,24}\bне\s+создан\w*)",
+        r"لم\s+يتم\s+إنشاء\s+عرض\s+سعر)",
         normalized,
     )
     if not (_has_explicit_quote_hold(text) or no_quote_created is not None):
@@ -1627,8 +1590,7 @@ def _catalog_recovery_output_is_valid(text: str, deps: SalesDeps) -> bool:
     no_quote_created = re.search(
         r"(?:\bno\s+(?:formal\s+)?(?:quotation|quote).{0,24}\bcreated\b|"
         r"\b(?:quotation|quote).{0,24}\bnot\s+created\b|"
-        r"لم\s+يتم\s+إنشاء\s+عرض\s+سعر|"
-        r"(?:кп|коммерческ\w*\s+предложен\w*).{0,24}\bне\s+создан\w*)",
+        r"لم\s+يتم\s+إنشاء\s+عرض\s+سعر)",
         normalized,
     )
     return _has_explicit_quote_hold(text) or no_quote_created is not None
@@ -8421,28 +8383,20 @@ _QUOTE_DETAIL_LABELS: dict[str, tuple[str, ...]] = {
         "full name",
         "customer name",
         "name",
-        "имя",
-        "фио",
     ),
     "company": (
         "company name",
         "company",
         "organization",
         "organisation",
-        "название компании",
-        "компания",
-        "организация",
     ),
     "address": (
         "delivery address",
         "address",
         "location",
-        "адрес доставки",
-        "адрес",
-        "локация",
     ),
     "email": ("email", "e-mail"),
-    "phone": ("phone", "mobile", "telephone", "телефон", "номер"),
+    "phone": ("phone", "mobile", "telephone"),
 }
 _QUOTE_DETAIL_LABEL_SEPARATOR = r"(?::|：|=|-|\bis\b|\bare\b)"
 _QUOTE_DETAIL_BOUNDARY_LABELS = (
@@ -8740,7 +8694,7 @@ def _is_substantive_name_gate_request(text: str) -> bool:
     normalized = _normalize_text(stripped)
     normalized = re.sub(
         r"^(?:hi|hello|hey|good morning|good afternoon|good evening|"
-        r"добрый день|здравствуйте|привет|مرحبا|السلام عليكم)[,!\s]*",
+        r"مرحبا|السلام عليكم)[,!\s]*",
         "",
         normalized,
     ).strip()
@@ -8750,7 +8704,6 @@ def _is_substantive_name_gate_request(text: str) -> bool:
         "can you help",
         "could you help",
         "please advise",
-        "подскажите",
         "thanks",
         "thank you",
         "ok",
@@ -8878,7 +8831,7 @@ def _is_customer_phone_detail(text: str, match: re.Match[str]) -> bool:
     prefix = text[max(0, match.start() - 40) : match.start()].casefold()
     return bool(
         re.search(
-            r"(?:phone|mobile|tel|whatsapp|номер|телефон|моб\.?)\s*[:：=-]?\s*$",
+            r"(?:phone|mobile|tel|whatsapp)\s*[:：=-]?\s*$",
             prefix,
         )
     )
@@ -8956,8 +8909,6 @@ def _extract_quote_customer_details(text: str) -> dict[str, str]:
             "full name",
             "name",
             "customer name",
-            "имя",
-            "фио",
         ),
     )
     if name:
@@ -8978,9 +8929,6 @@ def _extract_quote_customer_details(text: str) -> dict[str, str]:
             "company",
             "organization",
             "organisation",
-            "компания",
-            "название компании",
-            "организация",
         ),
     )
     if company:
@@ -8992,9 +8940,6 @@ def _extract_quote_customer_details(text: str) -> dict[str, str]:
             "delivery address",
             "address",
             "location",
-            "адрес доставки",
-            "адрес",
-            "локация",
         ),
     )
     if address:
@@ -9018,9 +8963,7 @@ def _extract_quote_customer_details(text: str) -> dict[str, str]:
         r"offices?|seats?|users?)\b",
         normalized,
     )
-    if (
-        individual_customer_signal is not None and individual_product_descriptor is None
-    ) or re.search(r"(?:частное\s+лицо|для\s+себя|лично)", text, re.IGNORECASE):
+    if individual_customer_signal is not None and individual_product_descriptor is None:
         details["customer_type"] = "individual"
 
     return details
@@ -9040,7 +8983,6 @@ def _is_individual_detail_value(value: str | None) -> bool:
         "individual purchase",
         "personal",
         "private customer",
-        "частное лицо",
     }
 
 
@@ -9304,7 +9246,6 @@ def _looks_like_terse_delivery_address(value: str) -> bool:
         "deira",
         "al quoz",
         "difc",
-        "дубай",
     )
     return bool(re.search(r"\d", value)) or any(
         term in normalized for term in location_terms
@@ -10444,8 +10385,6 @@ def _is_specific_delivery_address(address: str | None) -> bool:
         "ras al khaimah",
         "fujairah",
         "umm al quwain",
-        "оаэ",
-        "дубай",
     }
     if normalized in generic_addresses:
         return False
@@ -11574,14 +11513,6 @@ def _has_affirmative_quote_resume_intent(text: str) -> bool:
             "send quotation",
             "prepare quotation",
             "prepare the quotation",
-            "да",
-            "ок",
-            "хорошо",
-            "отправьте",
-            "пришлите",
-            "вышлите",
-            "подготовьте",
-            "сделайте",
             "نعم",
             "حسنا",
             "حسنًا",
@@ -16610,7 +16541,11 @@ async def process_message(
             return replace(response, tool_traces=plan_traces)
 
         run_deps = deps
-        turn_directives = _turn_runtime_directives(combined_text, masked_text)
+        turn_directives = _turn_runtime_directives(
+            combined_text,
+            masked_text,
+            sales_stage=str(getattr(deps.conversation, "sales_stage", "") or ""),
+        )
         if turn_directives:
             run_deps = replace(
                 deps,

@@ -113,17 +113,17 @@ async def notify_manager_escalation(
             buttons = [
                 [
                     {
-                        "text": "✅ Подтвердить заказ",
+                        "text": "✅ Confirm order",
                         "callback_data": f"order_confirm:{conv_id_str}",
                     },
                     {
-                        "text": "❌ Отклонить",
+                        "text": "❌ Reject",
                         "callback_data": f"order_reject:{conv_id_str}",
                     },
                 ],
                 [
                     {
-                        "text": "👤 Ответить клиенту",
+                        "text": "👤 Reply to customer",
                         "callback_data": f"faq_private:{conv_id_str}",
                     },
                 ],
@@ -132,11 +132,11 @@ async def notify_manager_escalation(
             buttons = [
                 [
                     {
-                        "text": "📚 В базу знаний",
+                        "text": "📚 To knowledge base",
                         "callback_data": f"faq_global:{conv_id_str}",
                     },
                     {
-                        "text": "👤 Только клиенту",
+                        "text": "👤 Customer only",
                         "callback_data": f"faq_private:{conv_id_str}",
                     },
                 ]
@@ -154,7 +154,7 @@ async def notify_manager_escalation(
                 await client.send_document(
                     file_bytes=pdf_bytes,
                     filename=pdf_filename,
-                    caption="📄 Коммерческое предложение на проверку",
+                    caption="📄 Quotation for review",
                 )
             except Exception:
                 logger.exception("Failed to send PDF document to Telegram")

@@ -43,10 +43,10 @@ async def test_normalize_to_english_parsing_fallback() -> None:
 
     with patch("src.services.auto_faq._translate_agent") as mock_agent:
         mock_agent.run = AsyncMock(return_value=mock_result)
-        q, a = await _normalize_to_english("оригинал", "ответ")
+        q, a = await _normalize_to_english("النص الأصلي", "الجواب")
 
-    assert q == "оригинал"
-    assert a == "ответ"
+    assert q == "النص الأصلي"
+    assert a == "الجواب"
 
 
 @pytest.mark.asyncio
@@ -57,10 +57,10 @@ async def test_normalize_to_english_exception_fallback() -> None:
 
     with patch("src.services.auto_faq._translate_agent") as mock_agent:
         mock_agent.run = AsyncMock(side_effect=RuntimeError("API error"))
-        q, a = await _normalize_to_english("вопрос", "ответ")
+        q, a = await _normalize_to_english("سؤال", "الجواب")
 
-    assert q == "вопрос"
-    assert a == "ответ"
+    assert q == "سؤال"
+    assert a == "الجواب"
 
 
 # ====================================================================
@@ -81,7 +81,7 @@ async def test_adapt_manager_response_passes_language() -> None:
         mock_agent.run = AsyncMock(return_value=mock_result)
         result = await adapt_manager_response(
             question="I need help",
-            draft="коллега свяжется через 5 минут",
+            draft="a colleague will be in touch in 5 minutes",
             language="ar",
         )
 
@@ -104,7 +104,7 @@ async def test_adapt_manager_response_defaults_to_english() -> None:
         mock_agent.run = AsyncMock(return_value=mock_result)
         result = await adapt_manager_response(
             question="I need help",
-            draft="коллега свяжется через 5 минут",
+            draft="a colleague will be in touch in 5 minutes",
         )
 
     assert result == "Our colleague will contact you within 5 minutes."

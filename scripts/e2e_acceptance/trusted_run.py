@@ -1418,26 +1418,26 @@ def _render_report(payload: ClientReportPayload, rollups: dict[str, bool]) -> by
     lines = [
         f"# {payload.title}",
         "",
-        f"Идентификатор запуска: `{payload.run_id}`",
-        f"Сформирован: {payload.generated_at.isoformat()}",
+        f"Run id: `{payload.run_id}`",
+        f"Generated: {payload.generated_at.isoformat()}",
         "",
-        "## Итог",
+        "## Outcome",
         "",
-        f"- Полнота покрытия: {'да' if rollups['coverage_complete'] else 'нет'}",
-        f"- Полнота исполнения: {'да' if rollups['execution_complete'] else 'нет'}",
-        f"- Требования выполнены: {'да' if rollups['requirements_met'] else 'нет'}",
+        f"- Coverage complete: {'yes' if rollups['coverage_complete'] else 'no'}",
+        f"- Execution complete: {'yes' if rollups['execution_complete'] else 'no'}",
+        f"- Requirements met: {'yes' if rollups['requirements_met'] else 'no'}",
         "",
-        "## Идентичность среды",
+        "## Environment identity",
         "",
         f"- Commit: `{payload.identity.repository_commit}`",
         f"- Release: `{payload.identity.deployed_release_sha}`",
         f"- CI: `{payload.identity.ci_run_id}`",
-        f"- Версия: `{payload.identity.app_version}`",
-        f"- Миграция: `{payload.identity.migration_head}`",
-        f"- Модели: {', '.join(payload.identity.models)}",
-        f"- Сервисы: {json.dumps(payload.identity.services, ensure_ascii=False, sort_keys=True)}",
+        f"- Version: `{payload.identity.app_version}`",
+        f"- Migration: `{payload.identity.migration_head}`",
+        f"- Models: {', '.join(payload.identity.models)}",
+        f"- Services: {json.dumps(payload.identity.services, ensure_ascii=False, sort_keys=True)}",
         "",
-        "## Диалоги",
+        "## Conversations",
         "",
     ]
     for turn in payload.turns:
@@ -1445,28 +1445,28 @@ def _render_report(payload: ClientReportPayload, rollups: dict[str, bool]) -> by
             [
                 f"### {turn.execution_id} / {turn.attempt_id} / {turn.turn_id}",
                 "",
-                f"Вопрос: {turn.question}",
+                f"Question: {turn.question}",
                 "",
-                f"Ответ: {turn.answer}",
+                f"Answer: {turn.answer}",
                 "",
-                f"Время: sent={turn.sent_at.isoformat()}, received={turn.received_at.isoformat()}, "
+                f"Timing: sent={turn.sent_at.isoformat()}, received={turn.received_at.isoformat()}, "
                 f"first_visible={turn.first_visible_at.isoformat()}, "
                 f"final_visible={turn.final_visible_at.isoformat()}, "
                 f"delivered={turn.delivered_at.isoformat() if turn.delivered_at else 'n/a'}",
-                f"Идентификаторы: conversation={turn.conversation_id}, "
+                f"Identifiers: conversation={turn.conversation_id}, "
                 f"message={turn.message_id}, provider={turn.provider_message_id}",
-                f"Модель: {turn.model}; tools: {', '.join(turn.tools) or 'нет'}",
-                f"Результаты tools: {', '.join(turn.tool_outcomes) or 'нет'}",
-                f"Аудит: {', '.join(turn.audit_ids) or 'нет'}; media: "
-                f"{', '.join(turn.media_refs) or 'нет'}",
-                f"Токены: {turn.token_count}; стоимость USD: {turn.cost_usd}",
-                f"Длительность: {turn.duration_ms if turn.duration_ms is not None else int((turn.final_visible_at - turn.sent_at).total_seconds() * 1000)} ms",
-                f"Отклонение: {turn.deviation or 'нет'}",
-                f"Оценка: {turn.evaluator_reasoning}",
+                f"Model: {turn.model}; tools: {', '.join(turn.tools) or 'none'}",
+                f"Tool outcomes: {', '.join(turn.tool_outcomes) or 'none'}",
+                f"Audit: {', '.join(turn.audit_ids) or 'none'}; media: "
+                f"{', '.join(turn.media_refs) or 'none'}",
+                f"Tokens: {turn.token_count}; cost USD: {turn.cost_usd}",
+                f"Duration: {turn.duration_ms if turn.duration_ms is not None else int((turn.final_visible_at - turn.sent_at).total_seconds() * 1000)} ms",
+                f"Deviation: {turn.deviation or 'none'}",
+                f"Evaluation: {turn.evaluator_reasoning}",
                 "",
             ]
         )
-    lines.extend(["## Критерии", ""])
+    lines.extend(["## Criteria", ""])
     for criterion_report in payload.criteria:
         lines.append(
             f"- {criterion_report.criterion_id}: {criterion_report.outcome} "
@@ -1474,7 +1474,7 @@ def _render_report(payload: ClientReportPayload, rollups: dict[str, bool]) -> by
             f"evidence={', '.join(criterion_report.evidence_refs)}; "
             f"{criterion_report.reasoning}"
         )
-    lines.extend(["", "## Побочные эффекты", ""])
+    lines.extend(["", "## Side effects", ""])
     for side_effect in payload.side_effects:
         lines.append(
             f"- {side_effect.artifact_id} / {side_effect.subsystem} / "
@@ -1487,18 +1487,18 @@ def _render_report(payload: ClientReportPayload, rollups: dict[str, bool]) -> by
     lines.extend(
         [
             "",
-            "## Производительность",
+            "## Performance",
             "",
             f"- p50: {payload.latency.p50_ms} ms",
             f"- p95: {payload.latency.p95_ms} ms",
             f"- max: {payload.latency.max_ms} ms",
             "",
-            "## Ограничения и внешние условия",
+            "## Constraints and external conditions",
             "",
             *(f"- {item}" for item in payload.limitations),
             *(f"- {item}" for item in payload.external_gates),
             "",
-            "## Дефекты",
+            "## Defects",
             "",
         ]
     )
@@ -1507,10 +1507,10 @@ def _render_report(payload: ClientReportPayload, rollups: dict[str, bool]) -> by
             [
                 f"### {defect.defect_id}",
                 "",
-                f"- Первопричина: {defect.root_cause}",
-                f"- Нарушенный инвариант: {defect.violated_invariant}",
-                f"- Исправление: {defect.fix}",
-                f"- Ретест: {defect.retest}",
+                f"- Root cause: {defect.root_cause}",
+                f"- Violated invariant: {defect.violated_invariant}",
+                f"- Fix: {defect.fix}",
+                f"- Retest: {defect.retest}",
                 f"- Checksums: {', '.join(defect.checksum_refs)}",
                 "",
             ]
@@ -2088,8 +2088,8 @@ def _derive_producer_publication_candidate(
             defect_id=entry.defect_id,
             root_cause=entry.root_cause,
             violated_invariant=entry.violated_invariant,
-            fix=entry.fix_ref or "Не требуется до закрытия дефекта.",
-            retest=entry.retest_attempt_ref or "Ретест ещё не выполнен.",
+            fix=entry.fix_ref or "Not required until the defect is closed.",
+            retest=entry.retest_attempt_ref or "Retest not yet performed.",
             checksum_refs=entry.checksum_refs,
             severity=entry.severity,
             status=entry.status,

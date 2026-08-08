@@ -17,7 +17,7 @@ async def main() -> None:
 
     engine = EmbeddingEngine()
 
-    query_text = "ищу удобное кресло недорого"
+    query_text = "looking for a comfortable chair, inexpensive"
     print(f"\nSearching for query: '{query_text}'")
 
     query = ProductSearchQuery(query=query_text, limit=3)

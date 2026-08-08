@@ -315,7 +315,7 @@ def test_policy_keeps_company_office_location_question_on_service_path() -> None
 
 def test_policy_treats_plain_greeting_as_safe_non_handoff() -> None:
     decision = evaluate_verified_answer_policy(
-        query="Добрый день",
+        query="Good afternoon",
         faq_context=[],
     )
 
@@ -328,7 +328,7 @@ def test_policy_treats_plain_greeting_as_safe_non_handoff() -> None:
 
 def test_policy_treats_greeting_with_filler_tail_as_assist_opener_clarify() -> None:
     decision = evaluate_verified_answer_policy(
-        query="Добрый день, подскажите",
+        query="Good afternoon, help please",
         faq_context=[],
     )
 
@@ -354,7 +354,7 @@ def test_policy_treats_common_arabic_greeting_variant_as_safe_non_handoff() -> N
 
 def test_policy_treats_gratitude_as_social_allow() -> None:
     decision = evaluate_verified_answer_policy(
-        query="Спасибо",
+        query="Thank you",
         faq_context=[],
     )
 
@@ -367,7 +367,7 @@ def test_policy_treats_gratitude_as_social_allow() -> None:
 
 def test_policy_treats_goodbye_as_social_allow() -> None:
     decision = evaluate_verified_answer_policy(
-        query="До свидания",
+        query="Goodbye",
         faq_context=[],
     )
 
@@ -621,14 +621,13 @@ def test_policy_keeps_payment_terms_in_invoice_on_manager_handoff() -> None:
 
 def test_policy_routes_greeting_with_real_question_into_service_policy() -> None:
     decision = evaluate_verified_answer_policy(
-        query="Добрый день, есть доставка в Дубай?",
+        query="Good afternoon, is there delivery to Dubai?",
         faq_context=[],
     )
 
     # The point of this one is the routing: a greeting carrying a real question
-    # is not social. The question behind it — "is there delivery to Dubai?" — is
-    # the same capability question as the English case above, so it reaches the
-    # model rather than a manager.
+    # is not social. The question behind it reaches the model rather than a
+    # manager.
     assert decision.question_class == "service_high_risk"
     assert decision.social_intent is None
     assert decision.faq_support == "missing"

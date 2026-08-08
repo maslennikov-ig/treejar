@@ -262,10 +262,9 @@ async def test_deterministic_does_not_store_order_items_for_stock_price_inquirie
         "Can you compare 2 CH 616 and 4 CH 620?",
         "ما هو سعر 2 CH 616؟",
         "هل يتوفر 2 CH 616 في المخزون؟",
-        "Сколько стоит 2 CH 616?",
     ],
 )
-async def test_deterministic_does_not_store_order_items_for_comparison_or_localized_inquiries(
+async def test_deterministic_does_not_store_order_items_for_comparison_or_arabic_inquiries(
     text: str,
 ) -> None:
     result = await extract_customer_facts(text, use_fast_model=False)

@@ -242,7 +242,7 @@ async def test_admin_command_sends_login_url_for_whitelisted_user(
     text = telegram.send_message_with_inline_keyboard.await_args.args[0]
     buttons = telegram.send_message_with_inline_keyboard.await_args.args[1]
     assert "CRM" in text
-    assert buttons[0][0]["text"] == "Открыть Noor CRM"
+    assert buttons[0][0]["text"] == "Open Noor CRM"
     assert buttons[0][0]["url"] == (
         "https://crm.example.test/dashboard/telegram-login?token=raw-login-token"
     )
@@ -273,7 +273,7 @@ async def test_private_admin_command_sends_login_url_for_whitelisted_user(
     assert handled is True
     telegram.send_message_with_inline_keyboard.assert_awaited_once()
     buttons = telegram.send_message_with_inline_keyboard.await_args.args[1]
-    assert buttons[0][0]["text"] == "Открыть Noor CRM"
+    assert buttons[0][0]["text"] == "Open Noor CRM"
     assert buttons[0][0]["url"] == (
         "https://crm.example.test/dashboard/telegram-login?token=raw-login-token"
     )

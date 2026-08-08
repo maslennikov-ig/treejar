@@ -56,10 +56,6 @@ _AUTOREPLY_MARKERS = (
     "away from the office",
     "annual leave",
     "vacation",
-    "автоответ",
-    "автоматический ответ",
-    "в отпуске",
-    "вне офиса",
 )
 _REJECTION_MARKERS = (
     "not interested",
@@ -71,12 +67,6 @@ _REJECTION_MARKERS = (
     "reject",
     "cancel this",
     "cancel the proposal",
-    "не интересно",
-    "неинтересно",
-    "не нужно",
-    "не нужен",
-    "отказыва",
-    "отмена",
 )
 
 

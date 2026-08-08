@@ -41,7 +41,7 @@ async def test_admin_crm_customers_endpoint_returns_client_cards(
                     customer_name="Noor Client",
                     latest_conversation_id=customer_id,
                     latest_message_at=datetime(2026, 5, 7, 12, 0, 0),
-                    latest_message_preview="Здравствуйте",
+                    latest_message_preview="Hello",
                     conversation_count=2,
                     status="active",
                     sales_stage="qualifying",
@@ -101,7 +101,7 @@ async def test_admin_crm_conversation_detail_returns_timeline(
             zoho_deal_id="z-deal",
             message_count=1,
             last_message_at=datetime(2026, 5, 7, 12, 0, 0),
-            last_message_preview="Здравствуйте",
+            last_message_preview="Hello",
             updated_at=datetime(2026, 5, 7, 12, 1, 0),
             created_at=datetime(2026, 5, 7, 11, 0, 0),
             metadata={"source": "whatsapp"},
@@ -109,7 +109,7 @@ async def test_admin_crm_conversation_detail_returns_timeline(
                 AdminTimelineMessage(
                     id=message_id,
                     role="user",
-                    content="Здравствуйте",
+                    content="Hello",
                     message_type="text",
                     created_at=datetime(2026, 5, 7, 12, 0, 0),
                 )
@@ -141,7 +141,7 @@ async def test_admin_crm_conversation_detail_returns_timeline(
     payload = response.json()
     assert payload["id"] == str(conversation_id)
     assert payload["timeline"][0]["id"] == str(message_id)
-    assert payload["timeline"][0]["content"] == "Здравствуйте"
+    assert payload["timeline"][0]["content"] == "Hello"
     assert payload["applied_bot_rules"][0]["title"] == "Ask name"
 
 

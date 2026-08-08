@@ -13,8 +13,8 @@ from src.core.cache import get_cached_crm_profile, set_cached_crm_profile
 from src.services.inbound_channels import normalize_channel_phone
 
 _DUBAI_TZ = ZoneInfo("Asia/Dubai")
-_UNKNOWN_TEXT = "не указано"
-_UNKNOWN_PHONE = "не указан"
+_UNKNOWN_TEXT = "not specified"
+_UNKNOWN_PHONE = "not specified"
 _GENERIC_CUSTOMER_PLACEHOLDERS = frozenset(
     {
         "valued customer",
@@ -347,10 +347,10 @@ def format_owner_identity_block(
 
     return "\n".join(
         [
-            f"<b>Телефон клиента:</b> {escape(phone_display)}",
-            f"<b>Имя клиента:</b> {escape(customer_name_display)}",
-            f"<b>Входящий номер:</b> {escape(inbound_display)}",
-            f"<b>Начат (UAE):</b> {escape(_format_datetime_uae(conversation_created_at))}",
-            f"<b>Последняя активность (UAE):</b> {escape(_format_datetime_uae(last_activity_at))}",
+            f"<b>Customer phone:</b> {escape(phone_display)}",
+            f"<b>Customer name:</b> {escape(customer_name_display)}",
+            f"<b>Inbound number:</b> {escape(inbound_display)}",
+            f"<b>Started (UAE):</b> {escape(_format_datetime_uae(conversation_created_at))}",
+            f"<b>Last activity (UAE):</b> {escape(_format_datetime_uae(last_activity_at))}",
         ]
     )

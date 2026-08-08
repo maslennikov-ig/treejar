@@ -252,12 +252,12 @@ async def _handle_callback_query(callback_query: dict[str, Any]) -> None:
         f"{_PROMPTED_KEY_PREFIX}{chat_id}", _PROMPTED_TTL_SECONDS, "1"
     )
 
-    mode_label = "📚 FAQ + клиент" if mode == "faq_global" else "👤 Только клиенту"
-    await client.answer_callback_query(callback_id, f"✅ Режим: {mode_label}")
+    mode_label = "📚 FAQ + customer" if mode == "faq_global" else "👤 Customer only"
+    await client.answer_callback_query(callback_id, f"✅ Mode: {mode_label}")
     await client.send_message(
-        f"📝 <b>Введите ваш ответ</b> ({mode_label}):\n\n"
-        f"<i>Вопрос клиента:</i> {question or 'не найден'}\n\n"
-        "Напишите ваш ответ, и я отправлю его клиенту.",
+        f"📝 <b>Type your reply</b> ({mode_label}):\n\n"
+        f"<i>Customer question:</i> {question or 'not found'}\n\n"
+        "Write your reply and I will send it to the customer.",
         chat_id=str(chat_id),
     )
 
@@ -294,7 +294,7 @@ async def _handle_admin_login_command_if_present(message: dict[str, Any]) -> boo
             or str(chat_type or "").lower() == "private"
         ):
             await client.send_message(
-                "Не удалось определить Telegram user id. Вход в CRM не выдан.",
+                "Could not determine the Telegram user id. No CRM login was issued.",
                 chat_id=str(chat_id),
             )
         return True
@@ -319,15 +319,15 @@ async def _handle_admin_login_command_if_present(message: dict[str, Any]) -> boo
     )
     if not result.authorized or not result.url:
         await client.send_message(
-            "Доступ к CRM не настроен для Telegram user id "
+            "CRM access is not configured for Telegram user id "
             f"<code>{escape(str(requester_id))}</code>.",
             chat_id=str(chat_id),
         )
         return True
 
     await client.send_message_with_inline_keyboard(
-        "Одноразовая ссылка для входа в Noor CRM действует 5 минут.",
-        [[{"text": "Открыть Noor CRM", "url": result.url}]],
+        "The one-time Noor CRM login link is valid for 5 minutes.",
+        [[{"text": "Open Noor CRM", "url": result.url}]],
         chat_id=str(chat_id),
     )
     return True
@@ -354,7 +354,7 @@ async def _handle_reset_command_if_present(message: dict[str, Any]) -> bool:
     phone = normalize_reset_phone(raw_phone)
     if phone is None:
         await client.send_message(
-            "Использование: <code>/reset +&lt;country-code-and-number&gt;</code>",
+            "Usage: <code>/reset +&lt;country-code-and-number&gt;</code>",
             chat_id=str(chat_id),
         )
         return True
@@ -363,7 +363,7 @@ async def _handle_reset_command_if_present(message: dict[str, Any]) -> bool:
     requester_id = from_user.get("id")
     if not isinstance(requester_id, int):
         await client.send_message(
-            "Не удалось определить Telegram user id. Reset не выполнен.",
+            "Could not determine the Telegram user id. Reset was not performed.",
             chat_id=str(chat_id),
         )
         return True
@@ -373,7 +373,7 @@ async def _handle_reset_command_if_present(message: dict[str, Any]) -> bool:
 
     if preview.conversation_count == 0:
         await client.send_message(
-            f"Диалогов для <code>{escape(phone)}</code> не найдено, сбрасывать нечего.",
+            f"No conversations found for <code>{escape(phone)}</code>, nothing to reset.",
             chat_id=str(chat_id),
         )
         return True
@@ -394,13 +394,13 @@ async def _handle_reset_command_if_present(message: dict[str, Any]) -> bool:
 
     latest_id = str(preview.latest_conversation_id or "n/a")
     text = (
-        "Подтвердите reset диалога.\n\n"
-        f"Телефон: <code>{escape(phone)}</code>\n"
-        f"Диалогов к архивированию: <b>{preview.conversation_count}</b>\n"
-        f"Сообщений в истории: <b>{preview.message_count}</b>\n"
+        "Confirm the conversation reset.\n\n"
+        f"Phone: <code>{escape(phone)}</code>\n"
+        f"Conversations to archive: <b>{preview.conversation_count}</b>\n"
+        f"Messages in history: <b>{preview.message_count}</b>\n"
         f"Pending escalations: <b>{preview.pending_escalation_count}</b>\n"
         f"Latest conversation: <code>{escape(latest_id)}</code>\n\n"
-        "Клиенту ничего не отправится."
+        "Nothing will be sent to the customer."
     )
     await client.send_message_with_inline_keyboard(
         text,
@@ -459,7 +459,7 @@ async def _handle_reset_callback(
         await client.answer_callback_query(callback_id, "✅ Reset cancelled")
         if message_id:
             await client.edit_message_reply_markup(chat_id, message_id)
-        await client.send_message("Reset отменён.", chat_id=str(chat_id))
+        await client.send_message("Reset cancelled.", chat_id=str(chat_id))
         return
 
     phone = str(pending.get("phone") or "")
@@ -479,16 +479,16 @@ async def _handle_reset_callback(
 
     if result.new_conversation is None:
         await client.send_message(
-            f"Диалогов для <code>{escape(phone)}</code> не найдено, сбрасывать нечего.",
+            f"No conversations found for <code>{escape(phone)}</code>, nothing to reset.",
             chat_id=str(chat_id),
         )
         return
 
     await client.send_message(
-        "Готово: архивировано "
-        f"{result.archived_count}, создан новый диалог "
+        "Done: archived "
+        f"{result.archived_count}, a new conversation was created "
         f"<code>{escape(str(result.new_conversation.id))}</code>. "
-        "Следующее сообщение клиента начнётся с нуля.",
+        "The customer's next message will start from scratch.",
         chat_id=str(chat_id),
     )
 
@@ -510,8 +510,8 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
         if await redis_client.get(prompted_key):
             await redis_client.delete(prompted_key)
             await _get_telegram_client().send_message(
-                "⚠️ Черновик уже неактивен, поэтому ответ клиенту не ушёл.\n\n"
-                "Нажмите кнопку под нужной эскалацией и отправьте текст ещё раз.",
+                "⚠️ The draft is no longer active, so the reply was not sent.\n\n"
+                "Press the button under the relevant escalation and send the text again.",
                 chat_id=str(chat_id),
             )
         return
@@ -608,13 +608,13 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
             # R3-2: HTML-escape adapted text before Telegram notification
             safe_adapted = escape(adapted)
             await client.send_message(
-                f"✅ Ответ отправлен клиенту:\n\n{safe_adapted}",
+                f"✅ Reply sent to the customer:\n\n{safe_adapted}",
                 chat_id=str(chat_id),
             )
         else:
             await client.send_message(
-                "⚠️ Не удалось найти номер телефона клиента. "
-                f"Адаптированный ответ:\n\n{adapted}",
+                "⚠️ Could not find the customer's phone number. "
+                f"Adapted reply:\n\n{adapted}",
                 chat_id=str(chat_id),
             )
 
@@ -622,8 +622,8 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
         if mode == "faq_global":
             if faq_candidate_generation_failed:
                 await client.send_message(
-                    "⚠️ Ответ клиенту обработан, но кандидат для Базы Знаний "
-                    "не создан: LLM не вернул валидный structured output после "
+                    "⚠️ The reply was processed, but no knowledge base candidate "
+                    "was created: the LLM returned no valid structured output after "
                     "retry/fallback.",
                     chat_id=str(chat_id),
                 )
@@ -649,32 +649,32 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
             if save_result.status == "needs_confirmation" and save_result.candidate:
                 candidate = save_result.candidate
                 await client.send_message(
-                    "📚 Кандидат для Базы Знаний подготовлен, но не сохранён. "
-                    "Требуется подтверждение админа.\n\n"
+                    "📚 A knowledge base candidate was prepared but not saved. "
+                    "Admin confirmation is required.\n\n"
                     f"<b>Q:</b> {escape(candidate.question)}\n"
                     f"<b>A:</b> {escape(candidate.answer)}",
                     chat_id=str(chat_id),
                 )
             elif save_result.status == "duplicate":
                 await client.send_message(
-                    "ℹ️ Похожий ответ уже есть в Базе Знаний (дубликат).",
+                    "ℹ️ A similar answer is already in the knowledge base (duplicate).",
                     chat_id=str(chat_id),
                 )
             elif save_result.status == "low_confidence":
                 await client.send_message(
-                    "⚠️ Ответ отправлен клиенту, но кандидат для Базы Знаний "
-                    "отклонён: низкая уверенность.",
+                    "⚠️ The reply was sent, but the knowledge base candidate "
+                    "was rejected: low confidence.",
                     chat_id=str(chat_id),
                 )
             elif save_result.status == "blocked_unsafe":
                 await client.send_message(
-                    "⚠️ Ответ отправлен клиенту, но кандидат для Базы Знаний "
-                    "отклонён safety-проверкой.",
+                    "⚠️ The reply was sent, but the knowledge base candidate "
+                    "was rejected by the safety check.",
                     chat_id=str(chat_id),
                 )
             elif save_result.status == "missing_candidate":
                 await client.send_message(
-                    "ℹ️ Ответ отправлен клиенту. Кандидат для Базы Знаний не создан.",
+                    "ℹ️ The reply was sent. No knowledge base candidate was created.",
                     chat_id=str(chat_id),
                 )
             else:
@@ -684,15 +684,15 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
                     ",".join(save_result.guard_reasons),
                 )
                 await client.send_message(
-                    "⚠️ Ответ отправлен клиенту, но не добавлен в Базу Знаний: "
-                    "он выглядит как контекстный/private-only.",
+                    "⚠️ The reply was sent but not added to the knowledge base: "
+                    "it looks contextual/private-only.",
                     chat_id=str(chat_id),
                 )
 
     except Exception:
         logger.exception("Failed to process manager reply")
         await client.send_message(
-            "❌ Ошибка при обработке ответа. Попробуйте ещё раз.",
+            "❌ Error while processing the reply. Please try again.",
             chat_id=str(chat_id),
         )
 
@@ -786,17 +786,17 @@ async def _handle_order_decision(
         result = await db.execute(stmt)
         conv = result.scalar_one_or_none()
         if not conv:
-            await client.answer_callback_query(callback_id, "❌ Разговор не найден")
+            await client.answer_callback_query(callback_id, "❌ Conversation not found")
             return
         if conv.escalation_status == "resolved":
-            await client.answer_callback_query(callback_id, "⚠️ Уже обработано")
+            await client.answer_callback_query(callback_id, "⚠️ Already processed")
             return
 
     phone, language = await _get_conversation_phone_and_lang(conv_uuid)
     is_confirm = mode == "order_confirm"
 
     # 1. Ack the button press
-    ack_text = "✅ Заказ подтверждён" if is_confirm else "❌ Заказ отклонён"
+    ack_text = "✅ Order confirmed" if is_confirm else "❌ Order rejected"
     await client.answer_callback_query(callback_id, ack_text)
 
     # CR-2: Remove inline keyboard to prevent re-clicks
@@ -879,13 +879,13 @@ async def _handle_order_decision(
                             conv_id_str,
                         )
                         await client.send_message(
-                            "⚠️ Не удалось отправить PDF клиенту.",
+                            "⚠️ Could not send the PDF to the customer.",
                             chat_id=str(chat_id),
                         )
                 else:
                     await client.send_message(
-                        "⚠️ PDF не найден (срок хранения истёк). "
-                        "Отправлено только текстовое подтверждение.",
+                        "⚠️ PDF not found (retention expired). "
+                        "Only the text confirmation was sent.",
                         chat_id=str(chat_id),
                     )
 
@@ -916,7 +916,7 @@ async def _handle_order_decision(
             except Exception:
                 logger.exception("Failed to send order decision to %s", phone)
                 await client.send_message(
-                    "❌ Не удалось отправить сообщение клиенту. Эскалация не закрыта.",
+                    "❌ Could not send the message to the customer. The escalation stays open.",
                     chat_id=str(chat_id),
                 )
                 return
@@ -963,7 +963,7 @@ async def _handle_order_decision(
             except Exception:
                 logger.exception("Failed to send order decision to %s", phone)
                 await client.send_message(
-                    "❌ Не удалось отправить сообщение клиенту. Эскалация не закрыта.",
+                    "❌ Could not send the message to the customer. The escalation stays open.",
                     chat_id=str(chat_id),
                 )
                 return
@@ -1014,9 +1014,9 @@ async def _handle_order_decision(
             )
             await db.commit()
 
-        action_label = "подтверждён ✅" if is_confirm else "отклонён ❌"
+        action_label = "confirmed ✅" if is_confirm else "rejected ❌"
         await client.send_message(
-            f"📦 Заказ {action_label}. Ответ отправлен клиенту.",
+            f"📦 Order {action_label}. The reply was sent to the customer.",
             chat_id=str(chat_id),
         )
         logger.info(
@@ -1026,6 +1026,6 @@ async def _handle_order_decision(
         )
     else:
         await client.send_message(
-            "⚠️ Не удалось найти номер телефона клиента.",
+            "⚠️ Could not find the customer's phone number.",
             chat_id=str(chat_id),
         )

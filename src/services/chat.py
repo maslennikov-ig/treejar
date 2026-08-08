@@ -677,7 +677,7 @@ async def _handle_escalation_fallback(
                 .replace(">", "&gt;")
             )
             await client.send_message(
-                f"⚠️ <b>Клиент снова пишет</b> (эскалация активна)\n\n"
+                f"⚠️ <b>Customer is writing again</b> (escalation active)\n\n"
                 f'📞 <a href="tel:{phone_display}">{phone_display}</a>\n'
                 f"💬 <i>{safe_text}</i>"
             )

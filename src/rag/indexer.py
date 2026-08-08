@@ -143,6 +143,19 @@ def _parse_faq(path: Path) -> list[dict[str, Any]]:
     return chunks
 
 
+_EXTRA_RULE_RENDERINGS: dict[str, str] = {
+    "Добавить правило": (
+        "Where possible, put several options into the quote so the customer can "
+        "pick what suits them best: different designs, different price brackets."
+    ),
+    "Делать фоллоу ап": "Follow up after one day, three days and seven days.",
+    "Наша задача": (
+        "Our job is to understand the customer's need and produce the quote as "
+        "fast as possible."
+    ),
+}
+
+
 def _parse_sales_rules(path: Path) -> list[dict[str, Any]]:
     """Parse Sales Dialogue Guidelines Markdown table into chunks."""
     content = path.read_text(encoding="utf-8")
@@ -156,36 +169,31 @@ def _parse_sales_rules(path: Path) -> list[dict[str, Any]]:
             # We skip the header row
             if len(cols) >= 5 and cols[0].isdigit():
                 rule_number = cols[0]
-                rule_ru = cols[1]
-                expl_ru = cols[2]
                 rule_en = cols[3]
                 expl_en = cols[4]
 
-                # We save bilingual content
-                combined = (
-                    f"Rule: {rule_en}\nExplanation: {expl_en}\n\n"
-                    f"Правило: {rule_ru}\nОбъяснение: {expl_ru}"
-                )
-
+                # The source table is bilingual because the customer wrote it
+                # that way. Only the English half is indexed: the knowledge base
+                # feeds the model, and the product speaks English and Arabic.
                 chunks.append(
                     {
                         "source": "rules",
                         "category": "sales_rules",
                         "title": f"Rule {rule_number}: {rule_en}",
-                        "content": combined,
-                        "language": "bilingual",
+                        "content": f"Rule: {rule_en}\nExplanation: {expl_en}",
+                        "language": "en",
                     }
                 )
 
-    # Also grab bullet points at the bottom
-    extra_rules = []
-    for line in lines:
-        if (
-            line.startswith("Добавить правило")
-            or line.startswith("Делать фоллоу ап")
-            or line.startswith("Наша задача")
-        ):
-            extra_rules.append(line.strip())
+    # The three trailing notes are the only part of the guidelines with no
+    # English column. The document is a frozen requirement in the acceptance
+    # traceability manifest, so it is not edited to add one; the renderings live
+    # here instead, keyed by the Russian line that carries each note.
+    extra_rules = [
+        _EXTRA_RULE_RENDERINGS[prefix]
+        for prefix in _EXTRA_RULE_RENDERINGS
+        if any(line.startswith(prefix) for line in lines)
+    ]
 
     if extra_rules:
         chunks.append(
@@ -194,7 +202,7 @@ def _parse_sales_rules(path: Path) -> list[dict[str, Any]]:
                 "category": "sales_rules",
                 "title": "Additional Rules",
                 "content": "\n".join(extra_rules),
-                "language": "ru",
+                "language": "en",
             }
         )
 
@@ -210,12 +218,17 @@ def _parse_company_values(path: Path) -> list[dict[str, Any]]:
     lines = content.split("\n")
     current_title = None
     current_body: list[str] = []
-    language = "ru"
+    # The document opens in Russian and repeats itself under an English heading.
+    # Only the English half is indexed: the knowledge base feeds the model, and
+    # the product speaks English and Arabic.
+    in_english_section = False
 
     for line in lines:
-        # Detect if we switched to EN section
         if "Treejar Values (EN" in line:
-            language = "en"
+            in_english_section = True
+            continue
+        if not in_english_section:
+            continue
 
         # Matches emoji numbers or standard *11)
         if "️⃣" in line or line.strip().startswith("*1") or line.strip().startswith("*2"):
@@ -234,18 +247,13 @@ def _parse_company_values(path: Path) -> list[dict[str, Any]]:
                             "category": "company_values",
                             "title": title_clean.strip(" *1234567890)"),
                             "content": body_text,
-                            "language": language,
+                            "language": "en",
                         }
                     )
 
             current_title = line.strip()
             current_body = []
-        elif (
-            current_title
-            and line.strip()
-            and not line.startswith("---")
-            and "Хочешь, чтобы" not in line
-        ):
+        elif current_title and line.strip() and not line.startswith("---"):
             current_body.append(line.strip())
 
     # Save the last one (only if it has non-empty content)
@@ -263,7 +271,7 @@ def _parse_company_values(path: Path) -> list[dict[str, Any]]:
                     "category": "company_values",
                     "title": title_clean.strip(" *1234567890)"),
                     "content": body_text,
-                    "language": language,
+                    "language": "en",
                 }
             )
 

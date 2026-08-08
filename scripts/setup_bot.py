@@ -19,7 +19,7 @@ async def setup_bot():
         r = await client.post(
             f"{BASE_URL}/setMyShortDescription",
             json={
-                "short_description": "🤖 Умный ассистент для менеджеров TreeJar.\n\nМгновенно пересылает эскалации, новые лиды и уведомления из WhatsApp."
+                "short_description": "🤖 A smart assistant for TreeJar managers.\n\nForwards escalations, new leads and WhatsApp notifications instantly."
             },
         )
         print("Short Description:", r.json())
@@ -28,7 +28,7 @@ async def setup_bot():
         r = await client.post(
             f"{BASE_URL}/setMyDescription",
             json={
-                "description": "Привет! Я внутренний бот-координатор TreeJar. 🌳\n\nМоя задача — помогать команде продаж работать эффективнее. Я буду присылать сюда:\n🔥 Горячие лиды, требующие внимания\n📞 Запросы на связь с 'живым' менеджером\n📊 Оповещения о качестве обслуживания\n\nПросто добавьте меня в рабочую группу менеджеров!"
+                "description": "Hello! I am TreeJar's internal coordinator bot. 🌳\n\nMy job is to help the sales team work more effectively. I will post here:\n🔥 Hot leads that need attention\n📞 Requests to speak to a human manager\n📊 Service quality alerts\n\nJust add me to the managers' working group!"
             },
         )
         print("Description:", r.json())
@@ -38,8 +38,8 @@ async def setup_bot():
             f"{BASE_URL}/setMyCommands",
             json={
                 "commands": [
-                    {"command": "status", "description": "Проверить статус работы"},
-                    {"command": "help", "description": "Справка по уведомлениям"},
+                    {"command": "status", "description": "Check operational status"},
+                    {"command": "help", "description": "Notification help"},
                 ]
             },
         )

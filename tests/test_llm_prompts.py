@@ -1,3 +1,4 @@
+import re
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -23,7 +24,7 @@ async def test_build_system_prompt_default_language() -> None:
     assert "You work for Treejar" in prompt
     assert "The user prefers to communicate in English" in prompt
     assert "Russian" not in prompt
-    assert "ОАЭ" not in prompt
+    assert not re.search(r"[Ѐ-ӿ]", prompt)
     assert "STAGE: GREETING" in prompt
     assert "Noor from Treejar" in prompt
     assert "ask how you should address them" in prompt
@@ -68,7 +69,7 @@ async def test_build_system_prompt_includes_compact_communication_policy() -> No
     assert "FU1 before the 24h WhatsApp window closes" in policy
     assert "3d/7d via allowed templates" in policy
     assert "exact next step" in policy
-    assert "Правило" not in policy
+    assert not re.search(r"[Ѐ-ӿ]", policy)
     assert len(policy) < 1600
 
 

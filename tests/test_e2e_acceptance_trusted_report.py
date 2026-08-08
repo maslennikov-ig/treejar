@@ -448,7 +448,7 @@ def _build_verified_run(
     report_payload = {
         "schema_version": "noor-e2e-client-report/v2",
         "run_id": run_id,
-        "title": "Приёмочное тестирование Noor",
+        "title": "Noor acceptance testing",
         "generated_at": (now + timedelta(seconds=11)).isoformat(),
         "identity": {
             "repository_commit": "a" * 40,
@@ -782,7 +782,7 @@ def test_typed_russian_report_and_final_serialized_privacy(
     registry.write_report(output)
 
     report = output.read_text(encoding="utf-8")
-    assert "# Приёмочное тестирование Noor" in report
+    assert "# Noor acceptance testing" in report
     assert "Synthetic exact question." in report
     assert "Synthetic exact answer." in report
     assert "fixture_tool" in report

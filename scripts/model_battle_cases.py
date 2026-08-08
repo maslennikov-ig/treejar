@@ -1161,7 +1161,7 @@ BACKGROUND_HARD_CASES: tuple[SystemCase, ...] = (
         "bg-ru-exact-sku-no-quote",
         "fact_extraction",
         _SYSTEM_BASE + "Extract the exact SKU and explicit quotation refusal.",
-        "Нужен именно CH 616 NEW black. Коммерческое предложение не делайте.",
+        "I specifically need CH 616 NEW black. Do not prepare a quotation.",
         _BACKGROUND_EXTRACTION_SCHEMA,
         {
             "language": "ru",

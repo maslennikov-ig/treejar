@@ -107,9 +107,9 @@ async def test_report_generation_and_send() -> None:
 
     # Step 1: format report text and check structure
     text = format_report_text(report_data)
-    assert "Недельный отчёт" in text, "Report text must contain 'Недельный отчёт'"
+    assert "Weekly report" in text, "Report text must contain 'Weekly report'"
     assert "50" in text, "Report text must contain total_conversations (50)"
-    assert "Диалоги" in text
+    assert "Conversations" in text
     assert "Executive Chair" in text
 
     # Step 2: send_telegram_message should call client.send_message

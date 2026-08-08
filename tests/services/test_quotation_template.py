@@ -51,7 +51,7 @@ def test_render_quotation_template_omits_empty_optional_customer_fields() -> Non
         "trn": "100418386400003",
         "date": "27-02-2026",
         "customer": {
-            "name": "Лилия",
+            "name": "ليلى",
             "company": "",
             "email": "",
             "phone": "+971501234567",
@@ -81,7 +81,7 @@ def test_render_quotation_template_omits_empty_optional_customer_fields() -> Non
 
     assert "Treejar Trading FZC LLC" in html
     assert "Skyland" not in html
-    assert "<strong>Name:</strong> Лилия" in html
+    assert "<strong>Name:</strong> ليلى" in html
     assert "<strong>Phone:</strong> +971501234567" in html
     assert "<strong>Address:</strong>" not in html
     assert "UAE" not in html

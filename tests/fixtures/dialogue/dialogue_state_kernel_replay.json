@@ -1058,7 +1058,7 @@
           "note": "СН uses Cyrillic letters."
         },
         {
-          "input": "Нужно 6 CH 616",
+          "input": "I need 6 CH 616",
           "expected_normalized_sku": "CH-616",
           "expected_quantity": 6
         }
@@ -1070,7 +1070,7 @@
         },
         {
           "role": "user",
-          "content": "Нужно 6 СН 616"
+          "content": "I need 6 СН 616"
         }
       ],
       "expected": {

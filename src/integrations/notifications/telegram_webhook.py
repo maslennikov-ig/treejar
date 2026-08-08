@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 _CANONICAL_BASE_URL = "https://noor.starec.ai"
 _TELEGRAM_WEBHOOK_ALLOWED_UPDATES = ["message", "callback_query"]
 _TELEGRAM_BOT_COMMANDS = [
-    {"command": "admin", "description": "Войти в Noor CRM"},
-    {"command": "status", "description": "Проверить статус работы"},
-    {"command": "help", "description": "Справка по уведомлениям"},
+    {"command": "admin", "description": "Open Noor CRM"},
+    {"command": "status", "description": "Check operational status"},
+    {"command": "help", "description": "Notification help"},
 ]
 _TELEGRAM_WEBHOOK_PATH = "/api/v1/webhook/telegram"
 

@@ -563,7 +563,7 @@ def _is_specific_delivery_address(value: str | None) -> bool:
     if not value:
         return False
     normalized = " ".join(value.casefold().split())
-    if normalized in {"dubai", "dubay", "uae", "дубай"}:
+    if normalized in {"dubai", "dubay", "uae"}:
         return False
     return bool(re.search(r"\d", value)) or len(normalized.split()) >= 2
 
@@ -571,21 +571,18 @@ def _is_specific_delivery_address(value: str | None) -> bool:
 _QUOTE_DECLINE_RE = re.compile(
     r"\b(?:no|without)\s+(?:a\s+)?(?:quote|quotation)\b|"
     r"\b(?:do\s+not|don't|dont|not\s+want)\b.{0,32}\b(?:quote|quotation)\b|"
-    r"(?:не\s+(?:нужно|хочу)|без)\s+(?:кп|коммерческ\w+\s+предлож)|"
     r"(?:لا\s+أريد|بدون)\s+(?:عرض\s+سعر|عرض\s+السعر)",
     re.IGNORECASE,
 )
 _QUOTE_DEFER_RE = re.compile(
     r"\b(?:quote|quotation)\b.{0,24}\b(?:later|yet|for\s+now|on\s+hold|pause)\b|"
     r"\b(?:later|not\s+yet|hold|pause)\b.{0,24}\b(?:quote|quotation)\b|"
-    r"(?:кп|коммерческ\w+\s+предлож).{0,24}(?:позже|пока\s+не|отлож)|"
     r"(?:عرض\s+سعر|عرض\s+السعر).{0,24}(?:لاحق|ليس\s+الآن)",
     re.IGNORECASE,
 )
 _QUOTE_REQUEST_RE = re.compile(
     r"\b(?:prepare|create|send|need|want|get)\b.{0,28}\b(?:quote|quotation)\b|"
     r"\b(?:quote|quotation)\b.{0,20}\b(?:please|now)\b|"
-    r"(?:подготов|сдел|пришл|отправ).{0,28}(?:кп|коммерческ\w+\s+предлож)|"
     r"(?:جهز|أرسل|ارسل).{0,28}(?:عرض\s+سعر|عرض\s+السعر)",
     re.IGNORECASE,
 )
@@ -607,13 +604,11 @@ def quote_consent_signal(
         "yes please",
         "ok",
         "okay",
-        "да",
-        "да пожалуйста",
         "نعم",
     }
     if affirmative and any(
         term in " ".join(recent_history).casefold()
-        for term in ("quote", "quotation", "кп", "коммерческ", "عرض سعر")
+        for term in ("quote", "quotation", "عرض سعر")
     ):
         return QuoteConsent.GRANTED
     return None

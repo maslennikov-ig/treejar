@@ -539,7 +539,7 @@ class LocalFakeAttemptProducer:
             "schema_version": "noor-e2e-protected-evaluator/v1",
             "publication": {
                 "schema_version": "noor-e2e-publication-metadata/v1",
-                "title": "Приёмочное тестирование Noor",
+                "title": "Noor acceptance testing",
                 "tester": {
                     "model": "production/fake-tester",
                     "reasoning_effort": "none",

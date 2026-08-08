@@ -33,17 +33,11 @@ _EN_PRICE_STOCK_QUESTION_RE = re.compile(
     r"\b(?:price|stock|availability|available)\b.*\?",
     re.IGNORECASE,
 )
-_RU_INQUIRY_RE = re.compile(
-    r"(?:сколько\s+стоит|какая\s+цена|цен(?:а|ы|е|у|ой)|есть\s+ли|"
-    r"в\s+наличии|налич(?:ие|ия|ии|ию|ием)|доступн)",
-    re.IGNORECASE,
-)
 _AR_INQUIRY_RE = re.compile(
     r"(?:ما\s+هو\s+سعر|كم\s+السعر|سعر|هل\s+يتوفر|يتوفر|متوفر|المخزون|التوفر)"
 )
 _EXPLICIT_SELECTION_RE = re.compile(
     r"\b(?:buy|purchase|order|proceed|take|confirm|need|want|would\s+like|like)\b"
-    r"|(?:нужно|нужны|хочу|заказать|возьму)"
     r"|(?:أحتاج|احتاج|أريد|اريد|اطلب|أطلب)",
     re.IGNORECASE,
 )
@@ -54,10 +48,6 @@ _QUOTATION_DONE_CLAIM_RE = re.compile(
     r"(?:prepared|created|generated|issued|drafted|ready|sent|attached)\b"
     r"|\b(?:prepared|created|generated|issued|drafted|sent|attached)\b"
     r"[^.!?\n]{0,60}\b(?:quote|quotation)\b"
-    r"|(?:кп|коммерческ\w+\s+предложени\w*)[^.!?\n]{0,60}"
-    r"(?:готов|подготовлен|создан|сформирован|отправлен|направлен)"
-    r"|(?:подготовил|создал|сформировал|отправил|направил)\w*"
-    r"[^.!?\n]{0,60}(?:кп|коммерческ\w+\s+предложени\w*)"
     r"|(?:عرض\s+(?:ال)?سعر)[^.!?\n]{0,60}(?:جاهز|جاهزة|مرفق|أُرسل|ارسل)"
     r"|(?:تم\s+(?:إعداد|اعداد|إرسال|ارسال)|جهزت|أعددت|اعددت)"
     r"[^.!?\n]{0,60}(?:عرض\s+(?:ال)?سعر)",
@@ -69,8 +59,6 @@ _QUOTATION_DONE_CLAIM_RE = re.compile(
 _QUOTATION_NOT_YET_RE = re.compile(
     r"\b(?:will|would|can|could|shall|going\s+to|once|after\s+you|when\s+you"
     r"|as\s+soon\s+as|if\s+you|cannot|can't|won't|not\s+yet|before)\b"
-    r"|(?:буд(?:у|ет|ем)|смогу|готов\w*\s+подготовить|как\s+только"
-    r"|после\s+того|когда\s+вы|если\s+вы|не\s+могу|пока\s+не)"
     r"|(?:سوف|سأ|بمجرد|عندما|إذا|لا\s+أستطيع|لم\s+)",
     re.IGNORECASE,
 )
@@ -114,7 +102,6 @@ def is_order_selection_blocked(text: str) -> bool:
     if (
         _EN_INQUIRY_RE.search(normalized)
         or _EN_PRICE_STOCK_QUESTION_RE.search(normalized)
-        or _RU_INQUIRY_RE.search(normalized)
         or _AR_INQUIRY_RE.search(normalized)
     ):
         return True
