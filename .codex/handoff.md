@@ -33,39 +33,39 @@ not granted.
   as of 2026-08-08. For three days only the database row did, while the source
   said `z-ai/glm-5.2` -- shadowed, so nothing misbehaved and every reader was
   misled. `tj-uidf`.
-- **glm-5.2 adopted as judge, on its sd.** k=5 on the ten stored `5656c82`
-  transcripts, 2026-08-08: pooled sd **1.3**, mean **11.2/30 +/- 0.4**. Incumbent
-  deepseek-v4-flash 3.8; five blind Claude readers 0.9. Cost argues the other way
-  and is not the reason. Against the panel, both repeating: 12.3 -> 11.2, delta
-  -1.1 +/- 0.5 -- judges differing, not builds. See
+- **Two judges, do not confuse them.** Acceptance measurement is a blind Claude
+  reader panel, never a paid model; an external judge belongs only to the runtime
+  `ai_quality_controls` feature, which runs unattended. The panel is also the more
+  precise instrument: sd **0.9** to glm-5.2's **1.3** on the same ten transcripts.
+  **Acceptance stands at 12.3 +/- 0.3, gap to 24.0 is 11.7.** Panel compares to
+  panel, never across judges: two judges share no noise estimate.
+- **glm-5.2 adopted for the runtime judge, on its sd**: k=5 on the stored
+  `5656c82` transcripts 2026-08-08, sd 1.3 and mean 11.2 +/- 0.4 against incumbent
+  deepseek-v4-flash's 3.8. Cost argues the other way and is not the reason.
   `docs/reports/2026-08-08-glm52-as-judge-at-k5.md`.
-- **The acceptance mean is 11.2/30 +/- 0.4**, so the gap to the 24.0 threshold is
-  12.8 points -- not 7.9, nor the 5.8 the double-normalised reports claimed.
 - **`ai_quality_controls` names `deepseek/deepseek-v4-flash`** in production, all
   three scopes `disabled`, moved off the delisted `xiaomi/mimo-v2-flash` on
   2026-08-08. Pointing the row at glm-5.2 and enabling `bot_qa` is a separate,
   unrequested change.
 - **Cost is not the argument for glm-5.2.** Per evaluation at the
-  `PATH_QUALITY_FINAL` ceiling: deepseek-v4-flash $0.0045, Luna $0.0064,
-  glm-5.2 $0.0114, Opus $0.2800. glm-5.2 is dearer than the model it would judge.
-  The argument is independence: Luna writes the customer-facing replies, and a
-  judge sharing a model with the thing it grades is measuring itself.
-- **Every mean published on 2026-08-07 was normalised twice.** `808b07d` moved
-  the /30 normalisation into `calculate_weighted_score` on 2026-08-03 and the
-  reports kept the old manual 30/24 on top. The real figures are `c977b07` 15.8,
-  `6a14f2f` 16.1, `5656c82` **16.1** -- not 18.0, 18.5, 18.2. The gap to the 24.0
-  threshold is 7.9 points, not 5.8. `tj-swgu.13` (P1).- **Standing figure: 12.3 +/- 0.3** at 95%, from five independent blind readers
-  over the same ten transcripts, same criteria and applicability map, product's
-  own weighting: 50 scorings, df 40, pooled sd 0.9, per-reader means 13.2, 12.0,
-  12.2, 11.8, 12.3. The deployed judge reads the same transcripts at 16.1 with
-  sd 3.8, so its mean would carry +/- 3.3 -- the panel is about four times
-  quieter. That is precision, not accuracy: the five share a model family and a
-  prompt, so a shared bias is invisible and the -3.8 gap says nothing about who
-  is right. The fifteen criteria remain the customer's.
-  `docs/reports/2026-08-07-repeated-scoring-and-the-second-reader.md`.- **The rule.** No movement smaller than its own uncertainty is evidence about
-  code, and the bound is the instrument's: +/- 3.3 for the deployed judge at one
-  pass, +/- 0.3 for the panel. Two judges do not share a noise estimate, so
-  neither lends its repeats to the other.- Instrument: `scripts/e2e_acceptance/score_uncertainty.py`, 22 tests. Reads
+  `PATH_QUALITY_FINAL` ceiling: deepseek-v4-flash $0.0045, Luna $0.0064, glm-5.2
+  $0.0114, Opus $0.2800 -- dearer than the model it judges. The argument is
+  independence: Luna writes the replies, and a judge sharing a model with the
+  thing it grades is measuring itself.
+- **Every mean published on 2026-08-07 was normalised twice** (`tj-swgu.13`,
+  closed). `808b07d` moved the /30 normalisation into `calculate_weighted_score`
+  on 2026-08-03 and the reports kept the old manual 30/24 on top. The real
+  figures are `c977b07` 15.8, `6a14f2f` 16.1, `5656c82` **16.1** -- never 18.0,
+  18.5, 18.2.
+- **The panel: 12.3 +/- 0.3** at 95%, five independent blind readers over the ten
+  transcripts, same criteria and applicability map, product's own weighting: 50
+  scorings, df 40, pooled sd 0.9, per-reader means 13.2, 12.0, 12.2, 11.8, 12.3.
+  Precision, not accuracy: the five share a model family and a prompt, so a shared
+  bias is invisible to it. Protocol and caveats in
+  `docs/reports/2026-08-07-repeated-scoring-and-the-second-reader.md`.
+- **The rule.** No movement smaller than its own uncertainty is evidence about
+  code; the bound is the instrument's, +/- 3.3 for the old judge, +/- 0.3 here.
+- Instrument: `scripts/e2e_acceptance/score_uncertainty.py`, 22 tests. Reads
   either score-file shape onto one /30 axis, states the interval its repeats
   justify, compares two runs paired, and refuses a verdict without repeats.
 ## Local verification
@@ -109,12 +109,12 @@ Next stage id: `tj-ee5f`
 The paid comparison has since run under `tj-feet.8` and the main model was
 switched, so the battle this section used to point at is done.
 
-Recommended action: `tj-swgu.11` and `tj-r1vk`, independent of each other and of
-the repeat run, then `tj-swgu.10`. `.11` is confirmed by two independent readers
-agreeing on the same S06 zeros, which is an applicability defect rather than a
-judge one. `.10` has a free lever recorded on it: `PATH_QUALITY_FINAL` passes no
-temperature at all, so the judge runs at the provider default while the
-harness's own bounded judge refuses anything but 0.
+Recommended action: epic `tj-2m5m`, which holds the per-criterion diagnosis of
+the gap. `.3` first -- `consultative_opening_directive` targets rules 6, 7 and 13
+and is not in any measured build, so a panel read of the current build comes
+before writing anything new. Then `.1` and `.2` (applicability: rule 3 is charged
+when the customer already gave their name; rule 11 asks for a discount policy
+forbids), `.5`, and `.4`, the real defect. `tj-r1vk` before any fresh run.
 
 `tj-ee5f.1` is the same production pass seen from the older stage. Do not fold
 the bounded product-runtime `R-17` defer into either. Fix `tj-r1vk` before the

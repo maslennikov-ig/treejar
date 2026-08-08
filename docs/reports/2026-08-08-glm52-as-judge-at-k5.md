@@ -1,5 +1,26 @@
 # glm-5.2 as the quality judge: what its repeats say
 
+**Scope, corrected 2026-08-08 after this was written.** The adoption below
+applies to `ai_quality_controls`, the runtime QA feature that scores live
+customer conversations unattended. It does **not** apply to acceptance
+measurement during development, where the judge is a blind Claude reader panel
+and no external judge is paid. On these same ten transcripts the panel measured
+sd **0.9** against glm-5.2's **1.3**, so the free instrument is also the more
+precise one; the paid run below cost $0.57 and should not have been the default.
+The panel's baseline is **12.29 ± 0.3**, and it is the figure downstream work
+compares against — two judges do not share a noise estimate, so panel compares
+to panel. See `2026-08-07-repeated-scoring-and-the-second-reader.md` for the
+protocol.
+
+Both instruments agree on the shape, which is what the diagnosis rests on:
+
+| block | earned, panel | earned, glm-5.2 |
+|---|---|---|
+| Opening & Trust | 69% | 70% |
+| Relationship & Discovery | 46% | 42% |
+| Consultative Solution | **23%** | **16%** |
+| Conversion & Next Step | 20% | 21% |
+
 Task: `tj-4e5j.7`. Measured 2026-08-08 against the ten stored `5656c82`
 transcripts, scored five times each on the English rubric at temperature 0.
 Fifty scorings, no live traffic, no production mutation. Run preserved at
