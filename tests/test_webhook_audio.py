@@ -64,10 +64,15 @@ class TestVoxtralConfig:
         assert configured.voxtral_model == configured.voice_transcription_model
 
     def test_default_openrouter_models_use_approved_routes(self) -> None:
-        """Test model defaults without reading developer-local environment files."""
+        """The defaults must name the models that actually run.
+
+        `system_configs.openrouter_model_main` overrides this at runtime, so a
+        stale default is shadowed rather than broken -- which is exactly why it
+        went unnoticed for three days and misled everyone who read the config.
+        """
         defaults = Settings(_env_file=None)
 
-        assert defaults.openrouter_model_main == "z-ai/glm-5.2"
+        assert defaults.openrouter_model_main == "openai/gpt-5.6-luna"
         assert defaults.openrouter_model_fast == "deepseek/deepseek-v4-flash"
 
 
