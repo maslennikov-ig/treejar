@@ -12,88 +12,88 @@ not granted.
 - **Production is not on Supabase.** Project `vlxgzhbtnwysaqonvlte` is INACTIVE,
   which is why DNS, the pooler, REST and the MCP failed at once and looked like a
   network fault. Production is Postgres in the `noor-db-1` container on
-  `noor-server` (ssh config entry), reached as `db:5432` over the compose
-  network, so no laptop-reachable URL exists.
-- **No real customer has ever written Russian.** Counted 2026-08-08: of 69
-  real-phone conversations **0** carry Cyrillic and 6 Arabic; all 28 Cyrillic
-  messages are our own harness. 0 of 69 puts the 95% ceiling near 4.3% -- "no
-  evidence", not "impossible". `tj-4e5j.2`.
+  `noor-server`, reached as `db:5432` over the compose network.
+- **No real customer has ever written Russian.** Of 69 real-phone conversations
+  **0** carry Cyrillic, 6 Arabic; all 28 Cyrillic messages are our own harness.
+  The 95% ceiling is near 4.3%: "no evidence", not "impossible". `tj-4e5j.2`.
 - **The catalogue is written with Cyrillic lookalikes, and that is load-bearing.**
   7 of 920 SKUs begin with Cyrillic `СН`; 132 names use Cyrillic `х` as the
-  dimension separator. The homoglyph maps in `engine.py` and `catalog_refs.py`
-  let a customer typing Latin `CH 135` reach SKU `СН 135`;
-  `tests/test_catalog_homoglyphs.py` guards it.
-- **The main model is Luna, and all three layers now say so.** `system_configs`,
-  `src/core/config.py` and the production `.env` all name `openai/gpt-5.6-luna`
-  as of 2026-08-08. For three days only the database row did, while the source
-  said `z-ai/glm-5.2` -- shadowed, so everyone was misled. `tj-uidf`.
-- **Two judges, do not confuse them.** Acceptance measurement is a blind Claude
-  reader panel, never a paid model; an external judge belongs only to the runtime
-  `ai_quality_controls` feature. Compare within one instrument only -- two
-  judges, or two differently-prompted panels, share no noise estimate.
-- **Acceptance stands at 15.4; the gap to 24.0 is 8.6.** Measured on `a830001`
-  2026-08-08: S01-S08 three times each, S09/S10 once, 52 blind scorings. Paired
-  against the corrected `5656c82` baseline of 13.4 the delta is **+1.95 +/- 1.58**
-  -- real, but thin: this panel disagreed with itself by a mean of 2.86 against
-  the previous panel's sd 0.9, probably from 26 packets each instead of 10
-  (`tj-2m5m.9`). Generation noise is smaller, a within-scenario sd of **0.84**.
+  dimension separator. The homoglyph maps let a customer typing Latin `CH 135`
+  reach SKU `СН 135`; `tests/test_catalog_homoglyphs.py` guards it.
+- **The main model is Luna, and all three layers now say so**: `system_configs`,
+  `src/core/config.py` and the production `.env`. For three days only the row
+  did, while the source said `z-ai/glm-5.2` -- shadowed. `tj-uidf`.
+- **Two judges, do not confuse them.** Acceptance is a blind Claude reader
+  panel, never a paid model; an external judge belongs only to runtime
+  `ai_quality_controls`. Compare within one instrument only.
+- **Acceptance on `a830001` was 15.9 against a 14.3 baseline, delta +1.6 +/- 1.9
+  -- inside noise once rules 13 and 15 are corrected on both sides.** 52 blind
+  scorings, S01-S08 three times each. The panel disagreed with itself by 2.86
+  against its own earlier 0.9, probably from 26 packets each (`tj-2m5m.9`);
+  generation noise is smaller at 0.84. Gap to 24.0 is 8.1.
   `docs/reports/2026-08-08-the-first-run-that-saw-the-directives.md`.
 - **Rules die on their own escape clauses, and four did.** The value proposition
   and the company question appear 0 times in all 26 transcripts of the live run;
   not a deploy gap, not an early return, not the tool layer, all checked.
   **A condition on the world is a guard; a condition on what Noor thinks she
   already did is a leak**, since she is both actor and judge. Removed 2026-08-08:
-  "if you have not already said it" (rule 7 -- `opening_guard.py` puts "Hello,
-  I'm Noor from Treejar." in the same reply); "at most one question ... leave it
-  for the next turn" (starved rule 13 forever); "you do not know what their
-  company does" (a name is not a line of work); "whose **whole content** is a
-  restatement" (why S08 survived -- an echo plus a promise). Five tests hold them
-  out; all unmeasured. Rules 11 and 15 moved, having nothing to hide behind.
-  `tj-2m5m.8`.
+  "if you have not already said it" (rule 7 -- `opening_guard.py` puts the
+  greeting in the same reply); "at most one question ... leave it for the next
+  turn" (starved rule 13 forever); "you do not know what their company does" (a
+  name is not a line of work); "whose **whole content** is a restatement" (why
+  S08 survived). Five tests hold them out; all unmeasured. `tj-2m5m.8`.
 - **The model is not over-constrained, measured.** Directives are 2 353 chars
   against a 6 929-char base prompt, and repeated runs of one scenario differ at
-  0.34 character similarity. The least repetitive scenario (S07, 0.12) scores
-  highest and the most repetitive (S08, 0.63) nearly lowest.
-- **`6a14f2f` and `5656c82` tie; the deltas inside them came from one generation
-  per side and are not evidence.**
-  `docs/reports/2026-08-08-did-the-build-regress.md`.
+  0.34 character similarity; the least repetitive scenario scores highest.
+- **The prompt now carries the business's own goal** -- understand the need and
+  quote in the shortest time -- plus three named methods (jobs-to-be-done, SNAP,
+  four facts before quoting) and a ban on naming any of them to the customer.
+  SPIN, Challenger, MEDDIC and Sandler stay out: built for long cycles, highest
+  theatre risk. Eight manual turns on the deployed build showed no methodology
+  narration at all. This grew the frozen product prompt, on an explicit owner
+  decision.
+- **`6a14f2f` and `5656c82` tie; per-scenario deltas from one generation a side
+  are not evidence.** `docs/reports/2026-08-08-did-the-build-regress.md`.
 - **Owner decision 2026-08-08: generation stays varied.** `PATH_CORE_CHAT` is
   not pinned to temperature 0 -- a bot that always writes the same sentence stops
-  selling, and each customer sees one conversation. The price is k runs per
-  scenario per side.
+  selling. The price is k runs per scenario per side.
 - **Less caution, more selling, 2026-08-08.** Rule 3 stands down when the
   customer signs their opening message; rule 11 needs a two-family order; an
   always-on directive forbids a reply that adds nothing; the consultative opening
   carries rules 9, 10 and a verified package -- never a discount.
   `docs/reports/2026-08-08-less-caution-more-selling.md`.
-- **Production runs `a830001`** (2026-08-08, owner-authorised push, deploy and
-  run; readback matched, health ok). The escape-clause fixes after it are
-  committed and **not deployed**.
-- **`tj-r1vk` is closed.** S09 and S10 need the real protected chat, so the
-  runner now calls the product's own reset before each: the old conversation is
-  archived and closed, a fresh one opens, nothing is deleted. Verified over all
-  26 transcripts.
-- **No figure published 2026-08-07 was real**: normalised twice by `808b07d`
-  plus a manual 30/24, so 18.0/18.5/18.2 were 15.8/16.1/16.1. `tj-swgu.13`.
+- **Production runs `0c4dd32`** (2026-08-09, readback matched, health ok).
+- **The model reads what the customer said; code owns catalog facts.** Owner
+  call after three parser failures in one day. `record_customer_requirements` is
+  the first tool that records rather than acts: it writes quantity, budget,
+  deadline, sign-off and company activity into typed slots, bounded, with a
+  catalog check on the SKU so a mis-extraction cannot become a fact. The kernel
+  no longer answers "please confirm the quantity" itself -- it kept beating the
+  model to the message -- it keeps state and delegates. Verified live: "10
+  chairs. CH 616 NEW black" now reaches a quotation offer with the slot reading
+  quantity 10. Prices went the other way: Noor answered "what is a normal
+  budget" with invented USD ranges, and now answers it from catalog rows in AED.
+  `tj-1osj`, `tj-o29r`.
+- **`tj-r1vk` is closed.** The runner resets the shared S09/S10 conversation
+  through the product's own service before each; nothing is deleted.
+- **No figure published 2026-08-07 was real**: double-normalised, so
+  18.0/18.5/18.2 were really 15.8/16.1/16.1. `tj-swgu.13`.
 - **The rule.** No movement smaller than its own uncertainty is evidence.
 - **The test is partly wrong, and it is not the bot's fault.** Against 74 real
-  production openings: 34% are a bare greeting and 12% exceed 100 chars, where
-  80% of ours do and none is a bare greeting. Length is fine, the real median
-  being 2 customer turns. The rubric is worse -- a manager's scorecard for a
-  complete sales call -- and S06 answers its customer perfectly, scoring 7.35 of
-  30 because that customer forbade what the checklist rewards. `tj-2m5m.10`,
-  `.11`, both needing an owner decision.
-- **glm-5.2 adopted for the runtime judge, on its sd**: k=5 on the stored
-  `5656c82` transcripts, sd 1.3 against incumbent deepseek-v4-flash's 3.8. Cost
-  argues the other way; the argument is independence, since Luna writes the
-  replies and a judge sharing its model is measuring itself. See that report.
-- **`ai_quality_controls` names `deepseek/deepseek-v4-flash`** in production, all
-  three scopes `disabled`, moved off the delisted `xiaomi/mimo-v2-flash` on
-  2026-08-08. Pointing the row at glm-5.2 and enabling `bot_qa` is a separate,
+  openings: 34% are a bare greeting, 12% exceed 100 chars; 80% of ours do and
+  none is a greeting. Length is fine (real median 2 customer turns). The rubric
+  is a manager's scorecard for a full sales call, and S06 answers its customer
+  perfectly for 7.35 of 30. Owner decision 2026-08-09: freeze S01-S10 as a
+  regression set, build a realistic set, and move the 24.0 target to it; rules
+  the customer explicitly forbade become n/a. `tj-2m5m.10`, `.11`.
+- **glm-5.2 adopted for the runtime judge on its sd**: 1.3 against
+  deepseek-v4-flash's 3.8. Cost argues the other way; the argument is
+  independence, since Luna writes the replies. See that report.
+- **`ai_quality_controls` names `deepseek/deepseek-v4-flash`**, all three scopes
+  `disabled`. Pointing it at glm-5.2 and enabling `bot_qa` is a separate,
   unrequested change.
-- Instrument: `scripts/e2e_acceptance/score_uncertainty.py`, 22 tests. Reads
-  either score-file shape onto one /30 axis and refuses a verdict without
-  repeats.
+- Instrument: `scripts/e2e_acceptance/score_uncertainty.py`; refuses a verdict
+  without repeats.
 
 ## Local verification
 
