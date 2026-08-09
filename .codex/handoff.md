@@ -11,52 +11,46 @@ not granted.
 
 - **Production is not on Supabase.** Project `vlxgzhbtnwysaqonvlte` is INACTIVE,
   which is why DNS, the pooler, REST and the MCP failed at once and looked like a
-  network fault. Production is Postgres in the `noor-db-1` container on
-  `noor-server`, reached as `db:5432` over the compose network.
+  network fault. It is Postgres in the `noor-db-1` container on `noor-server`,
+  reached as `db:5432` over the compose network.
 - **No real customer has ever written Russian.** Of 69 real-phone conversations
   **0** carry Cyrillic, 6 Arabic; all 28 Cyrillic messages are our own harness.
   The 95% ceiling is near 4.3%: "no evidence", not "impossible". `tj-4e5j.2`.
 - **The catalogue is written with Cyrillic lookalikes, and that is load-bearing.**
   7 of 920 SKUs begin with Cyrillic `СН`; 132 names use Cyrillic `х` as the
-  dimension separator. The homoglyph maps let a customer typing Latin `CH 135`
-  reach SKU `СН 135`; `tests/test_catalog_homoglyphs.py` guards it.
+  dimension separator. `tests/test_catalog_homoglyphs.py` guards the maps that
+  let Latin `CH 135` reach SKU `СН 135`.
 - **The main model is Luna, and all three layers now say so**: `system_configs`,
   `src/core/config.py` and the production `.env`. For three days only the row
   did, while the source said `z-ai/glm-5.2` -- shadowed. `tj-uidf`.
 - **Two judges, do not confuse them.** Acceptance is a blind Claude reader
   panel, never a paid model; an external judge belongs only to runtime
   `ai_quality_controls`. Compare within one instrument only.
-- **Acceptance on `a830001` was 15.9 against a 14.3 baseline, delta +1.6 +/- 1.9
-  -- inside noise once rules 13 and 15 are corrected on both sides.** 52 blind
-  scorings, S01-S08 three times each. The panel disagreed with itself by 2.86
-  against its own earlier 0.9, probably from 26 packets each (`tj-2m5m.9`);
-  generation noise is smaller at 0.84. Gap to 24.0 is 8.1.
-  `docs/reports/2026-08-08-the-first-run-that-saw-the-directives.md`.
-- **Rules die on their own escape clauses, and four did.** The value proposition
-  and the company question appear 0 times in all 26 transcripts of the live run;
-  not a deploy gap, not an early return, not the tool layer, all checked.
-  **A condition on the world is a guard; a condition on what Noor thinks she
-  already did is a leak**, since she is both actor and judge. Removed 2026-08-08:
-  "if you have not already said it" (rule 7 -- `opening_guard.py` puts the
-  greeting in the same reply); "at most one question ... leave it for the next
-  turn" (starved rule 13 forever); "you do not know what their company does" (a
-  name is not a line of work); "whose **whole content** is a restatement" (why
-  S08 survived). Five tests hold them out; all unmeasured. `tj-2m5m.8`.
-- **The model is not over-constrained, measured.** Directives are 2 353 chars
-  against a 6 929-char base prompt, and repeated runs of one scenario differ at
-  0.34 character similarity; the least repetitive scenario scores highest.
-- **The prompt now carries the business's own goal** -- understand the need and
-  quote in the shortest time -- plus three named methods (jobs-to-be-done, SNAP,
-  four facts before quoting) and a ban on naming any of them to the customer.
-  SPIN, Challenger, MEDDIC and Sandler stay out: built for long cycles, highest
-  theatre risk. Eight manual turns on the deployed build showed no methodology
-  narration at all. This grew the frozen product prompt, on an explicit owner
-  decision.
+- **The acceptance figure is two figures, and 24.0 is retired.** At `ac36265`,
+  two reads per packet across six readers: **project 19.95 +/- 0.93 over 11.0
+  applicable rules, transactional 20.77 +/- 4.41 over 7.6**. The fork made rules
+  6, 10 and 13 inapplicable to an ordinary order and the arithmetic normalises
+  what remains back to /30, so two conversations scored a perfect 30 over the
+  eight easy rules alone. `score_by_shape.py` refuses to print one number.
+  Reader disagreement fell 2.86 -> **1.96** at 13 packets each. **The rubric is
+  frozen**: five changes in one week, all raising the number, the last with no
+  build change at all -- nothing before 2026-08-09 is comparable. `tj-07bs`.
+- **Rules die on their own escape clauses, and four did.** **A condition on the
+  world is a guard; a condition on what Noor thinks she already did is a leak**,
+  since she is both actor and judge. Four removed 2026-08-08, five tests hold
+  them out. `tj-2m5m.8`.
+- **The model is not over-constrained, measured.** Directives are a quarter of
+  the prompt and repeated runs differ at 0.34 character similarity.
+- **The prompt carries the business's own goal** -- understand the need and
+  quote in the shortest time -- plus jobs-to-be-done, SNAP and four facts before
+  quoting, with a ban on naming any method to the customer. SPIN, Challenger,
+  MEDDIC and Sandler stay out. Grew the frozen prompt on an explicit owner
+  decision. Two research reports in `docs/Research/`.
 - **`6a14f2f` and `5656c82` tie; per-scenario deltas from one generation a side
   are not evidence.** `docs/reports/2026-08-08-did-the-build-regress.md`.
 - **Owner decision 2026-08-08: generation stays varied.** `PATH_CORE_CHAT` is
-  not pinned to temperature 0 -- a bot that always writes the same sentence stops
-  selling. The price is k runs per scenario per side.
+  not pinned to temperature 0. The price is k runs per scenario per side;
+  measured within-scenario sd is about 1.7.
 - **Less caution, more selling, 2026-08-08.** Rule 3 stands down when the
   customer signs their opening message; rule 11 needs a two-family order; an
   always-on directive forbids a reply that adds nothing; the consultative opening
@@ -64,31 +58,25 @@ not granted.
   `docs/reports/2026-08-08-less-caution-more-selling.md`.
 - **Production runs `0c4dd32`** (2026-08-09, readback matched, health ok).
 - **The model reads what the customer said; code owns catalog facts.** Owner
-  call after three parser failures in one day. `record_customer_requirements` is
-  the first tool that records rather than acts: it writes quantity, budget,
-  deadline, sign-off and company activity into typed slots, bounded, with a
-  catalog check on the SKU so a mis-extraction cannot become a fact. The kernel
-  no longer answers "please confirm the quantity" itself -- it kept beating the
-  model to the message -- it keeps state and delegates. Verified live: "10
-  chairs. CH 616 NEW black" now reaches a quotation offer with the slot reading
-  quantity 10. Prices went the other way: Noor answered "what is a normal
-  budget" with invented USD ranges, and now answers it from catalog rows in AED.
-  `tj-1osj`, `tj-o29r`.
-- **`tj-r1vk` is closed.** The runner resets the shared S09/S10 conversation
-  through the product's own service before each; nothing is deleted.
-- **No figure published 2026-08-07 was real**: double-normalised, so
-  18.0/18.5/18.2 were really 15.8/16.1/16.1. `tj-swgu.13`.
+  call after three parser failures in one day. `record_customer_requirements`
+  writes quantity, budget, deadline, sign-off and company activity into typed
+  slots, bounded, with a catalog check on the SKU so a mis-extraction cannot
+  become a fact. The kernel keeps state and delegates the question rather than
+  answering it first. Prices went the other way: invented USD ranges are gone
+  and budget questions are answered from catalog rows in AED. `tj-1osj`,
+  `tj-o29r`.
+- **`tj-r1vk` is closed**: the runner resets the shared S09/S10 conversation
+  through the product's own service before each.
+- **No figure published 2026-08-07 was real**: double-normalised. `tj-swgu.13`.
 - **The rule.** No movement smaller than its own uncertainty is evidence.
-- **The test is partly wrong, and it is not the bot's fault.** Against 74 real
-  openings: 34% are a bare greeting, 12% exceed 100 chars; 80% of ours do and
-  none is a greeting. Length is fine (real median 2 customer turns). The rubric
-  is a manager's scorecard for a full sales call, and S06 answers its customer
-  perfectly for 7.35 of 30. Owner decision 2026-08-09: freeze S01-S10 as a
-  regression set, build a realistic set, and move the 24.0 target to it; rules
-  the customer explicitly forbade become n/a. `tj-2m5m.10`, `.11`.
+- **The test was partly wrong, and not the bot's fault.** Against 74 real
+  openings: 34% are a bare greeting where none of ours is, median 53 chars
+  against our 126, real median 2 customer turns. Owner decision 2026-08-09:
+  S01-S10 frozen as a regression set with no threshold, a realistic set
+  (`R01`-`R05`) built to the measured shape, and the target moves to it. That
+  set found two defects on its first run. `tj-2m5m.10`, `tj-6f4z`.
 - **glm-5.2 adopted for the runtime judge on its sd**: 1.3 against
-  deepseek-v4-flash's 3.8. Cost argues the other way; the argument is
-  independence, since Luna writes the replies. See that report.
+  deepseek-v4-flash's 3.8. The argument is independence.
 - **`ai_quality_controls` names `deepseek/deepseek-v4-flash`**, all three scopes
   `disabled`. Pointing it at glm-5.2 and enabling `bot_qa` is a separate,
   unrequested change.
@@ -109,30 +97,28 @@ not granted.
   `.12`, `.14`. `.1`: later winner-only release-bound acceptance. `.5`: blocked
   on the provider-confirmed Wazzup status bug.
 
-Accepted design and executable plan, in `docs/superpowers/`:
-`specs|plans/2026-08-07-model-written-prose-over-verified-facts*` and
-`specs|plans/2026-08-03-noor-e2e-remediation-and-model-comparison*`.
+Ordered plan and rules of engagement:
+`docs/superpowers/specs/2026-08-09-deterministic-routes-and-the-forked-rubric-spec.md`.
+Earlier accepted artifacts remain under `docs/superpowers/`.
 
 ## Constraints
 
 - Preserve exact scenario wording in fixtures/protected evidence only.
-- Do not grow the product system prompt; the local change reduced it.
+- The product system prompt grew on 2026-08-09 by explicit owner decision; it
+  does not grow again without one.
 - Public REST/webhook contracts and the database schema remain unchanged.
 - Preserve unrelated work and untracked user files.
-- The local fixes are not production acceptance; the failed S01-S10 evidence
-  stays immutable until a new authorized release-bound pass exists.
 
 ## Next recommended
 
 Next stage id: `tj-ee5f`
 
-Recommended action: epic `tj-2m5m`. Four escape clauses are removed and
-untested. Before the next run, settle `tj-2m5m.10` and `.11` -- the scenarios
-and the rubric are both wrong in ways that change what the number means -- then
-split the reader load (`tj-2m5m.9`), or a two-point move stays invisible. Read
-two transcripts by eye every round: both findings that mattered this week came
-from reading, not from the number. `tj-ee5f.1` is the same production pass seen
-from the older stage; do not fold the bounded `R-17` defer into it.
+The ordered plan lives in
+`docs/superpowers/specs/2026-08-09-deterministic-routes-and-the-forked-rubric-spec.md`.
+Recommended action: `tj-ja1v` is the spine -- deterministic template routes
+score far below model-written turns, and every finding of 2026-08-09 was an
+instance of it. Start with `tj-jxv7`, which is small and carries a named
+hypothesis to check first.
 
 ## Stage tj-feet
 
@@ -153,10 +139,23 @@ Run `repin_traceability_sources.py` after moving current state.
 ## Starter prompt for next orchestrator
 
 Use $orchestrator-stage for the active `tj-ee5f` stage. Read `AGENTS.md`,
-`.codex/orchestrator.toml`, this handoff, the stage summary and manifest, the
-accepted remediation artifacts, and Beads `.1`, `.5`, `.7`, `.8`, `.13`,
-`.13.9`, `.14`. Preserve frozen `AC-01..AC-30`. A challenger decision does not
-authorize a model-config change.
+`.codex/orchestrator.toml`, this handoff, and then
+`docs/superpowers/specs/2026-08-09-deterministic-routes-and-the-forked-rubric-spec.md`,
+which carries the ordered plan, the two baselines and seven rules of engagement.
+
+The spine is `tj-ja1v`: deterministic template routes score far below
+model-written turns, and the name-gate fix showed the shape of the answer --
+keep the guarantee, let it carry what a salesperson carries.
+
+Two things must not happen. Do not ship a rubric change and a build change in
+the same measured round; five rubric changes in one week moved the number
+without the bot moving, and nothing before 2026-08-09 is comparable now. Do not
+compare one conversation shape with another or with a pre-fork figure --
+`scripts/e2e_acceptance/score_by_shape.py` refuses to print a single number for
+that reason.
+
+Read two transcripts by eye every round: every finding that mattered came from
+reading, not from a score. Preserve frozen `AC-01..AC-30`.
 
 ## Approval gates
 
