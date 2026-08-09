@@ -1676,6 +1676,11 @@ _ANCHOR_FAMILIES: tuple[tuple[str, tuple[str, ...], str, str], ...] = (
         "المكاتب ومحطات العمل",
     ),
 )
+# An anchor is a promise the customer can act on. The cheapest row in the
+# catalog is often a single leftover unit, and "desks from AED 58" is a poor
+# thing to say to somebody who needs fourteen of them. A small stock floor keeps
+# the number both true and orderable.
+_ANCHOR_MIN_STOCK = 5
 _anchor_line_cache: dict[str, str] = {}
 
 
@@ -1710,7 +1715,7 @@ async def catalog_anchor_line(db: AsyncSession, language: str) -> str | None:
                 or_(*conditions),
                 Product.price.is_not(None),
                 Product.price > 0,
-                Product.stock > 0,
+                Product.stock >= _ANCHOR_MIN_STOCK,
             )
         )
         lowest = result.scalar_one_or_none()
