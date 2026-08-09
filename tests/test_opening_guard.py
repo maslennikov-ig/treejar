@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.llm.opening_guard import apply_opening_guard
+from src.llm.opening_guard import apply_opening_guard, build_name_gate_reply
 
 
 def test_first_turn_english_response_adds_identity_and_name_question() -> None:
@@ -11,10 +11,7 @@ def test_first_turn_english_response_adds_identity_and_name_question() -> None:
         customer_name=None,
     )
 
-    assert response == (
-        "Hello, I'm Noor from Treejar. "
-        "May I know your name so I can address you properly?"
-    )
+    assert response == build_name_gate_reply(language="en")
     assert "office chairs" not in response
 
 
@@ -26,10 +23,7 @@ def test_first_turn_unknown_customer_does_not_answer_embedded_question() -> None
         customer_name=None,
     )
 
-    assert response == (
-        "Hello, I'm Noor from Treejar. "
-        "May I know your name so I can address you properly?"
-    )
+    assert response == build_name_gate_reply(language="en")
     assert "ergonomic chairs" not in response
 
 
@@ -41,10 +35,7 @@ def test_first_turn_russian_response_adds_identity_and_name_question_only() -> N
         customer_name=None,
     )
 
-    assert response == (
-        "Hello, I'm Noor from Treejar. "
-        "May I know your name so I can address you properly?"
-    )
+    assert response == build_name_gate_reply(language="en")
     assert "ergonomic chairs" not in response
 
 
@@ -69,10 +60,7 @@ def test_first_turn_arabic_response_adds_identity_and_name_question_only() -> No
         customer_name=None,
     )
 
-    assert (
-        response
-        == "مرحبًا، أنا Noor من Treejar. هل يمكنني معرفة اسمك لأخاطبك بشكل مناسب؟"
-    )
+    assert response == build_name_gate_reply(language="ar")
 
 
 def test_first_turn_english_response_strips_old_identity() -> None:
@@ -89,19 +77,16 @@ def test_first_turn_english_response_strips_old_identity() -> None:
 
 
 def test_first_turn_response_does_not_duplicate_compliant_opening() -> None:
-    original = (
-        "Hello, I'm Noor from Treejar. "
-        "May I know your name so I can address you properly?"
-    )
+    """The gate reply is regenerated, not appended to, however it arrives."""
 
     response = apply_opening_guard(
-        original,
+        build_name_gate_reply(language="en"),
         language="en",
         is_first_turn=True,
         customer_name=None,
     )
 
-    assert response == original
+    assert response == build_name_gate_reply(language="en")
     assert response.count("Noor") == 1
     assert response.count("Treejar") == 1
 
@@ -117,10 +102,7 @@ def test_first_turn_response_strips_generic_greeting_before_canonical_opening() 
         customer_name=None,
     )
 
-    assert response == (
-        "Hello, I'm Noor from Treejar. "
-        "May I know your name so I can address you properly?"
-    )
+    assert response == build_name_gate_reply(language="en")
     assert response.count("Hello") == 1
     assert response.count("Treejar") == 1
     assert "Welcome to Treejar" not in response
@@ -178,3 +160,35 @@ def test_first_turn_response_adds_identity_and_name_question_legacy_removed() ->
 
     assert response.startswith("Hello, I'm Noor from Treejar.")
     assert "May I know your name so I can address you properly?" in response
+
+
+def test_the_first_reply_carries_value_before_it_asks_for_anything() -> None:
+    """2026-08-09. Two research reports and our own data agree: a reply that
+    only asks for a name spends the single turn a third of customers ever read.
+    34% open with a bare greeting, 36% never send a second message."""
+
+    reply = build_name_gate_reply(
+        language="en",
+        anchor_line="Chairs from AED 139, desks and workstations from AED 1,813.",
+    )
+
+    # Who we are, then what we can do now, then the price, then the question.
+    assert reply.index("Noor from Treejar") < reply.index("live prices")
+    assert reply.index("live prices") < reply.index("AED 139")
+    assert reply.index("AED 139") < reply.index("May I know your name")
+    # One folded question, answerable in three words.
+    assert reply.count("?") == 2
+    assert "chairs, desks and workstations, or a full office" in reply
+    # Short enough to read on a phone.
+    assert len(reply) < 320
+
+
+def test_the_first_reply_stands_without_an_anchor_rather_than_invent_one() -> None:
+    """Every figure is a catalog row. If the catalog cannot answer, the reply
+    goes out without a number, never with a plausible one."""
+
+    reply = build_name_gate_reply(language="en")
+
+    assert "AED" not in reply
+    assert "May I know your name" in reply
+    assert "live prices" in reply

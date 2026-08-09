@@ -46,6 +46,7 @@ from src.llm.engine import (
     process_message,
     sales_agent,
 )
+from src.llm.opening_guard import build_name_gate_reply
 from src.models.conversation import Conversation
 from src.schemas.common import SalesStage
 from src.schemas.product import ProductRead
@@ -439,8 +440,17 @@ def test_the_retry_says_what_went_wrong_last_time() -> None:
     assert "previous attempt spelled figures out" in retry
 
 
+_NAME_QUESTION = "May I know your name so I can address you properly?"
+
+
 def _assert_first_turn_opening(text: str, expected_tail: str) -> None:
     assert text.startswith("Hello, I'm Noor from Treejar.")
+    if expected_tail == _NAME_QUESTION:
+        # The gate reply carries what we can do and an anchor price before it
+        # asks anything, so the name question is no longer last -- it is folded
+        # with a category question at the end. `tj-2m5m`, 2026-08-09.
+        assert expected_tail in text
+        return
     assert text.endswith(expected_tail)
 
 
@@ -3684,10 +3694,7 @@ async def test_process_message_first_turn_service_handoff_gets_opening(
 
     assert mock_run.await_count == 0
     mock_notify.assert_not_awaited()
-    assert response.text == (
-        "Hello, I'm Noor from Treejar. "
-        "May I know your name so I can address you properly?"
-    )
+    assert response.text == build_name_gate_reply(language="en")
     assert "May I know your name so I can address you properly?" in response.text
     assert "manager" not in response.text.lower()
 
@@ -3743,10 +3750,7 @@ async def test_process_message_first_turn_unknown_name_blocks_exact_sku_side_eff
         messaging_client=messaging,
     )
 
-    assert response.text == (
-        "Hello, I'm Noor from Treejar. "
-        "May I know your name so I can address you properly?"
-    )
+    assert response.text == build_name_gate_reply(language="en")
     assert response.model == "name-gate"
     assert response.deferred_product_media == ()
     assert conv.escalation_status == "none"
@@ -5308,10 +5312,7 @@ async def test_process_message_first_turn_llm_response_gets_contractual_opening(
         messaging_client=messaging,
     )
 
-    assert (
-        response.text
-        == "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
-    )
+    assert response.text == build_name_gate_reply(language="en")
 
 
 @pytest.mark.asyncio
@@ -5349,10 +5350,7 @@ async def test_process_message_assist_opener_returns_clarification_without_hando
     )
 
     assert mock_notify.await_count == 0
-    assert (
-        response.text
-        == "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
-    )
+    assert response.text == build_name_gate_reply(language="en")
     # The name gate parks the request and asks for a name first; answering it
     # is what resumes the request. The Russian phrasing this test used to carry
     # was never recognised as a request at all, so it left no metadata -- that
@@ -5396,10 +5394,7 @@ async def test_process_message_first_turn_static_clarification_gets_opening(
     )
 
     assert mock_notify.await_count == 0
-    assert (
-        response.text
-        == "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
-    )
+    assert response.text == build_name_gate_reply(language="en")
 
 
 @pytest.mark.asyncio

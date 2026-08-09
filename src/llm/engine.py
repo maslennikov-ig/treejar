@@ -1663,6 +1663,70 @@ def _requested_seat_count(text: str) -> int | None:
     return _planning_count_value(match.group("count")) if match else None
 
 
+# Narrower than the family term lists on purpose: the anchor names what it
+# prices. "workspace" also matches coffee tables, and quoting one under the
+# label "desks and workstations" would be true of the row and false to the
+# customer.
+_ANCHOR_FAMILIES: tuple[tuple[str, tuple[str, ...], str, str], ...] = (
+    ("seating", ("chair",), "Chairs", "الكراسي"),
+    (
+        "workspace",
+        ("desk", "workstation"),
+        "desks and workstations",
+        "المكاتب ومحطات العمل",
+    ),
+)
+_anchor_line_cache: dict[str, str] = {}
+
+
+async def catalog_anchor_line(db: AsyncSession, language: str) -> str | None:
+    """ "Chairs from AED 140, desks and workstations from AED 1,813."
+
+    The cheapest live row in each of the two families a customer names first.
+    It exists so the opening reply carries a real number before the customer has
+    told us anything, which is what both research reports of 2026-08-09 say the
+    first message must do.
+
+    Every figure is a catalog row. There is no fallback text with a number in
+    it: if the catalog cannot answer, the reply simply goes out without an
+    anchor rather than with an invented one.
+    """
+
+    from src.models.product import Product
+
+    is_arabic = is_arabic_customer_language(language)
+    cache_key = "ar" if is_arabic else "en"
+    cached = _anchor_line_cache.get(cache_key)
+    if cached is not None:
+        return cached or None
+
+    parts: list[str] = []
+    for _family, terms, label_en, label_ar in _ANCHOR_FAMILIES:
+        conditions = [func.lower(Product.name_en).like(f"%{term}%") for term in terms]
+        if not conditions:
+            continue
+        result = await db.execute(
+            select(func.min(Product.price)).where(
+                or_(*conditions),
+                Product.price.is_not(None),
+                Product.price > 0,
+                Product.stock > 0,
+            )
+        )
+        lowest = result.scalar_one_or_none()
+        if not isinstance(lowest, int | float | Decimal) or isinstance(lowest, bool):
+            continue
+        amount = f"{float(lowest):,.0f}"
+        label = label_ar if is_arabic else label_en
+        parts.append(
+            f"{label} من {amount} درهم" if is_arabic else f"{label} from AED {amount}"
+        )
+
+    line = (", ".join(parts) + ".") if parts else ""
+    _anchor_line_cache[cache_key] = line
+    return line or None
+
+
 def _catalog_product_capacity(product_text: str) -> int | None:
     normalized = _normalize_text(product_text)
     match = _CATALOG_CAPACITY_RE.search(normalized)
@@ -15255,6 +15319,9 @@ async def process_message(
         conv.metadata_ = metadata
         await db.flush()
 
+    # Filled only on the name-gate path, where the catalog can be read.
+    opening_anchor_line: list[str | None] = [None]
+
     def _apply_first_turn_opening_guard(text: str) -> str:
         assert conv is not None
         return apply_opening_guard(
@@ -15262,6 +15329,7 @@ async def process_message(
             language=str(conv.language),
             is_first_turn=is_first_turn,
             customer_name=_known_customer_name_for_guards(),
+            anchor_line=opening_anchor_line[0],
         )
 
     def _deferred_product_media_for_response(
@@ -16082,6 +16150,7 @@ async def process_message(
             combined_text=combined_text,
             masked_text=masked_text,
         )
+        opening_anchor_line[0] = await catalog_anchor_line(db, str(conv.language))
         response = _build_static_response(
             "Hello",
             "name-gate",
