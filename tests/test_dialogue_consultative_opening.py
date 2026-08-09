@@ -23,6 +23,8 @@ from src.dialogue.claim_contract import (
     defers_the_purchase,
     earns_consultative_opening,
     next_contact_directive,
+    project_consultation_directive,
+    signals_a_project,
     substantive_reply_directive,
 )
 
@@ -207,30 +209,55 @@ def test_the_directive_unlocks_no_fact_and_no_commercial_term() -> None:
     assert "you have not verified" in lowered
 
 
-def test_the_directive_carries_the_job_and_the_widening() -> None:
-    """Rules 9 and 10, added 2026-08-08 on the owner's decision that Noor may
-    widen past the literal request from the catalog."""
+def test_the_directive_carries_the_job_but_no_longer_the_widening() -> None:
+    """Rule 9 stays on every early turn; rule 10 moved to the project fork on
+    2026-08-09. Widening a seven-chair order is friction, not expertise."""
 
     lowered = consultative_opening_directive().casefold()
 
     # Rule 9, the job to be done rather than the words of the request.
     assert "what the furniture is for" in lowered
     assert "rather than against the words of the request" in lowered
-    # Rule 10, one missing piece, verified before it is named.
-    assert "do not stop at the item they named" in lowered
-    assert "search_products" in lowered
-    assert "one piece, not a list" in lowered
+    # Rule 10 is not here any more.
+    assert "do not stop at the item they named" not in lowered
+    assert "one piece, not a list" not in lowered
 
 
 def test_the_widening_is_a_package_and_never_a_discount() -> None:
-    """Rule 11's honest form. A combined total over verified rows commits
-    nothing; a discount is a commercial commitment nobody has authorised."""
+    """Rule 11's honest form, now on the project fork where it belongs."""
 
-    lowered = consultative_opening_directive().casefold()
+    lowered = project_consultation_directive().casefold()
 
+    assert "do not stop at the item they named" in lowered
+    assert "search_products" in lowered
+    assert "one piece, not a list" in lowered
     assert "one package with a combined total" in lowered
     assert "a package, never a discount" in lowered
-    assert "never offer a discount or a bonus" in lowered
+    # And the thing a large order actually turns on.
+    assert "availability for the whole order" in lowered
+    assert "never offer a discount" in consultative_opening_directive().casefold()
+
+
+def test_the_fork_reads_quantity_or_complexity_never_a_number_alone() -> None:
+    """Both research reports, 2026-08-09: seven desks for a new room can be a
+    project and thirty replacement chairs need not be."""
+
+    for project in (
+        "we are moving to a new office next month",
+        "need 30 desks",
+        "100 pcs please",
+        "full office setup for the new floor",
+        "please send the BOQ pricing",
+    ):
+        assert signals_a_project(project) is True, project
+
+    for ordinary in (
+        "need 7 chairs",
+        "please quote 4 CH 616 NEW black",
+        "need chairs for the office",
+        "",
+    ):
+        assert signals_a_project(ordinary) is False, ordinary
 
 
 def test_the_directive_does_not_grow_the_product_system_prompt() -> None:

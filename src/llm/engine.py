@@ -49,9 +49,11 @@ from src.dialogue.claim_contract import (
     defers_the_purchase,
     earns_consultative_opening,
     next_contact_directive,
+    project_consultation_directive,
     requests_product_comparison,
     requests_sizing_judgement,
     row_from_catalog_product,
+    signals_a_project,
     sizing_assumption_directive,
     substantive_reply_directive,
 )
@@ -443,6 +445,11 @@ def _turn_runtime_directives(*texts: str, sales_stage: str = "") -> tuple[str, .
         earns_consultative_opening(text, sales_stage=sales_stage) for text in candidates
     ):
         directives.append(consultative_opening_directive())
+        # The fork. Widening a seven-chair order is friction; widening a
+        # fit-out is the job. Same stand-down as the directive above, so a
+        # customer who has narrowed is still left alone.
+        if any(signals_a_project(text) for text in candidates):
+            directives.append(project_consultation_directive())
     return tuple(directives)
 
 

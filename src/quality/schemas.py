@@ -270,7 +270,14 @@ def calculate_weighted_score(
     applicable_rules = sum(
         criterion.applicable for criterion in criteria_by_rule.values()
     )
-    low_coverage = applicable_rules < 8 or len(applicable_blocks) < 3
+    # Lowered from 8 on 2026-08-09. The floor exists so a conversation that
+    # barely engaged cannot be flattered by a handful of easy rules, and 8 was
+    # right when almost every rule applied to almost every conversation. The
+    # transactional fork changed that: rules 6, 10 and 13 are now correctly not
+    # applicable to an ordinary short order, which left honest conversations
+    # like S03 and S04 sitting at 7 and being punished as though they had
+    # dodged the rubric. Five still catches the genuinely empty ones.
+    low_coverage = applicable_rules < 5 or len(applicable_blocks) < 3
     if not nominal_applicable_weight:
         score_scale = 0.0
     elif low_coverage:

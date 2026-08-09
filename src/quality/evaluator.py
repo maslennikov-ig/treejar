@@ -19,8 +19,10 @@ from sqlalchemy.orm import joinedload
 
 from src.core.config import settings
 from src.dialogue.claim_contract import (
+    PROJECT_QUANTITY_THRESHOLD,
     defers_the_decision,
     earns_consultative_opening,
+    signals_a_project,
 )
 from src.dialogue.order_state import (
     QuoteConsent,
@@ -537,6 +539,24 @@ def _build_applicability_assessment(
     # open cross-sell and a longer relationship. A customer who has narrowed to
     # an exact SKU and quantity is not in that conversation, and asking what
     # their company does is noise rather than discovery.
+    comprehensive_order = catalog and _comprehensive_order(metadata)
+    # The fork, from the two research reports of 2026-08-09: rules 6, 10 and 13
+    # are expertise on a fit-out and friction on a seven-chair order, so they
+    # are charged only where widening is wanted. Quantity OR complexity, never a
+    # threshold alone -- seven desks for a new room can be a project and thirty
+    # replacement chairs need not be.
+    planning = metadata.get(_CATALOG_PLANNING_KEY)
+    requested_seats = (
+        planning.get("requested_seats") if isinstance(planning, Mapping) else None
+    )
+    project_scope = bool(
+        comprehensive_order
+        or any(signals_a_project(text) for text in customer_texts)
+        or (
+            isinstance(requested_seats, int)
+            and requested_seats >= PROJECT_QUANTITY_THRESHOLD
+        )
+    )
     open_ended_relationship = bool(
         customer_texts
         and all(
@@ -554,7 +574,6 @@ def _build_applicability_assessment(
     name_already_given = _name_offered_before_the_assistant_spoke(
         messages, state.slots.customer_name
     )
-    comprehensive_order = catalog and _comprehensive_order(metadata)
 
     rules = {rule_number: False for rule_number in range(1, 16)}
     for rule_number in (1, 2):
@@ -562,14 +581,14 @@ def _build_applicability_assessment(
     rules[3] = opening and not name_already_given
     rules[4] = opening and customer_turns > 0
     rules[5] = opening and customer_turns > 0
-    rules[6] = opening and discovery
+    rules[6] = opening and discovery and project_scope
     rules[7] = opening
     rules[8] = discovery
     rules[9] = catalog
-    rules[10] = catalog
+    rules[10] = catalog and project_scope
     rules[11] = comprehensive_order
     rules[12] = quote_started or crm
-    rules[13] = company_context and open_ended_relationship
+    rules[13] = company_context and open_ended_relationship and project_scope
     rules[14] = confirmed_next_step
     rules[15] = (decision_deferred or followup) and not confirmed_next_step
 
@@ -588,6 +607,8 @@ def _build_applicability_assessment(
         signals.add("decision_deferred")
     if open_ended_relationship:
         signals.add("open_ended_relationship")
+    if project_scope:
+        signals.add("project_scope")
     if quote_started:
         signals.add("quote_started")
     if quote_created:

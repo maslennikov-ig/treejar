@@ -468,9 +468,47 @@ def test_rule_applicability_uses_typed_catalog_state_for_any_language(
     )
 
     assert assessment.language == language
-    assert all(assessment.rule_applicability[rule] for rule in (8, 9, 10))
-    assert assessment.rule_applicability[11] is False
+    assert all(assessment.rule_applicability[rule] for rule in (8, 9))
     assert "catalog" in assessment.signals
+
+
+@pytest.mark.parametrize(
+    ("customer_text", "rule_10"),
+    [
+        # "I need an office fit-out for my team" is a project in any language.
+        ("أحتاج تجهيز مكتب لفريقي", True),
+        ("we are moving to a new office next month", True),
+        # An ordinary order is not, and widening it is friction. 2026-08-09.
+        ("أحتاج أثاثاً للفريق", False),
+        ("I need two chairs", False),
+    ],
+)
+def test_rule_10_waits_for_a_project_signal(customer_text: str, rule_10: bool) -> None:
+    from src.quality.evaluator import _build_applicability_assessment
+
+    conversation = SimpleNamespace(
+        language="en",
+        metadata_={
+            "dialogue_kernel": {
+                "state": {
+                    "version": 1,
+                    "active_flow": "product_selection",
+                    "slots": {"pending_product_refs": ["requested-family"]},
+                }
+            }
+        },
+    )
+
+    assessment = _build_applicability_assessment(
+        [
+            _quality_message("user", customer_text),
+            _quality_message("assistant", "A reply in the customer's language"),
+        ],
+        "needs_analysis",
+        conversation,
+    )
+
+    assert assessment.rule_applicability[10] is rule_10
 
 
 def test_rule_11_needs_a_comprehensive_order_not_merely_a_catalog_turn() -> None:

@@ -27,6 +27,7 @@ from src.dialogue.claim_contract import (
     comparison_consultation_directive,
     consultative_opening_directive,
     next_contact_directive,
+    project_consultation_directive,
     sizing_assumption_directive,
     substantive_reply_directive,
 )
@@ -2474,9 +2475,12 @@ async def test_process_message_non_candidate_uses_full_tool_mode(
     assert deps.tool_mode == "full"
     # An opening turn carries the always-on substantive-reply directive and the
     # consultative opening it earns from the stage, and nothing else.
+    # "We need 20 chairs for next week" clears the project threshold, so the
+    # fork adds its directive on top of the two every early turn earns.
     assert deps.runtime_directives == (
         substantive_reply_directive(),
         consultative_opening_directive(),
+        project_consultation_directive(),
     )
 
 

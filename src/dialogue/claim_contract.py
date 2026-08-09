@@ -897,16 +897,78 @@ def consultative_opening_directive() -> str:
         "never the part you leave for a later turn. Find out what the "
         "furniture is for -- the work done in the space, who uses it, what "
         "would make the result right -- and recommend against that job rather "
-        "than against the words of the request. Do not stop at the item they "
-        "named: name the one piece the setup is missing that matters most, "
-        "look it up with search_products first, and give its confirmed price "
-        "and stock. One piece, not a list. If their "
-        "project spans several kinds of furniture, put the pieces together as "
-        "one package with a combined total from those same verified rows -- a "
-        "package, never a discount. Keep the whole reply to at most "
+        "than against the words of the request. Keep the whole reply to at most "
         "one question, counting a folded pair as one. None of this comes before "
         "answering what they asked. Never state a service, term or capability "
         "you have not verified, and never offer a discount or a bonus."
+    )
+
+
+_PROJECT_SCALE_RE = re.compile(
+    r"(?:\bnew\s+office\b|\bnew\s+floor\b|\bfit[\s-]?out\b|\brelocat\w*\b"
+    r"|\bmoving\s+(?:to|into)\b|\bmove[\s-]?in\b|\bwhole\s+office\b"
+    r"|\bfull\s+office\b|\bentire\s+(?:office|floor)\b|\boffice\s+setup\b"
+    r"|\btender\b|\bboq\b|\bbill\s+of\s+quantities\b|\bfloor\s+plan\b"
+    r"|\bturnkey\b|\bhandover\b|\bfurnish(?:ing)?\s+(?:a|an|our|the)\b"
+    r"|مكتب\s+جديد|تجهيز\s+مكتب|مناقصة)",
+    re.IGNORECASE,
+)
+
+_PROJECT_QUANTITY_RE = re.compile(
+    r"\b(\d{2,4})\s*(?:x\s*)?"
+    r"(?:pcs|pieces|units|seats?|people|persons?|staff|employees?|desks?|"
+    r"chairs?|workstations?|كرسي|كراسي|موظف|شخص)\b",
+    re.IGNORECASE,
+)
+
+PROJECT_QUANTITY_THRESHOLD = 20
+
+
+def signals_a_project(customer_text: str) -> bool:
+    """Is this a fit-out rather than a shopping trip?
+
+    Both research reports of 2026-08-09 reached the same conclusion
+    independently: one opening for everyone, then a fork, because a 7-unit
+    order and a 100-unit project want opposite handling. Widening the request
+    is expertise on one and friction on the other.
+
+    Deliberately "quantity **or** complexity", never a magic number alone --
+    report B is explicit that seven executive desks for a new room can need
+    more consultation than thirty replacement chairs. The threshold of 20 is a
+    starting hypothesis against a measured median of 7, to be moved once enough
+    conversations have outcomes attached, not a discovered constant.
+    """
+
+    text = str(customer_text)
+    if not text.strip():
+        return False
+    if _PROJECT_SCALE_RE.search(text):
+        return True
+    return any(
+        int(match.group(1)) >= PROJECT_QUANTITY_THRESHOLD
+        for match in _PROJECT_QUANTITY_RE.finditer(text)
+    )
+
+
+def project_consultation_directive() -> str:
+    """Widen the sale -- but only where widening is wanted.
+
+    This used to live inside `consultative_opening_directive` and fire on every
+    early turn, including the seven-chair orders where both reports call it
+    friction rather than expertise. It now needs a project signal.
+    """
+
+    return (
+        "This is a fit-out, not a single purchase, so the job is to get the "
+        "whole space working rather than to answer one line of it. Do not stop "
+        "at the item they named: name the one piece the setup is missing that "
+        "matters most, look it up with search_products first, and give its "
+        "confirmed price and stock. One piece, not a list. Where their project "
+        "spans several kinds of furniture, put the pieces together as one "
+        "package with a combined total from those same verified rows -- a "
+        "package, never a discount. On a quantity this size, availability for "
+        "the whole order matters more than the lowest unit price: say plainly "
+        "if stock covers it, and if it does not, say what does."
     )
 
 
