@@ -472,7 +472,9 @@ async def test_dialogue_kernel_expired_quote_details_frame_does_not_hijack_produ
 
     assert result.should_use_kernel is False
     assert result.decision.flow == "product_selection"
-    assert result.decision.action == "clarify_product_selection"
+    # The kernel keeps the state and hands the quantity question to the model,
+    # which can read the customer's wording. Changed 2026-08-09, `tj-o29r`.
+    assert result.decision.action == "delegate_quantity_question_to_legacy"
     assert (
         conv.metadata_["dialogue_kernel"]["state"]["expected_answer_frames"][0][
             "status"

@@ -12353,7 +12353,9 @@ async def test_process_message_kernel_quantity_prompt_stores_order_runtime_frame
         messaging_client=messaging,
     )
 
-    assert first_response.model == "dialogue-kernel|product_selection"
+    # The kernel no longer answers this itself: it keeps the state and lets the
+    # model read the message, so the route is the legacy clarify. `tj-o29r`.
+    assert first_response.model == "mock-model|product-quantity-clarify"
     quantity_frame = conv.metadata_["order_runtime"]["pending_question_frame"]
     assert quantity_frame["question_kind"] == "quantity"
     assert quantity_frame["source_refs"][0]["source_text"] == "CH 140"
@@ -12376,9 +12378,10 @@ async def test_process_message_kernel_quantity_prompt_stores_order_runtime_frame
     assert [(item["sku"], item["quantity"]) for item in pending_quote["items"]] == [
         ("CH-140", 2)
     ]
+    # The model itself is still not called for this turn, but the kernel no
+    # longer short-circuits the pipeline, so RAG runs as it does on any other
+    # legacy turn. `tj-o29r`, 2026-08-09.
     mock_run.assert_not_awaited()
-    mock_search_knowledge.assert_not_awaited()
-    mock_search_behavior_rules.assert_not_awaited()
     mock_notify_manager.assert_not_awaited()
 
 

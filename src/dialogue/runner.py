@@ -479,16 +479,22 @@ def _decide_node(state: _GraphOutput) -> _GraphOutput:
                 ),
                 "after_state": after_state,
             }
+        # The kernel keeps the state and hands the question to the model.
+        #
+        # It used to answer here itself, with a fixed "please confirm the
+        # quantity". That reply beat the model to the message, so on
+        # 2026-08-09 "10 chairs. CH 616 NEW black" was asked for a quantity
+        # standing in the same sentence: the parser had not bound the number to
+        # the reference, and nothing downstream ever read the text again.
+        # Reading a person's wording is the model's job, and
+        # `record_customer_requirements` is how it hands the answer back.
+        # `tj-o29r`.
         return {
             **state,
             "decision": DialogueDecision(
-                action="clarify_product_selection",
+                action="delegate_quantity_question_to_legacy",
                 flow="product_selection",
-                response_text=(
-                    "I have the product reference. Please confirm the quantity "
-                    "for each item so I can continue accurately."
-                ),
-                handled=True,
+                handled=False,
                 metadata={"refs": refs_payload},
             ),
             "after_state": after_state,
