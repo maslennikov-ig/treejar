@@ -124,8 +124,10 @@ def test_the_directive_names_the_three_moves_that_scored_zero() -> None:
     # Rule 7, zero in ten of ten.
     assert "what treejar offers" in lowered
     assert "one short clause" in lowered
-    # Rule 6, four of twenty.
-    assert "acknowledge the project" in lowered
+    # Rule 6 left this directive on 2026-08-09: both research reports call a
+    # compliment on a seven-chair order imitation rather than rapport, so the
+    # acknowledgement lives on the project fork now.
+    assert "acknowledg" not in lowered
     # Rule 13, zero in five of five where it applies.
     assert "what their company does" in lowered
 
@@ -183,8 +185,9 @@ def test_no_move_is_gated_on_what_noor_thinks_she_already_did() -> None:
     ):
         assert escape not in lowered, escape
 
-    # And the two that replaced them are anchored to this reply, not to memory.
-    assert lowered.count("in this reply") >= 2
+    # And what replaced them is anchored to this reply, not to memory. One of
+    # the two anchors left with rule 6 for the project fork on 2026-08-09.
+    assert "in this reply" in lowered
     assert "knowing the company's name is not knowing its line of work" in lowered
 
 
@@ -235,6 +238,9 @@ def test_the_widening_is_a_package_and_never_a_discount() -> None:
     assert "a package, never a discount" in lowered
     # And the thing a large order actually turns on.
     assert "availability for the whole order" in lowered
+    # Rule 6, in the only place it is not filler.
+    assert "acknowledging what they are building" in lowered
+    assert "an order of chairs is not" in lowered
     assert "never offer a discount" in consultative_opening_directive().casefold()
 
 

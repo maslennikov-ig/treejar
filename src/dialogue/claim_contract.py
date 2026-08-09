@@ -888,8 +888,7 @@ def consultative_opening_directive() -> str:
         "Treejar offers: an office furniture supplier in the UAE quoting from "
         "its own catalog with confirmed prices and stock. The greeting names "
         "Treejar but does not say what Treejar does, so it does not discharge "
-        "this. In this reply, acknowledge the project they described, in their "
-        "own terms and without flattery. If they have described a team or a "
+        "this. If they have described a team or a "
         "workplace, ask what their company does -- in the same sentence as "
         "whatever else you need to know. Knowing the company's name is not "
         "knowing its line of work, so a name they gave you does not answer "
@@ -960,7 +959,10 @@ def project_consultation_directive() -> str:
 
     return (
         "This is a fit-out, not a single purchase, so the job is to get the "
-        "whole space working rather than to answer one line of it. Do not stop "
+        "whole space working rather than to answer one line of it. Say one "
+        "short line acknowledging what they are building, in their own terms "
+        "and without flattery -- a new office is worth a sentence, an order of "
+        "chairs is not. Do not stop "
         "at the item they named: name the one piece the setup is missing that "
         "matters most, look it up with search_products first, and give its "
         "confirmed price and stock. One piece, not a list. Where their project "
