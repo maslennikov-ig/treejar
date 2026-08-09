@@ -6637,12 +6637,107 @@ def _sentence_shaped(text: str) -> bool:
     return any(word in _PROSE_MARKERS for word in words)
 
 
+def _verified_reference_fact_line(
+    item: ResolvedPurchaseSelectionItem,
+    *,
+    language: str,
+) -> str:
+    """One catalog row, said the way a salesperson would say it.
+
+    Every figure here comes from a row read this turn: the catalog price, and
+    the stock Zoho confirmed. Nothing is inferred and nothing is rounded.
+    """
+
+    name = _product_display_name(item.product)
+    is_arabic = is_arabic_customer_language(language)
+    facts: list[str] = []
+    if item.unit_price is not None:
+        amount = _format_commercial_amount(item.unit_price, item.currency)
+        facts.append(f"{amount} للوحدة" if is_arabic else f"{amount} each")
+    if item.availability is not None and item.availability > 0:
+        facts.append(
+            f"{item.availability} متوفرة الآن"
+            if is_arabic
+            else f"{item.availability} in stock now"
+        )
+    if not facts:
+        return ""
+    joined = "، ".join(facts) if is_arabic else ", ".join(facts)
+    return f"{name}: {joined}."
+
+
+def _verified_quote_line(
+    item: ResolvedPurchaseSelectionItem,
+    *,
+    language: str,
+) -> str:
+    """What the quotation will say, before it is asked to be issued.
+
+    The quantity is the customer's own and the unit price is the catalog's, so
+    the total is arithmetic over two verified numbers rather than a claim. If
+    either is missing the line is dropped whole; half a total is worse than
+    none.
+    """
+
+    if item.unit_price is None:
+        return ""
+    quantity = item.requested.quantity
+    if quantity <= 0:
+        return ""
+    name = _product_display_name(item.product)
+    unit = _format_commercial_amount(item.unit_price, item.currency)
+    total = _format_commercial_amount(item.unit_price * quantity, item.currency)
+    if is_arabic_customer_language(language):
+        return f"{quantity} × {name} بسعر {unit} للوحدة، الإجمالي {total}."
+    return f"{quantity} x {name} at {unit} each, total {total}."
+
+
 def _missing_quantity_product_references_message(
     references: tuple[str, ...],
     language: str,
+    *,
+    verified_items: tuple[ResolvedPurchaseSelectionItem, ...] = (),
 ) -> str:
+    """Answer first, then ask for the one thing that is genuinely missing.
+
+    `tj-ja1v`: this route used to hand the whole turn back -- "I have these
+    product references: CH 616 NEW black. Please confirm the quantity" -- while
+    the price and the live stock the customer had just asked for were one
+    catalog row away. A customer who asks whether we have a chair and is asked
+    for a quantity instead has been made to work for an answer we already had,
+    which both research reports of 2026-08-09 name as the cardinal error of
+    this channel.
+
+    The quantity question stays: it is real, and the total depends on it. What
+    changes is that it no longer comes first and no longer comes alone. Where
+    nothing resolved against the catalog the old wording stands, because then
+    there genuinely is nothing to add.
+    """
+
+    is_arabic = is_arabic_customer_language(language)
+    fact_lines = [
+        line
+        for line in (
+            _verified_reference_fact_line(item, language=language)
+            for item in verified_items
+        )
+        if line
+    ]
+    if fact_lines:
+        if is_arabic:
+            closing = (
+                "كم عدد القطع التي تحتاجها؟ سأؤكد لك الإجمالي وموعد التسليم "
+                "لهذه الكمية."
+            )
+        else:
+            closing = (
+                "How many do you need? I will confirm the total and the delivery "
+                "time for that quantity."
+            )
+        return "\n".join([*fact_lines, "", closing])
+
     item_list = ", ".join(references)
-    if is_arabic_customer_language(language):
+    if is_arabic:
         return (
             f"فهمت المنتجات التالية: {item_list}. يرجى تأكيد الكمية لكل منتج "
             "حتى أتحقق من التوفر وأكمل الخطوة التالية."
@@ -6650,6 +6745,95 @@ def _missing_quantity_product_references_message(
     return (
         f"I have these product references: {item_list}. Please confirm the quantity "
         "for each item so I can check availability and prepare the next step."
+    )
+
+
+async def _verified_facts_for_selection_items(
+    db: AsyncSession,
+    *,
+    conversation_id: UUID,
+    items: tuple[PurchaseSelectionItem, ...],
+    zoho_client: ZohoInventoryClient,
+    crm_context: dict[str, Any] | None,
+) -> tuple[ResolvedPurchaseSelectionItem, ...]:
+    """Read-only: what the catalog and Zoho say about these items, for prose.
+
+    Nothing here selects, reserves or quotes anything; the result is used to
+    write a sentence. A lookup failure costs the fact, never the turn, which is
+    why the whole call is wrapped: a route that could not read a price still
+    has a question worth asking.
+    """
+
+    if not items:
+        return ()
+    try:
+        resolution = await _resolve_purchase_selection(
+            db,
+            conversation_id=conversation_id,
+            selection=PurchaseSelection(items=items),
+            zoho_client=zoho_client,
+            crm_context=crm_context,
+        )
+    except Exception:
+        logger.warning(
+            "Verified fact lookup failed for %s; asking without the facts",
+            [item.sku for item in items],
+            exc_info=True,
+        )
+        return ()
+    return resolution.resolved
+
+
+async def _verified_facts_for_product_references(
+    db: AsyncSession,
+    *,
+    conversation_id: UUID,
+    references: tuple[str, ...],
+    zoho_client: ZohoInventoryClient,
+    crm_context: dict[str, Any] | None,
+) -> tuple[ResolvedPurchaseSelectionItem, ...]:
+    """The catalog rows behind references the customer named without a quantity.
+
+    Quantity is one only because the resolver needs a number, and nothing in
+    this path reads it back.
+    """
+
+    return await _verified_facts_for_selection_items(
+        db,
+        conversation_id=conversation_id,
+        items=tuple(
+            PurchaseSelectionItem(quantity=1, item_candidate=reference, sku=reference)
+            for reference in references
+        ),
+        zoho_client=zoho_client,
+        crm_context=crm_context,
+    )
+
+
+async def _verified_facts_for_quotation_items(
+    db: AsyncSession,
+    *,
+    conversation_id: UUID,
+    items: Sequence[QuotationItem],
+    zoho_client: ZohoInventoryClient,
+    crm_context: dict[str, Any] | None,
+) -> tuple[ResolvedPurchaseSelectionItem, ...]:
+    """The catalog rows behind a quotation that cannot be issued yet."""
+
+    return await _verified_facts_for_selection_items(
+        db,
+        conversation_id=conversation_id,
+        items=tuple(
+            PurchaseSelectionItem(
+                quantity=item.quantity,
+                item_candidate=item.sku,
+                sku=item.sku,
+            )
+            for item in items
+            if item.quantity > 0
+        ),
+        zoho_client=zoho_client,
+        crm_context=crm_context,
     )
 
 
@@ -10648,23 +10832,48 @@ def _quote_missing_required_details_message(
     missing: list[str],
     *,
     language: str = "en",
+    verified_items: tuple[ResolvedPurchaseSelectionItem, ...] = (),
 ) -> str:
+    """Confirm the quotation before asking for the paperwork behind it.
+
+    `tj-ja1v`: this route asked for a name, an email and an address without
+    ever saying what the quotation would be for or what it would come to, so
+    the customer was asked to hand over personal details on the strength of a
+    price they had not been given. The items and the quantity were already
+    resolved by the time this was reached; the price is one catalog row away.
+    """
+
     if not missing:
         return ""
+    quote_lines = [
+        line
+        for line in (
+            _verified_quote_line(item, language=language) for item in verified_items
+        )
+        if line
+    ]
     if is_arabic_customer_language(language):
         labels = [
             _QUOTE_MISSING_REQUIRED_DETAILS_AR.get(item, item) for item in missing
         ]
-        return (
-            "قبل أن أجهز عرض السعر، يرجى مشاركة: "
+        request = (
+            "يرجى مشاركة: "
             f"{'؛ '.join(labels)}. "
             "أحتاج هذه التفاصيل لإضافة بيانات العميل والتوصيل الصحيحة إلى ملف PDF."
         )
-    return (
-        "Before I prepare the quotation, please share: "
+        if not quote_lines:
+            return f"قبل أن أجهز عرض السعر، {request}"
+        return "\n".join(["سيغطي عرض السعر:", *quote_lines, "", f"ولتجهيزه، {request}"])
+    request = (
+        "please share: "
         f"{'; '.join(missing)}. "
         "I need these details to put the correct customer and delivery information "
         "on the PDF."
+    )
+    if not quote_lines:
+        return f"Before I prepare the quotation, {request}"
+    return "\n".join(
+        ["The quotation will cover:", *quote_lines, "", f"To prepare it, {request}"]
     )
 
 

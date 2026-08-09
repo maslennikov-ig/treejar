@@ -19,6 +19,7 @@ from src.llm import deterministic_routes as registry
 from src.llm.deterministic_routes import (
     DETERMINISTIC_CUSTOMER_ROUTES,
     ROUTES_NEVER_RECHECKED_AT_INTRODUCTION,
+    ROUTES_THAT_ONLY_ASK,
 )
 
 _ROUTE_SOURCES = ("src/llm/engine.py", "src/llm/order_quote_routes.py")
@@ -157,6 +158,47 @@ def test_every_route_that_carries_a_write_is_marked_as_one() -> None:
         "sales-opportunity",
         "sales-opportunity-unverified",
     }
+
+
+@pytest.mark.parametrize("label", sorted(DETERMINISTIC_CUSTOMER_ROUTES))
+def test_a_route_that_carries_a_write_reports_what_it_wrote(label: str) -> None:
+    """A route that changed something owes the customer the result of it.
+
+    Every one of these creates a quotation, persists a selection or writes a
+    CRM row. A reply that does not name what happened leaves the customer to
+    guess, which is the failure tj-ja1v measured at 13.3 against 24.8.
+    """
+
+    route = DETERMINISTIC_CUSTOMER_ROUTES[label]
+
+    if route.carries_write:
+        assert route.carries == "verified_fact"
+
+
+def test_the_routes_that_still_only_ask_are_the_ones_named() -> None:
+    """The tj-ja1v contract, with the remaining debt written down.
+
+    A route owning a customer-visible turn carries a verified fact, or
+    acknowledges what the customer just said, or escalates -- or it asks and
+    gives nothing, which is the shape that scored 13.3. That last set is
+    allowed to shrink and must never grow silently: adding a route to it means
+    editing this list, in the same commit, on purpose.
+    """
+
+    asks_only = {
+        label
+        for label, route in DETERMINISTIC_CUSTOMER_ROUTES.items()
+        if route.carries == "asks_only"
+    }
+
+    assert asks_only == set(ROUTES_THAT_ONLY_ASK)
+
+
+def test_no_route_can_only_ask_and_also_claim_a_recheck() -> None:
+    """A recheck that left the turn empty is not a recheck worth recording."""
+
+    for label in ROUTES_THAT_ONLY_ASK:
+        assert DETERMINISTIC_CUSTOMER_ROUTES[label].rechecked_on is None, label
 
 
 def test_the_registry_reports_how_much_of_itself_is_unverified() -> None:

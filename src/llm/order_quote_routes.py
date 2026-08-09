@@ -3,10 +3,11 @@ from __future__ import annotations
 # Runtime helper bindings are loaded lazily from src.llm.engine after engine import
 # completes. Direct imports here would recreate the old import-time cycle.
 # ruff: noqa: TC004
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from importlib import import_module
 from typing import TYPE_CHECKING, Any, Literal
+from uuid import UUID
 
 from pydantic_ai import RunContext
 
@@ -71,6 +72,8 @@ if TYPE_CHECKING:
         _store_pending_quote_brief_confirmation,
         _store_pending_quote_from_last_assistant_selection,
         _store_pending_sales_order_quote,
+        _verified_facts_for_product_references,
+        _verified_facts_for_quotation_items,
         _verified_prose_response,
         create_quotation,
         extract_exact_quote_candidate,
@@ -123,6 +126,8 @@ _ENGINE_BIND_NAMES = (
     "_store_pending_quote_brief_confirmation",
     "_store_pending_quote_from_last_assistant_selection",
     "_store_pending_sales_order_quote",
+    "_verified_facts_for_product_references",
+    "_verified_facts_for_quotation_items",
     "_verified_prose_response",
     "create_quotation",
     "extract_exact_quote_candidate",
@@ -310,6 +315,27 @@ async def _order_quote_route_for_turn(
     resumed_name_gate_intent: str | None = None,
 ) -> LLMResponse | None:
     _bind_engine_globals()
+
+    async def _missing_details_message(items: Sequence[Any], missing: list[str]) -> str:
+        """Say what the quotation covers before asking for the details it needs.
+
+        `tj-ja1v`. Every route below that asks for a name, an email or an
+        address has already resolved the items and quantities; only the price
+        was left unread, and reading it is what turns a form into an offer.
+        """
+
+        verified_items = await _verified_facts_for_quotation_items(
+            db,
+            conversation_id=UUID(str(conversation.id)),
+            items=items,
+            zoho_client=zoho_client,
+            crm_context=crm_context,
+        )
+        return _quote_missing_required_details_message(
+            missing,
+            language=str(conversation.language),
+            verified_items=verified_items,
+        )
 
     pending_reference_selection = pending_reference_route.selection
     resumed_catalog_selection = None
@@ -684,10 +710,7 @@ async def _order_quote_route_for_turn(
             await _clear_quote_intent_frame(db, conversation)
             await clear_verified_policy_repair_state()
             return build_static_response(
-                _quote_missing_required_details_message(
-                    missing_required,
-                    language=str(conversation.language),
-                ),
+                await _missing_details_message(exact_quote_items, missing_required),
                 f"{db_model_main}|exact-quote-missing-details",
                 response_deps=exact_quote_deps,
                 allow_product_media=False,
@@ -811,10 +834,18 @@ async def _order_quote_route_for_turn(
             if fallback_frame is not None:
                 await _store_pending_question_frame(db, conversation, fallback_frame)
         await clear_verified_policy_repair_state()
+        verified_items = await _verified_facts_for_product_references(
+            db,
+            conversation_id=UUID(str(conversation.id)),
+            references=missing_quantity_references,
+            zoho_client=zoho_client,
+            crm_context=crm_context,
+        )
         return build_static_response(
             _missing_quantity_product_references_message(
                 missing_quantity_references,
                 str(conversation.language),
+                verified_items=verified_items,
             ),
             f"{db_model_main}|product-quantity-clarify",
             allow_product_media=False,
@@ -915,9 +946,8 @@ async def _order_quote_route_for_turn(
             if missing_required:
                 await clear_verified_policy_repair_state()
                 return build_static_response(
-                    _quote_missing_required_details_message(
-                        missing_required,
-                        language=str(conversation.language),
+                    await _missing_details_message(
+                        resolved_exact_quote_items, missing_required
                     ),
                     f"{db_model_main}|quote-resume-missing-details",
                     allow_product_media=False,
@@ -970,10 +1000,7 @@ async def _order_quote_route_for_turn(
             if missing_required:
                 await clear_verified_policy_repair_state()
                 return build_static_response(
-                    _quote_missing_required_details_message(
-                        missing_required,
-                        language=str(conversation.language),
-                    ),
+                    await _missing_details_message(list(quote_items), missing_required),
                     f"{db_model_main}|quote-resume-missing-details",
                     allow_product_media=False,
                 )
@@ -1018,10 +1045,7 @@ async def _order_quote_route_for_turn(
             if missing_required:
                 await clear_verified_policy_repair_state()
                 return build_static_response(
-                    _quote_missing_required_details_message(
-                        missing_required,
-                        language=str(conversation.language),
-                    ),
+                    await _missing_details_message(list(quote_items), missing_required),
                     f"{db_model_main}|quote-resume-missing-details",
                     allow_product_media=False,
                 )

@@ -12706,7 +12706,16 @@ async def test_order_cutover_gh42_second_occurrence_bare_quantity_uses_runtime_f
     catalog_result = MagicMock()
     catalog_result.scalars.return_value.all.return_value = [product]
     db.get.side_effect = get_side_effect
-    db.execute.side_effect = [caption_result, sku_result, catalog_result]
+    # Two more results than this test used to need. The quantity question now
+    # reads the catalog row first so it can answer before it asks (`tj-ja1v`),
+    # which costs one caption lookup and one SKU lookup on the first turn.
+    db.execute.side_effect = [
+        caption_result,
+        sku_result,
+        caption_result,
+        sku_result,
+        catalog_result,
+    ]
     zoho.get_item.return_value = {
         "sku": "SK-45",
         "stock_on_hand": 9,
@@ -12725,6 +12734,11 @@ async def test_order_cutover_gh42_second_occurrence_bare_quantity_uses_runtime_f
     )
 
     assert first_response.model == "mock-model|product-quantity-clarify"
+    # The route asks for the quantity and answers what the customer named in
+    # the same breath, from the catalog row and the confirmed stock.
+    assert "620.00 AED each" in first_response.text
+    assert "9 in stock now" in first_response.text
+    assert "how many do you need?" in first_response.text.casefold()
     runtime = conv.metadata_["order_runtime"]
     assert runtime["pending_question_frame"]["question_kind"] == "quantity"
     assert runtime["pending_question_frame"]["source_refs"][0]["source_text"] == (
@@ -23121,3 +23135,203 @@ def test_the_scope_switch_reads_one_config_value(
     configured: str, expected: bool
 ) -> None:
     assert engine_module._claim_contract_runs_every_catalog_turn(configured) is expected
+
+
+# --- tj-jxv7 and tj-ja1v: answer before you ask -----------------------------
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_a_resumed_sku_question_is_not_answered_from_the_faq_branch(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """`tj-jxv7`, and the hypothesis it named turned out to be the wrong one.
+
+    The filed guess was that `combined_text` is rewritten to the stored question
+    after the turn directives are chosen, leaving the resumed turn directive-
+    less. It is not: the rewrite happens well before `_turn_runtime_directives`
+    runs. What actually happened is one layer earlier. "hi do u have ch616 in
+    black" classified as a service question, because the message carries no
+    product word and `ch616` has no word boundary in front of its digits, so
+    the resumed turn ran under the FAQ-only service directives -- answer only
+    from the knowledge base, state no prices -- against an empty FAQ. A
+    customer asking whether we stock a chair we do stock was asked for a
+    quantity instead.
+    """
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    query = "hi do u have ch616 in black"
+    name_reply = "Omar"
+    mock_build_history.side_effect = [
+        _first_turn_history(query),
+        [
+            ModelRequest(parts=[SystemPromptPart(content="summary")]),
+            ModelRequest(parts=[UserPromptPart(content=query)]),
+            ModelResponse(parts=[TextPart(content="Hello, I'm Noor from Treejar.")]),
+            ModelRequest(parts=[UserPromptPart(content=name_reply)]),
+        ],
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("CH 616 NEW black is in stock at AED 295.")
+
+    first_response = await process_message(
+        conversation_id=conv.id,
+        combined_text=query,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+    second_response = await process_message(
+        conversation_id=conv.id,
+        combined_text=name_reply,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert first_response.model == "name-gate"
+    assert second_response.model == "mock-model"
+    mock_run.assert_awaited_once()
+    directives = mock_run.await_args.kwargs["deps"].runtime_directives
+    assert not any("service policy branch" in directive for directive in directives)
+    assert not any(
+        "answer only from the FAQ facts" in directive for directive in directives
+    )
+    assert substantive_reply_directive() in directives
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("hi do u have ch616 in black", "product"),
+        ("do you have CH 616 NEW black", "product"),
+        ("do you have office chairs?", "product"),
+        ("do you deliver to sharjah", "service_high_risk"),
+        ("what is your return policy", "service_high_risk"),
+        # A separator would turn "for 12" and "AED 300" into SKUs, so the
+        # compact form is the only one this pattern claims.
+        ("can you deliver for 12 people", "service_high_risk"),
+    ],
+)
+def test_a_sku_typed_without_a_space_is_still_a_product_question(
+    text: str, expected: str
+) -> None:
+    from src.llm.verified_answers import classify_question
+
+    assert classify_question(text) == expected
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_the_quotation_says_what_it_covers_before_it_asks_for_the_paperwork(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """`tj-ja1v`. This route used to ask for an email and give nothing back.
+
+    The items and quantities were already resolved when it was reached, so the
+    customer was asked to hand over their name, company and delivery address on
+    the strength of a price they had never been shown.
+    """
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Aisha"
+    conv.language = "en"
+    conv.metadata_ = {}
+    text = "Please prepare a quotation for 4 x CH 616 NEW black."
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("Let me know how you would like to go on.")
+
+    product = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH-616",
+        zoho_item_id="zoho-ch-616",
+        name_en="Skyland Operative Chair CH 616 NEW black",
+        description_en="Skyland Operative Chair CH 616 NEW black",
+        price=295.0,
+        currency="AED",
+        stock=36,
+        attributes={},
+    )
+    catalog_result = MagicMock()
+    catalog_result.scalars.return_value.all.return_value = []
+    catalog_result.scalar_one_or_none.return_value = product
+    db.execute.return_value = catalog_result
+    zoho.get_item.return_value = {
+        "sku": "CH-616",
+        "stock_on_hand": 36,
+        "rate": 295.0,
+        "currency_code": "AED",
+    }
+
+    orig_resolve = engine_module._resolve_exact_quote_candidate_sku
+    engine_module._resolve_exact_quote_candidate_sku = AsyncMock(return_value="CH-616")
+    try:
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=text,
+            db=db,
+            redis=redis,
+            embedding_engine=embedding,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+    finally:
+        engine_module._resolve_exact_quote_candidate_sku = orig_resolve
+
+    assert response.model == "mock-model|exact-quote-missing-details"
+    assert "The quotation will cover:" in response.text
+    assert "4 x Skyland Operative Chair CH 616 NEW black" in response.text
+    assert "295.00 AED each" in response.text
+    assert "total 1,180.00 AED" in response.text
+    assert "please share:" in response.text
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+def test_the_missing_details_request_still_stands_when_no_price_could_be_read() -> None:
+    """A lookup failure costs the fact, never the turn."""
+
+    message = engine_module._quote_missing_required_details_message(
+        ["full name", "email"],
+        language="en",
+    )
+
+    assert message.startswith("Before I prepare the quotation, please share:")
+    assert "full name; email" in message
