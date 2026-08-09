@@ -371,3 +371,24 @@ def test_the_customer_never_gets_their_own_sentence_back_as_a_product() -> None:
     ):
         line = SimpleNamespace(source_text=prose, catalog_ref="CH-616")
         assert _displayable_product_reference(line) == "CH-616", prose
+
+
+def test_a_sentence_is_not_a_product_reference_unless_it_names_a_model() -> None:
+    """2026-08-09, live: a budget sentence passed the loose SKU signal on the
+    strength of "300" and came back to the customer as a product name."""
+
+    from src.llm import engine as engine_module
+
+    assert (
+        engine_module._missing_quantity_reference_segments_from_text(
+            "lets say 300 aed max per chair. we need them by end of month"
+        )
+        == ()
+    )
+    # A named model settles it, sentence or not.
+    assert engine_module._missing_quantity_reference_segments_from_text(
+        "I need SKYLAND NOVO 2400 Meeting Table"
+    )
+    assert engine_module._missing_quantity_reference_segments_from_text(
+        "CH 616 NEW black"
+    )

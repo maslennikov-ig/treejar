@@ -6329,9 +6329,17 @@ def _has_product_reference_sku_signal(segment: str) -> bool:
 def _is_missing_quantity_product_reference(segment: str) -> bool:
     if not segment or _segment_starts_with_explicit_quantity(segment):
         return False
-    if _has_product_reference_sku_signal(segment):
+    # A named model settles it, sentence or not: "I need SKYLAND NOVO 2400
+    # Meeting Table" is a product reference wrapped in words.
+    if _NAMED_MODEL_REFERENCE_RE.search(segment) is not None:
         return True
-    return _NAMED_MODEL_REFERENCE_RE.search(segment) is not None
+    # Without one, a sentence is not a reference however many numbers it
+    # carries. On 2026-08-09 "lets say 300 aed max per chair. we need them by
+    # end of month" passed the loose SKU signal on the strength of "300" and
+    # was read back to the customer as the name of a product they asked for.
+    if _sentence_shaped(segment):
+        return False
+    return _has_product_reference_sku_signal(segment)
 
 
 def _extract_missing_quantity_product_references(text: str) -> tuple[str, ...]:
