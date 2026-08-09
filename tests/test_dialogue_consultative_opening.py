@@ -338,3 +338,36 @@ def test_the_substantive_directive_does_noors_own_next_step() -> None:
     assert "your tools can do now" in lowered
     assert "instead of handing it back to them" in lowered
     assert "a row you verified this turn" in lowered
+
+
+# --- what the customer said, recorded rather than re-parsed --------------------
+
+
+def test_a_product_name_survives_the_display_boundary() -> None:
+    """A real catalog name is words without function words, and must show."""
+
+    from types import SimpleNamespace
+
+    from src.llm.engine import _displayable_product_reference
+
+    line = SimpleNamespace(
+        source_text="SKYLAND NOVO 2400 Meeting Table", catalog_ref="CH-616"
+    )
+    assert _displayable_product_reference(line) == "SKYLAND NOVO 2400 Meeting Table"
+
+
+def test_the_customer_never_gets_their_own_sentence_back_as_a_product() -> None:
+    """2026-08-09, in a live conversation: a budget sentence came back as a
+    product reference. The catalog reference is the thing that is a product."""
+
+    from types import SimpleNamespace
+
+    from src.llm.engine import _displayable_product_reference
+
+    for prose in (
+        "lets say 300 aed max per chair. we need them by end of month",
+        "we need them by end of month",
+        "please send me what you have for the new office",
+    ):
+        line = SimpleNamespace(source_text=prose, catalog_ref="CH-616")
+        assert _displayable_product_reference(line) == "CH-616", prose

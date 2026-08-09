@@ -413,6 +413,7 @@ def _decide_node(state: _GraphOutput) -> _GraphOutput:
             }
             for ref in refs
         ]
+
         after_state = dialogue_state.model_copy(
             update={"active_flow": "product_selection"}
         )
@@ -429,18 +430,38 @@ def _decide_node(state: _GraphOutput) -> _GraphOutput:
             },
             deep=True,
         )
-        if any(ref.quantity is not None for ref in refs):
+        # A quantity the customer already gave is still given, whatever wording
+        # carried it. `record_customer_requirements` writes it into the slot from
+        # the model's own reading, so a reference arriving without a number
+        # attached is not a reference without a number known. `tj-o29r`.
+        known_quantities = {
+            _quantity_key(item.get("sku")): item.get("quantity")
+            for item in dialogue_state.slots.selected_items
+            if isinstance(item, dict)
+            and item.get("sku")
+            and isinstance(item.get("quantity"), int)
+        }
+        effective = {
+            ref.normalized: (
+                ref.quantity
+                if ref.quantity is not None
+                else known_quantities.get(_quantity_key(ref.normalized))
+            )
+            for ref in refs
+            if ref.normalized
+        }
+        if any(quantity is not None for quantity in effective.values()):
             after_state = after_state.model_copy(
                 update={
                     "slots": after_state.slots.model_copy(
                         update={
                             "selected_items": [
                                 {
-                                    "sku": ref.normalized,
-                                    "quantity": ref.quantity,
+                                    "sku": sku,
+                                    "quantity": quantity,
                                 }
-                                for ref in refs
-                                if ref.quantity is not None
+                                for sku, quantity in effective.items()
+                                if quantity is not None
                             ]
                         },
                         deep=True,
@@ -507,6 +528,17 @@ def _has_active_flow_frame(state: DialogueState, flow: str) -> bool:
         frame.status == "active" and frame.flow == flow
         for frame in state.expected_answer_frames
     )
+
+
+def _quantity_key(sku: object) -> str:
+    """Compare SKUs across the forms the runtime uses.
+
+    The parser normalizes to `CH-616`; the catalog stores `CH 616`; a customer
+    types `ch616`. A quantity recorded against one must be found from another,
+    or the conversation asks again for what it already holds.
+    """
+
+    return "".join(ch for ch in str(sku or "").casefold() if ch.isalnum())
 
 
 def _extract_product_selection_refs(text: str) -> list[CatalogParsedRef]:

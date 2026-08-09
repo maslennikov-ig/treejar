@@ -31,6 +31,13 @@ class DialogueSlots(BaseModel):
     pending_product_refs: list[str] = Field(default_factory=list)
     quote_sent: bool = False
     post_quotation_status: str | None = None
+    # The four facts a quotation needs, as the customer gave them. Written only
+    # by `record_customer_requirements`, which the model calls after reading the
+    # message: no regex can cover every way a person writes "ten of those".
+    budget_cap_aed: float | None = None
+    needed_by: str | None = None
+    decision_authority: str | None = None
+    company_activity: str | None = None
 
 
 class LastQuestion(BaseModel):

@@ -6438,12 +6438,109 @@ def _missing_quantity_references_from_order_runtime_result(
     for line in result.state.lines:
         if line.status != "needs_quantity":
             continue
-        reference = " ".join((line.source_text or line.catalog_ref).split()).strip(
-            " ,.;:-"
-        )
+        reference = _displayable_product_reference(line)
         if reference and reference not in references:
             references.append(reference)
     return tuple(references)
+
+
+_MAX_DISPLAYABLE_REFERENCE_CHARS = 60
+_REFERENCE_SHAPED_RE = re.compile(r"^[\w\s./+-]{1,60}$", re.UNICODE)
+
+
+def _displayable_product_reference(line: Any) -> str:
+    """Name the product, never quote the customer's sentence back at them.
+
+    `source_text` used to win here, and on 2026-08-09 a customer's own line --
+    "lets say 300 aed max per chair. we need them by end of month" -- was read
+    back to them as a product reference. The catalog reference is the thing that
+    is actually a product name; the customer's wording is used only when it is
+    short and reference-shaped, which is where it reads better than the SKU.
+    """
+
+    catalog_ref = " ".join(str(getattr(line, "catalog_ref", "") or "").split()).strip(
+        " ,.;:-"
+    )
+    source_text = " ".join(str(getattr(line, "source_text", "") or "").split()).strip(
+        " ,.;:-"
+    )
+    if (
+        source_text
+        and len(source_text) <= _MAX_DISPLAYABLE_REFERENCE_CHARS
+        and _REFERENCE_SHAPED_RE.match(source_text)
+        and not _sentence_shaped(source_text)
+    ):
+        return source_text
+    return catalog_ref or source_text[:_MAX_DISPLAYABLE_REFERENCE_CHARS]
+
+
+_PROSE_MARKERS = frozenset(
+    {
+        "a",
+        "and",
+        "at",
+        "be",
+        "but",
+        "by",
+        "can",
+        "do",
+        "for",
+        "from",
+        "have",
+        "i",
+        "if",
+        "is",
+        "it",
+        "lets",
+        "max",
+        "me",
+        "my",
+        "need",
+        "of",
+        "on",
+        "or",
+        "our",
+        "per",
+        "please",
+        "say",
+        "should",
+        "so",
+        "that",
+        "the",
+        "them",
+        "then",
+        "they",
+        "this",
+        "to",
+        "want",
+        "we",
+        "will",
+        "with",
+        "you",
+        "your",
+        "من",
+        "في",
+        "على",
+        "نحتاج",
+        "نريد",
+        "لكل",
+        "إلى",
+        "الى",
+    }
+)
+
+
+def _sentence_shaped(text: str) -> bool:
+    """Prose, not a product name.
+
+    A product name is a run of identifiers -- "SKYLAND NOVO 2400 Meeting Table"
+    -- and carries no function words. A sentence cannot avoid them. Counting
+    words or looking for digits both misclassify real catalog names, which is
+    how two tests caught an earlier version of this.
+    """
+
+    words = [word.strip(".,;:!?").casefold() for word in text.split()]
+    return any(word in _PROSE_MARKERS for word in words)
 
 
 def _missing_quantity_product_references_message(
@@ -13512,6 +13609,117 @@ async def update_language(ctx: RunContext[SalesDeps], language: Language) -> str
     logger.info(f"LLM Tool called: update_language(language={language.value})")
     ctx.deps.conversation.language = language.value
     return f"Language updated to {language.value}."
+
+
+class RecordedItem(BaseModel):
+    """One product line exactly as the customer expressed it."""
+
+    sku: str = Field(description="The catalog SKU, as returned by search_products.")
+    quantity: int = Field(description="How many of this SKU the customer wants.")
+
+
+MAX_RECORDED_QUANTITY = 10_000
+MAX_RECORDED_BUDGET_AED = 100_000_000.0
+MAX_RECORDED_TEXT_CHARS = 200
+
+
+@sales_agent.tool
+@_track_sales_tool
+async def record_customer_requirements(
+    ctx: RunContext[SalesDeps],
+    items: list[RecordedItem] | None = None,
+    budget_cap_aed: float | None = None,
+    needed_by: str | None = None,
+    decision_authority: str | None = None,
+    company_activity: str | None = None,
+) -> str:
+    """Record what the customer told you, so the conversation stops re-asking it.
+
+    Call this the moment the customer gives any of these, in any wording. "Ten
+    of those", "we'll take a dozen", "around 10 chairs" are all a quantity.
+    Recording is not answering: you still reply to the customer yourself, and
+    you should repeat back what you recorded so they can correct it.
+
+    Args:
+        items: Product lines the customer has settled on, as SKU and quantity.
+        budget_cap_aed: The most the customer will spend, in AED. Per the unit
+            they stated it in; say which in your reply.
+        needed_by: When they need it, in the customer's own words.
+        decision_authority: Who signs this off, in the customer's own words.
+        company_activity: What the customer's company does.
+    """
+
+    logger.info(
+        "LLM Tool called: record_customer_requirements(items=%s, budget=%s)",
+        len(items or []),
+        budget_cap_aed,
+    )
+    conversation = ctx.deps.conversation
+    state = DialogueState.from_conversation(conversation)
+    slots = state.slots
+
+    recorded: list[str] = []
+    rejected: list[str] = []
+
+    existing = {
+        str(item.get("sku")): item
+        for item in slots.selected_items
+        if isinstance(item, dict) and item.get("sku")
+    }
+    for item in items or []:
+        sku = str(item.sku).strip()
+        if not 1 <= item.quantity <= MAX_RECORDED_QUANTITY:
+            rejected.append(f"{sku or '?'}: quantity {item.quantity} is out of range")
+            continue
+        product = await _find_catalog_product_by_sku(ctx.deps.db, sku)
+        if product is None:
+            # A mis-heard SKU must not become a fact. Search first, then record.
+            rejected.append(f"{sku or '?'}: not a catalog SKU, search_products first")
+            continue
+        canonical = str(product.sku)
+        existing[canonical] = {"sku": canonical, "quantity": item.quantity}
+        recorded.append(f"{item.quantity} x {canonical}")
+    slots.selected_items = list(existing.values())
+
+    def _text(value: str | None) -> str | None:
+        cleaned = " ".join(str(value or "").split())[:MAX_RECORDED_TEXT_CHARS]
+        return cleaned or None
+
+    if budget_cap_aed is not None:
+        if 0 < budget_cap_aed <= MAX_RECORDED_BUDGET_AED:
+            slots.budget_cap_aed = float(budget_cap_aed)
+            recorded.append(f"budget {budget_cap_aed:g} AED")
+        else:
+            rejected.append(f"budget {budget_cap_aed:g} is out of range")
+    for slot_name, value in (
+        ("needed_by", needed_by),
+        ("decision_authority", decision_authority),
+        ("company_activity", company_activity),
+    ):
+        cleaned = _text(value)
+        if cleaned:
+            setattr(slots, slot_name, cleaned)
+            recorded.append(f"{slot_name.replace('_', ' ')}: {cleaned}")
+
+    if not recorded and not rejected:
+        return "Nothing to record."
+
+    conversation.metadata_ = state.to_metadata(conversation.metadata_)
+    try:
+        await ctx.deps.db.flush()
+    except Exception:
+        logger.warning(
+            "Failed to flush recorded requirements for conversation %s",
+            conversation.id,
+        )
+
+    parts = []
+    if recorded:
+        parts.append("Recorded: " + "; ".join(recorded) + ".")
+    if rejected:
+        parts.append("Not recorded: " + "; ".join(rejected) + ".")
+    parts.append("Repeat back what you recorded so the customer can correct it.")
+    return " ".join(parts)
 
 
 @sales_agent.tool

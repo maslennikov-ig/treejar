@@ -493,3 +493,16 @@ def test_reconcile_dialogue_state_removes_impossible_slot_combinations() -> None
     assert reconciled.quote_lifecycle is QuoteLifecycle.QUOTE_OFFERED
     assert reconciled.active_flow == "product_selection"
     assert reconciled.sales_stage == "solution"
+
+
+def test_a_quantity_already_recorded_is_not_asked_for_again() -> None:
+    """`tj-o29r`: the parser binds a quantity only in the `10 x SKU` shape, so
+    "10 chairs. CH 616 NEW black" reached the runner without one and the
+    conversation asked for a number it had been given. The slot now answers."""
+
+    from src.dialogue.runner import _quantity_key
+
+    # The three forms the runtime uses for one SKU must compare equal.
+    assert _quantity_key("CH-616") == _quantity_key("CH 616") == _quantity_key("ch616")
+    assert _quantity_key("CH-616") != _quantity_key("CH-620")
+    assert _quantity_key(None) == ""
