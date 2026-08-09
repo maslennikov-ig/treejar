@@ -16369,10 +16369,13 @@ async def process_message(
         and _has_active_sales_detail_capture_context(conv, deps.recent_history)
         # An acknowledgement is not an answer. The customer's opening question
         # is stored while the name gate runs, and on 2026-08-09 R03 showed what
-        # happens when this route fires before it is served: "hi do u have
-        # ch616 in black" -> name gate -> "Omar" -> "Thanks, I've noted name:
-        # Omar." The question was never answered and the turn carried nothing.
-        and _name_gate_pending_request_from_metadata(conv) is None
+        # happens when this route fires on the turn that completes the gate:
+        # "hi do u have ch616 in black" -> name gate -> "Omar" -> "Thanks, I've
+        # noted name: Omar." The question was never served and the turn carried
+        # nothing. Reading the metadata here is too late -- the pending request
+        # has already been consumed by this point -- so the test is whether this
+        # turn is the one that completed the gate.
+        and not name_gate_completion_reply
         and _is_neutral_detail_capture_update(
             text=combined_text,
             customer_details=current_quote_customer_details,
