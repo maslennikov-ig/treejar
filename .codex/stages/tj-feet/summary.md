@@ -268,3 +268,16 @@ superseded rounds of 2026-08-04 and 2026-08-05 and must never be shown beside
 them without that statement. Different fixtures, different rubric, three axes
 where there was one blended number. The superseded rounds stay immutable where
 they are; `docs/reports/2026-08-05-superseded-sealed-rounds.md` records why.
+
+## Live policy from this stage
+
+Moved out of `.codex/handoff.md` on 2026-08-09, where it was the last thing
+keeping a closed stage in current state. It is still live policy.
+
+- **Owner decision 2026-08-06: a spoiled reply is worse than a model error.**
+  The claim contract blocks only what a retrieved row *refutes*; what it cannot
+  confirm ships and lands in `ContractResult.unverified`, logged every turn.
+  This reverses the original `tj-feet.3` criterion, so an invented attribute the
+  catalog is silent about reaches the customer. Turns rewritten fell to `4/42`,
+  all four the capacity rule.
+  `docs/reports/2026-08-06-claim-contract-gaps-closed.md`.

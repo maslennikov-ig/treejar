@@ -1,11 +1,12 @@
 # Orchestrator Handoff
 
-Updated: 2026-08-08
+Updated: 2026-08-09
 Current branch: `main`
 Current stage id: `tj-4e5j`
 Status: epic `tj-4e5j` is complete and locally green. Epic `tj-swgu` still has
 its release-bound production re-run outstanding, which needs authority that is
-not granted.
+not granted. The ordered plan of 2026-08-09 is delivered on the code side and
+unmeasured: nothing in it has met live traffic.
 
 ## Current truth
 
@@ -15,17 +16,17 @@ not granted.
   reached as `db:5432` over the compose network.
 - **No real customer has ever written Russian.** Of 69 real-phone conversations
   **0** carry Cyrillic, 6 Arabic; all 28 Cyrillic messages are our own harness.
-  The 95% ceiling is near 4.3%: "no evidence", not "impossible". `tj-4e5j.2`.
-- **The catalogue is written with Cyrillic lookalikes, and that is load-bearing.**
-  7 of 920 SKUs begin with Cyrillic `СН`; 132 names use Cyrillic `х` as the
-  dimension separator. `tests/test_catalog_homoglyphs.py` guards the maps that
-  let Latin `CH 135` reach SKU `СН 135`.
+  "No evidence", not "impossible". `tj-4e5j.2`.
+- **The catalogue is written with Cyrillic lookalikes, and that is
+  load-bearing.** 7 of 920 SKUs begin with Cyrillic `СН`, 132 names use Cyrillic
+  `х` as the dimension separator, and `tests/test_catalog_homoglyphs.py` guards
+  the maps that let Latin `CH 135` reach it.
 - **The main model is Luna, and all three layers now say so**: `system_configs`,
   `src/core/config.py` and the production `.env`. For three days only the row
   did, while the source said `z-ai/glm-5.2` -- shadowed. `tj-uidf`.
 - **Two judges, do not confuse them.** Acceptance is a blind Claude reader
   panel, never a paid model; an external judge belongs only to runtime
-  `ai_quality_controls`. Compare within one instrument only.
+  `ai_quality_controls`. Compare within one instrument.
 - **The acceptance figure is two figures, and 24.0 is retired.** At `ac36265`,
   two reads per packet across six readers: **project 19.95 +/- 0.93 over 11.0
   applicable rules, transactional 20.77 +/- 4.41 over 7.6**. The fork made rules
@@ -39,54 +40,70 @@ not granted.
   world is a guard; a condition on what Noor thinks she already did is a leak**,
   since she is both actor and judge. Four removed 2026-08-08, five tests hold
   them out. `tj-2m5m.8`.
-- **The model is not over-constrained, measured.** Directives are a quarter of
-  the prompt and repeated runs differ at 0.34 character similarity.
 - **The prompt carries the business's own goal** -- understand the need and
   quote in the shortest time -- plus jobs-to-be-done, SNAP and four facts before
-  quoting, with a ban on naming any method to the customer. SPIN, Challenger,
-  MEDDIC and Sandler stay out. Grew the frozen prompt on an explicit owner
-  decision. Two research reports in `docs/Research/`.
-- **`6a14f2f` and `5656c82` tie; per-scenario deltas from one generation a side
-  are not evidence.** `docs/reports/2026-08-08-did-the-build-regress.md`.
+  quoting, and a ban on naming any method to the customer. SPIN, Challenger,
+  MEDDIC and Sandler stay out. `docs/Research/`.
 - **Owner decision 2026-08-08: generation stays varied.** `PATH_CORE_CHAT` is
   not pinned to temperature 0. The price is k runs per scenario per side;
   measured within-scenario sd is about 1.7.
-- **Less caution, more selling, 2026-08-08.** Rule 3 stands down when the
-  customer signs their opening message; rule 11 needs a two-family order; an
-  always-on directive forbids a reply that adds nothing; the consultative opening
-  carries rules 9, 10 and a verified package -- never a discount.
-  `docs/reports/2026-08-08-less-caution-more-selling.md`.
+- **Less caution, more selling, 2026-08-08.** Rule 3 stands down on a signed
+  opening; rule 11 needs a two-family order; an always-on directive forbids a
+  reply that adds nothing; the consultative opening carries rules 9, 10 and a
+  verified package, never a discount. `docs/reports/2026-08-08-less-caution-more-selling.md`.
 - **Production runs `0c4dd32`** (2026-08-09, readback matched, health ok).
+- **A route answers before it asks, or it stands down.** `tj-ja1v`. Three of
+  its eight routes were already gone and four already write their prose through
+  the model. The two that only asked now read the catalog row first:
+  `product-quantity-clarify` states price and live stock before asking the
+  quantity, and the two missing-details routes say what the quotation covers and
+  what it comes to before asking for a name and an address. Both lookups are
+  read-only and wrapped -- a failure costs the fact, never the turn. The
+  contract is `DeterministicRoute.carries`, enforced by
+  `tests/test_deterministic_routes.py`; `ROUTES_THAT_ONLY_ASK` names the eight
+  that still give a question and nothing else, written out so a new one cannot
+  join silently.
+- **A SKU typed without a space was not a product question**, so
+  "hi do u have ch616 in black" ran on the verified-answer branch under *answer
+  only from the FAQ, do not invent prices* against an empty FAQ, with no turn
+  directives attached at all. The whole of `tj-jxv7`, and the second half of
+  `tj-6f4z`. The hypothesis that issue filed does not hold. Letters and digits
+  must stay adjacent, or "for 12" and "AED 300" become SKUs.
+- **The widening was re-measured, and it is not what it was filed as.** From
+  the stored `ac36265` panel scores, 82 reads over 41 packets, no live traffic:
+  rule 9 is **1.51/2** on 85% of reads, up from the 0.40 `tj-2m5m.4` was filed
+  on, so half that issue is closed. Rule 10 is 0.88 on 29%, confirmed and now
+  third. Ahead of it, **rule 11 at 0.28** (`tj-wvo4`) and **rule 13 at 0.00 on
+  every one of its twelve reads** (`tj-odeq`) -- directives that never fire,
+  which is where rule 7 was before the opening guard carried the value
+  proposition deterministically.
+- **The realistic set is nine.** Added: `R06` two messages and gone, `R07` a
+  voice note with a SKU the catalog does not hold, `R08` Arabic switching to
+  English mid-thread, `R09` delivery only. `S01`-`S10` untouched, none of the
+  four yet run. `tj-2m5m.10`.
 - **The model reads what the customer said; code owns catalog facts.** Owner
   call after three parser failures in one day. `record_customer_requirements`
   writes quantity, budget, deadline, sign-off and company activity into typed
   slots, bounded, with a catalog check on the SKU so a mis-extraction cannot
-  become a fact. The kernel keeps state and delegates the question rather than
-  answering it first. Prices went the other way: invented USD ranges are gone
-  and budget questions are answered from catalog rows in AED. `tj-1osj`,
-  `tj-o29r`.
-- **`tj-r1vk` is closed**: the runner resets the shared S09/S10 conversation
-  through the product's own service before each.
-- **No figure published 2026-08-07 was real**: double-normalised. `tj-swgu.13`.
-- **The rule.** No movement smaller than its own uncertainty is evidence.
+  become a fact. Invented USD ranges are gone; budget questions are answered
+  from catalog rows in AED. `tj-1osj`, `tj-o29r`.
 - **The test was partly wrong, and not the bot's fault.** Against 74 real
-  openings: 34% are a bare greeting where none of ours is, median 53 chars
-  against our 126, real median 2 customer turns. Owner decision 2026-08-09:
-  S01-S10 frozen as a regression set with no threshold, a realistic set
-  (`R01`-`R05`) built to the measured shape, and the target moves to it. That
-  set found two defects on its first run. `tj-2m5m.10`, `tj-6f4z`.
+  openings: 34% a bare greeting where none of ours is, median 53 chars against
+  our 126, real median 2 customer turns. Owner decision 2026-08-09: S01-S10
+  frozen as a regression set with no threshold, and the target moves to the
+  realistic set built to the measured shape. `tj-2m5m.10`, `tj-6f4z`.
 - **glm-5.2 adopted for the runtime judge on its sd**: 1.3 against
-  deepseek-v4-flash's 3.8. The argument is independence.
-- **`ai_quality_controls` names `deepseek/deepseek-v4-flash`**, all three scopes
-  `disabled`. Pointing it at glm-5.2 and enabling `bot_qa` is a separate,
+  deepseek-v4-flash's 3.8. The argument is independence. But
+  `ai_quality_controls` still names `deepseek/deepseek-v4-flash` with all three
+  scopes `disabled`; repointing it and enabling `bot_qa` is a separate,
   unrequested change.
 - Instrument: `scripts/e2e_acceptance/score_uncertainty.py`; refuses a verdict
-  without repeats.
+  without repeats. **No movement smaller than its own uncertainty is evidence.**
 
 ## Local verification
 
-- 2026-08-08 at `bf7b920` plus the escape-clause fixes: Ruff and format over 347
-  files, Mypy over 167 sources, Pytest `3341 passed, 19 skipped`,
+- 2026-08-09 at the route and classifier work: Ruff and format over 348 files,
+  Mypy over 167 sources, Pytest `3406 passed, 19 skipped`,
   `run_process_verification.sh` OK. Supersedes earlier figures.
 
 ## Active work
@@ -97,65 +114,49 @@ not granted.
   `.12`, `.14`. `.1`: later winner-only release-bound acceptance. `.5`: blocked
   on the provider-confirmed Wazzup status bug.
 
-Ordered plan and rules of engagement:
-`docs/superpowers/specs/2026-08-09-deterministic-routes-and-the-forked-rubric-spec.md`.
-Earlier accepted artifacts remain under `docs/superpowers/`.
+- `tj-swgu.11`, `tj-swgu.12` and `tj-2m5m.10` closed 2026-08-09 -- verified,
+  superseded and delivered, as the ordered plan directed. `tj-jxv7` and
+  `tj-ja1v` stay open for their live verification alone. Earlier accepted
+  artifacts remain under `docs/superpowers/`.
 
 ## Constraints
 
 - Preserve exact scenario wording in fixtures/protected evidence only.
-- The product system prompt grew on 2026-08-09 by explicit owner decision; it
-  does not grow again without one.
+- The product system prompt grew on 2026-08-09 by owner decision; not again
+  without one.
 - Public REST/webhook contracts and the database schema remain unchanged.
 - Preserve unrelated work and untracked user files.
+- Run `repin_traceability_sources.py` after moving current state, or three
+  manifest tests fail on a digest that says nothing about what changed.
 
 ## Next recommended
 
-Next stage id: `tj-ee5f`
+Next stage id: `tj-ee5f`. The ordered plan is
+`docs/superpowers/specs/2026-08-09-deterministic-routes-and-the-forked-rubric-spec.md`;
+what was delivered against it and the re-measure that redirects the rest is
+`docs/reports/2026-08-09-answer-before-you-ask-and-what-the-re-measure-says.md`.
 
-The ordered plan lives in
-`docs/superpowers/specs/2026-08-09-deterministic-routes-and-the-forked-rubric-spec.md`.
-Recommended action: `tj-ja1v` is the spine -- deterministic template routes
-score far below model-written turns, and every finding of 2026-08-09 was an
-instance of it. Start with `tj-jxv7`, which is small and carries a named
-hypothesis to check first.
+Recommended action: **spend a measured round.** The code side of the ordered
+plan is done and none of it has met live traffic, so the honest state of every
+claim above is a headroom estimate. One acceptance run against the two
+baselines -- project 19.95, transactional 20.77 -- says whether the route work
+moved anything, and it needs its own grant.
 
-## Stage tj-feet
-
-Closed 2026-08-06. Capacity-as-marked-assumption, the `gpt-5.6-luna` switch and
-`tj-feet.10` staying off are all in `.codex/stages/tj-feet/summary.md`. One
-decision is live policy and is recorded nowhere else:
-
-- **Owner decision 2026-08-06: a spoiled reply is worse than a model error.**
-  The claim contract blocks only what a retrieved row *refutes*; what it cannot
-  confirm ships and lands in `ContractResult.unverified`, logged every turn.
-  This reverses the original `tj-feet.3` criterion, so an invented attribute the
-  catalog is silent about reaches the customer. Turns rewritten fell to `4/42`,
-  all four the capacity rule.
-  `docs/reports/2026-08-06-claim-contract-gaps-closed.md`.
-
-Run `repin_traceability_sources.py` after moving current state.
+After that, and only one at a time: `tj-odeq` (rule 13 at 0.00) then `tj-wvo4`
+(rule 11 at 0.28). Both are directives that never fire and both want the
+name-gate treatment -- a deterministic guarantee carrying what a salesperson
+carries. Neither was attempted on 2026-08-09 because neither could be shown to
+work in the same round as the route changes.
 
 ## Starter prompt for next orchestrator
 
 Use $orchestrator-stage for the active `tj-ee5f` stage. Read `AGENTS.md`,
-`.codex/orchestrator.toml`, this handoff, and then
-`docs/superpowers/specs/2026-08-09-deterministic-routes-and-the-forked-rubric-spec.md`,
-which carries the ordered plan, the two baselines and seven rules of engagement.
-
-The spine is `tj-ja1v`: deterministic template routes score far below
-model-written turns, and the name-gate fix showed the shape of the answer --
-keep the guarantee, let it carry what a salesperson carries.
-
-Two things must not happen. Do not ship a rubric change and a build change in
-the same measured round; five rubric changes in one week moved the number
-without the bot moving, and nothing before 2026-08-09 is comparable now. Do not
-compare one conversation shape with another or with a pre-fork figure --
-`scripts/e2e_acceptance/score_by_shape.py` refuses to print a single number for
-that reason.
-
-Read two transcripts by eye every round: every finding that mattered came from
-reading, not from a score. Preserve frozen `AC-01..AC-30`.
+`.codex/orchestrator.toml`, this handoff, then the ordered plan and the report
+linked under Next recommended. Between them they carry the two baselines and
+the seven rules of engagement; the three that cost the most are that a rubric
+change and a build change never ship in the same measured round, that a shape
+is only ever compared with itself, and that two transcripts get read by eye
+every round. Preserve frozen `AC-01..AC-30`.
 
 ## Approval gates
 
