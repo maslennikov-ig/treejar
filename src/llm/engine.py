@@ -4638,6 +4638,16 @@ def _sku_lookup_variants(value: str) -> tuple[str, ...]:
     add(normalized.replace("-", " "))
     add(normalized.replace(" ", "-"))
     add(re.sub(r"[^A-Z0-9]+", "", normalized))
+
+    # A customer types "ch616"; the catalog stores "CH 616". Splitting a run of
+    # letters from the digits that follow it recovers the spaced and hyphenated
+    # forms, which the token pass above cannot because there is nothing to
+    # tokenise. Found 2026-08-09 on the realistic set: "hi do u have ch616 in
+    # black" reached "I don't have live stock information for CH616".
+    for chunk in re.finditer(r"\b([A-Z]{1,4})(\d{2,5})\b", normalized):
+        letters, digits = chunk.group(1), chunk.group(2)
+        add(f"{letters} {digits}")
+        add(f"{letters}-{digits}")
     return tuple(variants)
 
 

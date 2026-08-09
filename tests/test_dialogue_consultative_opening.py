@@ -392,3 +392,33 @@ def test_a_sentence_is_not_a_product_reference_unless_it_names_a_model() -> None
     assert engine_module._missing_quantity_reference_segments_from_text(
         "CH 616 NEW black"
     )
+
+
+# --- what the realistic openings found ---------------------------------------
+
+
+def test_the_word_office_does_not_send_the_customer_to_the_showroom() -> None:
+    """2026-08-09, realistic set: "for a small office, 4 people" and "Leila, im
+    the office manager" were both answered with a Google Maps link. In an
+    office-furniture business "office" is in almost every message."""
+
+    from src.llm.verified_answers import _TOPIC_KEYWORDS
+
+    showroom = _TOPIC_KEYWORDS["showroom"]
+    assert "office" not in showroom
+    assert "location" not in showroom
+    # The terms that are actually about visiting us stay.
+    assert "showroom" in showroom
+    assert "branch" in showroom
+
+
+def test_a_sku_typed_without_a_space_still_finds_the_product() -> None:
+    """The catalog stores "CH 616"; a customer types "ch616". Before this,
+    "hi do u have ch616 in black" got "I don't have live stock information"."""
+
+    from src.llm.engine import _sku_lookup_variants
+
+    variants = _sku_lookup_variants("ch616")
+    assert "CH 616" in variants
+    assert "CH-616" in variants
+    assert "CH616" in variants

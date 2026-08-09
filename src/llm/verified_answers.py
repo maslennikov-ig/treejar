@@ -490,7 +490,24 @@ _TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
         "السداد",
         "أقساط",
     ),
-    "showroom": ("showroom", "location", "office", "branch", "store"),
+    # "office" is in almost every message an office-furniture customer sends,
+    # and "location" is usually a delivery location. Both used to route a
+    # customer to the showroom address: on 2026-08-09 "for a small office, 4
+    # people" and "Leila, im the office manager" were both answered with a
+    # Google Maps link. The topic now needs a term that is actually about
+    # visiting us.
+    "showroom": (
+        "showroom",
+        "branch",
+        "store",
+        "your office",
+        "visit you",
+        "come and see",
+        "come see",
+        "where are you located",
+        "your location",
+        "معرض",
+    ),
     "company": (
         "company",
         "about treejar",
