@@ -134,6 +134,12 @@ from src.llm.safety import (
     model_settings_for_path,
     run_agent_with_safety,
 )
+from src.llm.sales_turn_guard import (
+    carry_the_company_question,
+    collapse_question_form,
+    format_package_total,
+    states_a_combined_total,
+)
 from src.llm.verified_answers import (
     VerifiedAnswerDecision,
     build_clarification_response,
@@ -1737,6 +1743,71 @@ async def catalog_anchor_line(db: AsyncSession, language: str) -> str | None:
     line = (", ".join(parts) + ".") if parts else ""
     _anchor_line_cache[cache_key] = line
     return line or None
+
+
+def _turn_owes_the_company_question(deps: SalesDeps) -> bool:
+    """Does rule 13 apply to this turn, and has nobody asked yet?
+
+    Three conditions, all of them about the world or about stored state, none
+    about what Noor believes she already did. That distinction is the one four
+    rules died on in `tj-2m5m.8`, and it is why the last condition reads the
+    `company_activity` slot rather than the transcript: the slot is written only
+    by `record_customer_requirements`, which is to say only when the customer
+    actually said it.
+
+    The middle condition is what stops this firing on a seven-chair order. Rule
+    13 is expertise on a fit-out and friction on a shopping trip, which is the
+    whole point of the 2026-08-09 fork.
+    """
+
+    conversation = deps.conversation
+    state = DialogueState.from_conversation(conversation)
+    if _string_value(state.slots.company_activity):
+        return False
+    if not _string_value(state.slots.company) and not _string_value(
+        getattr(conversation, "zoho_contact_id", None)
+    ):
+        return False
+    customer_texts = [text for text in (deps.user_query,) if text]
+    customer_texts.extend(
+        entry.split(":", 1)[1] if ":" in entry else entry
+        for entry in (deps.recent_history or ())
+        if entry.startswith("user:")
+    )
+    return any(signals_a_project(text) for text in customer_texts)
+
+
+def _verified_package_total_line(deps: SalesDeps, *, language: str) -> str:
+    """Rule 11's package, summed by code over rows the catalog returned.
+
+    Only fires on a genuine two-family order, which is exactly when the rubric
+    charges the rule. One family is an order, not a package, and adding a
+    "total" to it would be noise dressed as service.
+    """
+
+    families = {
+        family: lines
+        for family, lines in deps.verified_catalog_selections.items()
+        if lines
+    }
+    if len(families) < 2:
+        return ""
+    currencies = {
+        line.currency for lines in families.values() for line in lines if line.currency
+    }
+    if len(currencies) != 1:
+        return ""
+    entries: list[tuple[str, float]] = []
+    for lines in families.values():
+        for line in lines:
+            if line.total <= 0:
+                return ""
+            entries.append((f"{line.quantity} x {line.name}", float(line.total)))
+    return format_package_total(
+        entries,
+        currency=next(iter(currencies)),
+        language=language,
+    )
 
 
 def _catalog_product_capacity(product_text: str) -> int | None:
@@ -15558,6 +15629,34 @@ async def process_message(
             anchor_line=opening_anchor_line[0],
         )
 
+    def _apply_selling_turn_guard(text: str, response_deps: SalesDeps) -> str:
+        """Rules 11 and 13, and the one-question cap, guaranteed not requested.
+
+        Order matters. The package total goes on first because it is a fact and
+        carries no question. The form is collapsed next, so whatever the model
+        asked is down to one. The company question is folded in last, because
+        the rubric and the directive both count a folded pair as one and the
+        cap must not then throw it away.
+
+        The first turn is left alone: the opening guard owns it and already
+        carries the anchor price and its own folded pair.
+        """
+
+        assert conv is not None
+        if is_first_turn or not text.strip():
+            return text
+        language = str(conv.language)
+
+        package = _verified_package_total_line(response_deps, language=language)
+        if package and not states_a_combined_total(text):
+            text = f"{text.rstrip()}\n\n{package}"
+
+        text = collapse_question_form(text)
+
+        if _turn_owes_the_company_question(response_deps):
+            text = carry_the_company_question(text, language=language)
+        return text
+
     def _deferred_product_media_for_response(
         response_deps: SalesDeps,
         *,
@@ -15657,6 +15756,11 @@ async def process_message(
             customer_text=combined_text,
         )
         final_text = _apply_first_turn_opening_guard(final_text)
+        # Only the model-written path. The deterministic routes compose their
+        # own replies and were given their facts directly in `tj-ja1v`; running
+        # question surgery over them would edit text that is already exactly
+        # what it should be.
+        final_text = _apply_selling_turn_guard(final_text, response_deps)
         grounding_result = enforce_grounding_output(
             final_text,
             language=str(response_deps.conversation.language),

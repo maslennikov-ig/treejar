@@ -23335,3 +23335,108 @@ def test_the_missing_details_request_still_stands_when_no_price_could_be_read() 
 
     assert message.startswith("Before I prepare the quotation, please share:")
     assert "full name; email" in message
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_a_model_written_turn_is_capped_at_one_question(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """`tj-6tx6`. The form reaches the customer unless something stops it.
+
+    S01 turn 2 at `ac36265` asked five things in a numbered list and carried no
+    catalog row. The system prompt bans exactly that -- *never as a form* -- and
+    the consultative directive caps the reply at one question. Both were present
+    and both were ignored, so the cap is a guarantee now.
+    """
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Maya"
+    text = "We are furnishing a new office and I need help choosing furniture."
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Hi Maya. To recommend the right setup, could you share:\n\n"
+        "1. How many people do you need to furnish?\n"
+        "2. Which items are required?\n"
+        "3. Your approximate budget?\n"
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text.count("?") == 1
+    assert "How many people" in response.text
+    assert "approximate budget" not in response.text
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_the_first_turn_keeps_its_own_folded_pair(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """The opening guard owns turn one and the cap must not undo it.
+
+    Its folded pair -- the name and the category, answered in three words or
+    neither -- is the thing that moved rule 7 from 0.08 to 1.66.
+    """
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    text = "Hi"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("Hello there.")
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "name-gate"
+    assert "your name" in response.text.casefold()
+    assert "chairs, desks and workstations, or a full office" in response.text
+    mock_notify.assert_not_awaited()
