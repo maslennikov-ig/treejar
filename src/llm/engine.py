@@ -13731,8 +13731,9 @@ async def record_customer_requirements(
 
     Call this the moment the customer gives any of these, in any wording. "Ten
     of those", "we'll take a dozen", "around 10 chairs" are all a quantity.
-    Recording is not answering: you still reply to the customer yourself, and
-    you should repeat back what you recorded so they can correct it.
+    Recording is not answering: you still owe the customer a reply that carries
+    something new, and the confirmation of what you recorded rides along inside
+    it rather than standing in for it.
 
     Args:
         items: Product lines the customer has settled on, as SKU and quantity.
@@ -13812,7 +13813,11 @@ async def record_customer_requirements(
         parts.append("Recorded: " + "; ".join(recorded) + ".")
     if rejected:
         parts.append("Not recorded: " + "; ".join(rejected) + ".")
-    parts.append("Repeat back what you recorded so the customer can correct it.")
+    parts.append(
+        "Carry what you recorded into your reply so the customer can correct "
+        "it -- alongside the answer, never instead of one. A turn whose whole "
+        "content is a confirmation of what they just said is not a reply."
+    )
     return " ".join(parts)
 
 
@@ -16362,6 +16367,12 @@ async def process_message(
         not quote_detail_context_active
         and not quote_reply_updates_purchase_selection
         and _has_active_sales_detail_capture_context(conv, deps.recent_history)
+        # An acknowledgement is not an answer. The customer's opening question
+        # is stored while the name gate runs, and on 2026-08-09 R03 showed what
+        # happens when this route fires before it is served: "hi do u have
+        # ch616 in black" -> name gate -> "Omar" -> "Thanks, I've noted name:
+        # Omar." The question was never answered and the turn carried nothing.
+        and _name_gate_pending_request_from_metadata(conv) is None
         and _is_neutral_detail_capture_update(
             text=combined_text,
             customer_details=current_quote_customer_details,
