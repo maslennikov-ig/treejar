@@ -157,6 +157,23 @@ _SKU_SELECTION_SIGNAL_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+# A SKU written the way a person types it, with nothing between the letters and
+# the digits. `tj-jxv7`, 2026-08-09: "hi do u have ch616 in black" classified as
+# `service_low_risk`, because the message carries no product word and
+# `_NUMBER_RE` needs a word boundary in front of its digits, which "ch616" does
+# not give it. The turn then ran under the service directives -- answer only
+# from the FAQ, do not state a price -- with an empty FAQ, so a customer asking
+# whether we stock a chair we do stock was asked for a quantity instead.
+#
+# The letters and digits must be adjacent here. The spaced and hyphenated forms
+# already reach `product` through `_SKU_SELECTION_SIGNAL_RE`, and allowing a
+# separator would read "for 12" and "AED 300" as SKUs. Cyrillic letters count
+# because the catalogue itself is written with them: 7 of 920 Treejar SKUs begin
+# with Cyrillic "СН".
+_COMPACT_SKU_RE = re.compile(
+    r"\b[a-zА-я]{2,4}\d{2,8}\b",
+    re.IGNORECASE,
+)
 _PRODUCT_DISCOVERY_PHRASES = (
     "anything for",
     "options",
@@ -597,6 +614,8 @@ def _has_product_selection_signal(normalized: str) -> bool:
         _NUMBER_RE.search(normalized)
         or _PRODUCT_SELECTION_QUANTITY_RE.search(normalized)
     ):
+        return True
+    if _COMPACT_SKU_RE.search(normalized):
         return True
     return bool(
         _NUMBER_RE.search(normalized) and _SKU_SELECTION_SIGNAL_RE.search(normalized)
