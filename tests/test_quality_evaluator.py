@@ -1629,3 +1629,118 @@ def test_rule_13_stands_down_for_a_customer_who_has_already_narrowed() -> None:
         _assess("Prepare a quotation for exactly four CH 616 NEW black chairs.")[13]
         is False
     )
+
+
+# --- tj-swgu.11: a criterion the customer ruled out is not a zero ------------
+
+_S06_TURNS = (
+    "Please check the exact live price and stock for SKU CH 616 NEW black. "
+    "I may need twelve units, but I do not want a quotation.",
+    "My name is Aisha.",
+    "Confirm from live inventory whether twelve units of that exact SKU are "
+    "available and state the unit price. Do not suggest alternatives or offer "
+    "a quotation.",
+)
+_S09_TURNS = (
+    "Please prepare a formal quotation for exactly four CH 616 NEW black chairs "
+    "at the current confirmed price.",
+    "My name is Fatima.",
+    "Proceed with the quotation for exactly 4 x CH 616 NEW black.",
+)
+
+
+def _narrowed_order_applicability(turns: tuple[str, ...]) -> dict[int, bool]:
+    from src.quality.evaluator import _build_applicability_assessment
+
+    conversation = SimpleNamespace(
+        language="en",
+        metadata_={
+            "dialogue_kernel": {
+                "state": {
+                    "version": 1,
+                    "active_flow": "product_selection",
+                    "slots": {"pending_product_refs": ["CH-616"]},
+                }
+            },
+            "catalog_planning_v1": {"families": ["seating"], "requested_seats": 12},
+        },
+    )
+    messages = []
+    for turn in turns:
+        messages.append(_quality_message("user", turn))
+        messages.append(_quality_message("assistant", "Here is the confirmed row."))
+    return _build_applicability_assessment(
+        messages, "needs_analysis", conversation
+    ).rule_applicability
+
+
+@pytest.mark.parametrize(("label", "turns"), [("S06", _S06_TURNS), ("S09", _S09_TURNS)])
+def test_the_criteria_a_narrowed_customer_ruled_out_are_not_charged(
+    label: str, turns: tuple[str, ...]
+) -> None:
+    """`tj-swgu.11`, verified rather than rebuilt.
+
+    S06 asked for one exact SKU with no alternatives and no quotation; S09
+    asked for that quotation and got it. Both used to be scored zero on the
+    whole Consultative Solution block plus discovery, which cost roughly two
+    points of the mean and was mechanical rather than evidence about the
+    dialogue. The transactional/project fork of 2026-08-09 closed it from the
+    other direction: rules 6, 10, 11 and 13 need a project signal or a
+    two-family order, and a narrowed single-SKU order is neither.
+    """
+
+    applicability = _narrowed_order_applicability(turns)
+
+    assert applicability[6] is False, f"{label}: compliment charged on a narrow order"
+    assert applicability[10] is False, f"{label}: widening charged on a narrow order"
+    assert applicability[11] is False, f"{label}: incentive charged on one family"
+    assert applicability[13] is False, f"{label}: company discovery charged"
+
+
+@pytest.mark.parametrize(("label", "turns"), [("S06", _S06_TURNS), ("S09", _S09_TURNS)])
+def test_the_job_to_be_done_is_still_charged_on_a_narrowed_order(
+    label: str, turns: tuple[str, ...]
+) -> None:
+    """Rule 9 stays, and that is the decision rather than an oversight.
+
+    "Do not suggest alternatives" rules out widening the order. It does not
+    rule out understanding what the chairs are for, which is what rule 9 asks
+    and what `tj-2m5m.4` owns. Charging it here is evidence about the dialogue;
+    charging rules 10 and 11 was not.
+    """
+
+    assert _narrowed_order_applicability(turns)[9] is True, label
+
+
+def test_the_widening_rules_still_apply_where_nothing_was_ruled_out() -> None:
+    """The corrections must not have made the block unreachable."""
+
+    from src.quality.evaluator import _build_applicability_assessment
+
+    conversation = SimpleNamespace(
+        language="en",
+        metadata_={
+            "dialogue_kernel": {
+                "state": {
+                    "version": 1,
+                    "active_flow": "product_selection",
+                    "slots": {"pending_product_refs": ["seating"], "company": "Acme"},
+                }
+            },
+            "catalog_planning_v1": {"families": ["seating", "workspace"]},
+        },
+    )
+
+    applicability = _build_applicability_assessment(
+        [
+            _quality_message(
+                "user", "We are furnishing a new office for the whole team"
+            ),
+            _quality_message("assistant", "Here is what Treejar carries."),
+        ],
+        "needs_analysis",
+        conversation,
+    ).rule_applicability
+
+    assert applicability[10] is True
+    assert applicability[11] is True
