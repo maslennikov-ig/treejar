@@ -590,6 +590,13 @@ def test_rule_3_applies_when_no_name_is_known_at_all() -> None:
 
 
 def test_rule_applicability_distinguishes_quote_decline_from_collection() -> None:
+    """Corrected 2026-08-09 on the owner's question.
+
+    Declining the quotation document used to be enough to charge rule 15. It is
+    not: the source guideline conditions the rule on the customer not being
+    ready for the deal. This transcript now needs the customer to say so.
+    """
+
     from src.quality.evaluator import _build_applicability_assessment
 
     conversation = SimpleNamespace(
@@ -607,7 +614,9 @@ def test_rule_applicability_distinguishes_quote_decline_from_collection() -> Non
 
     assessment = _build_applicability_assessment(
         [
-            _quality_message("user", "No, I do not need a quotation"),
+            _quality_message(
+                "user", "No quotation please, we are not ready to order yet."
+            ),
             _quality_message(
                 "assistant", "Understood, we continue without a quotation."
             ),
@@ -620,6 +629,7 @@ def test_rule_applicability_distinguishes_quote_decline_from_collection() -> Non
     assert assessment.rule_applicability[12] is False
     assert assessment.rule_applicability[14] is False
     assert "quote_not_ready" in assessment.signals
+    assert "decision_deferred" in assessment.signals
 
 
 def test_rule_applicability_requires_explicit_runtime_quote_success() -> None:
@@ -742,8 +752,10 @@ def test_returned_create_quotation_is_not_a_successful_business_effect(
 @pytest.mark.parametrize(
     ("consent", "lifecycle", "rule_12", "rule_14", "rule_15"),
     [
-        ("declined", "consultation", False, False, True),
-        ("deferred", "quote_offered", False, False, True),
+        # Rule 15 needs the customer to defer the decision, not the paperwork:
+        # the shared transcript below only asks for the quotation.
+        ("declined", "consultation", False, False, False),
+        ("deferred", "quote_offered", False, False, False),
         ("granted", "quote_requested", True, False, False),
         ("granted", "created", True, True, False),
     ],
@@ -1476,3 +1488,106 @@ def test_an_unparseable_nested_string_falls_back_rather_than_failing() -> None:
 
     assert result.diagnostics.applicable_rules == 0
     assert result.block_scores == []
+
+
+def test_rule_15_separates_refusing_paperwork_from_refusing_to_buy() -> None:
+    """Owner question 2026-08-09, and the source guideline agrees.
+
+    Rule 15 is conditioned on "если клиент не готов к сделке". S05, S06 and S08
+    all refuse a quotation document while actively pricing an order, and were
+    charged for not booking a follow-up they did not need.
+    """
+
+    from src.quality.evaluator import _build_applicability_assessment
+
+    def _assess(customer_text: str) -> dict[int, bool]:
+        conversation = SimpleNamespace(
+            language="en",
+            metadata_={
+                "order_runtime": {
+                    "quote_workflow": {
+                        "version": 2,
+                        "consent": "declined",
+                        "lifecycle": "consultation",
+                    }
+                }
+            },
+        )
+        return _build_applicability_assessment(
+            [
+                _quality_message("user", customer_text),
+                _quality_message("assistant", "Confirmed: 12 units at AED 295."),
+            ],
+            "solution",
+            conversation,
+        ).rule_applicability
+
+    # Paperwork refused, deal alive: nothing to schedule.
+    assert (
+        _assess("Confirm the price for twelve units. I do not want a quotation.")[15]
+        is False
+    )
+    # Genuinely not deciding today.
+    assert _assess("We are not ready to order yet, I will get back to you.")[15] is True
+    assert _assess("A decision is expected within two weeks.")[15] is True
+
+
+def test_rule_15_stands_down_once_the_next_step_is_confirmed() -> None:
+    """A customer who has ordered has no next contact to agree."""
+
+    from src.quality.evaluator import _build_applicability_assessment
+
+    conversation = SimpleNamespace(
+        language="en",
+        metadata_={
+            "runtime_execution_evidence": {
+                "schema_version": "noor-runtime-execution-evidence/v3",
+                "turns": [],
+            }
+        },
+    )
+
+    assessment = _build_applicability_assessment(
+        [
+            _quality_message("user", "We are not ready to decide today."),
+            _quality_message("assistant", "Understood."),
+        ],
+        "closing",
+        conversation,
+    )
+
+    assert assessment.rule_applicability[15] is False
+
+
+def test_rule_13_stands_down_for_a_customer_who_has_already_narrowed() -> None:
+    """Rule 13 exists to open cross-sell and a longer relationship. A customer
+    asking for an exact SKU and quantity is not in that conversation."""
+
+    from src.quality.evaluator import _build_applicability_assessment
+
+    def _assess(customer_text: str) -> dict[int, bool]:
+        conversation = SimpleNamespace(
+            language="en",
+            metadata_={
+                "dialogue_kernel": {
+                    "state": {
+                        "version": 1,
+                        "slots": {"company": "Northstar QA LLC"},
+                    }
+                }
+            },
+        )
+        return _build_applicability_assessment(
+            [
+                _quality_message("user", customer_text),
+                _quality_message("assistant", "Here is what Treejar carries."),
+            ],
+            "qualifying",
+            conversation,
+        ).rule_applicability
+
+    assert _assess("We are furnishing an office for eight people.")[13] is True
+    assert (
+        _assess("Prepare a quotation for exactly four CH 616 NEW black chairs.")[13]
+        is False
+    )

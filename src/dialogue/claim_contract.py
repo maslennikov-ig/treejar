@@ -917,7 +917,7 @@ _RESUME_VERB = (
     r"|circle\s+back|follow\s+up|decide|order|buy)"
 )
 
-_PURCHASE_DEFERRED_RE = re.compile(
+_DECISION_DEFERRED_RE = re.compile(
     r"(?:\bnot\s+ready\b|\bnot\s+(?:buying|purchasing|ordering)\b"
     r"|\bnot\s+yet\s+(?:ready|buying|ordering|deciding)\b"
     r"|\bno\s+rush\b|\bin\s+no\s+hurry\b"
@@ -925,35 +925,66 @@ _PURCHASE_DEFERRED_RE = re.compile(
     r"|\b(?:need\s+to\s+)?think\s+(?:it\s+over|about\s+it)\b"
     r"|\b(?:discuss|review|check)\s+(?:it\s+)?(?:internally|with\s+(?:my|the)\s+"
     r"(?:team|manager|management|board|partner|partners))\b"
-    rf"|\b(?:get|come)\s+back\s+to\s+you\b|\bdo\s+not\s+create\s+a\s+{_QUOTATION_WORD}\b"
-    # "the no-quotation instruction" is the same refusal, restated.
-    rf"|\bno[\s-]+{_QUOTATION_WORD}\b|\bwithout\s+a\s+{_QUOTATION_WORD}\b"
+    r"|\b(?:get|come)\s+back\s+to\s+you\b"
     r"|\bwaiting\s+for\s+(?:budget\s+)?approval\b|\bbudget\s+is\s+not\s+approved\b"
+    # A decision placed in the future is a deferral however calmly it is put.
+    r"|\bdecision\s+(?:is\s+)?expected\b|\bwe\s+(?:will\s+)?decide\s+(?:with)?in\b"
+    r"|\bdecision\s+(?:with)?in\s+\w+\s+(?:days?|weeks?|months?)\b"
     # A date alone says nothing: "we need 20 chairs next week" is a deadline,
     # not a deferral. Only a date the customer attaches to talking again counts.
     rf"|\b{_RESUME_VERB}(?:\s+\w+){{0,3}}\s+(?:next|later\s+this)\s+"
     r"(?:week|month|quarter)\b"
-    r"|لسنا\s+مستعدين|لا\s+نريد\s+عرض\s+سعر|بدون\s+عرض\s+سعر"
-    r"|سنعود\s+إليك)",
+    r"|لسنا\s+مستعدين|سنعود\s+إليك)",
+    re.IGNORECASE,
+)
+
+_QUOTE_DOCUMENT_DECLINED_RE = re.compile(
+    rf"\bdo\s+not\s+create\s+a\s+{_QUOTATION_WORD}\b"
+    # "the no-quotation instruction" is the same refusal, restated.
+    rf"|\bno[\s-]+{_QUOTATION_WORD}\b|\bwithout\s+a\s+{_QUOTATION_WORD}\b"
+    r"|لا\s+نريد\s+عرض\s+سعر|بدون\s+عرض\s+سعر",
     re.IGNORECASE,
 )
 
 
-def defers_the_purchase(customer_text: str) -> bool:
+def defers_the_decision(customer_text: str) -> bool:
     """Has the customer said, in some form, "not now"?
 
-    Read over the customer request like every detector in this module, never
-    over the reply. Rule 15 -- agree a date and time for the next contact when
-    the customer is not buying today -- scored 0.25 of 2 across the stored
-    transcripts and is the second-largest single loss on the checklist. It has
-    no trigger of its own because deferral is not a question; it is a mood in
-    the customer's own sentence.
+    Deliberately narrower than `defers_the_purchase`: refusing the paperwork is
+    not the same as refusing to buy. S05, S06 and S08 all say some form of "no
+    quotation" while actively pricing an order, and the source guideline
+    conditions rule 15 on the customer not being *ready for the deal* -- "если
+    клиент не готов к сделке" -- not on whether they wanted a document. Charging
+    the rule on a paperwork refusal marked three scenarios down for obeying.
     """
 
     text = str(customer_text)
     if not text.strip():
         return False
-    return bool(_PURCHASE_DEFERRED_RE.search(text))
+    return bool(_DECISION_DEFERRED_RE.search(text))
+
+
+def declines_a_quotation_document(customer_text: str) -> bool:
+    """Has the customer refused the paperwork, whatever they think of the deal?"""
+
+    text = str(customer_text)
+    if not text.strip():
+        return False
+    return bool(_QUOTE_DOCUMENT_DECLINED_RE.search(text))
+
+
+def defers_the_purchase(customer_text: str) -> bool:
+    """Either signal, for the dialogue side.
+
+    The directive is allowed the looser reading. A customer who declines the
+    document today is worth a proposed next contact even if they are still
+    pricing, because the conversation otherwise ends on nothing. The rubric is
+    not allowed the looser reading, which is what `defers_the_decision` is for.
+    """
+
+    return defers_the_decision(customer_text) or declines_a_quotation_document(
+        customer_text
+    )
 
 
 def next_contact_directive() -> str:

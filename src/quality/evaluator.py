@@ -18,6 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from src.core.config import settings
+from src.dialogue.claim_contract import (
+    defers_the_decision,
+    earns_consultative_opening,
+)
 from src.dialogue.order_state import (
     QuoteConsent,
     QuoteLifecycle,
@@ -521,6 +525,25 @@ def _build_applicability_assessment(
     company_context = bool(
         filled_slots & {"company", "customer_type"} or quote_started or crm
     )
+    customer_texts = [
+        message.content or "" for message in messages if message.role == "user"
+    ]
+    # Rule 15's source condition is "если клиент не готов к сделке" -- not ready
+    # for the deal. Declining the paperwork is a different thing: S05, S06 and
+    # S08 all refuse a quotation while actively pricing an order, and charging
+    # them for not booking a follow-up marked three scenarios down for obeying.
+    decision_deferred = any(defers_the_decision(text) for text in customer_texts)
+    # Rule 13 exists "чтобы понять, где Treejar может быть полезен ещё" -- to
+    # open cross-sell and a longer relationship. A customer who has narrowed to
+    # an exact SKU and quantity is not in that conversation, and asking what
+    # their company does is noise rather than discovery.
+    open_ended_relationship = bool(
+        customer_texts
+        and all(
+            earns_consultative_opening(text, sales_stage=sales_stage)
+            for text in customer_texts
+        )
+    )
     confirmed_next_step = bool(
         quote_created
         or crm
@@ -546,9 +569,9 @@ def _build_applicability_assessment(
     rules[10] = catalog
     rules[11] = comprehensive_order
     rules[12] = quote_started or crm
-    rules[13] = company_context
+    rules[13] = company_context and open_ended_relationship
     rules[14] = confirmed_next_step
-    rules[15] = quote_not_ready or followup
+    rules[15] = (decision_deferred or followup) and not confirmed_next_step
 
     signals: set[str] = set()
     if opening:
@@ -561,6 +584,10 @@ def _build_applicability_assessment(
         signals.add("comprehensive_order")
     if name_already_given:
         signals.add("name_given_unprompted")
+    if decision_deferred:
+        signals.add("decision_deferred")
+    if open_ended_relationship:
+        signals.add("open_ended_relationship")
     if quote_started:
         signals.add("quote_started")
     if quote_created:
