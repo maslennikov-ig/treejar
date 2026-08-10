@@ -1,0 +1,39 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-vz7o",
+  "source_kind": "beads",
+  "source_id": "tj-vz7o",
+  "source_digest": "9f639668052cf1ac0db38a776011636a5db074665140c3e16edaf84494d5a823",
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "text": "tj-vz7o.3 is closed only after the same 53 stored packets across 19 scenarios have two independent blind raw-rubric reads each, every score file has exactly 15 criteria and no n_a field, reader disagreement is printed, and the change from the previous 13.58/30 raw mean is reported with a between-scenario interval.",
+      "text_digest": "10ff141b468af747ce21b5547efba3f66d54ef36a907da7729d874bc90bb5186"
+    },
+    {
+      "criterion_id": "AC-02",
+      "text": "tj-vz7o.6 is closed only after substantive-response coverage and time-to-first-reply are computed for both the 1400-dialogue client corpus and the 53 stored bot packets, every figure carries its denominator, and the corpus result reconciles with the client continuity counts.",
+      "text_digest": "6cbcf4c69c9f2faddfbdf40f3772b13680109e0cfe9ba233462f85d2007a161b"
+    },
+    {
+      "criterion_id": "AC-03",
+      "text": "tj-vz7o.7 is closed only after 15-20 natural customer openings are selected deterministically from the 687 natural-text openings with a recorded seed and length strata, only dialog_id and integer-derived metadata enter tracked artefacts, the set is frozen, its excluded opening types are stated, and a build-unchanged baseline exists.",
+      "text_digest": "f336597da3862fe5dbbb6cabfc1dc9406303f03d4cba8cbb532102fac98e7983"
+    },
+    {
+      "criterion_id": "AC-04",
+      "text": "tj-vz7o.4 remains open unless the user grants authority for exactly 53 paid claude-haiku-4.5 calls over the stored bot packets; the authority ask and missing client evaluator prompt are recorded, tj-vz7o.5 remains dependent, and no paid call, live traffic, production mutation, real-user message, deploy, or push occurs.",
+      "text_digest": "786cd2fdc29ce6e668a24daf07d5c3c04e9ec3e8f24adbfb330ccf3e05f7a01c"
+    },
+    {
+      "criterion_id": "AC-05",
+      "text": "tj-vz7o.8 and tj-vz7o.9 have accurate owner/client decision drafts based on the specified denominators and limitations, but neither draft is sent.",
+      "text_digest": "87b451d7bc52e8b0e3c4fdcde8bb2a0985794daec5a64997bd34aead2bd7fae1"
+    },
+    {
+      "criterion_id": "AC-06",
+      "text": "The frozen rubric and _build_applicability_assessment remain unchanged, raw_total is the only client-facing ruler, calculate_weighted_score is the only build-comparison ruler, two transcripts are inspected manually, the corpus remains outside the working tree with mode 0700/0600, required gates pass, commits are local only, and the final working tree is clean.",
+      "text_digest": "34d89cf597b58082845e9162680fc71c84f463335807f1d8cc36c090c371b939"
+    }
+  ]
+}

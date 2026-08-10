@@ -108,6 +108,29 @@ def _write_reader_file(
     )
 
 
+def _write_raw_reader_file(
+    directory: pathlib.Path, packet: str, scores: dict[int, int]
+) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{packet}.json").write_text(
+        json.dumps(
+            {
+                "scenario": packet,
+                "criteria": [
+                    {
+                        "rule_number": rule,
+                        "score": scores.get(rule, 0),
+                        "comment": "",
+                        "evidence": [],
+                    }
+                    for rule in range(1, 16)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_a_reader_file_round_trips_into_the_client_total(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -117,6 +140,31 @@ def test_a_reader_file_round_trips_into_the_client_total(
 
     assert len(criteria) == 15
     assert raw_total(criteria) == 5
+
+
+def test_a_map_free_reader_file_needs_no_applicability_fields(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Catch reintroducing the frozen applicability map into the raw arm."""
+    path = tmp_path / "readerA" / "S01-r1.json"
+    _write_raw_reader_file(path.parent, path.stem, {1: 2, 2: 2, 7: 1})
+
+    criteria = _read(path, require_map_free=True)
+
+    assert len(criteria) == 15
+    assert raw_total(criteria) == 5
+    assert all(item.applicable and not item.n_a for item in criteria)
+
+
+def test_map_free_mode_rejects_a_hidden_applicability_map(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A legacy score must not silently satisfy the new map-free arm."""
+    path = tmp_path / "readerA" / "S01-r1.json"
+    _write_reader_file(path.parent, path.stem, {1: 2})
+
+    with pytest.raises(ValueError, match="map-free"):
+        _read(path, require_map_free=True)
 
 
 def test_the_report_clusters_by_scenario_not_by_packet(
@@ -174,6 +222,67 @@ def test_the_report_refuses_to_subtract_the_client_figure(
     out = capsys.readouterr().out
     assert "Do not subtract these two numbers" in out
     assert "6.05" in out
+
+
+def test_map_free_report_validates_every_criterion_without_an_applicability_map(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    scores = tmp_path / "scores"
+    _write_raw_reader_file(scores / "readerA", "S01-r1", {1: 2})
+    _write_raw_reader_file(scores / "readerB", "S01-r1", {1: 1})
+
+    import sys
+
+    argv = sys.argv
+    sys.argv = [
+        "score_raw_convention",
+        "--scores",
+        str(scores),
+        "--require-map-free",
+    ]
+    try:
+        assert main() == 0
+    finally:
+        sys.argv = argv
+
+    out = capsys.readouterr().out
+    assert "map-free schema: 30/30 criteria scored; applicable/n_a absent" in out
+    assert "reader disagreement: 1.00 mean |A-B| over 1 packets" in out
+    assert "rule                                      scored   raw mean" in out
+
+
+def test_paired_baseline_prints_the_delta_and_both_intervals(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    scores = tmp_path / "scores"
+    baseline = tmp_path / "baseline"
+    for scenario in ("S01", "R01"):
+        for repeat in (1, 2):
+            packet = f"{scenario}-r{repeat}"
+            for reader in ("readerA", "readerB"):
+                _write_raw_reader_file(scores / reader, packet, {1: 2})
+                _write_reader_file(baseline / reader, packet, {})
+
+    import sys
+
+    argv = sys.argv
+    sys.argv = [
+        "score_raw_convention",
+        "--scores",
+        str(scores),
+        "--require-map-free",
+        "--baseline-scores",
+        str(baseline),
+    ]
+    try:
+        assert main() == 0
+    finally:
+        sys.argv = argv
+
+    out = capsys.readouterr().out
+    assert "paired baseline: 0.00/30 over the same 4 packets" in out
+    assert "paired delta, re-read of this set: +2.00 +/- 0.00" in out
+    assert "paired delta, another scenario draw: +2.00 +/- 0.00" in out
 
 
 def test_a_missing_scores_directory_fails_loudly(tmp_path: pathlib.Path) -> None:

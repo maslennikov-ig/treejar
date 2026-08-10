@@ -1,12 +1,12 @@
 # Orchestrator Handoff
 
 Updated: 2026-08-10
-Current branch: `main`
-Current stage id: `tj-4e5j`
-Status: two builds are committed, green and **unmeasured** -- `7c34d55` (the
-name gate removed) and `ffb8a2d` (the client-ruler bridge). The corpus of 1400
-human dialogues has arrived and reset the headline. `tj-swgu`'s release-bound
-re-run still needs authority that is not granted.
+Current branch: `codex/tj-vz7o-corpus-bridge`
+Accepted stage id: `tj-vz7o-openings`
+Status: the applicability-map confound is removed locally. The same 53 packets
+over 19 scenarios now read 18.71/30 +/- 1.66 on another scenario draw; the
+paired correction from 13.58 is +5.13 +/- 1.35. The judge confound remains and
+the exact 53-call authority request for `tj-vz7o.4` is open.
 
 ## Current truth
 
@@ -22,9 +22,10 @@ re-run still needs authority that is not granted.
 - **The main model is Luna, and all three layers now say so**: `system_configs`,
   `src/core/config.py`, the production `.env`. For three days only the row did,
   while the source said `z-ai/glm-5.2` -- shadowed. `tj-uidf`.
-- **Two judges, do not confuse them.** Acceptance is a blind Claude reader panel,
-  never a paid model; an external judge belongs only to runtime
-  `ai_quality_controls`. Nine readers at 11-12 packets gave disagreement 1.58.
+- **Two judges, do not confuse them.** Acceptance is a blind reader panel; the
+  client judge is `claude-haiku-4.5`. The map-free raw panel used nine readers
+  at 11-12 packets and gave 1.08 raw-point mean absolute disagreement across 53
+  double-read packets. The older 1.58 figure is on the weighted ruler.
 - **A condition on the world is a guard; a condition on what Noor thinks she
   already did is a leak**, since she is both actor and judge. Four rules died on
   their own escape clauses; five tests hold them out. `tj-2m5m.8`.
@@ -65,18 +66,22 @@ re-run still needs authority that is not granted.
   kernel's flow. Ask once and let it go; `refuse_to_chase_the_name` holds that on
   turns we actually sent. Three defects it uncovered are fixed in the same commit
   and named there. Parked requests still resume. `tj-0ai0`, `tj-i653`.
-- **Two rulers exist and they are not interchangeable.** We drop the rules that
-  did not apply and renormalise to /30; the client scores all fifteen and lets
-  an unearned one stand at zero. Our 20.02 and their 6.05 were never the same
-  measurement. On theirs the same 53 packets read **13.58 +/- 1.11** against a
-  human **6.05**, so 2.2x rather than 3.3x. `raw_total` is the only place that
-  arithmetic happens. `tj-vz7o`.
-- **The claim is about openings, not selling.** Rules 12, 14 and 15 were
-  applicable in **2 reads of 106**: our scenarios never reach the conversion
-  phase. +8.57 of the +7.50 gap sits in criteria 1-9 and the bot is -1.26 across
-  the conversion criteria. And 87.2% of the corpus carries a WhatsApp
-  auto-responder -- with it humans mean 6.40, without it 3.65 -- which scores
-  **0.76** on collecting contacts against our **0.02**.
+- **The first confound is removed.** With no applicability map, all 1590/1590
+  criterion reads across the same 53 packets and 19 scenarios were scored. The
+  raw result is **18.71 +/- 0.31** on a re-read and **18.71 +/- 1.66** on another
+  scenario draw. The paired correction from **13.58** is **+5.13 +/- 0.25** on
+  the fixed set and **+5.13 +/- 1.35** on another scenario draw. It moved; this
+  is a measurement correction, not a build change. `tj-vz7o.3`.
+- **The second confound remains.** Human **6.05 +/- about 0.85** is from 1247
+  evaluated dialogues across five manager groups, one at about 67%, read by
+  `claude-haiku-4.5`. Do not subtract it from 18.71 until `tj-vz7o.4` bridges the
+  judge. `raw_total` is client-facing; `calculate_weighted_score` is build-only.
+- **The strongest opening claim is coverage and speed.** Humans gave a later
+  substantive reply to **8452/9477** customer messages in 1400 dialogues:
+  **89.18%, 84.22%-90.46%** clustered over seven raw manager labels; first reply
+  median **1080 s, 840-1890 s**, over 1223/1358 answered openings. Noor answered
+  **141/141** messages in 53 packets over 19 scenarios: **100%, 100%-100%**;
+  first reply median **15.61 s, 9.99-21.51 s**, over 53/53 packets. `tj-vz7o.6`.
 - **The corpus is anti-patterns, not a benchmark**, in the client's own words:
   1400 dialogues, 1247 evaluated by `claude-haiku-4.5`, mean 6.05/30, ~86% of
   outcomes off-channel. At `<git-common-dir>/codex-orchestration/treejar-dialogs-corpus`,
@@ -111,11 +116,10 @@ re-run still needs authority that is not granted.
 - Review children `R-01..R-16`, `R-19`, `R-20`, `tj-ee5f.12`/`.14` closed;
   `.7`, `.8`, `.1` open for release-bound acceptance, `.13` depends on them,
   `.5` blocked on the Wazzup status bug.
-- Closed 2026-08-09: `tj-swgu.11`, `tj-swgu.12`, `tj-2m5m.10`, `tj-jxv7`,
-  `tj-ja1v`. Closed 2026-08-10: `tj-2m5m.9`. In progress: `tj-0ai0`, built and
-  awaiting a measured round. Open: `tj-6tx6` (half fixed), `tj-odeq`, `tj-jlx4`,
-  `tj-wvo4` (superseded as engineering by `tj-vz7o.8`), `tj-i653`. New epic
-  `tj-vz7o`, seven open children; `.1` and `.2` closed in `ffb8a2d`.
+- Closed 2026-08-10 under `tj-vz7o`: `.3` map-free re-read, `.6` response
+  coverage, `.7` seeded real-opening set. `.4` is claimed and awaiting exact
+  paid-call authority; `.5` remains dependent. `.8` and `.9` are drafted but
+  unsent and remain open. `tj-0ai0` is built and still awaits a measured round.
 
 ## Constraints
 
@@ -129,17 +133,15 @@ re-run still needs authority that is not granted.
 
 ## Next recommended
 
-Next stage id: `tj-ee5f`. The work is specified and queued:
-`docs/superpowers/specs/2026-08-10-the-clients-ruler-and-the-corpus-bridge-spec.md`,
-with the handoff prompt at
-`docs/superpowers/prompts/2026-08-10-corpus-bridge-orchestrator-handoff.md`.
-What the last round measured: `docs/reports/2026-08-09-the-measured-round-at-8b75888.md`.
+Next stage id: `tj-vz7o-judge-bridge`. If authority is granted, run exactly 53
+paid `claude-haiku-4.5` calls over the stored packets with no applicability map.
+Use the client's exact evaluator prompt if it arrives; otherwise label the run
+as reconstructed from `rubric.json` anchors. Then `tj-vz7o.5` follows. The
+accepted result is in
+`docs/reports/2026-08-10-the-map-free-reread-and-real-openings.md`.
 
-Recommended action: **`tj-vz7o.3` first** -- re-read the 53 stored packets with
-no applicability map. 13.58 is a lower bound until that exists, because the
-reads behind it were told which rules to skip. Then `tj-vz7o.4`, the client's
-judge over our packets, which is the only arm with no extrapolation and the one
-thing that needs authority.
+Recommended action: wait for the explicit 53-call grant and the client's
+evaluator prompt; do not start `tj-vz7o.4` or work around either gate.
 
 Still owed and unrelated to the corpus: **measure `7c34d55`** against the
 15-scenario baseline **18.94 +/- 3.74**, reading rules 7, 11 and 13 per-rule.
@@ -148,23 +150,18 @@ to explain it.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for the active `tj-ee5f` stage. Read `AGENTS.md`,
-`.codex/orchestrator.toml`, this handoff, then the reports under Next
-recommended. The rules that cost the most: a rubric change and a build change
-never ship in the same round; a shape is compared only with itself over the same
-scenarios; two transcripts get read by eye every round, which is how three of
-the last round's findings were made; a guarantee nobody checked actually fired
-is worth nothing; and this model follows an instruction where it loses a ban.
-Preserve frozen `AC-01..AC-30`.
+Use $orchestrator-stage for `tj-vz7o-judge-bridge` only after the 53-call grant.
+Read `AGENTS.md`, `.codex/orchestrator.toml`, this handoff, the corpus-bridge
+spec, and the accepted report. Preserve both rulers, keep corpus text outside
+Git, and never call `compare_runs` across judges.
 
 ## Approval gates
 
-Push, deploy and one acceptance run were granted on 2026-08-09, spent on
-`8b75888`, and are closed. `7c34d55` and `ffb8a2d` are committed locally and
-need a fresh grant to reach production. `tj-vz7o.4` needs its own grant: 53 paid
-`claude-haiku-4.5` calls to bridge the judge. No authority is currently granted for paid OpenRouter
-calls, model config changes, push, deploy, production mutation, test-only
-business effects, or real-user messaging.
+`tj-vz7o.4` needs a current grant for exactly 53 paid
+`claude-haiku-4.5` calls over the stored 53 bot packets, raw transcript only,
+with no live traffic or business mutation. No authority is granted for those
+calls, push, deploy, production mutation, model configuration, or real-user
+messaging.
 
 ## Explicit defers
 
@@ -173,10 +170,8 @@ business effects, or real-user messaging.
   until a deploy and a repeated run.
 - `tj-i653`: the parked-request machinery, about 500 lines, stays reachable
   until no live conversation carries `name_gate_pending_request`.
-- `tj-swgu` has no stage scaffold: `.codex/stages/tj-swgu/` does not exist and
-  `workspace.current_stage_id` is still `tj-feet`, so `check_stage_ready.py` and
-  `run_stage_closeout.py` both refuse the stage. Whoever closes `tj-swgu` has to
-  scaffold it first, which means writing another stream's manifest and ledger.
+- `tj-swgu` has no stage scaffold: `.codex/stages/tj-swgu/` does not exist.
+  Whoever closes it must scaffold that separate stream first.
 - Correcting the superseded 18.0/18.5/18.2 figures quoted outside this handoff
   is `tj-swgu.13`, with `tj-swgu.12`. Sealed rounds are superseded, never
   rewritten.

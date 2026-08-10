@@ -1,0 +1,44 @@
+{
+  "schema_version": "treejar-real-openings-public-manifest/v1",
+  "selection_seed": 20260810,
+  "population": {
+    "with_customer_opening": 1358,
+    "template": 525,
+    "attachment_only": 146,
+    "natural_text": 687,
+    "evaluated_natural_text": 629,
+    "natural_text_median_chars": 21
+  },
+  "selection": [
+    {"dialog_id": 116, "opener_chars": 2, "length_stratum": 1, "stored_human_raw_total": 3},
+    {"dialog_id": 293, "opener_chars": 2, "length_stratum": 1, "stored_human_raw_total": 9},
+    {"dialog_id": 421, "opener_chars": 2, "length_stratum": 1, "stored_human_raw_total": 8},
+    {"dialog_id": 807, "opener_chars": 2, "length_stratum": 1, "stored_human_raw_total": 7},
+    {"dialog_id": 867, "opener_chars": 2, "length_stratum": 1, "stored_human_raw_total": 4},
+    {"dialog_id": 420, "opener_chars": 6, "length_stratum": 2, "stored_human_raw_total": 7},
+    {"dialog_id": 1000, "opener_chars": 19, "length_stratum": 2, "stored_human_raw_total": 3},
+    {"dialog_id": 1022, "opener_chars": 14, "length_stratum": 2, "stored_human_raw_total": 1},
+    {"dialog_id": 1217, "opener_chars": 12, "length_stratum": 2, "stored_human_raw_total": 5},
+    {"dialog_id": 1291, "opener_chars": 5, "length_stratum": 2, "stored_human_raw_total": 6},
+    {"dialog_id": 366, "opener_chars": 30, "length_stratum": 3, "stored_human_raw_total": 4},
+    {"dialog_id": 436, "opener_chars": 22, "length_stratum": 3, "stored_human_raw_total": 8},
+    {"dialog_id": 442, "opener_chars": 27, "length_stratum": 3, "stored_human_raw_total": 11},
+    {"dialog_id": 789, "opener_chars": 36, "length_stratum": 3, "stored_human_raw_total": 7},
+    {"dialog_id": 815, "opener_chars": 38, "length_stratum": 3, "stored_human_raw_total": 5},
+    {"dialog_id": 28, "opener_chars": 810, "length_stratum": 4, "stored_human_raw_total": 4},
+    {"dialog_id": 692, "opener_chars": 77, "length_stratum": 4, "stored_human_raw_total": 6},
+    {"dialog_id": 819, "opener_chars": 195, "length_stratum": 4, "stored_human_raw_total": 8},
+    {"dialog_id": 875, "opener_chars": 43, "length_stratum": 4, "stored_human_raw_total": 4},
+    {"dialog_id": 1067, "opener_chars": 69, "length_stratum": 4, "stored_human_raw_total": 2}
+  ],
+  "baseline": {
+    "kind": "stored_client_judge_human_dialogue_raw_total",
+    "dialogues": 20,
+    "managers": 5,
+    "mean_raw_total": 5.6,
+    "manager_cluster_ci95_low": 3.91,
+    "manager_cluster_ci95_high": 6.45,
+    "bootstrap_samples": 10000,
+    "bootstrap_seed": 20260810
+  }
+}
