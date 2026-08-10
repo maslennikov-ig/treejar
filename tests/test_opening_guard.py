@@ -209,3 +209,91 @@ def test_an_empty_reply_is_left_alone() -> None:
         )
         == "   "
     )
+
+
+# --- a curly apostrophe cost four customers their whole reply -------------
+#
+# Measured 2026-08-10 over 20 real customer openings. `_strip_legacy_identity`
+# knew `I'm` and not `I’m`; the model writes the typographic one. Its own
+# introduction therefore survived the strip, `_has_identity` saw "Noor" and
+# "Treejar" still in the body, and the guard blanked the entire reply. Four of
+# twenty customers -- 293, 421, 867, 1217, every one of them a bare greeting --
+# received the identity line and nothing else. Bare greetings are 34% of real
+# traffic, so this is the most common opening we have.
+
+TYPOGRAPHIC_INTRO = (
+    "Hi, I’m Noor from Treejar. We supply ergonomic chairs, desks, "
+    "acoustic pods, and modular workstations for offices in Dubai.\n\n"
+    "What are you furnishing—an existing office, or a new workspace?"
+)
+
+
+def test_a_typographic_apostrophe_does_not_cost_the_answer() -> None:
+    guarded = apply_opening_guard(
+        TYPOGRAPHIC_INTRO,
+        language="en",
+        is_first_turn=True,
+        customer_name=None,
+    )
+
+    assert "What are you furnishing" in guarded
+    assert "ergonomic chairs, desks" in guarded
+
+
+def test_the_duplicate_introduction_still_goes() -> None:
+    """The intent was right; only the blast radius was wrong."""
+
+    guarded = apply_opening_guard(
+        TYPOGRAPHIC_INTRO,
+        language="en",
+        is_first_turn=True,
+        customer_name=None,
+    )
+
+    assert guarded.count("Noor") == 1
+    assert guarded.startswith("Hello, I'm Noor from Treejar.")
+
+
+def test_only_the_introducing_sentence_is_dropped() -> None:
+    """A mid-reply mention must not take the sentences around it.
+
+    The old rule blanked the body the moment "Noor" and "Treejar" both appeared
+    anywhere in it, which is how an answer, a price and a question could all
+    disappear behind one redundant hello.
+    """
+
+    guarded = apply_opening_guard(
+        "Thanks for asking. I am Noor from Treejar and happy to help. "
+        "The CH 120 is AED 292. How many do you need?",
+        language="en",
+        is_first_turn=True,
+        customer_name=None,
+    )
+
+    assert "AED 292" in guarded
+    assert "How many do you need?" in guarded
+
+
+def test_removing_a_sentence_keeps_the_paragraph_break() -> None:
+    guarded = apply_opening_guard(
+        "Good morning! I’m Noor from Treejar, a premium provider. "
+        "We supply desks and chairs.\n\nWhat are you furnishing today?",
+        language="en",
+        is_first_turn=True,
+        customer_name=None,
+    )
+
+    assert "We supply desks and chairs.\n\nWhat are you furnishing today?" in guarded
+
+
+def test_the_customers_own_punctuation_survives() -> None:
+    """The apostrophe is matched, not rewritten: the reply is the model's."""
+
+    guarded = apply_opening_guard(
+        "Thanks. I’m sorry, I can’t confirm that today.",
+        language="en",
+        is_first_turn=True,
+        customer_name=None,
+    )
+
+    assert "I’m sorry, I can’t confirm that today." in guarded

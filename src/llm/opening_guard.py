@@ -88,8 +88,15 @@ def _strip_generic_english_opening(text: str) -> str:
 
 def _strip_legacy_identity(text: str) -> str:
     body = text.lstrip()
+    # `I'm` and `I’m` are the same word, and until 2026-08-10 this pattern knew
+    # only the straight one. The model writes the typographic apostrophe, so its
+    # own introduction survived the strip, `_has_identity` then saw it, and the
+    # whole reply was discarded. Four of twenty customers -- every one of them a
+    # bare greeting -- got the identity line and nothing else. Matched here
+    # rather than rewritten, so the customer still reads the model's own
+    # punctuation.
     body = re.sub(
-        r"\A(?:hello|hi|hey)?[\s!,.:-]*(?:i(?:'| a)m|i am)\s+"
+        r"\A(?:hello|hi|hey)?[\s!,.:-]*(?:i(?:['’ʼ]| a)m|i am)\s+"
         r"(?:si[y]yad|noor)\s+from\s+treejar[\s!,.:-]*",
         "",
         body,
@@ -111,6 +118,35 @@ def _strip_own_capability(text: str, capability: str) -> str:
     if capability not in text:
         return text
     return " ".join(text.replace(capability, " ").split())
+
+
+# The trailing `\s*` keeps each sentence's own spacing attached to it, so
+# removing one takes its blank line with it instead of welding its neighbours
+# together.
+_SENTENCE_RE = re.compile(r"[^.!?؟\n]+(?:[.!?؟]+|\n+|\Z)\s*")
+
+
+def _drop_identity_sentences(text: str) -> str:
+    """Remove the model's own introduction, and only that.
+
+    This used to blank the whole reply the moment "Noor" and "Treejar" both
+    appeared anywhere in it. The intent was right -- our identity line is
+    already there and two of them read badly -- but the blast radius was the
+    entire answer. On 2026-08-10 that cost four of twenty customers everything
+    the model had written for them, including the one question that would have
+    moved the conversation on.
+
+    A duplicate introduction is one sentence. Only that sentence goes.
+    """
+
+    if not _has_identity(text):
+        return text
+    kept = [
+        part
+        for part in _SENTENCE_RE.findall(text)
+        if not _has_identity(part) or not part.strip()
+    ]
+    return re.sub(r"\n{3,}", "\n\n", "".join(kept)).strip()
 
 
 def apply_opening_guard(
@@ -144,8 +180,7 @@ def apply_opening_guard(
     if not is_arabic:
         body = _strip_generic_english_opening(body) or body
     body = _strip_own_capability(body, capability).strip()
-    if _has_identity(body):
-        body = ""
+    body = _drop_identity_sentences(body)
 
     parts = [f"{identity} {capability}"]
     if anchor_line and not _PRICE_RE.search(body):
