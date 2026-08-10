@@ -27,6 +27,7 @@ from src.dialogue.claim_contract import (
     signals_a_project,
     substantive_reply_directive,
 )
+from src.llm.communication_policy import EVIDENCE_GROUNDING_POLICY
 
 # --- the trigger ------------------------------------------------------------
 
@@ -202,14 +203,24 @@ def test_the_directive_bounds_itself_against_the_reply_it_shares_a_turn_with() -
 
 
 def test_the_directive_unlocks_no_fact_and_no_commercial_term() -> None:
-    """Rule 11 wants an incentive and stays at zero on purpose: a discount is a
-    commitment nobody has authorised. The sibling comparison directive forbids
-    one in the same words."""
+    """Rule 11 wants an incentive; a discount is a commitment nobody has
+    authorised, so what the directive asks for is the catalog price.
+
+    Stated as the act to perform rather than the act to avoid, on the owner's
+    observation of 2026-08-10 that this model follows a positive instruction and
+    loses a prohibition. The ban itself is not lost: it lives once, in the
+    immutable grounding policy, where `discount` is a manager-required
+    capability. Rule 11 was the worst-scoring charged rule in the rubric at
+    0.28/2 and then 0.00 while it was worded as two prohibitions wrapped around
+    one permission."""
 
     lowered = consultative_opening_directive().casefold()
 
-    assert "never offer a discount or a bonus" in lowered
-    assert "you have not verified" in lowered
+    assert "quote every figure at the catalog price" in lowered
+    assert "where a tool in this run has confirmed it" in lowered
+    # The prohibition is not repeated here, and is not lost either.
+    assert "never" not in lowered
+    assert "Never approve or promise a discount" in EVIDENCE_GROUNDING_POLICY
 
 
 def test_the_directive_carries_the_job_but_no_longer_the_widening() -> None:
@@ -226,7 +237,7 @@ def test_the_directive_carries_the_job_but_no_longer_the_widening() -> None:
     assert "one piece, not a list" not in lowered
 
 
-def test_the_widening_is_a_package_and_never_a_discount() -> None:
+def test_the_widening_is_a_package_at_the_catalog_price() -> None:
     """Rule 11's honest form, now on the project fork where it belongs."""
 
     lowered = project_consultation_directive().casefold()
@@ -234,14 +245,14 @@ def test_the_widening_is_a_package_and_never_a_discount() -> None:
     assert "do not stop at the item they named" in lowered
     assert "search_products" in lowered
     assert "one piece, not a list" in lowered
-    assert "one package with a combined total" in lowered
-    assert "a package, never a discount" in lowered
+    assert "one package and state their combined total" in lowered
+    assert "quote every figure at the catalog price" in lowered
     # And the thing a large order actually turns on.
     assert "availability for the whole order" in lowered
     # Rule 6, in the only place it is not filler.
     assert "acknowledging what they are building" in lowered
     assert "an order of chairs is not" in lowered
-    assert "never offer a discount" in consultative_opening_directive().casefold()
+    assert "never" not in consultative_opening_directive().casefold()
 
 
 def test_the_fork_reads_quantity_or_complexity_never_a_number_alone() -> None:

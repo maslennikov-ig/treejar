@@ -137,9 +137,7 @@ from src.llm.safety import (
 from src.llm.sales_turn_guard import (
     carry_the_company_question,
     collapse_question_form,
-    format_package_total,
     refuse_to_chase_the_name,
-    states_a_combined_total,
 )
 from src.llm.verified_answers import (
     VerifiedAnswerDecision,
@@ -1776,39 +1774,6 @@ def _turn_owes_the_company_question(deps: SalesDeps) -> bool:
         if entry.startswith("user:")
     )
     return any(signals_a_project(text) for text in customer_texts)
-
-
-def _verified_package_total_line(deps: SalesDeps, *, language: str) -> str:
-    """Rule 11's package, summed by code over rows the catalog returned.
-
-    Only fires on a genuine two-family order, which is exactly when the rubric
-    charges the rule. One family is an order, not a package, and adding a
-    "total" to it would be noise dressed as service.
-    """
-
-    families = {
-        family: lines
-        for family, lines in deps.verified_catalog_selections.items()
-        if lines
-    }
-    if len(families) < 2:
-        return ""
-    currencies = {
-        line.currency for lines in families.values() for line in lines if line.currency
-    }
-    if len(currencies) != 1:
-        return ""
-    entries: list[tuple[str, float]] = []
-    for lines in families.values():
-        for line in lines:
-            if line.total <= 0:
-                return ""
-            entries.append((f"{line.quantity} x {line.name}", float(line.total)))
-    return format_package_total(
-        entries,
-        currency=next(iter(currencies)),
-        language=language,
-    )
 
 
 def _catalog_product_capacity(product_text: str) -> int | None:
@@ -15631,26 +15596,28 @@ async def process_message(
         )
 
     def _apply_selling_turn_guard(text: str, response_deps: SalesDeps) -> str:
-        """Rules 11 and 13, and the one-question cap, guaranteed not requested.
+        """Rule 13, the one-question cap, and one name request per conversation.
 
-        Order matters. The package total goes on first because it is a fact and
-        carries no question. The form is collapsed next, so whatever the model
-        asked is down to one. The company question is folded in last, because
-        the rubric and the directive both count a folded pair as one and the
-        cap must not then throw it away.
+        Order matters. The form is collapsed first, so whatever the model asked
+        is down to one. The repeated name request goes next, because collapsing
+        may have been what left it standing. The company question is folded in
+        last, because the rubric and the directive both count a folded pair as
+        one and the cap must not then throw it away.
 
-        The first turn is left alone: the opening guard owns it and already
-        carries the anchor price and its own folded pair.
+        Rule 11's package total was guaranteed here until 2026-08-10 and fired
+        on 0 of 53 packets: it read `verified_catalog_selections`, written only
+        inside the catalog-decision tool path and empty on an ordinary selling
+        turn. Rather than wire a second route into it, the rule went back to
+        `project_consultation_directive` in positive form. If it still scores
+        zero next round, the guarantee comes back -- reading rows that exist.
+
+        The first turn is left alone: the opening guard owns it.
         """
 
         assert conv is not None
         if is_first_turn or not text.strip():
             return text
         language = str(conv.language)
-
-        package = _verified_package_total_line(response_deps, language=language)
-        if package and not states_a_combined_total(text):
-            text = f"{text.rstrip()}\n\n{package}"
 
         text = collapse_question_form(text)
 

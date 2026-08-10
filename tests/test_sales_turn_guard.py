@@ -3,7 +3,12 @@
 Every case here is a real reply from the `ac36265` packets or a control that
 must survive untouched. Rules 11 and 13 and the one-question cap were all given
 to the model as directives and all measured at or near zero over 82 blind reads,
-so they are guaranteed here instead. `tj-odeq`, `tj-wvo4`, `tj-6tx6`.
+so they are guaranteed here instead. `tj-odeq`, `tj-6tx6`.
+
+Rule 11's package total lived here until 2026-08-10 and fired on 0 of 53
+packets: it read a mapping written only inside the catalog-decision tool
+path, empty on an ordinary selling turn. It went back to a directive, in
+positive form this time. `tj-wvo4` holds the terms for bringing it back.
 """
 
 from __future__ import annotations
@@ -14,9 +19,7 @@ from src.llm.sales_turn_guard import (
     asks_the_company_activity,
     carry_the_company_question,
     collapse_question_form,
-    format_package_total,
     refuse_to_chase_the_name,
-    states_a_combined_total,
 )
 
 # S01 turn 2 at ac36265, verbatim. Five questions in a numbered list, no catalog
@@ -146,48 +149,6 @@ def test_the_company_question_follows_the_customers_language() -> None:
     carried = carry_the_company_question("شكرًا لك.", language="ar")
 
     assert "طبيعة عمل" in carried
-
-
-def test_the_package_total_is_arithmetic_over_two_verified_rows() -> None:
-    """Rule 11's bundle, after the owner declined a discount on 2026-08-08.
-
-    On S01 the model listed a workstation and its chairs with their subtotals
-    and never added them up, leaving the customer to do the arithmetic on the
-    number that decides the sale.
-    """
-
-    line = format_package_total(
-        [("1 x SKYLAND NOVO 4800", 3369.0), ("8 x CH 615 NEW black", 5553.0)],
-        currency="AED",
-        language="en",
-    )
-
-    assert "total 8,922.00 AED" in line
-    assert states_a_combined_total(line)
-    # Never a discount: the owner declined one and three places in the runtime
-    # forbid it.
-    assert "discount" not in line.casefold()
-
-
-def test_one_family_is_an_order_and_not_a_package() -> None:
-    """Calling a single line a package would be noise dressed as service."""
-
-    assert (
-        format_package_total([("8 x CH 615", 5553.0)], currency="AED", language="en")
-        == ""
-    )
-
-
-def test_there_is_no_package_line_without_figures_to_put_in_it() -> None:
-    assert format_package_total([], currency="AED", language="en") == ""
-    assert (
-        format_package_total(
-            [("1 x NOVO 4800", 0.0), ("8 x CH 615", 0.0)],
-            currency="AED",
-            language="en",
-        )
-        == ""
-    )
 
 
 def test_the_name_is_asked_once_and_then_let_go() -> None:

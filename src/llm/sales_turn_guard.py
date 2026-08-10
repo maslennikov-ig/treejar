@@ -259,38 +259,3 @@ def carry_the_company_question(text: str, *, language: str) -> str:
     if not body:
         return question
     return f"{body} {question}"
-
-
-def format_package_total(
-    lines: list[tuple[str, float]],
-    *,
-    currency: str,
-    language: str,
-) -> str:
-    """The combined total of a multi-family order, which code owns.
-
-    Rule 11 asks for a bundle. The owner declined a discount on 2026-08-08, so
-    what is on offer is a package of verified rows at their combined total --
-    and on S01 the model listed a workstation and three chair options with their
-    subtotals and never once added them up. The customer was left to do the
-    arithmetic on the number that decides the sale.
-
-    Every figure here is a row the catalog returned this turn. The guard adds
-    nothing and discounts nothing; it sums.
-    """
-
-    if len(lines) < 2:
-        return ""
-    total = sum(amount for _name, amount in lines)
-    if total <= 0:
-        return ""
-    if is_arabic_customer_language(language):
-        parts = "، ".join(f"{name} {amount:,.2f} {currency}" for name, amount in lines)
-        return f"الباقة كاملة: {parts} — الإجمالي {total:,.2f} {currency}."
-    parts = ", ".join(f"{name} {amount:,.2f} {currency}" for name, amount in lines)
-    return f"Together as one package: {parts} — total {total:,.2f} {currency}."
-
-
-def states_a_combined_total(text: str) -> bool:
-    normalized = text.casefold()
-    return "as one package" in normalized or "الباقة كاملة" in text

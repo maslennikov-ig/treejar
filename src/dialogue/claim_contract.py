@@ -892,14 +892,15 @@ def consultative_opening_directive() -> str:
         "workplace, ask what their company does -- in the same sentence as "
         "whatever else you need to know. Knowing the company's name is not "
         "knowing its line of work, so a name they gave you does not answer "
-        "this. A question folded that way counts as one question, so it is "
-        "never the part you leave for a later turn. Find out what the "
+        "this. A question folded that way counts as one question, so it rides "
+        "in this reply. Find out what the "
         "furniture is for -- the work done in the space, who uses it, what "
         "would make the result right -- and recommend against that job rather "
         "than against the words of the request. Keep the whole reply to at most "
         "one question, counting a folded pair as one. None of this comes before "
-        "answering what they asked. Never state a service, term or capability "
-        "you have not verified, and never offer a discount or a bonus."
+        "answering what they asked. State a service, term or capability where a "
+        "tool in this run has confirmed it, and quote every figure at the "
+        "catalog price."
     )
 
 
@@ -967,8 +968,9 @@ def project_consultation_directive() -> str:
         "matters most, look it up with search_products first, and give its "
         "confirmed price and stock. One piece, not a list. Where their project "
         "spans several kinds of furniture, put the pieces together as one "
-        "package with a combined total from those same verified rows -- a "
-        "package, never a discount. On a quantity this size, availability for "
+        "package and state their combined total from those same verified rows. "
+        "Quote every figure at the catalog price. On a quantity this size, "
+        "availability for "
         "the whole order matters more than the lowest unit price: say plainly "
         "if stock covers it, and if it does not, say what does."
     )
