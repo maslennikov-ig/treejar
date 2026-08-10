@@ -137,6 +137,7 @@ from src.llm.safety import (
 from src.llm.sales_turn_guard import (
     carry_the_company_question,
     collapse_question_form,
+    commit_to_what_you_deferred,
     refuse_to_chase_the_name,
 )
 from src.llm.verified_answers import (
@@ -2946,6 +2947,46 @@ class SalesDeps:
     catalog_decision: CatalogDecision | None = None
     executed_tool_names: list[str] = field(default_factory=list)
     recovery_tool_traces: list[RuntimeToolTrace] = field(default_factory=list)
+
+
+_PRICE_FIGURE_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def _turn_saw_catalog_evidence(deps: SalesDeps) -> bool:
+    return bool(
+        deps.product_results_seen
+        or deps.claim_rows
+        or deps.catalog_fact_products
+        or deps.verified_catalog_selections
+        or deps.current_catalog_selections
+        or deps.pending_product_media
+        or deps.stock_snapshots
+    )
+
+
+def grounded_amounts_for_turn(
+    deps: SalesDeps,
+    *,
+    customer_text: str = "",
+) -> tuple[object, ...] | None:
+    """The sums this turn may say out loud, or `None` to leave the check off.
+
+    Deliberately narrow. `tj-vz7o.10.1` measured one failure and this closes
+    exactly that one: a bare "Good Afternoon" retrieved nothing, and the reply
+    still named a confident starting price and attributed it to our catalog.
+    When the turn touched no catalog at all, every sum in the reply is invented
+    by construction, and the only honest exception is a figure the customer
+    wrote first -- their own budget read back is theirs, not ours.
+
+    The moment a row *is* retrieved this returns `None` and the check stands
+    down, because a price-per-row claim is the claim contract's job and it has
+    the field paths to do it. A blunter rule here would strip real quotations,
+    which is a worse defect than the one being fixed.
+    """
+
+    if _turn_saw_catalog_evidence(deps):
+        return None
+    return tuple(_PRICE_FIGURE_RE.findall(str(customer_text or "")))
 
 
 _CLAIM_CONTRACT_CONTRACT = (
@@ -15739,10 +15780,21 @@ async def process_message(
         # question surgery over them would edit text that is already exactly
         # what it should be.
         final_text = _apply_selling_turn_guard(final_text, response_deps)
+        # Every turn, including the first: `tj-vz7o.10.1` measured this failure
+        # on an opening, which `_apply_selling_turn_guard` deliberately skips.
+        # Runs before grounding so grounding still has the last word on it.
+        final_text = commit_to_what_you_deferred(
+            final_text,
+            language=str(response_deps.conversation.language),
+        )
         grounding_result = enforce_grounding_output(
             final_text,
             language=str(response_deps.conversation.language),
             inventory_confirmed=response_deps.inventory_confirmed,
+            grounded_amounts=grounded_amounts_for_turn(
+                response_deps,
+                customer_text=combined_text,
+            ),
         )
         final_text = grounding_result.text
         final_text = _append_required_tool_disclosures(final_text, response_deps)

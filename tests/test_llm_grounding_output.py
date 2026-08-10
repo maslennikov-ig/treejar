@@ -341,3 +341,145 @@ def test_enforce_grounding_output_uses_localized_fallback_for_single_unsafe_sent
     assert arabic.action is GroundingOutputAction.REPLACED
     assert "المخزون" in arabic.text
     assert classify_grounding_output(arabic.text) == ()
+
+
+# --- the invented price, tj-vz7o.10.1 -------------------------------------
+#
+# Measured on 2026-08-10 over 20 real customer openings: a bare "Good
+# Afternoon" retrieved nothing from the catalog, and the reply came back with
+# "Our ergonomic office chairs start from AED 500 in our catalog" -- in the
+# same message as our own promise to quote only confirmed prices. The three
+# older violations are text-only patterns, so none of them could see that no
+# row existed behind the figure.
+
+UNGROUNDED_OPENING = (
+    "Hello, I'm Noor from Treejar. We supply office furniture across the UAE, "
+    "and I quote from our own catalog with confirmed prices and stock.\n\n"
+    "Good afternoon! Welcome to Treejar.\n\n"
+    "Our ergonomic office chairs start from AED 500 in our catalog. Are you "
+    "furnishing a new office or upgrading an existing workspace?"
+)
+
+
+def test_a_price_with_no_verified_row_behind_it_is_removed() -> None:
+    result = enforce_grounding_output(
+        UNGROUNDED_OPENING,
+        language="en",
+        grounded_amounts=[],
+    )
+
+    assert result.action is GroundingOutputAction.REPAIRED
+    assert result.violations == (GroundingViolation.UNVERIFIED_PRICE,)
+    assert "AED 500" not in result.text
+    assert "Are you furnishing a new office" in result.text
+
+
+def test_removing_a_sentence_does_not_flatten_the_paragraphs() -> None:
+    """The repair used to re-join the whole reply with single spaces.
+
+    That was invisible while the repair path almost never fired on an opening.
+    The price violation fires there by design, and a three-paragraph WhatsApp
+    greeting arriving as one wall of text is a defect of its own.
+    """
+
+    result = enforce_grounding_output(
+        UNGROUNDED_OPENING,
+        language="en",
+        grounded_amounts=[],
+    )
+
+    assert result.text.count("\n\n") == 2
+    assert "  " not in result.text
+
+
+def test_a_price_that_is_on_a_verified_row_survives() -> None:
+    text = "The XTEN-S workstation is AED 566.87 in the catalog."
+
+    assert (
+        enforce_grounding_output(text, language="en", grounded_amounts=[566.87]).action
+        is GroundingOutputAction.UNCHANGED
+    )
+
+
+@pytest.mark.parametrize(
+    ("grounded", "written"),
+    [
+        # One sum, four spellings. A guard that cannot see these are equal
+        # reports defects that are not there, which is how the first automatic
+        # pass of the 2026-08-10 round produced five false flags.
+        (5000, "AED 5,000"),
+        (5000.0, "AED 5000.00"),
+        ("5000.000", "AED 5,000.0"),
+        (566.87, "566.87 AED"),
+    ],
+)
+def test_one_sum_spelled_four_ways_is_one_sum(grounded: object, written: str) -> None:
+    result = enforce_grounding_output(
+        f"That comes to {written}.",
+        language="en",
+        grounded_amounts=[grounded],
+    )
+
+    assert result.action is GroundingOutputAction.UNCHANGED
+
+
+def test_the_customers_own_figure_read_back_is_not_our_invention() -> None:
+    result = enforce_grounding_output(
+        "Understood, a budget of AED 12,000 for the fit-out.",
+        language="en",
+        grounded_amounts=["12000"],
+    )
+
+    assert result.action is GroundingOutputAction.UNCHANGED
+
+
+def test_only_money_counts_as_a_price() -> None:
+    """Dimensions, quantities and lead times are not prices.
+
+    Stripping a sentence for saying "2-3 days" would be a worse defect than
+    the one this violation catches.
+    """
+
+    result = enforce_grounding_output(
+        "The desk is 1200x600 mm and delivery takes 2-3 days for 7 units.",
+        language="en",
+        grounded_amounts=[],
+    )
+
+    assert result.action is GroundingOutputAction.UNCHANGED
+
+
+def test_the_check_stays_off_when_nobody_offered_evidence() -> None:
+    """`None` and an empty list mean opposite things, on purpose.
+
+    `None` is "no caller looked", which is every non-selling call site and must
+    not change their behaviour. `[]` is "we looked and found nothing", which is
+    the case this violation exists for.
+    """
+
+    text = "Our chairs start from AED 500."
+
+    assert (
+        enforce_grounding_output(text, language="en").action
+        is GroundingOutputAction.UNCHANGED
+    )
+    assert (
+        enforce_grounding_output(text, language="en", grounded_amounts=[]).action
+        is GroundingOutputAction.REPLACED
+    )
+
+
+def test_a_reply_that_is_only_an_invented_price_falls_back_in_both_languages() -> None:
+    english = enforce_grounding_output(
+        "Our chairs start from AED 500.", language="en", grounded_amounts=[]
+    )
+    arabic = enforce_grounding_output(
+        "تبدأ كراسينا من 500 درهم.", language="ar", grounded_amounts=[]
+    )
+
+    assert english.action is GroundingOutputAction.REPLACED
+    assert "only from our own catalog" in english.text
+    assert classify_grounding_output(english.text, grounded_amounts=[]) == ()
+    assert arabic.action is GroundingOutputAction.REPLACED
+    assert "الكتالوج" in arabic.text
+    assert classify_grounding_output(arabic.text, grounded_amounts=[]) == ()

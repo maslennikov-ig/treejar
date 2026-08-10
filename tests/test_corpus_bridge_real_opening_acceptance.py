@@ -8,6 +8,7 @@ import pathlib
 import pytest
 from scripts.corpus_bridge.real_opening_acceptance import (
     _load_frozen_scenarios,
+    apply_shipped_output_guards,
     build_generation_messages,
     build_public_summary,
     catalog_matches,
@@ -20,7 +21,9 @@ from scripts.corpus_bridge.real_opening_acceptance import (
 )
 
 
-def _result(dialog_id: int, *, score: float = 20.0) -> dict[str, object]:
+def _result(
+    dialog_id: int, *, score: float = 20.0, attainable: float = 30.0
+) -> dict[str, object]:
     return {
         "dialog_id": dialog_id,
         "length_stratum": (dialog_id - 1) // 5 + 1,
@@ -35,6 +38,7 @@ def _result(dialog_id: int, *, score: float = 20.0) -> dict[str, object]:
         "completion_tokens": 20 + dialog_id,
         "cost_micro_usd": 10 + dialog_id,
         "weighted_score": score,
+        "attainable_score": attainable,
         "raw_total": 8,
         "language_ok": True,
         "critical_failures": [],
@@ -115,12 +119,8 @@ def test_public_summary_contains_no_opening_or_response_text() -> None:
         "ci95_low": 80,
         "ci95_high": 80,
     }
-    assert public["acceptance"] == {
-        "accepted": True,
-        "minimum_ci95_low_tenths": 200,
-        "observed_ci95_low_tenths": 200,
-        "critical_failure_count": 0,
-    }
+    assert public["acceptance"]["accepted"] is True
+    assert public["acceptance"]["score_verdict"] == "paired_comparison_required"
     assert public["luna_time_to_first_reply_ms"] == {
         "responses": 20,
         "median": 710,
@@ -171,19 +171,63 @@ def test_failed_quality_round_still_produces_a_text_safe_summary() -> None:
     assert public["acceptance"]["accepted"] is False
 
 
-def test_good_label_requires_the_interval_not_only_the_point_estimate() -> None:
-    """Catch an uncertain mean being presented as client-ready quality."""
+def test_no_absolute_score_threshold_can_come_back() -> None:
+    """`tj-vz7o.10.2`. The retired gate and why it may not return.
+
+    The round of 2026-08-10 pre-registered "the lower bound reaches 20.0/30",
+    then the applicability maps showed eleven of the twenty openings with a
+    deterministic ceiling of 9.6/30. Those eleven could not have passed with
+    every applicable rule perfect: the gate was unreachable by arithmetic, not
+    by quality. Restoring any absolute level over this set restores that.
+    """
+
     results = [_result(dialog_id, score=19.9) for dialog_id in range(1, 21)]
 
     public = build_public_summary(results, bootstrap_samples=200, seed=17)
 
     assert public["weighted_score_tenths"]["mean"] == 199
-    assert public["acceptance"] == {
-        "accepted": False,
-        "minimum_ci95_low_tenths": 200,
-        "observed_ci95_low_tenths": 199,
-        "critical_failure_count": 0,
-    }
+    assert "minimum_ci95_low_tenths" not in public["acceptance"]
+    assert public["acceptance"]["score_verdict"] == "paired_comparison_required"
+    assert public["acceptance"]["accepted"] is True
+
+
+def test_the_score_is_reported_against_the_ceiling_it_could_reach() -> None:
+    """Averaging a 9.6 ceiling with a 30.0 one produces a number no opening
+    could have scored. The bands keep them apart."""
+
+    results = [
+        _result(dialog_id, score=7.2, attainable=9.6) for dialog_id in range(1, 12)
+    ] + [_result(dialog_id, score=21.0, attainable=30.0) for dialog_id in range(12, 21)]
+
+    public = build_public_summary(results, bootstrap_samples=200, seed=17)
+
+    assert public["ceiling_bands"] == [
+        {
+            "attainable_tenths": 96,
+            "openings": 11,
+            "mean_tenths": 72,
+            "share_of_ceiling_percent": 75,
+        },
+        {
+            "attainable_tenths": 300,
+            "openings": 9,
+            "mean_tenths": 210,
+            "share_of_ceiling_percent": 70,
+        },
+    ]
+
+
+def test_a_critical_failure_still_blocks_acceptance_at_any_score() -> None:
+    """The one absolute left in the contract. A fabricated figure is a defect
+    whatever the mean says, so it is not a threshold that can be tuned."""
+
+    results = [_result(dialog_id, score=29.0) for dialog_id in range(1, 21)]
+    results[3]["critical_failures"] = ["hallucination"]
+
+    public = build_public_summary(results, bootstrap_samples=200, seed=17)
+
+    assert public["acceptance"]["accepted"] is False
+    assert public["acceptance"]["critical_failure_count"] == 1
 
 
 def test_cost_estimate_prices_every_authorized_call() -> None:
@@ -270,3 +314,48 @@ def test_numeric_grounding_normalizes_catalog_names_and_opening_ranges() -> None
         == []
     )
     assert find_ungrounded_numbers("Options start at AED 901.", case) == ["901"]
+
+
+def test_the_harness_applies_the_guards_that_ship() -> None:
+    """`tj-vz7o.10.1`. The round measured the model plus one guard.
+
+    Production runs `apply_opening_guard`, then the deferral guard, then
+    `enforce_grounding_output`, and only then does a customer see the text. A
+    harness that stops after the first measures a reply that would never be
+    sent. Neither failure found on 2026-08-10 was caused by this gap -- both
+    survive the full pipeline -- but a defect production would have filtered
+    cannot be told from a real one after the fact.
+    """
+
+    invented = apply_shipped_output_guards(
+        "Our ergonomic chairs start from AED 500 in our catalog. "
+        "What are you furnishing?",
+        language="en",
+        anchor_line=None,
+        catalog_evidence=[],
+    )
+
+    assert "AED 500" not in invented
+    assert "What are you furnishing?" in invented
+
+
+def test_a_price_on_a_retrieved_row_survives_the_harness_guards() -> None:
+    kept = apply_shipped_output_guards(
+        "The XTEN-S workstation is AED 566.87.",
+        language="en",
+        anchor_line=None,
+        catalog_evidence=[{"name": "XTEN-S", "price_aed": 566.87, "stock": 4}],
+    )
+
+    assert "566.87" in kept
+
+
+def test_the_harness_commits_to_what_it_defers() -> None:
+    committed = apply_shipped_output_guards(
+        "Whether assembly can be included still needs confirmation.",
+        language="en",
+        anchor_line=None,
+        catalog_evidence=[],
+    )
+
+    assert "I'll confirm assembly with our team and come back to you." in committed

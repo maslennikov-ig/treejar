@@ -39,8 +39,10 @@ from src.llm.communication_policy import (
     COMMUNICATION_RULES_POLICY,
     finalize_evidence_grounding_prompt,
 )
+from src.llm.grounding_output import enforce_grounding_output
 from src.llm.opening_guard import apply_opening_guard
 from src.llm.prompts import BASE_SYSTEM_PROMPT, LANGUAGE_DIRECTIVE, STAGE_RULES
+from src.llm.sales_turn_guard import commit_to_what_you_deferred
 from src.models.conversation import Conversation
 from src.models.message import Message
 from src.quality.evaluator import (
@@ -52,6 +54,7 @@ from src.quality.evaluator import (
 from src.quality.schemas import (
     EvaluationResult,
     RedFlagEvaluationResult,
+    attainable_weighted_score,
     finalize_evaluation_result,
     raw_total,
 )
@@ -201,6 +204,66 @@ def _stratified_median_interval(
     )
 
 
+# Frozen 2026-08-10 under `tj-vz7o.10.2`, before any rerun.
+#
+# The round before this one pre-registered "the lower bound of the weighted
+# interval reaches 20.0/30" and the applicability maps then showed that eleven
+# of the twenty openings have a deterministic ceiling of 9.6/30. The gate was
+# unreachable by arithmetic rather than by quality, and it failed honestly
+# instead of being lowered afterwards.
+#
+# The replacement states no absolute score at all, and that is the point. Two
+# facts make an absolute level meaningless on this set: the openings have
+# different ceilings, so their mean is an average of incommensurable numbers;
+# and the judge is GLM, which does not bridge to the client's `claude-haiku-4.5`
+# on any published figure. What survives both is a paired comparison of the same
+# twenty openings, same judge, one build against another -- which is what
+# `score_uncertainty.py` has enforced for the normalised axis all along.
+ACCEPTANCE_CONTRACT: dict[str, Any] = {
+    "frozen_on": "2026-08-10",
+    "beads": "tj-vz7o.10.2",
+    "required": [
+        "20/20 non-empty Luna responses",
+        "20/20 valid GLM evaluations",
+        "20/20 responses in the customer's language",
+        "zero critical failures: a fabricated figure is a defect at any score",
+    ],
+    "score_rule": (
+        "No absolute /30 threshold. Report the score beside the attainable "
+        "ceiling for that opening, and decide a build by a paired delta against "
+        "the stored baseline over the same twenty openings and the same judge."
+    ),
+    "forbidden": [
+        "an aggregate level quoted across openings with different ceilings",
+        "any comparison with the client's figure: a different judge read it",
+    ],
+}
+
+
+def _ceiling_bands(results: list[dict[str, object]]) -> list[dict[str, Any]]:
+    """One row per attainable ceiling, because their mean is not a level.
+
+    Eleven of the twenty openings top out at 9.6/30 and nine can reach 30.0.
+    Averaging them produces a number no opening could have scored.
+    """
+
+    bands: dict[int, list[float]] = {}
+    for item in results:
+        ceiling = round(float(item.get("attainable_score") or 0.0) * 10)
+        bands.setdefault(ceiling, []).append(float(item["weighted_score"]))
+    return [
+        {
+            "attainable_tenths": ceiling,
+            "openings": len(scores),
+            "mean_tenths": round(statistics.fmean(scores) * 10),
+            "share_of_ceiling_percent": (
+                round(statistics.fmean(scores) / (ceiling / 10) * 100) if ceiling else 0
+            ),
+        }
+        for ceiling, scores in sorted(bands.items())
+    ]
+
+
 def build_public_summary(
     results: list[dict[str, object]], *, bootstrap_samples: int, seed: int
 ) -> dict[str, Any]:
@@ -248,6 +311,7 @@ def build_public_summary(
     ]
     critical_failure_count = sum(len(item["critical_failures"]) for item in results)
     low_tenths = round(low * 10)
+    ceilings = _ceiling_bands(results)
     return {
         "schema_version": "treejar-real-opening-acceptance-public/v1",
         "generation_model": "openai/gpt-5.6-luna",
@@ -275,11 +339,15 @@ def build_public_summary(
             "ci95_low": round(latency_low),
             "ci95_high": round(latency_high),
         },
-        "acceptance": {
-            "accepted": critical_failure_count == 0 and low_tenths >= 200,
-            "minimum_ci95_low_tenths": 200,
-            "observed_ci95_low_tenths": low_tenths,
+        "ceiling_bands": ceilings,
+        "acceptance": ACCEPTANCE_CONTRACT
+        | {
+            "coverage_complete": len(results) == EXPECTED_OPENINGS,
             "critical_failure_count": critical_failure_count,
+            "accepted": critical_failure_count == 0
+            and len(results) == EXPECTED_OPENINGS,
+            "score_verdict": "paired_comparison_required",
+            "observed_ci95_low_tenths": low_tenths,
         },
         "bootstrap": {"samples": bootstrap_samples, "seed": seed},
         "scenarios": rows,
@@ -350,6 +418,46 @@ def build_generation_messages(
         {"role": "system", "content": system},
         {"role": "user", "content": opening},
     ]
+
+
+def apply_shipped_output_guards(
+    raw_content: str,
+    *,
+    language: str,
+    anchor_line: str | None,
+    catalog_evidence: object,
+) -> str:
+    """Everything production would do to this text before the customer sees it.
+
+    The 2026-08-10 round applied `apply_opening_guard` and stopped, so it
+    measured the model plus one guard rather than the reply that would actually
+    be sent. Neither failure it found was caused by that gap -- both survive the
+    full pipeline, which is why they were real -- but a round that reports a
+    defect production would have filtered is a round that sends us to fix
+    nothing, and it cannot be told apart from a real one after the fact.
+
+    `is_first_turn=True` and `customer_name=None` are properties of the frozen
+    set: every case is one customer opening with no prior conversation.
+    """
+
+    text = apply_opening_guard(
+        raw_content,
+        language=language,
+        is_first_turn=True,
+        customer_name=None,
+        anchor_line=anchor_line,
+    )
+    text = commit_to_what_you_deferred(text, language=language)
+    grounded: list[object] = []
+    if isinstance(catalog_evidence, list):
+        for product in catalog_evidence:
+            if isinstance(product, dict) and product.get("price_aed") is not None:
+                grounded.append(product["price_aed"])
+    return enforce_grounding_output(
+        text,
+        language=language,
+        grounded_amounts=grounded,
+    ).text
 
 
 def catalog_matches(
@@ -1023,6 +1131,7 @@ def _analyze_completed_state(
                 "cost_micro_usd": int(generation["cost_micro_usd"])
                 + int(judge["cost_micro_usd"]),
                 "weighted_score": float(evaluation.total_score),
+                "attainable_score": attainable_weighted_score(evaluation.criteria),
                 "raw_total": raw_total(evaluation.criteria),
                 "language_ok": bool(judge["language_ok"]),
                 "critical_failures": corrected_failures,
@@ -1166,16 +1275,15 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                 raw_content, finish_reason = _message_content(body)
                 if finish_reason == "length":
                     raise RuntimeError(f"dialog {dialog_id}: Luna response truncated")
-                response = apply_opening_guard(
+                response = apply_shipped_output_guards(
                     raw_content,
                     language=str(case["language"]),
-                    is_first_turn=True,
-                    customer_name=None,
                     anchor_line=(
                         str(case["anchor_line"])
                         if isinstance(case.get("anchor_line"), str)
                         else None
                     ),
+                    catalog_evidence=case["catalog_evidence"],
                 )
                 record["generation"] = {
                     "model": GENERATOR_MODEL,

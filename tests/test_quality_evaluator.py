@@ -1744,3 +1744,69 @@ def test_the_widening_rules_still_apply_where_nothing_was_ruled_out() -> None:
 
     assert applicability[10] is True
     assert applicability[11] is True
+
+
+# --- what a conversation of this shape could possibly score, tj-vz7o.10.2 ---
+
+
+def _criteria_with(applicable: set[int], scores: dict[int, int] | None = None) -> list:
+    from src.quality.schemas import RULE_NAMES, CriterionScore
+
+    return [
+        CriterionScore(
+            rule_number=rule,
+            rule_name=RULE_NAMES[rule],
+            score=(scores or {}).get(rule, 0),
+            comment="",
+            applicable=rule in applicable,
+        )
+        for rule in range(1, 16)
+    ]
+
+
+def test_a_short_opening_has_a_ceiling_of_nine_point_six() -> None:
+    """The finding that retired the 20.0/30 acceptance gate.
+
+    Eleven of the twenty real customer openings measured on 2026-08-10 engaged
+    six rules across two blocks. Below the coverage floor the scorer stops
+    renormalising, so those eleven could not have passed a 20.0 threshold if
+    every applicable rule had been perfect. The gate was unreachable by
+    arithmetic, not by quality.
+    """
+
+    from src.quality.schemas import attainable_weighted_score
+
+    assert attainable_weighted_score(_criteria_with({1, 2, 3, 7, 4, 5})) == 9.6
+
+
+def test_a_full_conversation_still_has_a_ceiling_of_thirty() -> None:
+    from src.quality.schemas import attainable_weighted_score
+
+    assert attainable_weighted_score(_criteria_with(set(range(1, 16)))) == 30.0
+
+
+def test_nothing_applicable_can_attain_nothing() -> None:
+    from src.quality.schemas import attainable_weighted_score
+
+    assert attainable_weighted_score(_criteria_with(set())) == 0.0
+
+
+def test_the_ceiling_is_never_below_what_was_actually_scored() -> None:
+    """The property that makes a share-of-ceiling number meaningful.
+
+    Computed by asking the frozen scorer what a perfect conversation of this
+    shape scores, so it cannot drift away from the scorer it describes.
+    """
+
+    from src.quality.schemas import attainable_weighted_score, calculate_weighted_score
+
+    for applicable in (
+        {1, 2, 3, 7},
+        {1, 2, 3, 7, 4, 5},
+        {1, 2, 3, 7, 4, 5, 8, 9, 10},
+        set(range(1, 16)),
+    ):
+        criteria = _criteria_with(applicable, {rule: 2 for rule in applicable})
+        scored, _ = calculate_weighted_score(criteria)
+        assert scored <= attainable_weighted_score(criteria) + 1e-9
+        assert scored == pytest.approx(attainable_weighted_score(criteria))

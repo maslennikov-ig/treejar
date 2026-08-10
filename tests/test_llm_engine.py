@@ -43,6 +43,7 @@ from src.llm.engine import (
     _extract_quote_customer_details,
     _product_media_is_referenced,
     extract_exact_quote_candidate,
+    grounded_amounts_for_turn,
     inject_system_prompt,
     process_message,
     sales_agent,
@@ -23207,7 +23208,17 @@ async def test_a_compact_sku_question_is_not_answered_from_the_faq_branch(
     ]
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
-    mock_run.return_value = _FakeAgentResult("CH 616 NEW black is in stock at AED 295.")
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        # A price can only be answered off a catalog lookup, and since
+        # `tj-vz7o.10.1` the grounding guard says so: a turn that touched no
+        # catalog may not state a sum. Mocking the answer without the lookup
+        # would describe a turn production cannot produce.
+        deps = kwargs["deps"]
+        deps.product_results_seen = True
+        return _FakeAgentResult("CH 616 NEW black is in stock at AED 295.")
+
+    mock_run.side_effect = run_side_effect
 
     first_response = await process_message(
         conversation_id=conv.id,
@@ -23450,4 +23461,117 @@ async def test_the_first_turn_keeps_its_own_folded_pair(
     assert "quote from our own catalog" in response.text
     assert "What are you furnishing?" in response.text
     assert "how should I address you" in response.text
+    mock_notify.assert_not_awaited()
+
+
+# --- the invented opening price, tj-vz7o.10.1 -----------------------------
+
+
+def _deps_without_catalog_evidence(conv: Conversation) -> SalesDeps:
+    return SalesDeps(
+        db=AsyncMock(),
+        redis=AsyncMock(),
+        conversation=conv,
+        embedding_engine=AsyncMock(),
+        zoho_inventory=AsyncMock(),
+        zoho_crm=None,
+        messaging_client=AsyncMock(),
+        pii_map={},
+    )
+
+
+def test_a_turn_that_touched_no_catalog_may_state_no_sum(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    _db, conv, *_ = mock_deps
+    deps = _deps_without_catalog_evidence(conv)
+
+    assert grounded_amounts_for_turn(deps, customer_text="Good Afternoon") == ()
+
+
+def test_the_customers_own_figure_stays_groundable(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    _db, conv, *_ = mock_deps
+    deps = _deps_without_catalog_evidence(conv)
+
+    assert grounded_amounts_for_turn(
+        deps, customer_text="my budget is around 12,000 AED"
+    ) == ("12,000",)
+
+
+def test_the_price_check_stands_down_once_a_row_was_retrieved(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """A per-row price claim belongs to the claim contract, which has the field
+    paths to check it. A blunt rule here would strip real quotations, which is
+    a worse defect than the one being fixed."""
+
+    _db, conv, *_ = mock_deps
+    deps = _deps_without_catalog_evidence(conv)
+    deps.product_results_seen = True
+
+    assert grounded_amounts_for_turn(deps, customer_text="anything") is None
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_a_bare_greeting_never_comes_back_with_a_starting_price(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """The exact failure measured on 2026-08-10 over 20 real openings.
+
+    "Good Afternoon" matched no catalog row, and the reply still named a
+    confident starting price and attributed it to our catalog -- in the same
+    message as the promise to quote only confirmed prices. Nothing in the
+    pipeline could see it, because every grounding rule before this one was a
+    text pattern with no knowledge of what had actually been retrieved.
+    """
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    query = "Good Afternoon"
+    mock_build_history.return_value = _first_turn_history(query)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Good afternoon! Welcome to Treejar.\n\n"
+        "Our ergonomic office chairs start from AED 500 in our catalog. "
+        "Are you furnishing a new office?"
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=query,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "500" not in response.text
+    assert "AED" not in response.text
+    # The turn still does its job: the customer is greeted and asked something.
+    assert "Are you furnishing a new office" in response.text
     mock_notify.assert_not_awaited()

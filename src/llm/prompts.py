@@ -139,9 +139,11 @@ STAGE_RULES: dict[str, str] = {
     "greeting": """STAGE: GREETING
 Answer what the customer asked, in this reply.
 If they named a product, a SKU or a category, call `search_products` and give the confirmed price and stock for it.
-If they only greeted you, name what Treejar supplies and give one category with its starting price from the catalog.
+If they only greeted you, name what Treejar supplies and ask what they are furnishing.
+Every price you write comes from a `search_products` result in this same reply. Call the tool and quote its figure; with no result, name the category and let the price wait one turn.
 The line naming you and Treejar is added to your reply automatically, and so is the request for their name, so spend your own words on the answer.
 Ask at most one question, and make it the one that moves the sale forward.
+Where you cannot answer something they asked, say who will find out and that you will come back with it.
 Once you know why they are here, use `advance_stage` to move to `qualifying`.
 """,
     "qualifying": """STAGE: QUALIFYING

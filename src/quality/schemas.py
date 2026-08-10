@@ -276,6 +276,40 @@ def raw_total(criteria: Sequence[CriterionScore]) -> int:
     )
 
 
+def attainable_weighted_score(criteria: Sequence[CriterionScore]) -> float:
+    """The best score this conversation could possibly have earned.
+
+    Not every conversation can reach 30. `calculate_weighted_score` renormalises
+    only when enough of the rubric applied; below that floor it leaves the
+    weights alone, so a short opening that engages two blocks has a ceiling of
+    9.6/30 however well it is written. Eleven of the twenty real customer
+    openings measured on 2026-08-10 were in exactly that position.
+
+    That is not a defect in the scorer -- it is the honest statement that eight
+    rules and fifteen rules are different measurements. It does mean an
+    aggregate level over a mixed set says nothing, and that a fixed threshold
+    over such a set is unreachable by arithmetic rather than by quality. The
+    ceiling is computed by asking the frozen scorer itself what a perfect
+    conversation of this shape scores, so it can never drift away from the
+    scorer it describes.
+    """
+
+    perfect = [
+        CriterionScore(
+            rule_number=criterion.rule_number,
+            rule_name=criterion.rule_name,
+            score=2 if criterion.applicable and not criterion.n_a else 0,
+            comment="",
+            applicable=criterion.applicable,
+            n_a=criterion.n_a,
+            evidence=[],
+        )
+        for criterion in criteria
+    ]
+    ceiling, _ = calculate_weighted_score(perfect)
+    return ceiling
+
+
 def calculate_weighted_score(
     criteria: list[CriterionScore],
 ) -> tuple[float, list[BlockScore]]:

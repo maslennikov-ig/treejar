@@ -11,8 +11,8 @@ the exact 53-call authority for `tj-vz7o.4` was declined; the issue stays open.
 ## Current truth
 
 - **Production is not on Supabase.** Project `vlxgzhbtnwysaqonvlte` is INACTIVE,
-  which is why DNS, the pooler, REST and the MCP failed at once. It is Postgres
-  in `noor-db-1` on `noor-server`, reached as `db:5432`.
+  which is why DNS, pooler, REST and MCP failed at once. It is Postgres in
+  `noor-db-1` on `noor-server`, reached as `db:5432`.
 - **No real customer has ever written Russian.** Of 69 real-phone conversations
   0 carry Cyrillic, 6 Arabic; all 28 Cyrillic messages are our harness.
   `tj-4e5j.2`.
@@ -22,10 +22,20 @@ the exact 53-call authority for `tj-vz7o.4` was declined; the issue stays open.
 - **The main model is Luna, and all three layers now say so**: `system_configs`,
   `src/core/config.py`, the production `.env`. For three days only the row did,
   while the source said `z-ai/glm-5.2` -- shadowed. `tj-uidf`.
-- **Two judges, do not confuse them.** Acceptance is a blind reader panel; the
-  client judge is `claude-haiku-4.5`. The map-free raw panel used nine readers
-  at 11-12 packets and gave 1.08 raw-point mean absolute disagreement across 53
-  double-read packets. The older 1.58 figure is on the weighted ruler.
+- **Three judges now, do not confuse them.** The stored-packet panel is blind
+  Claude readers; the client judge is `claude-haiku-4.5`; the 20 real openings
+  of `tj-vz7o.10` were scored by `z-ai/glm-5.2`, the runtime QA judge, which
+  had never scored an acceptance before. So **18.71 and 11.0 are not
+  comparable in either direction**: different judge and different set, and the
+  real-opening set is the measured hard zone. Only a paired delta within one
+  judge and one set means anything. The map-free raw panel used nine readers at
+  11-12 packets for 1.08 mean absolute disagreement over 53 double-read packets;
+  the older 1.58 is on the weighted ruler.
+- **An opening's ceiling is not 30.** Below the coverage floor
+  `calculate_weighted_score` stops renormalising, so 11 of the 20 real openings
+  top out at 9.6/30 however well written. `attainable_weighted_score` computes
+  it from the frozen scorer; every score is published beside its ceiling and no
+  level is averaged across ceilings. `tj-vz7o.10.2`.
 - **A condition on the world is a guard; a condition on what Noor thinks she
   already did is a leak**, since she is both actor and judge. Four rules died on
   their own escape clauses; five tests hold them out. `tj-2m5m.8`.
@@ -36,36 +46,33 @@ the exact 53-call authority for `tj-vz7o.4` was declined; the issue stays open.
 - **Less caution, more selling, 2026-08-08.** Rule 3 stands down on a signed
   opening; rule 11 needs a two-family order. `docs/reports/2026-08-08-less-caution-more-selling.md`.
 - **This model follows an instruction and loses a prohibition** -- owner,
-  2026-08-10. Rule 11 was one permission wrapped in two bans and scored 0.00; it
-  now states the act. Six formatting bans duplicated `_format_for_whatsapp`. The
-  consultative directive now holds no "never" at all, and a test keeps it that
-  way. Real constraints live once, in the grounding policy. 37 -> 28 of 238.
+  2026-08-10. Rule 11 was a permission wrapped in two bans and scored 0.00; it
+  now states the act, the consultative directive holds no "never" at all, and a
+  test keeps it so. Real constraints live once, in grounding. 37 -> 28 of 238.
 - **24.0 is retired and the rubric is frozen.** Five changes in one week, all
-  raising the number, so nothing before 2026-08-09 compares. `score_by_shape.py`
-  refuses to print one number. `tj-07bs`.
+  raising it, so nothing before 2026-08-09 compares. `tj-07bs`.
 - **The widening is not what `tj-2m5m.4` was filed as.** Rule 9 is 1.51/2 on 85%
-  of reads against the 0.40 it was filed on; rule 10 is 0.88 on 29%, third.
-- **Production runs `8b75888`** (2026-08-09, readback matched, health ok).
+  of reads against the 0.40 filed; rule 10 is 0.88 on 29%, third. Production
+  runs `8b75888` (2026-08-09, readback matched, health ok).
 - **The round moved nothing in aggregate, and that is the finding.** At
   `8b75888`: project **20.02 +/- 1.00** against 19.95, transactional **21.16
-  +/- 3.49** against 20.77 over the same 11 scenarios, both deltas far inside
-  their own uncertainty. Reader disagreement **1.58**, the lowest yet.
+  +/- 3.49** against 20.77 over the same 11 scenarios, both far inside their own
+  uncertainty. Reader disagreement **1.58**, the lowest yet.
 - **The new transactional baseline is 18.94 +/- 3.74 over 7.6 rules across 15
   scenarios**, including `R06`-`R09`. Compare with that, never with 21.16, which
   exists only for the like-for-like eleven.
 - **The realistic shapes are the gap, and 2026-08-10 aims at it.** `R07` 7.35,
   `R06` 8.10, `R09` 10.50, `R04` 7.95 against `R02` 29.07, at the same 6-8
-  applicable rules. Good at a brief, poor at four words and silence. The corpus
-  confirms it with n=687: real openings have a median of 21 characters.
+  applicable rules. Good at a brief, poor at four words. Corpus n=687: a real
+  opening has a median of 21 characters.
 - **A guarantee that never runs is worth nothing, and one of ours did not.**
   Rule 11's package line appeared in 0 of 53 packets and was deleted rather than
   repaired. Rule 13's guard did fire, on 3 packets, moving it **0.00 -> 0.75**,
   attributable because nothing else touched rule 13. `tj-odeq`.
 - **The first turn answers, then asks the name in passing** -- owner decision,
-  2026-08-10, `58d9a2f`. Both gates went, the engine short-circuit and the
-  kernel's flow. Ask once and let it go; `refuse_to_chase_the_name` holds that on
-  turns we actually sent. Three defects it uncovered are fixed in the same commit
-  and named there. Parked requests still resume. `tj-0ai0`, `tj-i653`.
+  2026-08-10, `58d9a2f`. Both gates went, engine short-circuit and kernel flow.
+  Ask once and let go; `refuse_to_chase_the_name` reads turns we actually sent.
+  Three defects it uncovered are fixed there. Parked requests still resume.
 - **The first confound is removed.** With no applicability map, all 1590/1590
   criterion reads across the same 53 packets and 19 scenarios were scored. The
   raw result is **18.71 +/- 0.31** on a re-read and **18.71 +/- 1.66** on another
@@ -108,7 +115,7 @@ the exact 53-call authority for `tj-vz7o.4` was declined; the issue stays open.
 ## Local verification
 
 - 2026-08-10 on `codex/tj-vz7o-corpus-bridge`: Ruff and format over 429 files,
-  Mypy over 168 sources, Pytest `3463 passed, 19 skipped`, and process
+  Mypy over 168 sources, Pytest `3498 passed, 19 skipped`, and process
   verification all passed. Supersedes earlier figures.
 
 ## Active work
@@ -117,10 +124,10 @@ the exact 53-call authority for `tj-vz7o.4` was declined; the issue stays open.
   `.7`, `.8`, `.1` open for release-bound acceptance, `.13` depends on them,
   `.5` blocked on the Wazzup status bug.
 - Closed 2026-08-10 under `tj-vz7o`: `.3` map-free re-read, `.6` response
-  coverage, `.7` seeded real-opening set. `.10` ran 20/20 Luna plus 20/20 GLM:
-  11.9/30 (95% CI 10.2-13.7), 2 critical failures in 2/20, so it remains open;
-  `.10.1` owns the failures and `.10.2` the shape-aware gate. `.4` authority
-  was declined; `.5` remains dependent. `.8`/`.9` are drafted, unsent, open.
+  coverage, `.7` seeded real-opening set, `.10.1` both product failures, `.10.2`
+  the frozen gate. `.10` ran 20/20 Luna plus 20/20 GLM with 2 critical failures
+  in 2/20 and stays open until a rerun. `.4` authority was declined; `.5` remains
+  dependent. `.8`/`.9` are drafted, unsent, open.
 
 ## Constraints
 
@@ -134,14 +141,14 @@ the exact 53-call authority for `tj-vz7o.4` was declined; the issue stays open.
 
 ## Next recommended
 
-Next stage id: `tj-vz7o-real-openings-remediation`. Fix `tj-vz7o.10.1`, then
-freeze the shape-aware gate in `.10.2` before asking for a second exact 20 Luna
-+ 20 GLM paid round on the same set. The failed result is in
-`docs/reports/2026-08-10-luna-glm-real-opening-acceptance.md`. Haiku is not a
-project instrument under the owner decision; `.4` stays open under the original
-spec with the denied ask recorded, and `.5` stays dependent.
+Next stage id: `tj-vz7o-real-openings-remediation`. `.10.1` and `.10.2` are
+done, so the only step left on `.10` is a second exact 20 Luna + 20 GLM paid
+round on the same set, scored against the stored baseline as a paired delta.
+Result and contract: `docs/reports/2026-08-10-luna-glm-real-opening-acceptance.md`.
+Haiku is not a project instrument under the owner decision; `.4` stays open under
+the original spec with the denied ask recorded, and `.5` stays dependent.
 
-Recommended action: fix `.10.1`, freeze `.10.2`, then ask for exact rerun authority.
+Recommended action: ask for exact rerun authority; nothing else on `.10` is blocked.
 
 Still owed and unrelated to the corpus: **measure `7c34d55`** against the
 15-scenario baseline **18.94 +/- 3.74**, reading rules 7, 11 and 13 per-rule.

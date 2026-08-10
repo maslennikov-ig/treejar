@@ -30,7 +30,7 @@ answer it or clearly commit to verification.
 | GLM evaluation coverage | 20/20, 100% | 20 Luna responses; fixed-set coverage 100%–100% |
 | Correct-language responses | 20/20, 100% | 20 frozen openings; fixed-set coverage 100%–100% |
 | Luna time to first reply | 2.508 s median | 20/20 replies; stratified-bootstrap 95% CI 2.310–2.948 s |
-| Project weighted score | 11.9/30 | 20 openings; stratified-bootstrap 95% CI 10.2–13.7 |
+| Project weighted score | 11.9/30 — **not a level**, see below | 20 openings of two different ceilings; stratified-bootstrap 95% CI 10.2–13.7 |
 | `raw_total`, scored by GLM | 11.0/30 | 20 openings; stratified-bootstrap 95% CI 10.4–11.6 |
 | Remaining critical failures | 2 in 2/20 openings | 10.0%; Wilson 95% CI 2.8%–30.1% |
 | Luna model cost | $0.004581 total | exactly 20 calls |
@@ -67,9 +67,48 @@ all 11 have a deterministic maximum of 9.6/30 even if every applicable rule
 scores 2/2. Only 9/20 openings can reach 30.0/30.
 
 The gate was not changed after seeing the result. It failed and is retired from
-decision use. `tj-vz7o.10.2` must freeze a shape-aware gate before any paid
-rerun. This is a defect in this round's acceptance design, not evidence that the
-set or frozen scorer should be rewritten.
+decision use. This is a defect in this round's acceptance design, not evidence
+that the set or frozen scorer should be rewritten.
+
+## Why 11.9/30 is not a level, and what replaced it
+
+The same arithmetic that retired the gate disqualifies the aggregate. Eleven of
+the twenty openings can attain at most 9.6/30 and nine can attain 30.0, so their
+mean is an average of two incommensurable numbers and no opening could have
+scored it. It is reported above only because withdrawing a published figure in
+silence is worse than labelling it.
+
+`tj-vz7o.10.2` is now frozen, before any rerun, and states no absolute score at
+all:
+
+- 20/20 responses, 20/20 evaluations, 20/20 in the customer's language.
+- Zero critical failures. A fabricated figure is a defect at any score, so this
+  is the one absolute and it is not a threshold that can be tuned.
+- Score decided by a **paired delta** over the same twenty openings and the same
+  judge, reported per attainable ceiling. `attainable_weighted_score` derives the
+  ceiling from the frozen scorer itself, so it cannot drift from the scorer it
+  describes.
+
+Two facts make an absolute level impossible here rather than merely awkward: the
+mixed ceilings above, and the judge. GLM does not bridge to the client's
+`claude-haiku-4.5` on any figure, so no level measured with it can be read as
+readiness against the client's own numbers. A paired comparison survives both.
+
+## Two numbers that must never be subtracted
+
+`18.71/30` (`tj-vz7o.3`) and `11.0/30` (this round) are both labelled
+`raw_total`, both dated 2026-08-10, and they are **not comparable in either
+direction**. Two things differ at once, not one:
+
+- **The judge.** 18.71 came from a blind Claude reader panel; 11.0 came from
+  `z-ai/glm-5.2`. This project has already measured a 3.8-point systematic shift
+  between two judges on identical text.
+- **The set.** 18.71 is 53 stored packets over 19 hand-built scenarios; 11.0 is
+  20 real customer openings — the zone where the failure was measured in the
+  first place, at R06 8.10 and R07 7.35 against R02 29.07.
+
+Read as a drop, that pair says the bot got worse. Nothing here supports that,
+and nothing here refutes it either. The comparison simply was not made.
 
 ## Two responses read by eye
 
@@ -113,6 +152,45 @@ be compared as though only the salesperson changed.
 - `tj-vz7o.5` remains open and dependent on `tj-vz7o.4`.
 - `tj-vz7o.8` and `tj-vz7o.9` remain drafted and unsent.
 - `tj-vz7o.10` remains open because this round did not pass.
-- `tj-vz7o.10.1` tracks the two remaining product failures.
-- `tj-vz7o.10.2` tracks the shape-aware acceptance gate required before a
-  rerun.
+- `tj-vz7o.10.1` closed: both failures fixed, with a third found while fixing
+  them. See below.
+- `tj-vz7o.10.2` closed: the acceptance contract above is frozen in
+  `ACCEPTANCE_CONTRACT`, before any rerun.
+
+## What the two failures turned out to be
+
+Both were real, and neither was an artefact of the harness. Both were traced to
+a cause upstream of the sentence that failed.
+
+**The invented price** was invited by our own prompt. The greeting stage rule
+said, in as many words, "if they only greeted you, name what Treejar supplies
+and give one category with its starting price from the catalog" — on a turn
+where no catalog lookup has happened and no row exists. The model was asked for
+a fact the turn could not supply, and supplied one. The rule now says every
+price comes from a `search_products` result in that same reply, and with no
+result the price waits a turn.
+
+That fixes the cause; the guarantee behind it was missing too. `GroundingViolation`
+had three members and all three were text patterns, so none of them could see
+that no row stood behind a figure. `UNVERIFIED_PRICE` is the first that is told
+what was actually verified. It is deliberately narrow: it runs only when the turn
+touched no catalog at all, because a per-row price claim belongs to the claim
+contract, and a blunter rule here would strip real quotations — a worse defect
+than the one being fixed.
+
+**The deferred assembly question** needed no new fact, only a named owner. The
+reply said stock, drawer options and assembly "still need confirmation", which
+was true and told the customer nothing about whether anyone would find out.
+`commit_to_what_you_deferred` adds the missing half-sentence next to the
+deferral rather than at the end after the questions. Stock is deliberately
+excluded: promising to go and check stock is a `FUTURE_STOCK_CHECK` violation
+that grounding removes on purpose, and a guard that adds a sentence the next
+guard deletes is worse than no guard.
+
+**The third finding: the harness measured the model plus one guard.** It applied
+`apply_opening_guard` and stopped, where production also runs the deferral guard
+and `enforce_grounding_output` before a customer sees anything. Neither failure
+above was caused by that gap — both survive the full pipeline, which is how they
+were confirmed real — but a round that reports a defect production would have
+filtered cannot be told from a real one afterwards. The harness now applies the
+shipped guards, and a test holds it there.

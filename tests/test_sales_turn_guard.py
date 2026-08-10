@@ -15,10 +15,15 @@ from __future__ import annotations
 
 import pytest
 
+from src.llm.grounding_output import (
+    GroundingOutputAction,
+    enforce_grounding_output,
+)
 from src.llm.sales_turn_guard import (
     asks_the_company_activity,
     carry_the_company_question,
     collapse_question_form,
+    commit_to_what_you_deferred,
     refuse_to_chase_the_name,
 )
 
@@ -242,3 +247,96 @@ def test_arabic_is_asked_once_too() -> None:
         )
         == "لدينا هذا الكرسي."
     )
+
+
+# --- a deferral is not an answer, tj-vz7o.10.1 ----------------------------
+#
+# Measured 2026-08-10 on real customer opening 819. Asked "will you also
+# assembly the desk upon delivery?", the reply closed with "Current stock,
+# mobile-drawer options, and whether assembly can be included for delivery
+# within 2-3 days still need confirmation." True in every word, and the
+# customer still had no idea whether anyone would ever find out.
+
+DEFERRED_ASSEMBLY = (
+    "Current stock, mobile-drawer options, and whether assembly can be "
+    "included for delivery within 2-3 days still need confirmation.\n\n"
+    "Could you please share your delivery area in Dubai?"
+)
+
+
+def test_a_deferred_request_gains_someone_who_will_answer_it() -> None:
+    result = commit_to_what_you_deferred(DEFERRED_ASSEMBLY, language="en")
+
+    assert "I'll confirm assembly with our team and come back to you." in result
+    assert "Could you please share your delivery area in Dubai?" in result
+
+
+def test_the_commitment_lands_next_to_the_deferral_not_after_the_question() -> None:
+    """A promise that arrives two questions later reads as an afterthought,
+    and on WhatsApp the customer's eye stops at the first question anyway."""
+
+    result = commit_to_what_you_deferred(DEFERRED_ASSEMBLY, language="en")
+
+    assert result.index("I'll confirm assembly") < result.index("Could you please")
+
+
+def test_a_reply_that_already_commits_is_left_alone() -> None:
+    text = "Assembly needs confirmation. I will confirm and come back to you."
+
+    assert commit_to_what_you_deferred(text, language="en") == text
+
+
+def test_stock_alone_never_earns_a_promise_to_chase_it() -> None:
+    """`grounding_output` removes a promise to go and check stock on purpose.
+
+    A guard that adds a sentence the next guard deletes is worse than no guard,
+    so stock is deliberately absent from the subject list.
+    """
+
+    text = "Current stock still needs confirmation."
+
+    assert commit_to_what_you_deferred(text, language="en") == text
+
+
+def test_a_reply_that_defers_nothing_is_untouched() -> None:
+    text = "The XTEN-S workstation is AED 566.87 and 12 units are in stock."
+
+    assert commit_to_what_you_deferred(text, language="en") == text
+
+
+@pytest.mark.parametrize(
+    ("deferral", "expected"),
+    [
+        ("Whether installation is included is not yet confirmed.", "assembly"),
+        ("The delivery timeline remains unconfirmed.", "the delivery timing"),
+        ("Warranty cover needs to be confirmed.", "the warranty terms"),
+        ("Payment terms are still unconfirmed.", "the payment terms"),
+    ],
+)
+def test_the_commitment_names_the_thing_that_was_deferred(
+    deferral: str, expected: str
+) -> None:
+    result = commit_to_what_you_deferred(deferral, language="en")
+
+    assert f"I'll confirm {expected} with our team" in result
+
+
+def test_arabic_gets_the_commitment_in_arabic() -> None:
+    result = commit_to_what_you_deferred("التركيب غير مؤكد حتى الآن.", language="ar")
+
+    assert "سأؤكد التركيب مع فريقنا وأعود إليك." in result
+
+
+def test_the_commitment_survives_the_grounding_policy() -> None:
+    """The two guards run back to back, and grounding has the last word.
+
+    `FUTURE_STOCK_CHECK` exists to delete "I'll check and get back to you"
+    where the object is stock. This asserts the subjects chosen here are not
+    that, so the sentence added is one the customer actually receives.
+    """
+
+    committed = commit_to_what_you_deferred(DEFERRED_ASSEMBLY, language="en")
+    enforced = enforce_grounding_output(committed, language="en")
+
+    assert enforced.action is GroundingOutputAction.UNCHANGED
+    assert "come back to you" in enforced.text

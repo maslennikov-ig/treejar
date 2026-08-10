@@ -210,6 +210,112 @@ def _drop_name_questions(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(kept_lines)).strip()
 
 
+# --- a deferral is not an answer, tj-vz7o.10.1 ----------------------------
+#
+# Measured 2026-08-10 on a real customer opening: asked "will you also assembly
+# the desk upon delivery?", the reply ended "Current stock, mobile-drawer
+# options, and whether assembly can be included for delivery within 2-3 days
+# still need confirmation." Every word of that is true and the customer still
+# learned nothing about who would find out, or whether anyone would. The judge
+# scored it as an ignored request, and reading it by eye agrees.
+#
+# Stock is deliberately absent from the subjects below. Promising to go and
+# check stock is a `FUTURE_STOCK_CHECK` violation that `grounding_output`
+# removes on purpose, and a guard that adds a sentence the next guard deletes
+# is worse than no guard.
+_DEFERRAL_RE = re.compile(
+    r"\b(?:still\s+)?needs?\s+(?:to\s+be\s+)?confirm(?:ed|ation)\b"
+    r"|\bneeds?\s+confirming\b"
+    r"|\b(?:remains?|are|is)\s+(?:still\s+)?unconfirmed\b"
+    r"|\bnot\s+(?:yet\s+)?confirmed\b"
+    r"|\bto\s+be\s+confirmed\b"
+    r"|يحتاج\s+إلى\s+تأكيد"
+    r"|غير\s+مؤكد",
+    re.IGNORECASE,
+)
+_COMMITMENT_RE = re.compile(
+    r"\b(?:i|we)(?:'ll|\s+will)\s+(?:confirm|check|verify|find\s+out)\b"
+    r"|\b(?:come|get|revert)\s+back\s+to\s+you\b"
+    r"|\b(?:i|we)(?:'ll|\s+will)\s+(?:update|let)\s+you\b"
+    r"|سأؤكد|سأعود\s+إليك",
+    re.IGNORECASE,
+)
+# Ordered: the first subject the deferral actually names is the one committed to.
+_DEFERRED_SUBJECTS: tuple[tuple[re.Pattern[str], str, str], ...] = (
+    (
+        re.compile(r"\bassembl|\binstall|التركيب", re.IGNORECASE),
+        "assembly",
+        "التركيب",
+    ),
+    (
+        re.compile(
+            r"\bdeliver|\blead\s*time|\btimeline|التسليم",
+            re.IGNORECASE,
+        ),
+        "the delivery timing",
+        "موعد التسليم",
+    ),
+    (
+        re.compile(r"\bwarrant|الضمان", re.IGNORECASE),
+        "the warranty terms",
+        "شروط الضمان",
+    ),
+    (
+        re.compile(r"\bpayment|\bterms\b|الدفع", re.IGNORECASE),
+        "the payment terms",
+        "شروط الدفع",
+    ),
+)
+
+
+def commit_to_what_you_deferred(text: str, *, language: str) -> str:
+    """Say who will find out, or do not raise it at all.
+
+    Reads only the reply's own words: it fires on a deferral this text states,
+    and names a subject this text names. Nothing here consults what Noor
+    believes she already did.
+
+    Deliberately silent when the only thing deferred is stock. That one has an
+    answer already -- the inventory result -- and promising to chase it is a
+    grounding violation by design.
+    """
+
+    body = text.rstrip()
+    if not body or _COMMITMENT_RE.search(body):
+        return text
+    deferral = _DEFERRAL_RE.search(body)
+    if not deferral:
+        return text
+
+    start, end = _sentence_bounds(body, deferral.start())
+    sentence = body[start:end]
+    for pattern, english, arabic in _DEFERRED_SUBJECTS:
+        if not pattern.search(sentence):
+            continue
+        if is_arabic_customer_language(language):
+            commitment = f"سأؤكد {arabic} مع فريقنا وأعود إليك."
+        else:
+            commitment = f"I'll confirm {english} with our team and come back to you."
+        # Straight after the deferral, not at the end of the reply. A promise
+        # that arrives two questions later reads as an afterthought, and the
+        # customer's eye stops at the first question anyway.
+        return f"{body[:end].rstrip()} {commitment}{body[end:]}"
+    return text
+
+
+def _sentence_bounds(text: str, index: int) -> tuple[int, int]:
+    """The sentence containing `index`, as offsets into `text`."""
+
+    cursor = 0
+    for sentence in _SENTENCE_SPLIT_RE.split(text):
+        start = text.index(sentence, cursor) if sentence else cursor
+        end = start + len(sentence)
+        if start <= index <= end:
+            return start, end
+        cursor = end
+    return 0, len(text)
+
+
 _EN_ACTIVITY_QUESTION = "And what does your company actually do, day to day?"
 _AR_ACTIVITY_QUESTION = "وما طبيعة عمل شركتكم فعليًا؟"
 _EN_ACTIVITY_SIGNALS = (

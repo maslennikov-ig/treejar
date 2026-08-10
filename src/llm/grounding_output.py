@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 
 
@@ -13,6 +15,14 @@ class GroundingViolation(StrEnum):
     SPECIFIC_PRODUCT_SHOWROOM_TRIAL = "specific_product_showroom_trial"
     UNVERIFIED_STOCK_CONFIRMATION = "unverified_stock_confirmation"
     FUTURE_STOCK_CHECK = "future_stock_check"
+    # Added 2026-08-10 for `tj-vz7o.10.1`. On a bare "Good Afternoon" with no
+    # catalog row behind it, the model answered "Our ergonomic office chairs
+    # start from AED 500 in our catalog" -- a price it invented, attributed to
+    # the catalog, in the same reply as our promise to quote only confirmed
+    # prices. The three violations above are text-only patterns, so nothing
+    # here could see that no row existed. This one is the first that has to be
+    # told what was actually verified.
+    UNVERIFIED_PRICE = "unverified_price"
 
 
 class GroundingOutputAction(StrEnum):
@@ -38,6 +48,14 @@ _QUOTED_TEXT_RE = re.compile(
     r"|(?<![\w])'(?=\S)(?:[^'\n]|(?<=\w)'(?=\w))*?(?<=\S)'(?!\w)"
     r"|‘(?=\S)(?:[^’\n]|(?<=\w)’(?=\w))*?(?<=\S)’(?!\w)",
     re.DOTALL,
+)
+# Only a figure carrying a currency marker. Dimensions, quantities, lead times
+# and phone-shaped strings are not prices, and stripping a sentence for saying
+# "2-3 days" would be a worse defect than the one this catches.
+_AMOUNT_RE = re.compile(
+    r"(?:\bAED\b|درهم)\s*(?P<prefixed>\d[\d,]*(?:\.\d+)?)"
+    r"|(?P<suffixed>\d[\d,]*(?:\.\d+)?)\s*(?:\bAED\b|درهم)",
+    re.IGNORECASE,
 )
 _EN_SHOWROOM_RE = re.compile(r"\bshowroom\b")
 _EN_SPECIFIC_PRODUCT_TRIAL_RE = re.compile(
@@ -178,6 +196,15 @@ _AR_STOCK_FALLBACK = (
     "لا تتوفر لدي نتيجة حالية من نظام المخزون، لذلك يبقى المخزون غير مؤكد. "
     "لا يمكنني تأكيد التوفر إلا بناءً على نتيجة مخزون حالية."
 )
+_EN_PRICE_FALLBACK = (
+    "I quote only from our own catalog, and I don't have a confirmed price for "
+    "that yet. Tell me what you need and I'll pull the exact figure from the "
+    "catalog for you."
+)
+_AR_PRICE_FALLBACK = (
+    "أقدّم الأسعار من كتالوجنا فقط، ولا يتوفر لدي سعر مؤكد لذلك بعد. أخبرني بما "
+    "تحتاجه وسأستخرج لك الرقم الدقيق من الكتالوج."
+)
 _EN_GENERIC_FALLBACK = (
     "I can only share confirmed product and inventory information. Current "
     "availability and a specific showroom trial are not confirmed."
@@ -186,6 +213,48 @@ _AR_GENERIC_FALLBACK = (
     "يمكنني مشاركة معلومات المنتج والمخزون المؤكدة فقط. التوفر الحالي وتجربة "
     "منتج محدد في المعرض غير مؤكدين."
 )
+
+
+def canonical_amount(value: object) -> str | None:
+    """One spelling for one sum of money, so `5000` and `AED 5,000.00` agree.
+
+    The 2026-08-10 opening round flagged five responses for inventing a figure
+    that was in fact sitting in their own evidence, spelled differently. A
+    grounding check that cannot see `566.87 == 566.870` reports defects that do
+    not exist, and the round after it gets tuned instead of fixed.
+    """
+
+    text = str(value if value is not None else "").strip().replace(",", "")
+    if not text:
+        return None
+    try:
+        number = Decimal(text)
+    except InvalidOperation:
+        return None
+    if not number.is_finite():
+        return None
+    rendered = format(number, "f")
+    if "." in rendered:
+        rendered = rendered.rstrip("0").rstrip(".")
+    return rendered or "0"
+
+
+def asserted_amounts(text: str) -> tuple[str, ...]:
+    """Every sum of money the customer would read as a Treejar figure."""
+
+    found: list[str] = []
+    for match in _AMOUNT_RE.finditer(visible_grounding_text(str(text or ""))):
+        token = match.group("prefixed") or match.group("suffixed")
+        canonical = canonical_amount(token)
+        if canonical is not None and canonical not in found:
+            found.append(canonical)
+    return tuple(found)
+
+
+def _has_unverified_price(sentence: str, *, grounded: frozenset[str] | None) -> bool:
+    if grounded is None:
+        return False
+    return any(amount not in grounded for amount in asserted_amounts(sentence))
 
 
 def _normalized(text: str) -> str:
@@ -380,6 +449,7 @@ def _classify_sentence(
     *,
     full_text: str,
     inventory_confirmed: bool,
+    grounded_amounts: frozenset[str] | None,
 ) -> tuple[GroundingViolation, ...]:
     violations: list[GroundingViolation] = []
     if _has_specific_product_showroom_trial(sentence):
@@ -391,6 +461,8 @@ def _classify_sentence(
         full_text=full_text,
     ):
         violations.append(GroundingViolation.FUTURE_STOCK_CHECK)
+    if _has_unverified_price(sentence, grounded=grounded_amounts):
+        violations.append(GroundingViolation.UNVERIFIED_PRICE)
     return tuple(violations)
 
 
@@ -398,6 +470,7 @@ def _classify(
     text: str,
     *,
     inventory_confirmed: bool,
+    grounded_amounts: frozenset[str] | None = None,
 ) -> tuple[GroundingViolation, ...]:
     violations: list[GroundingViolation] = []
     for sentence in _sentence_parts(text):
@@ -405,6 +478,7 @@ def _classify(
             sentence,
             full_text=text,
             inventory_confirmed=inventory_confirmed,
+            grounded_amounts=grounded_amounts,
         ):
             if violation not in violations:
                 violations.append(violation)
@@ -415,12 +489,30 @@ def classify_grounding_output(
     text: str,
     *,
     inventory_confirmed: bool = False,
+    grounded_amounts: Iterable[object] | None = None,
 ) -> tuple[GroundingViolation, ...]:
-    """Classify bounded unsupported showroom and inventory semantics."""
+    """Classify bounded unsupported showroom, inventory and price semantics."""
 
     return _classify(
         str(text or ""),
         inventory_confirmed=inventory_confirmed,
+        grounded_amounts=_grounded_set(grounded_amounts),
+    )
+
+
+def _grounded_set(values: Iterable[object] | None) -> frozenset[str] | None:
+    """`None` means nobody offered evidence, so the price check stays off.
+
+    An empty collection is the opposite and means it: the caller looked and
+    found no verified figure, so every sum in the reply is invented.
+    """
+
+    if values is None:
+        return None
+    return frozenset(
+        canonical
+        for value in values
+        if (canonical := canonical_amount(value)) is not None
     )
 
 
@@ -457,9 +549,69 @@ def _fallback(
         or GroundingViolation.UNVERIFIED_STOCK_CONFIRMATION in violations
     ):
         return _AR_STOCK_FALLBACK if arabic else _EN_STOCK_FALLBACK
+    if GroundingViolation.UNVERIFIED_PRICE in violations:
+        return _AR_PRICE_FALLBACK if arabic else _EN_PRICE_FALLBACK
     if GroundingViolation.SPECIFIC_PRODUCT_SHOWROOM_TRIAL in violations:
         return _AR_SHOWROOM_FALLBACK if arabic else _EN_SHOWROOM_FALLBACK
     return _AR_GENERIC_FALLBACK if arabic else _EN_GENERIC_FALLBACK
+
+
+def _tidy(text: str) -> str:
+    """Close the hole a removed sentence leaves without closing the paragraphs.
+
+    Dropping one sentence used to re-join the whole reply with single spaces,
+    which flattened a three-paragraph WhatsApp opening into a wall. That was
+    invisible while the repair path almost never fired on an opening; the price
+    violation fires there by design, so the seam has to be tidy.
+    """
+
+    kept: list[str] = []
+    for line in text.splitlines():
+        # A removed sentence leaves its own padding behind on both sides, so the
+        # seam is squeezed rather than trusted. WhatsApp replies are flat text
+        # and bullets sit at column zero, so no indentation is lost here.
+        tidy = re.sub(r"[ \t]{2,}", " ", line.strip())
+        if not tidy and (not kept or not kept[-1]):
+            continue
+        kept.append(tidy)
+    return "\n".join(kept).strip()
+
+
+def _repair(
+    original: str,
+    *,
+    inventory_confirmed: bool,
+    grounded_amounts: frozenset[str] | None,
+) -> str:
+    pieces: list[str] = []
+    for match in _SENTENCE_RE.finditer(original):
+        raw = match.group()
+        sentence = raw.strip()
+        if not sentence:
+            pieces.append(raw)
+            continue
+        if not _classify_sentence(
+            sentence,
+            full_text=original,
+            inventory_confirmed=inventory_confirmed,
+            grounded_amounts=grounded_amounts,
+        ):
+            pieces.append(raw)
+            continue
+        leading = raw[: len(raw) - len(raw.lstrip())]
+        confirmed_clause = _confirmed_present_clause(
+            sentence,
+            inventory_confirmed=inventory_confirmed,
+        )
+        if confirmed_clause and not _classify(
+            confirmed_clause,
+            inventory_confirmed=inventory_confirmed,
+            grounded_amounts=grounded_amounts,
+        ):
+            pieces.append(f"{leading}{confirmed_clause}")
+        else:
+            pieces.append(leading)
+    return _tidy("".join(pieces))
 
 
 def enforce_grounding_output(
@@ -467,14 +619,24 @@ def enforce_grounding_output(
     *,
     language: str,
     inventory_confirmed: bool = False,
+    grounded_amounts: Iterable[object] | None = None,
 ) -> GroundingOutputResult:
-    """Remove bounded violating sentences or fail closed with localized text."""
+    """Remove bounded violating sentences or fail closed with localized text.
+
+    `grounded_amounts` carries every sum of money verified for this turn --
+    catalog rows read this turn plus figures the customer themselves wrote.
+    Leave it `None` and the price check does not run at all, which is what the
+    non-selling call sites want. Pass an empty collection and it runs against
+    nothing, which is exactly right when no row was retrieved.
+    """
 
     original = str(text or "")
     try:
+        grounded = _grounded_set(grounded_amounts)
         violations = _classify(
             original,
             inventory_confirmed=inventory_confirmed,
+            grounded_amounts=grounded,
         )
         if not violations:
             return GroundingOutputResult(
@@ -483,29 +645,15 @@ def enforce_grounding_output(
                 action=GroundingOutputAction.UNCHANGED,
             )
 
-        retained: list[str] = []
-        for sentence in _sentence_parts(original):
-            sentence_violations = _classify_sentence(
-                sentence,
-                full_text=original,
-                inventory_confirmed=inventory_confirmed,
-            )
-            if not sentence_violations:
-                retained.append(sentence)
-                continue
-            confirmed_clause = _confirmed_present_clause(
-                sentence,
-                inventory_confirmed=inventory_confirmed,
-            )
-            if confirmed_clause and not _classify(
-                confirmed_clause,
-                inventory_confirmed=inventory_confirmed,
-            ):
-                retained.append(confirmed_clause)
-        repaired = " ".join(retained).strip()
+        repaired = _repair(
+            original,
+            inventory_confirmed=inventory_confirmed,
+            grounded_amounts=grounded,
+        )
         if repaired and not _classify(
             repaired,
             inventory_confirmed=inventory_confirmed,
+            grounded_amounts=grounded,
         ):
             return GroundingOutputResult(
                 text=repaired,
