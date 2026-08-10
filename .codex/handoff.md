@@ -6,7 +6,7 @@ Accepted stage id: `tj-vz7o-openings`
 Status: the applicability-map confound is removed locally. The same 53 packets
 over 19 scenarios now read 18.71/30 +/- 1.66 on another scenario draw; the
 paired correction from 13.58 is +5.13 +/- 1.35. The judge confound remains and
-the exact 53-call authority request for `tj-vz7o.4` is open.
+the exact 53-call authority for `tj-vz7o.4` was declined; the issue stays open.
 
 ## Current truth
 
@@ -107,9 +107,9 @@ the exact 53-call authority request for `tj-vz7o.4` is open.
 
 ## Local verification
 
-- 2026-08-10 at `ffb8a2d`: Ruff and format over 421 files, Mypy over 168
-  sources, Pytest `3441 passed, 19 skipped`, `run_process_verification.sh` OK.
-  Supersedes earlier figures.
+- 2026-08-10 on `codex/tj-vz7o-corpus-bridge`: Ruff and format over 429 files,
+  Mypy over 168 sources, Pytest `3463 passed, 19 skipped`, and process
+  verification all passed. Supersedes earlier figures.
 
 ## Active work
 
@@ -117,9 +117,10 @@ the exact 53-call authority request for `tj-vz7o.4` is open.
   `.7`, `.8`, `.1` open for release-bound acceptance, `.13` depends on them,
   `.5` blocked on the Wazzup status bug.
 - Closed 2026-08-10 under `tj-vz7o`: `.3` map-free re-read, `.6` response
-  coverage, `.7` seeded real-opening set. `.4` is claimed and awaiting exact
-  paid-call authority; `.5` remains dependent. `.8` and `.9` are drafted but
-  unsent and remain open. `tj-0ai0` is built and still awaits a measured round.
+  coverage, `.7` seeded real-opening set. `.10` ran 20/20 Luna plus 20/20 GLM:
+  11.9/30 (95% CI 10.2-13.7), 2 critical failures in 2/20, so it remains open;
+  `.10.1` owns the failures and `.10.2` the shape-aware gate. `.4` authority
+  was declined; `.5` remains dependent. `.8`/`.9` are drafted, unsent, open.
 
 ## Constraints
 
@@ -133,15 +134,14 @@ the exact 53-call authority request for `tj-vz7o.4` is open.
 
 ## Next recommended
 
-Next stage id: `tj-vz7o-judge-bridge`. If authority is granted, run exactly 53
-paid `claude-haiku-4.5` calls over the stored packets with no applicability map.
-Use the client's exact evaluator prompt if it arrives; otherwise label the run
-as reconstructed from `rubric.json` anchors. Then `tj-vz7o.5` follows. The
-accepted result is in
-`docs/reports/2026-08-10-the-map-free-reread-and-real-openings.md`.
+Next stage id: `tj-vz7o-real-openings-remediation`. Fix `tj-vz7o.10.1`, then
+freeze the shape-aware gate in `.10.2` before asking for a second exact 20 Luna
++ 20 GLM paid round on the same set. The failed result is in
+`docs/reports/2026-08-10-luna-glm-real-opening-acceptance.md`. Haiku is not a
+project instrument under the owner decision; `.4` stays open under the original
+spec with the denied ask recorded, and `.5` stays dependent.
 
-Recommended action: wait for the explicit 53-call grant and the client's
-evaluator prompt; do not start `tj-vz7o.4` or work around either gate.
+Recommended action: fix `.10.1`, freeze `.10.2`, then ask for exact rerun authority.
 
 Still owed and unrelated to the corpus: **measure `7c34d55`** against the
 15-scenario baseline **18.94 +/- 3.74**, reading rules 7, 11 and 13 per-rule.
@@ -150,18 +150,16 @@ to explain it.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for `tj-vz7o-judge-bridge` only after the 53-call grant.
+Use $orchestrator-stage for `tj-vz7o-real-openings-remediation`.
 Read `AGENTS.md`, `.codex/orchestrator.toml`, this handoff, the corpus-bridge
-spec, and the accepted report. Preserve both rulers, keep corpus text outside
-Git, and never call `compare_runs` across judges.
+spec, and both 2026-08-10 corpus-bridge reports. Preserve both rulers, keep
+corpus text outside Git, and never compare runs across judges.
 
 ## Approval gates
 
-`tj-vz7o.4` needs a current grant for exactly 53 paid
-`claude-haiku-4.5` calls over the stored 53 bot packets, raw transcript only,
-with no live traffic or business mutation. No authority is granted for those
-calls, push, deploy, production mutation, model configuration, or real-user
-messaging.
+No second 20 Luna + 20 GLM round is authorized. `tj-vz7o.4` Haiku authority was
+explicitly declined. No authority is granted for further paid calls, push,
+deploy, production mutation, model configuration, or real-user messaging.
 
 ## Explicit defers
 

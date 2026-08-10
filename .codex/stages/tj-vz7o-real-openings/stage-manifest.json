@@ -1,0 +1,38 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-vz7o-real-openings",
+  "goal_id": "tj-vz7o.10",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "in_progress",
+  "sequence": 1,
+  "acceptance_boundary_id": "luna-glm-real-opening-acceptance",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": ["real-opening-runner", "luna-generation", "glm-quality-judge", "client-readiness-report"],
+    "risk_models": ["commercial-confidentiality", "paid-provider-calls", "measurement-validity"],
+    "test_environments": ["protected-real-opening-set", "isolated-openrouter-harness"],
+    "rollback_boundary": "local-commit-and-protected-git-common-dir-evidence",
+    "acceptance_proofs": ["20-luna-responses", "20-glm-evaluations", "zero-critical-failures", "manual-response-review", "repository-gates"]
+  },
+  "work_areas": ["decision", "contract", "implementation", "consumer_adoption", "tests", "proof", "docs_and_graph_review"],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-vz7o.10",
+    "source_digest": "db7e49eab7ad5729170f1c23faab9cba0e4a2da8f0b688150969571e2a4b590c",
+    "criteria": [
+      {"criterion_id": "AC-01", "text": "Exactly 20 frozen natural openings selected with seed 20260810 are used once each, and every transcript-bearing input or response remains outside Git under mode 0700/0600.", "text_digest": "c99e707daaa528f574a591815a259d72ee317bbf52727a1cd91f30b22a893647"},
+      {"criterion_id": "AC-02", "text": "The generation arm makes exactly 20 paid calls to openai/gpt-5.6-luna and the judge arm makes exactly 20 paid calls to z-ai/glm-5.2 after a free availability and cost preflight, with model identity, prompt/config digests, usage, and total cost recorded.", "text_digest": "bd1ba404333b32e0d1aed8721078b072fe4eb3338194bdaa412ec94754af5029"},
+      {"criterion_id": "AC-03", "text": "All 20/20 openings produce a non-empty Luna response and 20/20 receive a valid GLM evaluation; no critical hallucination, ignored request, wrong language, unsafe commitment, or hard deflection remains, and the project-owned weighted opening score is reported with its denominator and between-opening interval.", "text_digest": "3310faa10917bd4e326ceae291482f4e3afbc96c34aa5eb5b6845fbfbe607147"},
+      {"criterion_id": "AC-04", "text": "At least two protected responses are read manually, failures are stated rather than averaged away, and the client claim is limited to opening quality, response coverage, and response time rather than conversion, revenue, close rate, or outcomes.", "text_digest": "50f8888441bda3e9344f3b59bde328fe35a95ce36ae4de799fbda1065cb14dc2"},
+      {"criterion_id": "AC-05", "text": "The frozen rubric and applicability builder remain unchanged, corpus text never enters the working tree, required repository gates pass, the commit stays local, and no live traffic, production mutation, real-user message, deploy, or push occurs.", "text_digest": "6f208e46c0b68b7f89a0d9c04060edc6db7a6e74f9579ebd2489b7989cc4df85"}
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-vz7o.10/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "db7e49eab7ad5729170f1c23faab9cba0e4a2da8f0b688150969571e2a4b590c",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {"task_id": "tj-vz7o.10-runner", "stream_owner": "opening-measurement-integrator", "artifact_path": ".codex/stages/tj-vz7o-real-openings/artifacts/tj-vz7o.10-runner.md"}
+  ]
+}
