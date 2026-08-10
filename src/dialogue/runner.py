@@ -357,18 +357,12 @@ def _decide_node(state: _GraphOutput) -> _GraphOutput:
             "after_state": after_state,
         }
 
-    if state["is_first_turn"] and not dialogue_state.slots.customer_name:
-        after_state = dialogue_state.model_copy(update={"active_flow": "name_gate"})
-        return {
-            **state,
-            "decision": DialogueDecision(
-                action="ask_name",
-                flow="name_gate",
-                response_text="Hello",
-                handled=True,
-            ),
-            "after_state": after_state,
-        }
+    # The kernel's own copy of the name gate was removed on 2026-08-10. A first
+    # turn from an unnamed customer is now an ordinary turn: it runs to the end,
+    # answers what was asked, and `apply_opening_guard` folds the name request
+    # onto that answer. The resume branch above stays, because conversations
+    # parked before this shipped still carry `name_gate_pending_request` in
+    # their metadata and must still be able to come back.
 
     if _is_quote_details_context(dialogue_state):
         details = _extract_quote_details(text)

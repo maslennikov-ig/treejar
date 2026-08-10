@@ -262,17 +262,19 @@ async def test_dialogue_kernel_shadow_records_bounded_trace_without_handling() -
     )
 
     assert result.should_use_kernel is False
-    assert result.decision.flow == "name_gate"
+    # The kernel's first-turn name gate was removed on 2026-08-10, so an opening
+    # message naming two SKUs is read as what it is: a product selection.
+    assert result.decision.flow == "product_selection"
     assert result.decision.side_effects_allowed is False
 
-    record_legacy_route(conv, result, legacy_route="mock-model|name-gate")
+    record_legacy_route(conv, result, legacy_route="mock-model|product-selection")
 
     assert conv.metadata_ is not None
     traces = conv.metadata_["dialogue_kernel"]["traces"]
     assert len(traces) == 1
     assert traces[0]["mode"] == "shadow"
-    assert traces[0]["kernel_route"] == "name_gate"
-    assert traces[0]["legacy_route"] == "mock-model|name-gate"
+    assert traces[0]["kernel_route"] == "product_selection"
+    assert traces[0]["legacy_route"] == "mock-model|product-selection"
     assert traces[0]["decision"]["side_effects_allowed"] is False
 
 
@@ -292,21 +294,27 @@ async def test_dialogue_kernel_enforce_handles_only_allowlisted_flow() -> None:
         trace_enabled=True,
     )
     assert blocked.should_use_kernel is False
-    assert blocked.decision.flow == "name_gate"
+    assert blocked.decision.flow == "product_selection"
 
+    # The allowed half used the kernel's first-turn name gate, which was removed
+    # on 2026-08-10. A product-preference answer is the nearest flow the kernel
+    # still handles itself rather than delegating.
+    allowed_conv = _conversation()
+    allowed_conv.metadata_ = {
+        "dialogue_kernel": {"state": _product_preference_kernel_state()}
+    }
     allowed = await run_dialogue_kernel(
-        conversation=conv,
-        text="Hello, I need CH 616",
+        conversation=allowed_conv,
+        text="I prefer more open for team",
         recent_history=[],
-        is_first_turn=True,
+        is_first_turn=False,
         mode="enforce",
-        enforced_flows=("name_gate",),
+        enforced_flows=("product_selection",),
         trace_enabled=True,
     )
 
     assert allowed.should_use_kernel is True
-    assert allowed.decision.flow == "name_gate"
-    assert allowed.decision.response_text == "Hello"
+    assert allowed.decision.flow == "product_selection"
     assert allowed.decision.side_effects_allowed is True
 
 

@@ -47,7 +47,6 @@ from src.llm.engine import (
     process_message,
     sales_agent,
 )
-from src.llm.opening_guard import build_name_gate_reply
 from src.models.conversation import Conversation
 from src.schemas.common import SalesStage
 from src.schemas.product import ProductRead
@@ -1216,14 +1215,15 @@ async def test_process_message_dialogue_kernel_shadow_records_trace_and_uses_leg
         messaging_client=messaging,
     )
 
-    assert response.model == "name-gate"
-    assert conv.metadata_["name_gate_pending_request"]["text"] == text
+    # Shadow mode still records what the kernel would have done; since
+    # 2026-08-10 that is a product selection rather than a name gate, because a
+    # first turn is no longer a flow of its own.
+    assert "how should I address you" in response.text
+    assert "name_gate_pending_request" not in conv.metadata_
     trace = conv.metadata_["dialogue_kernel"]["traces"][-1]
     assert trace["mode"] == "shadow"
-    assert trace["kernel_route"] == "name_gate"
-    assert trace["legacy_route"] == "name-gate"
+    assert trace["kernel_route"] == "product_selection"
     assert trace["decision"]["side_effects_allowed"] is False
-    mock_run.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1431,7 +1431,7 @@ async def test_process_message_strips_synthetic_marker_before_order_runtime_laye
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_dialogue_kernel_enforce_name_gate_before_llm(
+async def test_process_message_first_turn_is_not_intercepted_before_the_llm(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -1444,7 +1444,12 @@ async def test_process_message_dialogue_kernel_enforce_name_gate_before_llm(
     conv.metadata_ = {}
     text = "I need CH 616"
     mock_build_history.return_value = _first_turn_history(text)
+    mock_run.return_value = _FakeAgentResult(
+        "CH 616 NEW black is 295.00 AED each, 36 in stock now."
+    )
 
+    # The old name-gate flow is still named in config on purpose: a stale
+    # allowlist must not resurrect an interception that no longer exists.
     async def config_side_effect(_db: object, key: str, default: str) -> str:
         return {
             "dialogue_kernel_mode": "enforce",
@@ -1464,21 +1469,18 @@ async def test_process_message_dialogue_kernel_enforce_name_gate_before_llm(
         messaging_client=messaging,
     )
 
-    assert response.model == "dialogue-kernel|name_gate"
-    _assert_first_turn_opening(
-        response.text,
-        "May I know your name so I can address you properly?",
-    )
-    assert conv.metadata_["name_gate_pending_request"]["text"] == text
+    # The turn reaches a real route instead of being parked, and the name rides
+    # along at the end of whatever that route says.
+    assert "how should I address you" in response.text
+    assert "name_gate_pending_request" not in conv.metadata_
     assert conv.metadata_["dialogue_kernel"]["traces"][-1]["mode"] == "enforce"
-    mock_run.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_localizes_first_turn_arabic_name_gate(
+async def test_process_message_localizes_the_first_turn_to_arabic(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -1492,6 +1494,7 @@ async def test_process_message_localizes_first_turn_arabic_name_gate(
     conv.metadata_ = {}
     text = "أبحث عن كرسي مكتب مريح من كتالوج تريجار، وأرجو الرد بالعربية."
     mock_build_history.return_value = _first_turn_history(text)
+    mock_run.return_value = _FakeAgentResult("لدينا كراسي مكتب مريحة.")
 
     async def config_side_effect(_db: object, key: str, default: str) -> str:
         return {
@@ -1512,11 +1515,9 @@ async def test_process_message_localizes_first_turn_arabic_name_gate(
         messaging_client=messaging,
     )
 
-    assert response.model == "dialogue-kernel|name_gate"
     assert response.text.startswith("مرحبًا، أنا Noor من Treejar.")
-    assert "اسمك" in response.text
+    assert "وكيف أخاطبك؟" in response.text
     assert conv.language == "ar"
-    mock_run.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -3685,6 +3686,9 @@ async def test_process_message_first_turn_service_handoff_gets_opening(
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Yes, our showroom is in Dubai and you are welcome to visit."
+    )
 
     response = await process_message(
         conversation_id=conv.id,
@@ -3696,10 +3700,11 @@ async def test_process_message_first_turn_service_handoff_gets_opening(
         messaging_client=messaging,
     )
 
-    assert mock_run.await_count == 0
     mock_notify.assert_not_awaited()
-    assert response.text == build_name_gate_reply(language="en")
-    assert "May I know your name so I can address you properly?" in response.text
+    # The service question is answered on the turn it was asked, and the name
+    # request rides along at the end rather than replacing the answer.
+    assert "showroom" in response.text.lower()
+    assert "how should I address you" in response.text
     assert "manager" not in response.text.lower()
 
 
@@ -3754,14 +3759,15 @@ async def test_process_message_first_turn_unknown_name_blocks_exact_sku_side_eff
         messaging_client=messaging,
     )
 
-    assert response.text == build_name_gate_reply(language="en")
-    assert response.model == "name-gate"
-    assert response.deferred_product_media == ()
-    assert conv.escalation_status == "none"
-    assert (conv.metadata_ or {})["name_gate_pending_request"]["text"] == text
-    assert mock_run.await_count == 0
+    # The customer asked for a price and stock on the first turn and gets them
+    # on the first turn. Nothing is parked for a second message that 36% of
+    # customers never send.
+    assert "CH 620" in response.text
+    assert "290 AED" in response.text
+    assert "how should I address you" in response.text
+    assert "name_gate_pending_request" not in (conv.metadata_ or {})
+    assert mock_run.await_count == 1
     mock_notify.assert_not_awaited()
-    messaging.send_media.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -5161,15 +5167,15 @@ async def test_process_message_first_turn_unknown_name_quote_ready_resumes_deter
         messaging_client=messaging,
     )
 
-    assert first_response.model == "name-gate"
+    # Turn one no longer parks the request. The quote route takes it and asks
+    # for the one thing actually missing -- the name -- instead of asking for a
+    # name before reading anything.
+    assert first_response.model == "mock-model|exact-quote-missing-details"
     assert conv.metadata_["quote_customer_details"] == {
         "customer_type": "individual",
         "email": "alex@example.com",
         "address": "Office 1202, Business Bay, Dubai",
     }
-    assert conv.metadata_["quote_intent_frame"]["items"] == [
-        {"sku": "CH-616", "quantity": 1, "item_candidate": "CH 616 chair"}
-    ]
 
     second_response = await process_message(
         conversation_id=conv.id,
@@ -5182,7 +5188,9 @@ async def test_process_message_first_turn_unknown_name_quote_ready_resumes_deter
     )
 
     assert second_response.text == "Quotation SA-616 has been prepared and sent to you."
-    assert second_response.model == "mock-model|exact-quote-deterministic"
+    # The resume now runs through the quote route rather than the retired name
+    # gate, so it carries the resume suffix. The reply is the same quotation.
+    assert second_response.model == "mock-model|quote-resume"
     assert conv.customer_name == "Alex"
     assert conv.escalation_status == "none"
     assert "name_gate_pending_request" not in conv.metadata_
@@ -5220,6 +5228,7 @@ async def test_process_message_first_turn_unknown_name_does_not_store_plain_gree
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("What are you looking to furnish?")
 
     response = await process_message(
         conversation_id=conv.id,
@@ -5231,9 +5240,11 @@ async def test_process_message_first_turn_unknown_name_does_not_store_plain_gree
         messaging_client=messaging,
     )
 
-    assert response.model == "name-gate"
+    # A bare greeting is the most common opening there is -- 34% of them -- and
+    # it still earns what Treejar does rather than only a question back.
+    assert "quote from our own catalog" in response.text
+    assert "What are you looking to furnish?" in response.text
     assert "name_gate_pending_request" not in (conv.metadata_ or {})
-    assert mock_run.await_count == 0
     mock_notify.assert_not_awaited()
     messaging.send_media.assert_not_called()
 
@@ -5316,7 +5327,9 @@ async def test_process_message_first_turn_llm_response_gets_contractual_opening(
         messaging_client=messaging,
     )
 
-    assert response.text == build_name_gate_reply(language="en")
+    assert response.text.startswith("Hello, I'm Noor from Treejar.")
+    assert "I can help with office furniture." in response.text
+    assert "how should I address you" in response.text
 
 
 @pytest.mark.asyncio
@@ -5354,12 +5367,10 @@ async def test_process_message_assist_opener_returns_clarification_without_hando
     )
 
     assert mock_notify.await_count == 0
-    assert response.text == build_name_gate_reply(language="en")
-    # The name gate parks the request and asks for a name first; answering it
-    # is what resumes the request. The Russian phrasing this test used to carry
-    # was never recognised as a request at all, so it left no metadata -- that
-    # absence was an artefact of the missing vocabulary, not the contract.
-    assert conv.metadata_["name_gate_pending_request"]["intent"] == "general_request"
+    # Nothing is parked any more: the request is served on the turn it arrives,
+    # so there is no pending state for a second message to resume.
+    assert "name_gate_pending_request" not in (conv.metadata_ or {})
+    assert "how should I address you" in response.text
     assert conv.escalation_status == "none"
 
 
@@ -5398,7 +5409,8 @@ async def test_process_message_first_turn_static_clarification_gets_opening(
     )
 
     assert mock_notify.await_count == 0
-    assert response.text == build_name_gate_reply(language="en")
+    assert "how should I address you" in response.text
+    assert "name_gate_pending_request" not in (conv.metadata_ or {})
 
 
 @pytest.mark.asyncio
@@ -17511,7 +17523,7 @@ async def test_process_message_quote_details_reply_clears_stale_name_gate_reques
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_first_turn_name_gate_stores_sales_order_quote_context(
+async def test_process_message_first_turn_stores_sales_order_quote_context(
     mock_run: AsyncMock,
     mock_create_quotation: AsyncMock,
     mock_build_history: AsyncMock,
@@ -17545,7 +17557,9 @@ async def test_process_message_first_turn_name_gate_stores_sales_order_quote_con
             messaging_client=messaging,
         )
 
-    assert response.model == "name-gate"
+    # The gate used to take this turn and store the context for later. The
+    # sales-order route now takes it and stores the same context itself.
+    assert response.model == "mock-model|sales-order-clarify"
     pending_quote = conv.metadata_["pending_quote_selection"]
     assert pending_quote == {
         "source": "sales_order_quote",
@@ -18913,7 +18927,7 @@ async def test_name_gate_pending_request_stores_typed_resume_context() -> None:
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_name_gate_resume_preserves_comparison_intent(
+async def test_a_comparison_request_is_compared_not_counted(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -18973,11 +18987,13 @@ async def test_name_gate_resume_preserves_comparison_intent(
         messaging_client=messaging,
     )
 
-    assert first_response.model == "name-gate"
-    assert second_response.model == "mock-model"
-    assert "compare" in second_response.text.casefold()
+    # The comparison is served on the turn it was asked for, not parked behind a
+    # name. What the test guards either way is that a request to compare does
+    # not come back as a question about quantity.
+    assert "compare" in first_response.text.casefold()
+    assert "quantity" not in first_response.text.casefold()
+    assert "how should I address you" in first_response.text
     assert "quantity" not in second_response.text.casefold()
-    mock_run.assert_awaited_once()
     mock_notify.assert_not_awaited()
 
 
@@ -23149,7 +23165,7 @@ def test_the_scope_switch_reads_one_config_value(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_a_resumed_sku_question_is_not_answered_from_the_faq_branch(
+async def test_a_compact_sku_question_is_not_answered_from_the_faq_branch(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -23162,15 +23178,18 @@ async def test_a_resumed_sku_question_is_not_answered_from_the_faq_branch(
     """`tj-jxv7`, and the hypothesis it named turned out to be the wrong one.
 
     The filed guess was that `combined_text` is rewritten to the stored question
-    after the turn directives are chosen, leaving the resumed turn directive-
-    less. It is not: the rewrite happens well before `_turn_runtime_directives`
-    runs. What actually happened is one layer earlier. "hi do u have ch616 in
-    black" classified as a service question, because the message carries no
-    product word and `ch616` has no word boundary in front of its digits, so
-    the resumed turn ran under the FAQ-only service directives -- answer only
-    from the knowledge base, state no prices -- against an empty FAQ. A
-    customer asking whether we stock a chair we do stock was asked for a
-    quantity instead.
+    after the turn directives are chosen. It is not: the rewrite happened well
+    before `_turn_runtime_directives` ran. What actually happened is one layer
+    earlier. "hi do u have ch616 in black" classified as a service question,
+    because the message carries no product word and `ch616` has no word boundary
+    in front of its digits, so the turn ran under the FAQ-only service
+    directives -- answer only from the knowledge base, state no prices --
+    against an empty FAQ. A customer asking whether we stock a chair we do stock
+    was asked for a quantity instead.
+
+    Since 2026-08-10 this is a first-turn test rather than a resumed-turn one:
+    the name gate that used to park the question is gone, so the misclassified
+    turn is now the customer's opening message itself.
     """
 
     db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
@@ -23199,18 +23218,8 @@ async def test_a_resumed_sku_question_is_not_answered_from_the_faq_branch(
         zoho_client=zoho,
         messaging_client=messaging,
     )
-    second_response = await process_message(
-        conversation_id=conv.id,
-        combined_text=name_reply,
-        db=db,
-        redis=redis,
-        embedding_engine=embedding,
-        zoho_client=zoho,
-        messaging_client=messaging,
-    )
 
-    assert first_response.model == "name-gate"
-    assert second_response.model == "mock-model"
+    assert "295" in first_response.text
     mock_run.assert_awaited_once()
     directives = mock_run.await_args.kwargs["deps"].runtime_directives
     assert not any("service policy branch" in directive for directive in directives)
@@ -23412,10 +23421,11 @@ async def test_the_first_turn_keeps_its_own_folded_pair(
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
 ) -> None:
-    """The opening guard owns turn one and the cap must not undo it.
+    """The opening guard folds the name onto the model's reply, and the
+    one-question cap must not then throw it away.
 
-    Its folded pair -- the name and the category, answered in three words or
-    neither -- is the thing that moved rule 7 from 0.08 to 1.66.
+    The value proposition it carries is what moved rule 7 from 0.08 to 1.66.
+    Since 2026-08-10 the model writes the turn and the guard only adds to it.
     """
 
     db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
@@ -23424,7 +23434,7 @@ async def test_the_first_turn_keeps_its_own_folded_pair(
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
-    mock_run.return_value = _FakeAgentResult("Hello there.")
+    mock_run.return_value = _FakeAgentResult("What are you furnishing?")
 
     response = await process_message(
         conversation_id=conv.id,
@@ -23436,7 +23446,8 @@ async def test_the_first_turn_keeps_its_own_folded_pair(
         messaging_client=messaging,
     )
 
-    assert response.model == "name-gate"
-    assert "your name" in response.text.casefold()
-    assert "chairs, desks and workstations, or a full office" in response.text
+    assert response.text.startswith("Hello, I'm Noor from Treejar.")
+    assert "quote from our own catalog" in response.text
+    assert "What are you furnishing?" in response.text
+    assert "how should I address you" in response.text
     mock_notify.assert_not_awaited()

@@ -1,43 +1,62 @@
-"""Deterministic first-turn dialogue opening guard."""
+"""Deterministic first-turn dialogue opening guard.
+
+The first reply answers the customer and asks for the name in passing. It used
+to do the opposite: the model never ran, and the whole turn was a fixed request
+for a name.
+
+The cost was measured, not suspected. 34% of real customers open with a bare
+greeting and nothing else, 36% never send a second message, and the median
+conversation is two customer messages -- so the median customer never saw a
+product or a price, and for a third of conversations the only thing Treejar
+ever said to them was "may I know your name". Both independent research reports
+of 2026-08-09 named that opening as the single worst move available on this
+channel.
+
+Owner decision of 2026-08-10, which this module implements:
+
+- The reply answers first. The name question rides along at the end of it.
+- The WhatsApp profile name is not trusted as a source: profiles carry device
+  names, emoji, trading names and blanks.
+- Ask once. If the customer does not give a name, carry on without one --
+  `src/llm/sales_turn_guard.py` holds that half, because this module only ever
+  sees the first turn.
+
+What stays deterministic is what the model measurably will not say on its own:
+who Treejar is, what it can do right now, and a catalog anchor price. Rule 7,
+the value proposition, scored zero in 26 of 26 transcripts while it was left to
+a directive.
+"""
 
 from __future__ import annotations
 
 import re
 
+from src.llm.closed_question_guard import response_asks_customer_name
+
 _EN_IDENTITY = "Hello, I'm Noor from Treejar."
-_EN_NAME_QUESTION = "May I know your name so I can address you properly?"
+_EN_NAME_QUESTION = "And how should I address you?"
 _AR_IDENTITY = "مرحبًا، أنا Noor من Treejar."
-_AR_NAME_QUESTION = "هل يمكنني معرفة اسمك لأخاطبك بشكل مناسب؟"
+_AR_NAME_QUESTION = "وكيف أخاطبك؟"
 
-# What the first reply is for, added 2026-08-09. Two independent research
-# reports named the bare name request as the single worst opening available on
-# this channel, and our own data agrees: 34% of real customers open with a
-# greeting and nothing else, 36% never send a second message, and the median
-# conversation is two customer messages. A reply that only asks for a name
-# spends the only turn a third of customers will ever read.
-_EN_CAPABILITY = "I can check live prices, stock and UAE delivery with installation."
-_AR_CAPABILITY = "يمكنني التحقق من الأسعار والتوفر والتوصيل والتركيب في الإمارات."
-_EN_CATEGORY_QUESTION = (
-    "And are you looking at chairs, desks and workstations, or a full office?"
+# What Treejar is, which is rule 7 and which the model does not say on its own.
+#
+# The wording earns its keep twice. It has to name a line of business, and it
+# has to survive `enforce_grounding_output`: the clause this replaced promised
+# "UAE delivery with installation", an unverified service commitment that the
+# grounding policy is right to cut. It only ever reached a customer because the
+# old gate returned a static reply and skipped grounding altogether. What is
+# left is true on every turn without a tool call -- who we are, and how we work.
+_EN_CAPABILITY = (
+    "We supply office furniture across the UAE, and I quote from our own catalog "
+    "with confirmed prices and stock."
 )
-_AR_CATEGORY_QUESTION = "وهل تبحث عن كراسي أو مكاتب ومحطات عمل أم تجهيز مكتب كامل؟"
+_AR_CAPABILITY = (
+    "نورّد أثاث المكاتب في الإمارات، وأعمل من كتالوجنا وأؤكد كل سعر وتوفر قبل إرساله."
+)
 
-_EN_NAME_QUESTION_SIGNALS = (
-    "your name",
-    "address you",
-    "call you",
-    "how should i address",
-    "how should i call",
-    "may i know your name",
-)
-_AR_NAME_QUESTION_SIGNALS = (
-    "اسمك",
-    "أخاطبك",
-    "اخاطبك",
-    "أناديك",
-    "اناديك",
-    "مناداتك",
-)
+# An anchor is a floor price for the catalog at large. It is worth sending when
+# the reply carries no figure of its own and pure noise beside one that does.
+_PRICE_RE = re.compile(r"\bAED\b|درهم", re.IGNORECASE)
 
 
 def _is_arabic_language(language: str) -> bool:
@@ -48,13 +67,6 @@ def _is_arabic_language(language: str) -> bool:
 def _has_identity(text: str) -> bool:
     normalized = text.casefold()
     return "noor" in normalized and "treejar" in normalized
-
-
-def _has_name_question(text: str) -> bool:
-    normalized = text.casefold()
-    return any(signal in normalized for signal in _EN_NAME_QUESTION_SIGNALS) or any(
-        signal in text for signal in _AR_NAME_QUESTION_SIGNALS
-    )
 
 
 def _has_customer_name(customer_name: str | None) -> bool:
@@ -71,7 +83,7 @@ def _strip_generic_english_opening(text: str) -> str:
         count=1,
         flags=re.I,
     )
-    return body.lstrip() or text.lstrip()
+    return body.lstrip()
 
 
 def _strip_legacy_identity(text: str) -> str:
@@ -93,30 +105,12 @@ def _strip_legacy_identity(text: str) -> str:
     return body.lstrip()
 
 
-def build_name_gate_reply(*, language: str, anchor_line: str | None = None) -> str:
-    """The first reply, carrying something before it asks for anything.
+def _strip_own_capability(text: str, capability: str) -> str:
+    """Drop a capability sentence the model wrote itself, so ours is the only one."""
 
-    Order matters and is the whole point: who we are, what we can do for the
-    customer right now, what things cost, and only then the question. The name
-    request keeps its exact wording and is folded together with a category
-    question, so the customer answers both in three words or neither.
-
-    `anchor_line` comes from the catalog, never from the model. Without it the
-    reply still stands; with it the customer has a real number before they have
-    told us anything.
-    """
-
-    is_arabic = _is_arabic_language(language)
-    identity = _AR_IDENTITY if is_arabic else _EN_IDENTITY
-    capability = _AR_CAPABILITY if is_arabic else _EN_CAPABILITY
-    name_question = _AR_NAME_QUESTION if is_arabic else _EN_NAME_QUESTION
-    category_question = _AR_CATEGORY_QUESTION if is_arabic else _EN_CATEGORY_QUESTION
-
-    parts = [f"{identity} {capability}"]
-    if anchor_line:
-        parts.append(anchor_line)
-    parts.append(f"{name_question} {category_question}")
-    return "\n\n".join(parts)
+    if capability not in text:
+        return text
+    return " ".join(text.replace(capability, " ").split())
 
 
 def apply_opening_guard(
@@ -127,36 +121,39 @@ def apply_opening_guard(
     customer_name: str | None,
     anchor_line: str | None = None,
 ) -> str:
-    """Ensure the first customer-facing reply follows Treejar opening rules."""
+    """Ensure the first customer-facing reply carries value before it asks.
+
+    Order is the whole point: who we are, what we can do now, the price, the
+    answer to what they actually asked, and only then the name question folded
+    onto the end of it.
+    """
+
     if not is_first_turn:
         return text
 
-    body = text.lstrip()
+    body = text.strip()
     if not body:
         return text
 
     is_arabic = _is_arabic_language(language)
     identity = _AR_IDENTITY if is_arabic else _EN_IDENTITY
+    capability = _AR_CAPABILITY if is_arabic else _EN_CAPABILITY
     name_question = _AR_NAME_QUESTION if is_arabic else _EN_NAME_QUESTION
 
-    if not _has_customer_name(customer_name):
-        return build_name_gate_reply(language=language, anchor_line=anchor_line)
-
     body = _strip_legacy_identity(body) or body
-    needs_identity = not _has_identity(body)
-    needs_name_question = False
-
-    if not needs_identity and not needs_name_question:
-        return text
-
-    if not needs_identity:
-        return f"{body}\n\n{name_question}" if needs_name_question else body
-
     if not is_arabic:
-        body = _strip_generic_english_opening(body)
+        body = _strip_generic_english_opening(body) or body
+    body = _strip_own_capability(body, capability).strip()
+    if _has_identity(body):
+        body = ""
 
-    opening_parts = [identity]
-    if needs_name_question:
-        opening_parts.append(name_question)
+    parts = [f"{identity} {capability}"]
+    if anchor_line and not _PRICE_RE.search(body):
+        parts.append(anchor_line)
+    if body:
+        parts.append(body)
 
-    return f"{' '.join(opening_parts)}\n\n{body}"
+    if not _has_customer_name(customer_name) and not response_asks_customer_name(body):
+        parts[-1] = f"{parts[-1].rstrip()} {name_question}"
+
+    return "\n\n".join(parts)

@@ -27,7 +27,11 @@ async def test_build_system_prompt_default_language() -> None:
     assert not re.search(r"[Ѐ-ӿ]", prompt)
     assert "STAGE: GREETING" in prompt
     assert "Noor from Treejar" in prompt
-    assert "ask how you should address them" in prompt
+    # The greeting stage asks for an answer, not for a name: the name request
+    # is folded in deterministically by `apply_opening_guard`, so the stage
+    # rule spends the model's attention on the customer's actual question.
+    assert "Answer what the customer asked" in prompt
+    assert "ask how you should address them" not in prompt
 
 
 @pytest.mark.asyncio

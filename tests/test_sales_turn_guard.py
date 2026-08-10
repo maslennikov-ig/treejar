@@ -15,6 +15,7 @@ from src.llm.sales_turn_guard import (
     carry_the_company_question,
     collapse_question_form,
     format_package_total,
+    refuse_to_chase_the_name,
     states_a_combined_total,
 )
 
@@ -186,4 +187,97 @@ def test_there_is_no_package_line_without_figures_to_put_in_it() -> None:
             language="en",
         )
         == ""
+    )
+
+
+def test_the_name_is_asked_once_and_then_let_go() -> None:
+    """Owner decision of 2026-08-10: a customer who ignores the name question
+    has answered it. The median conversation is two messages long; spending the
+    second one asking again for something already declined spends the sale."""
+
+    text = "The CH 616 is 295 AED and 36 are in stock. May I know your name?"
+
+    assert (
+        refuse_to_chase_the_name(
+            text,
+            previous_assistant_turns=[
+                "Hello, I'm Noor from Treejar. And how should I address you?"
+            ],
+            customer_name=None,
+        )
+        == "The CH 616 is 295 AED and 36 are in stock."
+    )
+
+
+def test_the_first_ask_survives() -> None:
+    text = "We stock that chair. And how should I address you?"
+
+    assert (
+        refuse_to_chase_the_name(
+            text,
+            previous_assistant_turns=["Hello, I'm Noor from Treejar."],
+            customer_name=None,
+        )
+        == text
+    )
+
+
+def test_a_known_name_is_left_to_the_closed_question_guard() -> None:
+    """Two guards, one signal list, and no overlap: this one owns the customer
+    who never gave a name, the other owns the one who did."""
+
+    text = "May I know your name?"
+
+    assert (
+        refuse_to_chase_the_name(
+            text,
+            previous_assistant_turns=["May I know your name?"],
+            customer_name="Ahmed",
+        )
+        == text
+    )
+
+
+def test_a_reply_that_is_only_a_repeated_question_is_kept_rather_than_emptied() -> None:
+    """An empty message cannot be sent to WhatsApp at all, so a repeated
+    question beats no reply. The route that produced it is the defect."""
+
+    text = "May I know your name?"
+
+    assert (
+        refuse_to_chase_the_name(
+            text,
+            previous_assistant_turns=["May I know your name?"],
+            customer_name=None,
+        )
+        == text
+    )
+
+
+def test_the_quote_route_list_form_counts_as_having_asked() -> None:
+    """The routes ask as a list item -- "please share: customer name" -- which
+    no fixed phrase matches, so the opening guard used to fold a second name
+    request onto a reply that already carried one."""
+
+    assert (
+        refuse_to_chase_the_name(
+            "CH 616 is 295 AED. Before I prepare the quotation, please share: "
+            "customer name.",
+            previous_assistant_turns=["And how should I address you?"],
+            customer_name=None,
+        )
+        == "CH 616 is 295 AED."
+    )
+
+
+def test_arabic_is_asked_once_too() -> None:
+    text = "لدينا هذا الكرسي. وكيف أخاطبك؟"
+
+    assert (
+        refuse_to_chase_the_name(
+            text,
+            previous_assistant_turns=["وكيف أخاطبك؟"],
+            customer_name=None,
+        )
+        == "لدينا هذا الكرسي."
     )

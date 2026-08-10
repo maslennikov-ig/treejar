@@ -116,20 +116,11 @@ DETERMINISTIC_CUSTOMER_ROUTES: dict[str, DeterministicRoute] = {
         rechecked_on=_TODAY,
     ),
     # --- routes that ask for one missing thing ---------------------------
-    "name-gate": DeterministicRoute(
-        does=(
-            "Opens with what Treejar does and an anchor price from the catalog, "
-            "then asks how to address the customer and what they are after."
-        ),
-        # Was a bare name request until 2026-08-09. Both research reports named
-        # that the worst opening available on this channel, and 36% of real
-        # customers never send a second message, so a third of conversations
-        # spent their only reply on it. Rule 7 moved 0.08 -> 1.66 when the
-        # guarantee replaced two days of directives.
-        carries="verified_fact",
-        rechecked_against_model=_LUNA,
-        rechecked_on=_ANCHOR_DAY,
-    ),
+    # `name-gate` was retired on 2026-08-10. It was the whole first turn: the
+    # model never ran, the customer's question was parked, and the only reply a
+    # third of customers ever read was a request for their name. The name is now
+    # a clause folded onto a real answer by `apply_opening_guard`, which is a
+    # guard rather than a route because it never owns the turn.
     "name-capture": DeterministicRoute(
         does="Acknowledges the name just given.",
         carries="acknowledges",

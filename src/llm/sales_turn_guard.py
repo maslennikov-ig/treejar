@@ -27,7 +27,9 @@ died on in `tj-2m5m.8`, and it is not reintroduced here.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
+from src.llm.closed_question_guard import response_asks_customer_name
 from src.services.customer_language import is_arabic_customer_language
 
 # A question the guard itself folds in is not a second question. The rubric
@@ -155,6 +157,57 @@ def _drop_trailing_questions(line: str) -> str:
         if not _is_question(sentence)
     ]
     return " ".join(part for part in kept if part.strip()).strip()
+
+
+def refuse_to_chase_the_name(
+    text: str,
+    *,
+    previous_assistant_turns: Sequence[str],
+    customer_name: str | None,
+) -> str:
+    """Ask for the name once. If it does not come, carry on without it.
+
+    Owner decision of 2026-08-10: the name is worth one passing question and
+    nothing more. WhatsApp profiles are an unreliable source -- device names,
+    emoji, trading names, blanks -- so the question is still asked, but a
+    customer who ignores it has answered it. Asking a second time spends a turn
+    on something they have already declined to give, in a median conversation
+    two messages long.
+
+    The condition is on the world, not on what Noor thinks she did: it reads the
+    assistant's own previous turns and the stored name, both facts. The sibling
+    case -- asking for a name we already hold -- belongs to
+    `apply_closed_question_guard`, and both read the same signal list so they
+    cannot drift apart.
+    """
+
+    if str(customer_name or "").strip():
+        return text
+    if not response_asks_customer_name(text):
+        return text
+    if not any(response_asks_customer_name(turn) for turn in previous_assistant_turns):
+        return text
+
+    stripped = _drop_name_questions(text)
+    # An empty reply cannot be sent at all, so a repeated question beats one.
+    return stripped or text
+
+
+def _drop_name_questions(text: str) -> str:
+    kept_lines: list[str] = []
+    for line in text.split("\n"):
+        if not response_asks_customer_name(line):
+            kept_lines.append(line)
+            continue
+        kept = [
+            sentence
+            for sentence in _SENTENCE_SPLIT_RE.split(line)
+            if not response_asks_customer_name(sentence)
+        ]
+        remainder = " ".join(part for part in kept if part.strip()).strip()
+        if remainder:
+            kept_lines.append(remainder)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(kept_lines)).strip()
 
 
 _EN_ACTIVITY_QUESTION = "And what does your company actually do, day to day?"

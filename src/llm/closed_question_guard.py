@@ -46,12 +46,29 @@ _DELIVERY_ADDRESS_SLOT = _SlotQuestion(
     missing_label_ar="عنوان التوصيل المحدد",
 )
 
+# One place decides whether a sentence asks for the name. `opening_guard` folds
+# the question in and `sales_turn_guard` refuses to repeat it, and both read
+# this; a second copy of these signals is how the two halves drift apart.
 _EN_CUSTOMER_NAME_QUESTION_SIGNALS = (
     "may i know your name",
     "can i have your name",
     "please share your name",
     "what is your name",
     "your name so i can address you",
+    "how should i address you",
+    "how do i address you",
+    "how should i call you",
+    "who am i speaking with",
+)
+# The quote routes ask for the name as a list item -- "please share: customer
+# name" -- which no fixed phrase matches. Without this, `apply_opening_guard`
+# folded a second name request onto a reply that already carried one.
+_EN_CUSTOMER_NAME_QUESTION_PATTERNS = (
+    re.compile(
+        r"\b(?:share|provide|send|confirm|need|require)\b[^.?!\n]{0,140}"
+        r"\b(?:customer\s+name|full\s+name|your\s+name)\b"
+    ),
+    re.compile(r"\bwhat\s+(?:is|was)\s+your\s+name\b"),
 )
 _EN_COMPANY_STATUS_QUESTION_PATTERNS = (
     re.compile(
@@ -99,6 +116,7 @@ _AR_DELIVERY_ADDRESS_QUESTION_SIGNALS = (
     "العنوان",
 )
 _AR_REQUEST_SIGNALS = (
+    "كيف",
     "يرجى",
     "رجاء",
     "شارك",
@@ -119,9 +137,13 @@ def response_asks_customer_name(text: str) -> bool:
     normalized = " ".join(str(text or "").casefold().split())
     if not normalized:
         return False
-    return any(
-        signal in normalized for signal in _EN_CUSTOMER_NAME_QUESTION_SIGNALS
-    ) or _arabic_request_mentions(str(text or ""), _AR_CUSTOMER_NAME_QUESTION_SIGNALS)
+    if any(signal in normalized for signal in _EN_CUSTOMER_NAME_QUESTION_SIGNALS):
+        return True
+    if any(
+        pattern.search(normalized) for pattern in _EN_CUSTOMER_NAME_QUESTION_PATTERNS
+    ):
+        return True
+    return _arabic_request_mentions(str(text or ""), _AR_CUSTOMER_NAME_QUESTION_SIGNALS)
 
 
 def _arabic_request_mentions(raw_text: str, signals: tuple[str, ...]) -> bool:

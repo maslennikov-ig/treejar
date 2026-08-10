@@ -138,6 +138,7 @@ from src.llm.sales_turn_guard import (
     carry_the_company_question,
     collapse_question_form,
     format_package_total,
+    refuse_to_chase_the_name,
     states_a_combined_total,
 )
 from src.llm.verified_answers import (
@@ -15653,6 +15654,16 @@ async def process_message(
 
         text = collapse_question_form(text)
 
+        text = refuse_to_chase_the_name(
+            text,
+            previous_assistant_turns=[
+                entry.removeprefix("assistant: ")
+                for entry in (response_deps.recent_history or ())
+                if entry.startswith("assistant: ")
+            ],
+            customer_name=_known_customer_name_for_guards(),
+        )
+
         if _turn_owes_the_company_question(response_deps):
             text = carry_the_company_question(text, language=language)
         return text
@@ -16457,7 +16468,14 @@ async def process_message(
         and pending_quote_brief_confirmation
     ):
         await _clear_pending_quote_brief_confirmation(db, conv)
-    if pending_name_gate_request:
+    # A bare "Alex" is only a name because we just asked for one. Until
+    # 2026-08-10 the only thing that ever asked was the name gate, so this read
+    # its parked request; now any route can ask, and the reply has to land the
+    # same way. The condition is on what we actually sent, not on what the
+    # engine believes it did.
+    if pending_name_gate_request or response_asks_customer_name(
+        _last_assistant_message(recent_history)
+    ):
         pending_reply_name = _extract_pending_name_gate_reply_name(
             combined_text,
             current_quote_customer_details,
@@ -16473,35 +16491,16 @@ async def process_message(
         and customer_name_was_unknown
         and not _string_value(current_quote_customer_details.get("name"))
     ):
-        await _store_name_gate_pending_request(db, conv, combined_text)
-        await _store_name_gate_quote_context(
-            db,
-            conv,
-            combined_text=combined_text,
-            masked_text=masked_text,
-        )
+        # The turn is no longer spent on the question. It runs to the end like
+        # any other, and `apply_opening_guard` folds the name request onto the
+        # answer -- owner decision of 2026-08-10, on the measurement that 36% of
+        # customers never send a second message and so never got past this
+        # point. Nothing is deferred for a later resume, because nothing is
+        # deferred at all.
+        #
+        # The anchor is still read here, where the catalog is in reach, so the
+        # opening carries a price when the reply itself found none.
         opening_anchor_line[0] = await catalog_anchor_line(db, str(conv.language))
-        response = _build_static_response(
-            "Hello",
-            "name-gate",
-            allow_product_media=False,
-        )
-        if current_quote_customer_details:
-            identity_details = {
-                key: value
-                for key, value in current_quote_customer_details.items()
-                if key in {"name", "company"}
-            }
-            await _store_extracted_quote_customer_details(
-                db,
-                conv,
-                identity_details,
-            )
-        if current_quote_intent_frame is not None:
-            await _store_quote_intent_frame(db, conv, combined_text)
-        if current_sales_memory_updates:
-            await _store_sales_memory_updates(db, conv, current_sales_memory_updates)
-        return response
 
     # Store customer details from the original, unmasked text before any route
     # can call create_quotation. Phone is enough to create a draft, while the
@@ -16600,7 +16599,14 @@ async def process_message(
                 combined_text
             )
         else:
-            if not _has_detail_capture_handoff_blocker(combined_text):
+            # Nothing was parked, so there is no prior request to resume. If a
+            # quotation is pending, though, the name that just arrived is the
+            # detail it was waiting for, and the quote route below owes an
+            # answer -- not "Thank you, Alex. How can I help you?"
+            if (
+                not _has_detail_capture_handoff_blocker(combined_text)
+                and not has_pending_quote_selection
+            ):
                 if (
                     _has_active_sales_detail_capture_context(
                         conv,
@@ -16689,6 +16695,12 @@ async def process_message(
         # has already been consumed by this point -- so the test is whether this
         # turn is the one that completed the gate.
         and not name_gate_completion_reply
+        # The same rule, generalised on 2026-08-10 when the gate was removed. A
+        # customer answering the last detail a pending quotation was waiting for
+        # is owed the quotation, not "Thanks, I've noted name: Alex." The quote
+        # route below either completes it or asks for what is still missing
+        # while carrying the verified price and stock, and both beat a receipt.
+        and not has_pending_quote_selection
         and _is_neutral_detail_capture_update(
             text=combined_text,
             customer_details=current_quote_customer_details,
