@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -248,6 +249,31 @@ def canonicalize_criteria(
         )
 
     return canonical
+
+
+def raw_total(criteria: Sequence[CriterionScore]) -> int:
+    """The client's own convention: score every criterion, drop nothing.
+
+    Two rulers exist and they are not interchangeable. `calculate_weighted_score`
+    below drops the rules that did not apply and stretches the surviving blocks
+    back to /30, which is right for comparing one build with another. The client
+    scores all fifteen on every dialogue and lets an unearned criterion stand at
+    zero, which is right for comparing us with the people doing this job today.
+
+    Our published 20.02 and their 6.05 came from those two rulers and were never
+    comparable. On this one the same 53 packets read 13.55.
+
+    Every number that leaves this project on the client's axis goes through this
+    function. The alternative is what happened on 2026-08-07, when the reports
+    normalised a score the evaluator had already normalised and the figure drifted
+    for four days before anyone noticed.
+    """
+
+    return sum(
+        criterion.score
+        for criterion in criteria
+        if criterion.applicable and not criterion.n_a
+    )
 
 
 def calculate_weighted_score(
