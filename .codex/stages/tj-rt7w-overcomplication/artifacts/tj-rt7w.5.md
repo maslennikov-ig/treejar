@@ -54,8 +54,8 @@ parallel_decision: sequential
 status: accepted
 delivery_method: manual integration
 accepted_by_orchestrator: yes
-cleanup_status: not_applicable
-cleanup_notes: root-owned main worktree
+cleanup_status: cleaned
+cleanup_notes: root-owned main worktree; no dedicated worktree or branch existed
 risk_level: high
 verification_tier: release
 risk_tags:

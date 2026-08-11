@@ -1,8 +1,15 @@
 # Stage tj-rt7w-overcomplication
 
-Status: in progress
+Status: accepted
 Base: `main` at `3f9a719`
 Acceptance owner: root orchestrator
+
+docs-reviewed: updated — handoff, stage evidence, and project index now name
+the accepted internal module boundaries; no external/versioned behavior changed.
+project-index: updated — stable `src/llm/` navigation lists catalog planning,
+message orchestration, response policy, response transport, and order routing.
+graph-reviewed: no-change-needed — optional Graphify output is not initialized,
+and slice acceptance is below the configured integration/release refresh policy.
 
 ## Scope
 
