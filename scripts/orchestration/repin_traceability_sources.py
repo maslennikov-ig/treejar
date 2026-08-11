@@ -20,6 +20,16 @@ way to record that current state moved, never a way to launder a real change.
     uv run python scripts/orchestration/repin_traceability_sources.py
 
 `--check` reports drift and exits non-zero without writing, so it can gate.
+
+A stable source moves too, just rarely. `.codex/project-index.md` is a
+navigation map, so `tj-rt7w.6` changed the `src/llm/` module boundaries and the
+index with them, and the pin fired on a file two `tj-ee5f` criteria cite. That
+is not a false alarm and not current state either, so it does not belong in
+`MUTABLE_SOURCE_PATHS`: recording it has to cost a deliberate act that shows up
+in the command line and in the commit.
+
+    uv run python scripts/orchestration/repin_traceability_sources.py \
+        --source project-index
 """
 
 from __future__ import annotations
@@ -74,13 +84,28 @@ def _source_set_digest(registry: dict[str, dict]) -> str:
     return _canonical_json_digest(payload)
 
 
-def repin(manifest_path: pathlib.Path, *, repo_root: pathlib.Path, check: bool) -> int:
+def repin(
+    manifest_path: pathlib.Path,
+    *,
+    repo_root: pathlib.Path,
+    check: bool,
+    named_sources: tuple[str, ...] = (),
+) -> int:
     document = json.loads(manifest_path.read_text(encoding="utf-8"))
     registry = document.get("source_registry") or {}
     drifted: list[str] = []
 
+    unknown = sorted(set(named_sources) - set(registry))
+    if unknown:
+        raise ManifestValidationError(
+            f"no such source in {manifest_path.name}: {', '.join(unknown)}"
+        )
+
     for source_id, source in registry.items():
-        if source.get("path") not in MUTABLE_SOURCE_PATHS:
+        if (
+            source.get("path") not in MUTABLE_SOURCE_PATHS
+            and source_id not in named_sources
+        ):
             continue
         content = _read_regular_file_at(
             repo_root,
@@ -135,6 +160,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage", default="tj-ee5f")
     parser.add_argument("--check", action="store_true")
+    parser.add_argument(
+        "--source",
+        action="append",
+        default=[],
+        metavar="SOURCE_ID",
+        help=(
+            "also re-pin this frozen source, by its registry id. Repeatable. "
+            "Naming a source is a deliberate record that a stable document "
+            "moved, so it never happens by default."
+        ),
+    )
     args = parser.parse_args()
     manifest_path = (
         REPO_ROOT / ".codex" / "stages" / args.stage / "traceability-manifest.json"
@@ -143,7 +179,12 @@ def main() -> int:
         print(f"no traceability manifest for stage {args.stage}", file=sys.stderr)
         return 2
     try:
-        return repin(manifest_path, repo_root=REPO_ROOT, check=args.check)
+        return repin(
+            manifest_path,
+            repo_root=REPO_ROOT,
+            check=args.check,
+            named_sources=tuple(args.source),
+        )
     except ManifestValidationError as exc:
         print(f"manifest error: {exc}", file=sys.stderr)
         return 2

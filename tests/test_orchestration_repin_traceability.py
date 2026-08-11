@@ -23,6 +23,10 @@ import pathlib
 import shutil
 
 import pytest
+from scripts.e2e_acceptance.manifest import (
+    ManifestValidationError,
+    load_traceability_manifest,
+)
 from scripts.orchestration.repin_traceability_sources import (
     MUTABLE_SOURCE_PATHS,
     repin,
@@ -114,3 +118,63 @@ def test_the_mutable_set_is_exactly_what_the_contract_declares() -> None:
         ".codex/orchestrator.toml",
         ".codex/handoff.md",
     }
+
+
+def test_a_named_frozen_source_is_re_pinned(
+    repo: pathlib.Path, manifest: pathlib.Path
+) -> None:
+    """`tj-rt7w.8`. A stable source does move — when the thing it points at does.
+
+    `.codex/project-index.md` is a navigation map, so a stage that changes the
+    module boundaries changes it too, and the pin fires. That is the net doing
+    its job, not a false alarm: two `tj-ee5f` criteria cite the index. Recording
+    the move has to stay a deliberate act, so it takes the source's own name on
+    the command line and never happens by default.
+    """
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    document["source_registry"]["repo-contract"]["content_digest"] = _STALE
+    manifest.write_text(json.dumps(document), encoding="utf-8")
+
+    assert (
+        repin(manifest, repo_root=repo, check=False, named_sources=("repo-contract",))
+        == 0
+    )
+
+    assert _registry(manifest)["repo-contract"]["content_digest"] == _digest(
+        repo / "AGENTS.md"
+    )
+
+
+def test_naming_one_frozen_source_does_not_re_pin_another(
+    repo: pathlib.Path, manifest: pathlib.Path
+) -> None:
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    document["source_registry"]["repo-contract"]["content_digest"] = _STALE
+    document["source_registry"]["project-index"]["content_digest"] = _STALE
+    manifest.write_text(json.dumps(document), encoding="utf-8")
+
+    repin(manifest, repo_root=repo, check=False, named_sources=("repo-contract",))
+
+    registry = _registry(manifest)
+    assert registry["repo-contract"]["content_digest"] != _STALE
+    assert registry["project-index"]["content_digest"] == _STALE
+
+
+def test_naming_a_source_the_manifest_does_not_carry_fails_loudly(
+    repo: pathlib.Path, manifest: pathlib.Path
+) -> None:
+    """A typo must not read as "nothing had drifted"."""
+    with pytest.raises(ManifestValidationError):
+        repin(manifest, repo_root=repo, check=False, named_sources=("no-such-source",))
+
+
+def test_a_named_re_pin_still_loads_through_the_validator(
+    repo: pathlib.Path, manifest: pathlib.Path
+) -> None:
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    document["source_registry"]["repo-contract"]["content_digest"] = _STALE
+    manifest.write_text(json.dumps(document), encoding="utf-8")
+
+    repin(manifest, repo_root=repo, check=False, named_sources=("repo-contract",))
+
+    assert load_traceability_manifest(manifest)

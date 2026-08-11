@@ -2,7 +2,7 @@
   "schema_version": "noor-e2e-traceability/v1",
   "goal_id": "tj-ee5f",
   "scope_source_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
-  "source_set_digest": "c7f5ea9c38463f4181ca461711ff8b92d7796a0d8ab37a5d58555b3e2cf32453",
+  "source_set_digest": "63dda3190d94b8e777de0ebad941216a6473998646b6adfa748e2fa38c46b350",
   "precedence_order": [
     "current repository and runtime contracts",
     "original and updated requirements",
@@ -58,12 +58,12 @@
     },
     "project-index": {
       "path": ".codex/project-index.md",
-      "content_digest": "f6a02124afd3b30e1e4c68a7a0f9559db374b81c7aecf08f8c37a4adfe5e08c6",
+      "content_digest": "43d48982aac7d4299cb2f248f5fcb368f48b2a66d31c8a91ffe781a0c77781a9",
       "sections": [
         {
           "start_locator": "# Project Index - Treejar AI Sales Bot",
           "end_locator": null,
-          "content_digest": "f6a02124afd3b30e1e4c68a7a0f9559db374b81c7aecf08f8c37a4adfe5e08c6"
+          "content_digest": "43d48982aac7d4299cb2f248f5fcb368f48b2a66d31c8a91ffe781a0c77781a9"
         }
       ]
     },
