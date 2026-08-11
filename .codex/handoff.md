@@ -153,6 +153,10 @@ Plus `docs/plans/2026-08-11-permission-list-plan.md` and the ratified list at
 
 Next stage id: `tj-mshi-permission-list`, then `tj-n7p4-judged-repairs`.
 
+Recommended action: `tj-mshi.2`, the first orchestrator-owned child of the
+permission list. `tj-mshi.1` is closed, so the registry can be filled from the
+ratified document immediately.
+
 After those, the product track that has waited behind the cleanup: two P0 epics
 (`tj-2m5m`, `tj-swgu`), then the reader findings this round confirmed still live
 — `tj-vz7o.12`, `tj-wvo4`, `tj-odeq`. `tj-riim` closes inside `tj-mshi.4`, and
@@ -160,6 +164,7 @@ After those, the product track that has waited behind the cleanup: two P0 epics
 
 ## Starter prompt for next orchestrator
 
+Use $orchestrator-stage for `tj-mshi-permission-list` and epic `tj-mshi`.
 Hand `docs/plans/2026-08-11-permission-list-orchestrator-prompt.md` verbatim, and
 `docs/plans/2026-08-11-nothing-deleted-orchestrator-prompt.md` after that stage
 is accepted. Both are written to be handed over as they are. The next measured
