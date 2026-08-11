@@ -43,7 +43,22 @@ Deliver `tj-rt7w.1` through `tj-rt7w.6` in dependency order. Keep
   source files; Pytest passed with 3526 tests and 19 skips; process verification
   passed.
 
-### tj-rt7w.3 — pending
+### tj-rt7w.3 — accepted
+
+- Change: `src/llm/money.py` now owns the amount token, the existing currency
+  spellings, customer-output amount recognition, and the canonical decimal
+  form. Engine budgets, fact extraction, grounding, and the opening guard use
+  those shared definitions.
+- Behaviour evidence: no existing test was edited. An exact before/after replay
+  over all twenty stored raw outputs found zero mismatches separately in all
+  four modules; no output interpretation changed.
+- Regression evidence: ten new direct tests cover `290 == 290.00`, comma and
+  trailing-zero normalization, both existing currency/amount orders, and the
+  opening guard's currency-presence contract.
+- Gate: the focused money-and-consumer set passed 986 tests. Ruff and format
+  passed over `src/` and `tests/`; Mypy passed over 170 source files; Pytest
+  passed with 3536 tests and 19 skips; process verification is recorded in the
+  child artifact.
 
 ### tj-rt7w.4 — pending
 

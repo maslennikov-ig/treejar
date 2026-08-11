@@ -5,8 +5,9 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
 from enum import StrEnum
+
+from src.llm.money import canonical_amount, find_customer_output_amounts
 
 
 class GroundingViolation(StrEnum):
@@ -55,14 +56,6 @@ _QUOTED_TEXT_RE = re.compile(
     r"|(?<![\w])'(?=\S)(?:[^'\n]|(?<=\w)'(?=\w))*?(?<=\S)'(?!\w)"
     r"|‘(?=\S)(?:[^’\n]|(?<=\w)’(?=\w))*?(?<=\S)’(?!\w)",
     re.DOTALL,
-)
-# Only a figure carrying a currency marker. Dimensions, quantities, lead times
-# and phone-shaped strings are not prices, and stripping a sentence for saying
-# "2-3 days" would be a worse defect than the one this catches.
-_AMOUNT_RE = re.compile(
-    r"(?:\bAED\b|درهم)\s*(?P<prefixed>\d[\d,]*(?:\.\d+)?)"
-    r"|(?P<suffixed>\d[\d,]*(?:\.\d+)?)\s*(?:\bAED\b|درهم)",
-    re.IGNORECASE,
 )
 _EN_SHOWROOM_RE = re.compile(r"\bshowroom\b")
 _EN_SPECIFIC_PRODUCT_TRIAL_RE = re.compile(
@@ -259,40 +252,10 @@ _AR_GENERIC_FALLBACK = (
 )
 
 
-def canonical_amount(value: object) -> str | None:
-    """One spelling for one sum of money, so `5000` and `AED 5,000.00` agree.
-
-    The 2026-08-10 opening round flagged five responses for inventing a figure
-    that was in fact sitting in their own evidence, spelled differently. A
-    grounding check that cannot see `566.87 == 566.870` reports defects that do
-    not exist, and the round after it gets tuned instead of fixed.
-    """
-
-    text = str(value if value is not None else "").strip().replace(",", "")
-    if not text:
-        return None
-    try:
-        number = Decimal(text)
-    except InvalidOperation:
-        return None
-    if not number.is_finite():
-        return None
-    rendered = format(number, "f")
-    if "." in rendered:
-        rendered = rendered.rstrip("0").rstrip(".")
-    return rendered or "0"
-
-
 def asserted_amounts(text: str) -> tuple[str, ...]:
     """Every sum of money the customer would read as a Treejar figure."""
 
-    found: list[str] = []
-    for match in _AMOUNT_RE.finditer(visible_grounding_text(str(text or ""))):
-        token = match.group("prefixed") or match.group("suffixed")
-        canonical = canonical_amount(token)
-        if canonical is not None and canonical not in found:
-            found.append(canonical)
-    return tuple(found)
+    return find_customer_output_amounts(visible_grounding_text(str(text or "")))
 
 
 def _has_unverified_price(sentence: str, *, grounded: frozenset[str] | None) -> bool:

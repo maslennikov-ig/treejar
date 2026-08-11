@@ -121,6 +121,11 @@ from src.llm.grounding_output import (
     GroundingOutputAction,
     enforce_grounding_output,
 )
+from src.llm.money import (
+    AMOUNT_TOKEN_PATTERN,
+    BUDGET_AED_CURRENCY_PATTERN,
+    canonical_amount,
+)
 from src.llm.opening_guard import apply_opening_guard
 from src.llm.order_quote_routes import QuotationItem, _order_quote_route_for_turn
 from src.llm.order_status import format_order_status
@@ -1172,11 +1177,11 @@ _CATALOG_CROSS_SELL_SOURCE: dict[CatalogFamily, str] = {
 }
 _CATALOG_BUDGET_CAP_RE = re.compile(
     r"(?:\b(?:under|below|within|up\s+to|maximum|max(?:imum)?\s+of)\s+"
-    r"(?:(?P<currency_before>AED|DHS|dirhams?)\s*)?"
-    r"(?P<amount_before>\d[\d,]*(?:\.\d+)?)"
-    r"(?:\s*(?P<currency_after>AED|DHS|dirhams?))?\b|"
-    r"\b(?P<currency_leading>AED|DHS|dirhams?)\s*"
-    r"(?P<amount_leading>\d[\d,]*(?:\.\d+)?)\s+"
+    rf"(?:(?P<currency_before>{BUDGET_AED_CURRENCY_PATTERN})\s*)?"
+    rf"(?P<amount_before>{AMOUNT_TOKEN_PATTERN})"
+    rf"(?:\s*(?P<currency_after>{BUDGET_AED_CURRENCY_PATTERN}))?\b|"
+    rf"\b(?P<currency_leading>{BUDGET_AED_CURRENCY_PATTERN})\s*"
+    rf"(?P<amount_leading>{AMOUNT_TOKEN_PATTERN})\s+"
     r"(?:or\s+less|max(?:imum)?|cap)\b)",
     re.IGNORECASE,
 )
@@ -1891,7 +1896,10 @@ def _catalog_budget_constraints(text: str) -> CatalogBudgetConstraints:
     per_item_cap: float | None = None
     for match in _CATALOG_BUDGET_CAP_RE.finditer(normalized):
         raw_amount = match.group("amount_before") or match.group("amount_leading")
-        amount = float(raw_amount.replace(",", ""))
+        normalized_amount = canonical_amount(raw_amount)
+        if normalized_amount is None:
+            continue
+        amount = float(normalized_amount)
         if not 0 < amount <= 10_000_000:
             continue
         clause = _budget_clause(normalized, match)
@@ -9907,9 +9915,9 @@ _NEGATED_SALES_OPPORTUNITY_ACTION_RE = re.compile(
 )
 _SALES_BUDGET_RE = re.compile(
     r"\bbudget\s*[:：=-]?\s*"
-    r"(?:(?P<currency_before>AED|DHS|dirhams?)\s*)?"
-    r"(?P<amount>\d[\d,]*(?:\.\d+)?)"
-    r"(?:\s*(?P<currency_after>AED|DHS|dirhams?))?\b",
+    rf"(?:(?P<currency_before>{BUDGET_AED_CURRENCY_PATTERN})\s*)?"
+    rf"(?P<amount>{AMOUNT_TOKEN_PATTERN})"
+    rf"(?:\s*(?P<currency_after>{BUDGET_AED_CURRENCY_PATTERN}))?\b",
     re.IGNORECASE,
 )
 _DECISION_HORIZON_RE = re.compile(
@@ -9971,7 +9979,8 @@ def _extract_sales_opportunity_request(
     currency: str | None = None
     budget_match = _SALES_BUDGET_RE.search(normalized)
     if budget_match is not None:
-        amount = float(budget_match.group("amount").replace(",", ""))
+        normalized_amount = canonical_amount(budget_match.group("amount"))
+        amount = float(normalized_amount) if normalized_amount is not None else None
         raw_currency = budget_match.group("currency_before") or budget_match.group(
             "currency_after"
         )

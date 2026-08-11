@@ -32,6 +32,7 @@ from __future__ import annotations
 import re
 
 from src.llm.closed_question_guard import response_asks_customer_name
+from src.llm.money import contains_customer_output_currency
 
 _EN_IDENTITY = "Hello, I'm Noor from Treejar."
 _EN_NAME_QUESTION = "And how should I address you?"
@@ -53,10 +54,6 @@ _EN_CAPABILITY = (
 _AR_CAPABILITY = (
     "نورّد أثاث المكاتب في الإمارات، وأعمل من كتالوجنا وأؤكد كل سعر وتوفر قبل إرساله."
 )
-
-# An anchor is a floor price for the catalog at large. It is worth sending when
-# the reply carries no figure of its own and pure noise beside one that does.
-_PRICE_RE = re.compile(r"\bAED\b|درهم", re.IGNORECASE)
 
 
 def _is_arabic_language(language: str) -> bool:
@@ -183,7 +180,7 @@ def apply_opening_guard(
     body = _drop_identity_sentences(body)
 
     parts = [f"{identity} {capability}"]
-    if anchor_line and not _PRICE_RE.search(body):
+    if anchor_line and not contains_customer_output_currency(body):
         parts.append(anchor_line)
     if body:
         parts.append(body)

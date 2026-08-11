@@ -13,6 +13,11 @@ from src.core.config import settings
 from src.dialogue.order_guards import is_order_selection_blocked
 from src.dialogue.order_runtime import run_order_runtime
 from src.dialogue.order_state import order_lines_snapshot
+from src.llm.money import (
+    AMOUNT_TOKEN_PATTERN,
+    BUDGET_AED_CURRENCY_PATTERN,
+    canonical_amount,
+)
 from src.llm.pii import EMAIL_PATTERN, PHONE_PATTERN
 from src.llm.safety import (
     PATH_FACT_EXTRACTION,
@@ -57,15 +62,15 @@ _GENERIC_SPACED_SKU_PATTERN = re.compile(r"\b[A-Z]{1,4}\s*[- ]\s*\d{2,8}\b")
 _BUDGET_PATTERN = re.compile(
     r"\b(?:budget\s*(?P<q1>under|below|up\s+to|around|about|approx(?:imately)?)?"
     r"|(?P<q2>under|below|up\s+to|around|about|approx(?:imately)?))"
-    r"\s*(?P<currency1>AED|DHS|dirhams?)?\s*"
-    r"(?P<amount>\d[\d,]*(?:\.\d+)?)\s*"
-    r"(?P<currency2>AED|DHS|dirhams?)?\b",
+    rf"\s*(?P<currency1>{BUDGET_AED_CURRENCY_PATTERN})?\s*"
+    rf"(?P<amount>{AMOUNT_TOKEN_PATTERN})\s*"
+    rf"(?P<currency2>{BUDGET_AED_CURRENCY_PATTERN})?\b",
     re.IGNORECASE,
 )
 _REVERSE_BUDGET_PATTERN = re.compile(
-    r"\b(?P<currency1>AED|DHS|dirhams?)?\s*"
-    r"(?P<amount>\d[\d,]*(?:\.\d+)?)\s*"
-    r"(?P<currency2>AED|DHS|dirhams?)?\s+budget\b",
+    rf"\b(?P<currency1>{BUDGET_AED_CURRENCY_PATTERN})?\s*"
+    rf"(?P<amount>{AMOUNT_TOKEN_PATTERN})\s*"
+    rf"(?P<currency2>{BUDGET_AED_CURRENCY_PATTERN})?\s+budget\b",
     re.IGNORECASE,
 )
 _COLOR_PATTERN = re.compile(
@@ -899,8 +904,10 @@ def _strip_synthetic_test_markers(text: str) -> str:
 
 
 def _budget_value(match: re.Match[str]) -> dict[str, Any]:
-    amount_text = match.group("amount").replace(",", "")
-    amount = float(amount_text) if "." in amount_text else int(amount_text)
+    amount_text = match.group("amount")
+    normalized_amount = canonical_amount(amount_text)
+    assert normalized_amount is not None
+    amount = float(normalized_amount) if "." in amount_text else int(normalized_amount)
     qualifier = match.groupdict().get("q1") or match.groupdict().get("q2")
     if qualifier:
         qualifier = re.sub(r"\s+", " ", qualifier.lower())
