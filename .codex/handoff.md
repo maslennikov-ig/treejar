@@ -138,16 +138,22 @@ duplicate identity lines the anchor replaces, so that one is *replacing* and
 stays deterministic; `grounding_output` removes and replaces nothing, once in
 sixty, and that is where the judge belongs.
 
-Documents for both, ready to hand over:
+Documents, ready to hand over:
 
-| | spec | prompt |
-|---|---|---|
-| `tj-mshi` | `docs/superpowers/specs/2026-08-11-what-noor-may-promise-spec.md` | `docs/plans/2026-08-11-permission-list-orchestrator-prompt.md` |
-| `tj-n7p4` | `docs/superpowers/specs/2026-08-11-nothing-is-deleted-without-a-judge-spec.md` | `docs/plans/2026-08-11-nothing-deleted-orchestrator-prompt.md` |
+- **One prompt for both stages, run in sequence:**
+  `docs/plans/2026-08-11-orchestrator-prompt.md`. Passes
+  `orch-prompts prompt-check`.
+- Specs: `docs/superpowers/specs/2026-08-11-what-noor-may-promise-spec.md` and
+  `docs/superpowers/specs/2026-08-11-nothing-is-deleted-without-a-judge-spec.md`.
+- `docs/plans/2026-08-11-permission-list-plan.md`, and the ratified list at
+  `docs/plans/2026-08-11-promise-types-for-ratification.md`.
 
-Plus `docs/plans/2026-08-11-permission-list-plan.md` and the ratified list at
-`docs/plans/2026-08-11-promise-types-for-ratification.md`. Both prompts pass
-`orch-prompts prompt-check`.
+**Paid calls are authorised in advance**, owner, 2026-08-11: 20 Luna generation
+calls per measured round; up to 25 second-vendor repair-judge calls across
+`tj-n7p4`; ceiling $2.00 for both stages, against about $0.05 expected. The
+**scoring** judge is the orchestrator reading blind and costs nothing --
+`--second-reader` is never passed. The **repair** judge in `tj-n7p4` is a
+different thing, paid, and fires only on a flag.
 
 ## Next recommended
 
@@ -165,9 +171,10 @@ After those, the product track that has waited behind the cleanup: two P0 epics
 ## Starter prompt for next orchestrator
 
 Use $orchestrator-stage for `tj-mshi-permission-list` and epic `tj-mshi`.
-Hand `docs/plans/2026-08-11-permission-list-orchestrator-prompt.md` verbatim, and
-`docs/plans/2026-08-11-nothing-deleted-orchestrator-prompt.md` after that stage
-is accepted. Both are written to be handed over as they are. The next measured
+Hand `docs/plans/2026-08-11-orchestrator-prompt.md` verbatim. It covers both
+stages and gates the second on the first being accepted; the repo contract's
+single-active-stage rule and the fact that both touch the same reply path are
+why they are sequential rather than parallel. The next measured
 round is the first one comparable with 2026-08-11, because the judge is the
 same. Ask for paid-call authority by name and amount before spending.
 
