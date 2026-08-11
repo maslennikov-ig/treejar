@@ -3,8 +3,9 @@
 Updated: 2026-08-11
 Current branch: `main`
 Current stage id: `tj-n7p4-judged-repairs`
-Status: stage 1 is accepted at `5ef5eeb`. Stage 2 `.1`, `.2`, `.3`, `.6` and
-`.4` are accepted locally; `.5` is next. One repair-judge call cost $0.001265216.
+Status: stage 1 is accepted at `5ef5eeb`. All six stage-2 children are
+implemented and measured; root closeout is next. Stage 2 used one repair-judge
+call for $0.001265216 and none in the final measured round.
 
 Documentation: no external/versioned boundary — this stage changes first-party
 Python prompt and policy text and uses an existing provider client.
@@ -79,6 +80,7 @@ Python prompt and policy text and uses an existing provider client.
 - `d81a744` — `tj-n7p4.2`, declare replacing and removing guard contracts.
 - `f12cc5c` — `tj-n7p4.3`, add the second-vendor repair judge.
 - `a1d9532` — `tj-n7p4.6`, hand unresolved repairs to a manager.
+- `0764ce2` — `tj-n7p4.4`, align the harness with production repair.
 
 Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
 
@@ -97,6 +99,11 @@ Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
   full Pytest `3594 passed, 19 skipped`; no paid call; process passed.
 - `.4` protected replay: all 60 stored raw assistant outputs re-render through
   the full policy chain with zero changes, digest `1b0b2963…`.
+- `.5` measured round: 20/20 generation, root reading and language; 20 Luna,
+  zero repair and scoring calls; zero flags, fallbacks and rewrites; $0.005444.
+- `.5` paired result: criticals 1 to 1; weighted delta +1.16 (95% CI -0.28 to
+  +3.00); raw delta +0.50 (95% CI +0.05 to +1.10). The one candidate critical
+  is the known SKU-detector false positive on dialog 1067.
 - `test_llm_grounding_output.py` stayed byte-identical and passed all 107 tests.
 - Stage closeout passed 107 affected-package, 29 security, and 145 integration
   tests, then readiness and process verification.
@@ -172,20 +179,13 @@ different thing, paid, and fires only on a flag.
 
 ## Next recommended
 
-Next stage id: `tj-n7p4-judged-repairs`; it is now the active implementation
-stage and stays sequential through `.1`, `.2`, `.3`, `.6`, `.4`, `.5`.
-
-Recommended action: run `tj-n7p4.5`: exactly 20 authorized Luna calls, only
-triggered repair calls, root blind scoring, then root-read every rewrite.
-
-After stage 2, the product track that has waited behind the cleanup: two P0 epics
-(`tj-2m5m`, `tj-swgu`), then the reader findings this round confirmed still live
-— `tj-vz7o.12`, `tj-wvo4`, `tj-odeq`. `tj-riim` closed in `tj-mshi.5`, and
-`tj-rt7w.14` closes with `.3`.
+Next stage id: `tj-n7p4-judged-repairs` (root closeout).
+Recommended action: run readiness and slice closeout, close `tj-n7p4`, then
+resume `tj-2m5m`, `tj-swgu`, `tj-vz7o.12`, `tj-wvo4`, and `tj-odeq`.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for `tj-n7p4.5` inside the active `tj-n7p4` stage.
+Use $orchestrator-stage for the next product task after this root closeout.
 
 ## Explicit defers
 

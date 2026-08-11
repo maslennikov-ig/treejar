@@ -24,9 +24,9 @@ subagent is used.
 
 ## Current checkpoint
 
-Stage 1 `tj-mshi-permission-list` is accepted at `5ef5eeb`. Stage 2 is opened
-from that exact tip. `.1`, `.2`, `.3`, `.6` and `.4` are accepted; `.5` is next.
-One stage-2 repair-judge call cost $0.001265216.
+Stage 1 `tj-mshi-permission-list` is accepted at `5ef5eeb`. All six stage-2
+children are implemented and measured; root closeout is next. Stage 2 used one
+repair-judge call in `.3` for $0.001265216 and none in the measured round.
 
 ## Acceptance boundary
 
@@ -130,3 +130,26 @@ the same path production would send.
   `.1` harness patch-point assertion now exercise the async production path.
 - Ruff and format passed over 374 files; Mypy passed over 174 source files;
   Pytest passed with 3594 tests and 19 skips; process verification passed.
+
+### tj-n7p4.5 — accepted
+
+- The authorized frozen round made exactly 20 Luna generation calls, zero
+  repair-judge calls and zero scoring calls. It cost $0.005444; both stages,
+  including `.3`, cost $0.012167216 against the $2.00 ceiling.
+- Coverage and language were 20/20. The root read all 20 replies and all 300
+  criteria blind, recorded zero red flags, and did not open the baseline until
+  the current judgment was durably ingested.
+- No removal flag fired, so there were zero approvals, corrections,
+  cannot-fix results, rejected corrections, fallbacks, provider failures or
+  rewrite comparisons. Clean turns therefore made no second-vendor call and
+  no deterministic customer-text edit.
+- Public criticals stayed 1 to 1. The candidate's one is the frozen numeric
+  detector's known SKU false positive on dialog 1067, tracked as `tj-2p4c`.
+- Paired weighted delta was +1.16 (95% CI -0.28 to +3.00), inconclusive. Raw
+  delta was +0.50 (95% CI +0.05 to +1.10), but cannot be attributed to repair
+  because the repair path did not fire. No broad quality claim is made.
+- Transcript-bearing evidence remains protected under `.git`; the tracked
+  report contains counts, digests and dialog identifiers only.
+- Ruff and format passed over 373 files; Mypy passed over 174 source files;
+  after restoring mandatory handoff labels, Pytest passed with 3594 tests and
+  19 skips; process verification passed.
