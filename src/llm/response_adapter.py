@@ -17,6 +17,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from src.core.config import settings
+from src.llm.money import PRICE_SIGNAL_CURRENCY_PATTERN
 from src.llm.safety import (
     PATH_AUTO_FAQ_CANDIDATE,
     PATH_RESPONSE_ADAPTER,
@@ -33,7 +34,7 @@ ADAPTER_MODEL_NAME = model_name_for_path(PATH_RESPONSE_ADAPTER)
 AUTO_FAQ_CANDIDATE_MODEL_NAME = model_name_for_path(PATH_AUTO_FAQ_CANDIDATE)
 AUTO_FAQ_CANDIDATE_FALLBACK_MODEL_NAME = settings.openrouter_model_main
 
-_PRICE_SIGNALS_RE = re.compile(r"\b(?:aed|dirhams?|dhs?)\b|درهم", re.I)
+_PRICE_SIGNALS_RE = re.compile(PRICE_SIGNAL_CURRENCY_PATTERN, re.I)
 _STOCK_SIGNALS_RE = re.compile(
     r"\b(?:in\s+stock|stock|currently\s+available|available\s+(?:now|for))\b",
     re.I,

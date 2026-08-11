@@ -146,12 +146,20 @@ applies one chain. Provenance and cost may differ per path; the text policy may
 not.
 
 **R2. A guard may delete a sentence, never a reply.** Enforced as an invariant in
-the chain itself, not as a convention: if post-processing turns a meaningful
-reply into one with no meaningful sentence, the guard is wrong and the pipeline
-keeps the previous text and records a defect. Character count is not a validity
-signal: a safe repair may legitimately be much shorter. What the reply says is
-owned by the guard-specific semantic validator. This one rule would have caught
-F5 the day it shipped.
+the chain itself, not as a convention: if post-processing turns a reply with
+letters or digits in it into one with none, the guard is wrong and the pipeline
+keeps the previous text and records a defect. This is what `render_reply` does
+today, and it is exactly what F5 needed — `_drop_identity_sentences` set
+`body = ""`, so the bound catches it.
+
+The first attempt was stricter: reject any guard that removed more than half the
+characters. It was reverted because it fired on six existing repairs that were
+right to be short, and character count is not a validity signal. **What replaced
+it is weaker than the rule reads.** A guard that reduces a four-sentence reply to
+one word satisfies the bound. Nothing yet judges whether what survived still
+answers the customer; that would need a semantic check per guard, and adding one
+is a behaviour change that owes a measured round under R5 rather than an
+assertion here. Recorded, not solved.
 
 **R3. Guards are modules with pure functions.** `(text, explicit state) -> text`.
 No closure over `process_message`, no database, no Redis. Unit-testable, and the

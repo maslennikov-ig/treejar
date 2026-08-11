@@ -148,6 +148,7 @@ from src.llm.grounding_output import GroundingOutputAction
 from src.llm.money import (
     AMOUNT_TOKEN_PATTERN,
     BUDGET_AED_CURRENCY_PATTERN,
+    SKU_FOLLOWING_CURRENCY_PATTERN,
     canonical_amount,
 )
 from src.llm.order_quote_routes import QuotationItem, _order_quote_route_for_turn
@@ -766,7 +767,7 @@ _SKU_NUMERIC_PREFIX_STOPWORDS = frozenset(
     }
 )
 _SKU_FOLLOWING_CURRENCY_RE = re.compile(
-    r"\s*(?:aed|dhs?|dirhams?|dirham|درهم|د\.إ)\b",
+    rf"\s*{SKU_FOLLOWING_CURRENCY_PATTERN}\b",
     re.IGNORECASE,
 )
 _ORDER_CONFIRMATION_PRODUCT_RE = re.compile(
