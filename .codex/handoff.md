@@ -123,29 +123,54 @@ zero judging calls, $0.004661**. Report:
 - `project-index: reviewed-no-change` — no module added, moved or renamed.
 - `graph-reviewed: no-change-needed` — Graphify is not initialized.
 
+## Two owner decisions of 2026-08-11, and what they queued
+
+**Say what Noor may promise, not what he may not.** Prohibitions hold badly on
+Luna, and the list of things Treejar does not do has no end. Epic `tj-mshi`,
+ratified and ready to execute; `tj-mshi.1` is closed. The registry that holds
+the list already exists — `COMMERCIAL_CAPABILITIES`, eight entries, four modes,
+under-populated and phrased backwards.
+
+**No automatic deletions.** Where a check finds doubt, a judge reads it and
+either approves the text or writes the correction. Epic `tj-n7p4`. Audited on
+the 60 stored replies: a guard removes a sentence from **28 of 60**, all of them
+duplicate identity lines the anchor replaces, so that one is *replacing* and
+stays deterministic; `grounding_output` removes and replaces nothing, once in
+sixty, and that is where the judge belongs.
+
+Documents for both, ready to hand over:
+
+| | spec | prompt |
+|---|---|---|
+| `tj-mshi` | `docs/superpowers/specs/2026-08-11-what-noor-may-promise-spec.md` | `docs/plans/2026-08-11-permission-list-orchestrator-prompt.md` |
+| `tj-n7p4` | `docs/superpowers/specs/2026-08-11-nothing-is-deleted-without-a-judge-spec.md` | `docs/plans/2026-08-11-nothing-deleted-orchestrator-prompt.md` |
+
+Plus `docs/plans/2026-08-11-permission-list-plan.md` and the ratified list at
+`docs/plans/2026-08-11-promise-types-for-ratification.md`. Both prompts pass
+`orch-prompts prompt-check`.
+
 ## Next recommended
 
-Next stage id: `tj-product-defects`
+Next stage id: `tj-mshi-permission-list`, then `tj-n7p4-judged-repairs`.
 
-Recommended action: the product track, which has been deferred behind the
-cleanup and is now unblocked. Two P0 epics (`tj-2m5m`, `tj-swgu`), then the
-reader findings that this round confirmed still live: `tj-riim`, `tj-vz7o.12`,
-`tj-wvo4`, `tj-odeq`. `tj-rt7w.14` owes a measured round under R5 and queues
-with them.
+After those, the product track that has waited behind the cleanup: two P0 epics
+(`tj-2m5m`, `tj-swgu`), then the reader findings this round confirmed still live
+— `tj-vz7o.12`, `tj-wvo4`, `tj-odeq`. `tj-riim` closes inside `tj-mshi.4`, and
+`tj-rt7w.14` inside `tj-n7p4.3`.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for the product track. Read `AGENTS.md`,
-`.codex/orchestrator.toml`, this handoff and
-`docs/reports/2026-08-11-the-round-after-the-cleanup.md` first. Take `tj-riim`
-and `tj-vz7o.12` in order of certainty, prompt-first and measured per R5, and
-never ride a refactor and a behaviour change in the same round per R6. The next
-measured round is the first one comparable with 2026-08-11, because the judge is
-the same. Ask for paid-call authority by name and amount before spending.
+Hand `docs/plans/2026-08-11-permission-list-orchestrator-prompt.md` verbatim, and
+`docs/plans/2026-08-11-nothing-deleted-orchestrator-prompt.md` after that stage
+is accepted. Both are written to be handed over as they are. The next measured
+round is the first one comparable with 2026-08-11, because the judge is the
+same. Ask for paid-call authority by name and amount before spending.
 
 ## Explicit defers
 
 - `tj-rt7w.14`: the R2 bound has no semantic half; a fix owes a measured round.
-- `tj-riim`: found by this round, not fixed here; a fix owes a measured round.
+- `tj-riim`: found by the 2026-08-11 round; closes inside `tj-mshi.4`.
+- `tj-n7p4`: the judged-repair architecture, specified and queued behind
+  `tj-mshi`.
 - Deterministic-route retirement: explicitly outside this stream.
 - Deployment and any live proof: not authorized or performed here.
