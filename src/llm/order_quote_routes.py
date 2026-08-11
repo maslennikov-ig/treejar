@@ -317,7 +317,12 @@ async def _order_quote_route_for_turn(
 ) -> LLMResponse | None:
     _bind_engine_globals()
 
-    async def _missing_details_message(items: Sequence[Any], missing: list[str]) -> str:
+    async def _missing_details_message(
+        items: Sequence[Any],
+        missing: list[str],
+        *,
+        response_deps: SalesDeps = deps,
+    ) -> str:
         """Say what the quotation covers before asking for the details it needs.
 
         `tj-ja1v`. Every route below that asks for a name, an email or an
@@ -331,6 +336,10 @@ async def _order_quote_route_for_turn(
             items=items,
             zoho_client=zoho_client,
             crm_context=crm_context,
+        )
+        response_deps.product_results_seen = bool(verified_items)
+        response_deps.inventory_confirmed = any(
+            item.availability is not None for item in verified_items
         )
         return _quote_missing_required_details_message(
             missing,
@@ -711,7 +720,11 @@ async def _order_quote_route_for_turn(
             await _clear_quote_intent_frame(db, conversation)
             await clear_verified_policy_repair_state()
             return build_static_response(
-                await _missing_details_message(exact_quote_items, missing_required),
+                await _missing_details_message(
+                    exact_quote_items,
+                    missing_required,
+                    response_deps=exact_quote_deps,
+                ),
                 f"{db_model_main}|exact-quote-missing-details",
                 response_deps=exact_quote_deps,
                 allow_product_media=False,
@@ -841,6 +854,10 @@ async def _order_quote_route_for_turn(
             references=missing_quantity_references,
             zoho_client=zoho_client,
             crm_context=crm_context,
+        )
+        deps.product_results_seen = bool(verified_items)
+        deps.inventory_confirmed = any(
+            item.availability is not None for item in verified_items
         )
         return build_static_response(
             _missing_quantity_product_references_message(

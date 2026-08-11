@@ -77,7 +77,30 @@ Deliver `tj-rt7w.1` through `tj-rt7w.6` in dependency order. Keep
   passed with 3540 tests and 19 skips; process verification is recorded in the
   child artifact.
 
-### tj-rt7w.5 — pending
+### tj-rt7w.5 — accepted
+
+- Change: `render_reply()` now applies one ordered text policy to model,
+  repaired-model, deterministic-replacement, and deterministic-static replies.
+  Provenance is metadata only; it never selects or skips a policy step.
+- Exit evidence: every transport response is constructed from a
+  `RenderedReply`. A new AST regression test finds no direct `LLMResponse`
+  construction inside `process_message`, so a new customer-facing exit cannot
+  quietly recreate an independent chain.
+- Grounding evidence: deterministic catalog routes now pass their verified
+  catalog and inventory state into the same policy. The no-evidence quantity
+  prompt no longer promises a future inventory check, so the universal guard
+  does not leave a useful question truncated.
+- Output evidence: the former full chain changed 0 of 20 stored raw outputs.
+  Each of the three former short chains changed only `dialog_id=789` and
+  `dialog_id=819`; root read every complete old/new reply. `789` lost the
+  unsupported customer-owned-furniture service offer at grounding. With the
+  owner's explicit acceptance, `819` gained a commitment to resolve its stated
+  assembly deferral; grounding then left it unchanged. No other stored output
+  moved.
+- Gate: six focused exit/policy tests and all 819 engine tests passed. Ruff and
+  format passed over `src/` and `tests/`; Mypy passed over 170 source files;
+  Pytest passed with 3546 tests and 19 skips; process verification is recorded
+  in the child artifact.
 
 ### tj-rt7w.6 — pending
 

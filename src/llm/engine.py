@@ -18,7 +18,7 @@ from collections.abc import (
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from decimal import Decimal, InvalidOperation
-from functools import partial, wraps
+from functools import wraps
 from html import escape
 from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 from uuid import UUID
@@ -114,10 +114,7 @@ from src.llm.fact_extractor import (
     ExtractedCustomerFact,
     extract_customer_facts,
 )
-from src.llm.grounding_output import (
-    GroundingOutputAction,
-    enforce_grounding_output,
-)
+from src.llm.grounding_output import GroundingOutputAction
 from src.llm.money import (
     AMOUNT_TOKEN_PATTERN,
     BUDGET_AED_CURRENCY_PATTERN,
@@ -128,11 +125,12 @@ from src.llm.order_status import format_order_status
 from src.llm.pii import EMAIL_PATTERN, PHONE_PATTERN, mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
 from src.llm.response_policy import (
-    apply_first_turn_opening_guard,
-    apply_guard_with_reply_bound,
-    apply_selling_turn_guard,
+    RenderedReply,
+    ReplyPolicyState,
+    ReplyProvenance,
+    append_required_tool_disclosure,
     guard_premature_quote_detail_collection,
-    repair_closed_questions,
+    render_reply,
 )
 from src.llm.response_policy import (
     last_assistant_asked_quote_customer_details as _last_assistant_asked_quote_customer_details,
@@ -144,9 +142,6 @@ from src.llm.safety import (
     model_name_for_path,
     model_settings_for_path,
     run_agent_with_safety,
-)
-from src.llm.sales_turn_guard import (
-    commit_to_what_you_deferred,
 )
 from src.llm.verified_answers import (
     VerifiedAnswerDecision,
@@ -3422,10 +3417,10 @@ def _product_search_call_limit(deps: SalesDeps) -> int:
 
 
 def _append_required_tool_disclosures(text: str, deps: SalesDeps) -> str:
-    disclosure = _string_value(deps.required_cross_sell_disclosure)
-    if not disclosure or _normalize_text(disclosure) in _normalize_text(text):
-        return text
-    return f"{text.rstrip()}\n\n{disclosure}"
+    return append_required_tool_disclosure(
+        text,
+        _string_value(deps.required_cross_sell_disclosure) or None,
+    )
 
 
 def _track_sales_tool(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -4596,6 +4591,32 @@ class ProductMediaPayload:
     product_key: str
     zoho_item_id: str | None = None
     reference_tokens: tuple[str, ...] = ()
+
+
+def _response_from_rendered_reply(
+    rendered: RenderedReply,
+    *,
+    tokens_in: int | None,
+    tokens_out: int | None,
+    cost: float | None,
+    model: str,
+    usage_provenance: Literal["provider_reported", "deterministic_static"],
+    deferred_product_media: tuple[ProductMediaPayload, ...] = (),
+    tool_traces: tuple[RuntimeToolTrace, ...] = (),
+) -> LLMResponse:
+    """Build the transport response only from text that passed the policy."""
+
+    return LLMResponse(
+        text=rendered.text,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost=cost,
+        model=model,
+        usage_provenance=usage_provenance,
+        text_provenance=rendered.provenance,
+        deferred_product_media=deferred_product_media,
+        tool_traces=tool_traces,
+    )
 
 
 _PRODUCT_REFERENCE_VARIANT_WORDS = frozenset(
@@ -6026,6 +6047,11 @@ async def _resolve_purchase_selection_confirmation(
             crm_context=crm_context,
             items=resolution.unresolved,
         )
+    verified_items = variant_options or resolution.resolved
+    selection_deps.product_results_seen = bool(verified_items)
+    selection_deps.inventory_confirmed = any(
+        item.availability is not None for item in verified_items
+    )
     if variant_options:
         if clear_pending_reference_quantity:
             await _clear_pending_product_reference_quantity(db, conversation)
@@ -6829,11 +6855,11 @@ def _missing_quantity_product_references_message(
     if is_arabic:
         return (
             f"فهمت المنتجات التالية: {item_list}. يرجى تأكيد الكمية لكل منتج "
-            "حتى أتحقق من التوفر وأكمل الخطوة التالية."
+            "حتى أجهز الخطوة التالية."
         )
     return (
         f"I have these product references: {item_list}. Please confirm the quantity "
-        "for each item so I can check availability and prepare the next step."
+        "for each item so I can prepare the next step."
     )
 
 
@@ -15593,6 +15619,62 @@ async def process_message(
             or _string_value(conv.customer_name)
         )
 
+    def _render_customer_reply(
+        text: str,
+        *,
+        response_deps: SalesDeps,
+        provenance: ReplyProvenance,
+        model_name: str,
+    ) -> RenderedReply:
+        assert conv is not None
+        quote_details = _quote_customer_details_from_metadata(conv)
+        delivery_address = _string_value(quote_details.get("address"))
+        if delivery_address and not _is_specific_delivery_address(delivery_address):
+            delivery_address = ""
+        quote_workflow = quote_workflow_from_metadata(
+            response_deps.conversation.metadata_
+        )
+        rendered = render_reply(
+            unmask_pii(text, pii_map),
+            state=ReplyPolicyState(
+                language=str(response_deps.conversation.language),
+                is_first_turn=is_first_turn,
+                customer_name=_known_customer_name_for_guards() or None,
+                anchor_line=opening_anchor_line[0],
+                company=_string_value(quote_details.get("company")) or None,
+                customer_type=(
+                    _string_value(quote_details.get("customer_type")) or None
+                ),
+                delivery_address=delivery_address or None,
+                previous_assistant_turns=tuple(
+                    entry.removeprefix("assistant: ")
+                    for entry in (response_deps.recent_history or ())
+                    if entry.startswith("assistant: ")
+                ),
+                owes_company_question=_turn_owes_the_company_question(response_deps),
+                quote_consent_granted=(quote_workflow.consent is QuoteConsent.GRANTED),
+                inventory_confirmed=response_deps.inventory_confirmed,
+                grounded_amounts=grounded_amounts_for_turn(
+                    response_deps,
+                    customer_text=combined_text,
+                ),
+                required_tool_disclosure=(
+                    _string_value(response_deps.required_cross_sell_disclosure) or None
+                ),
+            ),
+            provenance=provenance,
+        )
+        if rendered.grounding.action is not GroundingOutputAction.UNCHANGED:
+            logger.warning(
+                "Enforced customer output: action=%s violations=%s "
+                "model=%s language=%s",
+                rendered.grounding.action,
+                [violation.value for violation in rendered.grounding.violations],
+                model_name,
+                response_deps.conversation.language,
+            )
+        return rendered
+
     def _build_llm_response(
         result: Any,
         model_name: str,
@@ -15604,102 +15686,16 @@ async def process_message(
     ) -> LLMResponse:
         assert conv is not None
         response_deps = response_deps or deps
-        final_text = unmask_pii(result.output, pii_map)
         if route_suffix:
             model_name = f"{model_name}|{route_suffix}"
-        quote_details = _quote_customer_details_from_metadata(conv)
-        delivery_address = _string_value(quote_details.get("address"))
-        if delivery_address and not _is_specific_delivery_address(delivery_address):
-            delivery_address = ""
-        final_text = apply_guard_with_reply_bound(
-            final_text,
-            guard_name="closed_question",
-            guard=partial(
-                repair_closed_questions,
-                language=str(conv.language),
-                customer_name=_known_customer_name_for_guards(),
-                company=quote_details.get("company"),
-                customer_type=quote_details.get("customer_type"),
-                delivery_address=delivery_address,
-            ),
-        )
-        quote_workflow = quote_workflow_from_metadata(
-            response_deps.conversation.metadata_
-        )
-        final_text = apply_guard_with_reply_bound(
-            final_text,
-            guard_name="premature_quote_details",
-            guard=partial(
-                guard_premature_quote_detail_collection,
-                language=str(response_deps.conversation.language),
-                quote_consent_granted=(quote_workflow.consent is QuoteConsent.GRANTED),
-            ),
-        )
-        final_text = apply_guard_with_reply_bound(
-            final_text,
-            guard_name="first_turn_opening",
-            guard=partial(
-                apply_first_turn_opening_guard,
-                language=str(conv.language),
-                is_first_turn=is_first_turn,
-                customer_name=_known_customer_name_for_guards(),
-                anchor_line=opening_anchor_line[0],
-            ),
-        )
-        # Only the model-written path. The deterministic routes compose their
-        # own replies and were given their facts directly in `tj-ja1v`; running
-        # question surgery over them would edit text that is already exactly
-        # what it should be.
-        final_text = apply_guard_with_reply_bound(
-            final_text,
-            guard_name="selling_turn",
-            guard=partial(
-                apply_selling_turn_guard,
-                language=str(conv.language),
-                is_first_turn=is_first_turn,
-                previous_assistant_turns=[
-                    entry.removeprefix("assistant: ")
-                    for entry in (response_deps.recent_history or ())
-                    if entry.startswith("assistant: ")
-                ],
-                customer_name=_known_customer_name_for_guards(),
-                owes_company_question=_turn_owes_the_company_question(response_deps),
-            ),
-        )
-        # Every turn, including the first: `tj-vz7o.10.1` measured this failure
-        # on an opening, which `apply_selling_turn_guard` deliberately skips.
-        # Runs before grounding so grounding still has the last word on it.
-        final_text = apply_guard_with_reply_bound(
-            final_text,
-            guard_name="deferred_commitment",
-            guard=lambda current: commit_to_what_you_deferred(
-                current,
-                language=str(response_deps.conversation.language),
-            ),
-        )
-        grounding_result = enforce_grounding_output(
-            final_text,
-            language=str(response_deps.conversation.language),
-            inventory_confirmed=response_deps.inventory_confirmed,
-            grounded_amounts=grounded_amounts_for_turn(
-                response_deps,
-                customer_text=combined_text,
-            ),
-        )
-        final_text = apply_guard_with_reply_bound(
-            final_text,
-            guard_name="grounding_output",
-            guard=lambda _current: grounding_result.text,
-        )
-        final_text = apply_guard_with_reply_bound(
-            final_text,
-            guard_name="tool_disclosures",
-            guard=lambda current: _append_required_tool_disclosures(
-                current, response_deps
-            ),
+        rendered = _render_customer_reply(
+            result.output,
+            response_deps=response_deps,
+            provenance=text_provenance,
+            model_name=model_name,
         )
         if quotation_claimed_without_call(
-            final_text, quotation_created=response_deps.quotation_created
+            rendered.text, quotation_created=response_deps.quotation_created
         ):
             # Recorded, not rewritten: withdrawing the tool is the elimination,
             # and blocking a whole response over one sentence is out of scope.
@@ -15709,15 +15705,6 @@ async def process_message(
                 response_deps.conversation.id,
                 model_name,
                 response_deps.executed_tool_names,
-            )
-        if grounding_result.action is not GroundingOutputAction.UNCHANGED:
-            logger.warning(
-                "Enforced model customer output: action=%s violations=%s "
-                "model=%s language=%s",
-                grounding_result.action,
-                [violation.value for violation in grounding_result.violations],
-                model_name,
-                response_deps.conversation.language,
             )
         usage = result.usage()
         usage_telemetry = get_llm_usage_telemetry(result)
@@ -15729,21 +15716,20 @@ async def process_message(
             )
             _capture_expected_answer_frames_from_assistant_response(
                 conv,
-                response_text=final_text,
+                response_text=rendered.text,
                 dialogue_kernel_mode=dialogue_kernel_mode,
             )
-        return LLMResponse(
-            text=final_text,
+        return _response_from_rendered_reply(
+            rendered,
             tokens_in=usage.input_tokens if usage else None,
             tokens_out=usage.output_tokens if usage else None,
             cost=usage_telemetry.cost if usage_telemetry is not None else None,
             model=model_name,
             usage_provenance="provider_reported",
-            text_provenance=text_provenance,
             deferred_product_media=_deferred_product_media_for_response(
                 response_deps,
                 allow_product_media=allow_product_media,
-                response_text=final_text,
+                response_text=rendered.text,
             ),
             tool_traces=extract_runtime_tool_traces(result),
         )
@@ -15829,45 +15815,11 @@ async def process_message(
     ) -> LLMResponse:
         assert conv is not None
         response_deps = response_deps or deps
-        final_text = unmask_pii(text, pii_map)
-        quote_details = _quote_customer_details_from_metadata(conv)
-        delivery_address = _string_value(quote_details.get("address"))
-        if delivery_address and not _is_specific_delivery_address(delivery_address):
-            delivery_address = ""
-        final_text = apply_guard_with_reply_bound(
-            final_text,
-            guard_name="closed_question",
-            guard=partial(
-                repair_closed_questions,
-                language=str(conv.language),
-                customer_name=_known_customer_name_for_guards(),
-                company=quote_details.get("company"),
-                customer_type=quote_details.get("customer_type"),
-                delivery_address=delivery_address,
-            ),
-        )
-        quote_workflow = quote_workflow_from_metadata(
-            response_deps.conversation.metadata_
-        )
-        final_text = apply_guard_with_reply_bound(
-            final_text,
-            guard_name="premature_quote_details",
-            guard=partial(
-                guard_premature_quote_detail_collection,
-                language=str(response_deps.conversation.language),
-                quote_consent_granted=(quote_workflow.consent is QuoteConsent.GRANTED),
-            ),
-        )
-        final_text = apply_guard_with_reply_bound(
-            final_text,
-            guard_name="first_turn_opening",
-            guard=partial(
-                apply_first_turn_opening_guard,
-                language=str(conv.language),
-                is_first_turn=is_first_turn,
-                customer_name=_known_customer_name_for_guards(),
-                anchor_line=opening_anchor_line[0],
-            ),
+        rendered = _render_customer_reply(
+            text,
+            response_deps=response_deps,
+            provenance="deterministic_static",
+            model_name=model_name,
         )
         if conv is not None and not model_name.startswith("dialogue-kernel|"):
             record_legacy_route(
@@ -15877,21 +15829,20 @@ async def process_message(
             )
             _capture_expected_answer_frames_from_assistant_response(
                 conv,
-                response_text=final_text,
+                response_text=rendered.text,
                 dialogue_kernel_mode=dialogue_kernel_mode,
             )
-        return LLMResponse(
-            text=final_text,
+        return _response_from_rendered_reply(
+            rendered,
             tokens_in=0,
             tokens_out=0,
             cost=None,
             model=model_name,
             usage_provenance="deterministic_static",
-            text_provenance="deterministic_static",
             deferred_product_media=_deferred_product_media_for_response(
                 response_deps,
                 allow_product_media=allow_product_media,
-                response_text=final_text,
+                response_text=rendered.text,
             ),
             tool_traces=tool_traces,
         )
@@ -15905,35 +15856,30 @@ async def process_message(
             if decision_text
             else build_service_handoff_response(policy_decision, decision_language)
         )
-        final_text = apply_guard_with_reply_bound(
+        response_model = f"{model_name}|verified-policy"
+        rendered = _render_customer_reply(
             final_text,
-            guard_name="first_turn_opening",
-            guard=partial(
-                apply_first_turn_opening_guard,
-                language=str(conv.language),
-                is_first_turn=is_first_turn,
-                customer_name=_known_customer_name_for_guards(),
-                anchor_line=opening_anchor_line[0],
-            ),
+            response_deps=deps,
+            provenance="deterministic_static",
+            model_name=response_model,
         )
         if conv is not None:
             record_legacy_route(
                 conv,
                 dialogue_kernel_result,
-                legacy_route=f"{model_name}|verified-policy",
+                legacy_route=response_model,
             )
-        return LLMResponse(
-            text=final_text,
+        return _response_from_rendered_reply(
+            rendered,
             tokens_in=0,
             tokens_out=0,
             cost=None,
-            model=f"{model_name}|verified-policy",
+            model=response_model,
             usage_provenance="deterministic_static",
-            text_provenance="deterministic_static",
             deferred_product_media=_deferred_product_media_for_response(
                 deps,
                 allow_product_media=False,
-                response_text=final_text,
+                response_text=rendered.text,
             ),
         )
 
@@ -16814,56 +16760,34 @@ async def process_message(
             route_suffix: str = "verified-catalog-functional-failure",
             allow_product_media: bool = True,
         ) -> LLMResponse:
-            final_text = unmask_pii(recovery_text, pii_map)
-            quote_details = _quote_customer_details_from_metadata(conv)
-            delivery_address = _string_value(quote_details.get("address"))
-            if delivery_address and not _is_specific_delivery_address(delivery_address):
-                delivery_address = ""
-            final_text = apply_guard_with_reply_bound(
-                final_text,
-                guard_name="closed_question",
-                guard=partial(
-                    repair_closed_questions,
-                    language=str(conv.language),
-                    customer_name=_known_customer_name_for_guards(),
-                    company=quote_details.get("company"),
-                    customer_type=quote_details.get("customer_type"),
-                    delivery_address=delivery_address,
-                ),
-            )
-            final_text = apply_guard_with_reply_bound(
-                final_text,
-                guard_name="first_turn_opening",
-                guard=partial(
-                    apply_first_turn_opening_guard,
-                    language=str(conv.language),
-                    is_first_turn=is_first_turn,
-                    customer_name=_known_customer_name_for_guards(),
-                    anchor_line=opening_anchor_line[0],
-                ),
+            response_model = f"{db_model_main}|{route_suffix}"
+            rendered = _render_customer_reply(
+                recovery_text,
+                response_deps=run_deps,
+                provenance="deterministic_replacement",
+                model_name=response_model,
             )
             record_legacy_route(
                 conv,
                 dialogue_kernel_result,
-                legacy_route=f"{db_model_main}|{route_suffix}",
+                legacy_route=response_model,
             )
             _capture_expected_answer_frames_from_assistant_response(
                 conv,
-                response_text=final_text,
+                response_text=rendered.text,
                 dialogue_kernel_mode=dialogue_kernel_mode,
             )
-            return LLMResponse(
-                text=final_text,
+            return _response_from_rendered_reply(
+                rendered,
                 tokens_in=usage.input_tokens,
                 tokens_out=usage.output_tokens,
                 cost=cost,
-                model=f"{db_model_main}|{route_suffix}",
+                model=response_model,
                 usage_provenance="provider_reported",
-                text_provenance="deterministic_replacement",
                 deferred_product_media=_deferred_product_media_for_response(
                     run_deps,
                     allow_product_media=allow_product_media,
-                    response_text=final_text,
+                    response_text=rendered.text,
                 ),
                 tool_traces=recovery_traces,
             )
@@ -17338,12 +17262,18 @@ async def process_message(
         )
         # NOTE: We do not surface exc details in model= to avoid info leakage
         db_model_label = db_model_main if "db_model_main" in locals() else "unknown"
-        return LLMResponse(
-            text="I apologize, but I am experiencing a temporary issue. Please try again in a moment.",
+        response_model = f"{db_model_label}|error"
+        rendered = _render_customer_reply(
+            "I apologize, but I am experiencing a temporary issue. Please try again in a moment.",
+            response_deps=deps,
+            provenance="deterministic_static",
+            model_name=response_model,
+        )
+        return _response_from_rendered_reply(
+            rendered,
             tokens_in=0,
             tokens_out=0,
             cost=0.0,
-            model=f"{db_model_label}|error",
+            model=response_model,
             usage_provenance="deterministic_static",
-            text_provenance="deterministic_static",
         )
