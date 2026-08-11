@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from src.llm.response_policy import (
+    ReplyPolicyState,
     apply_first_turn_opening_guard,
-    apply_selling_turn_guard,
     guard_premature_quote_detail_collection,
+    render_reply,
     repair_closed_questions,
 )
 
@@ -21,17 +22,23 @@ def test_first_turn_opening_guard_needs_only_explicit_state() -> None:
     assert guarded.endswith("And how should I address you?")
 
 
-def test_selling_turn_guard_needs_only_explicit_state() -> None:
-    guarded = apply_selling_turn_guard(
+def test_selling_turn_guards_need_only_explicit_state() -> None:
+    """The three selling-turn guards, read through the one path that ships them.
+
+    This replaces a test of `apply_selling_turn_guard`, the composition they
+    shared. Declaring each guard separately removed the composition, and the
+    end-to-end path is the coverage whose absence let the bundle's mode go
+    unnoticed in the first place.
+    """
+
+    guarded = render_reply(
         "Which category suits you? What quantity do you need?",
-        language="en",
-        is_first_turn=False,
-        previous_assistant_turns=(),
-        customer_name=None,
-        owes_company_question=False,
+        state=ReplyPolicyState(language="en", is_first_turn=False),
+        provenance="model",
     )
 
-    assert guarded == "Which category suits you?"
+    assert guarded.text == "Which category suits you?"
+    assert guarded.flags == ()
 
 
 def test_closed_question_repair_needs_only_explicit_state() -> None:

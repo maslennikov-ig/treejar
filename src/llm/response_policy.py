@@ -21,6 +21,7 @@ from src.llm.sales_turn_guard import (
     carry_the_company_question,
     collapse_question_form,
     commit_to_what_you_deferred,
+    only_asks_were_dropped,
     refuse_to_chase_the_name,
 )
 from src.services.customer_language import is_arabic_customer_language
@@ -66,9 +67,26 @@ class RenderedReply:
 
 
 class GuardMode(StrEnum):
-    """Whether a deterministic guard covers or merely detects a removal."""
+    """What a deterministic guard is allowed to do to the customer's text.
+
+    `REDUCING` is the third answer, added on 2026-08-11 after the second one
+    was found to cost the customer something. Declaring the selling turn
+    `REMOVING` was literally correct -- it removes and writes nothing back --
+    but it stopped a fix that was earned by measurement: the model asks five
+    questions in a numbered list, the customer answers none of them and leaves,
+    and 36% leave anyway. Deferring that to a judge is slower, costs a call, and
+    under D3 the judge may hand the form back.
+
+    So the line moved to where the customer actually stands. A surplus question
+    is the reply's own ask and costs them nothing; everything else is the answer
+    they came for. A reducing guard may drop the first and may not touch the
+    second, and it proves that at runtime rather than declaring it. When the
+    proof fails it behaves exactly like `REMOVING`: no edit, one flag, and the
+    judge reads it.
+    """
 
     REPLACING = "replacing"
+    REDUCING = "reducing"
     REMOVING = "removing"
 
 
@@ -83,6 +101,7 @@ class GuardDeclaration:
     mode: GuardMode
     reason: str
     replacement_covers: ReplacementCoverage | None = None
+    reduction_preserves: ReplacementCoverage | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,31 +140,6 @@ def apply_first_turn_opening_guard(
         customer_name=customer_name,
         anchor_line=anchor_line,
     )
-
-
-def apply_selling_turn_guard(
-    text: str,
-    *,
-    language: str,
-    is_first_turn: bool,
-    previous_assistant_turns: Sequence[str],
-    customer_name: str | None,
-    owes_company_question: bool,
-) -> str:
-    """Apply the selling-turn guards in their established order."""
-
-    if is_first_turn or not text.strip():
-        return text
-
-    guarded = collapse_question_form(text)
-    guarded = refuse_to_chase_the_name(
-        guarded,
-        previous_assistant_turns=previous_assistant_turns,
-        customer_name=customer_name,
-    )
-    if owes_company_question:
-        guarded = carry_the_company_question(guarded, language=language)
-    return guarded
 
 
 def repair_closed_questions(
@@ -357,10 +351,23 @@ RESPONSE_GUARD_DECLARATIONS: dict[str, GuardDeclaration] = {
         reason="Deduplicates greeting and identity only after the canonical identity and capability replace them.",
         replacement_covers=opening_replacement_covers,
     ),
-    "selling_turn": GuardDeclaration(
-        name="selling_turn",
-        mode=GuardMode.REMOVING,
-        reason="May drop trailing or repeated questions without writing equivalent text.",
+    "question_form": GuardDeclaration(
+        name="question_form",
+        mode=GuardMode.REDUCING,
+        reason="Drops the reply's surplus questions and form items; every other sentence survives in place.",
+        reduction_preserves=only_asks_were_dropped,
+    ),
+    "name_chase": GuardDeclaration(
+        name="name_chase",
+        mode=GuardMode.REDUCING,
+        reason="Drops a repeat request for a name the customer has already declined, and nothing else.",
+        reduction_preserves=only_asks_were_dropped,
+    ),
+    "company_question": GuardDeclaration(
+        name="company_question",
+        mode=GuardMode.REPLACING,
+        reason="Only folds in the rule 13 activity question and preserves the original reply.",
+        replacement_covers=_additive_replacement_covers,
     ),
     "deferred_commitment": GuardDeclaration(
         name="deferred_commitment",
@@ -410,6 +417,32 @@ def apply_declared_guard(
 
     candidate = guard(text)
     detected = candidate != text if flagged is None else flagged
+    if declaration.mode is GuardMode.REDUCING:
+        if candidate == text:
+            return GuardApplication(text=text, candidate=candidate)
+        preserves = declaration.reduction_preserves
+        if preserves is not None and preserves(text, candidate):
+            return GuardApplication(text=candidate, candidate=candidate)
+        logger.error(
+            "Response guard reduction lost content: guard=%s before_chars=%d "
+            "after_chars=%d",
+            declaration.name,
+            len(text),
+            len(candidate),
+        )
+        return GuardApplication(
+            text=text,
+            candidate=candidate,
+            flags=(
+                ReplyGuardFlag(
+                    guard_name=declaration.name,
+                    reason="reduction_lost_content",
+                    details=flag_details,
+                    candidate=candidate,
+                ),
+            ),
+        )
+
     if declaration.mode is GuardMode.REMOVING:
         if not detected:
             return GuardApplication(text=text, candidate=candidate)
@@ -526,20 +559,36 @@ def render_reply(
         ),
     )
     raised_flags.extend(flags)
-    rendered, flags = _render_declared_guard(
-        rendered,
-        guard_name="selling_turn",
-        guard=partial(
-            apply_selling_turn_guard,
-            language=state.language,
-            is_first_turn=state.is_first_turn,
-            previous_assistant_turns=state.previous_assistant_turns,
-            customer_name=state.customer_name,
-            owes_company_question=state.owes_company_question,
-        ),
-        flag_details=("deterministic_guard_would_remove_content",),
-    )
-    raised_flags.extend(flags)
+    if not state.is_first_turn and rendered.strip():
+        # Three guards in their established order, declared one at a time. They
+        # used to share a declaration, and the bundle had to take the strictest
+        # member's mode, which suppressed a fold the customer wants and an
+        # addition that removes nothing at all.
+        rendered, flags = _render_declared_guard(
+            rendered,
+            guard_name="question_form",
+            guard=collapse_question_form,
+            flag_details=("deterministic_fold_would_lose_content",),
+        )
+        raised_flags.extend(flags)
+        rendered, flags = _render_declared_guard(
+            rendered,
+            guard_name="name_chase",
+            guard=partial(
+                refuse_to_chase_the_name,
+                previous_assistant_turns=state.previous_assistant_turns,
+                customer_name=state.customer_name,
+            ),
+            flag_details=("deterministic_fold_would_lose_content",),
+        )
+        raised_flags.extend(flags)
+        if state.owes_company_question:
+            rendered, flags = _render_declared_guard(
+                rendered,
+                guard_name="company_question",
+                guard=partial(carry_the_company_question, language=state.language),
+            )
+            raised_flags.extend(flags)
     rendered, flags = _render_declared_guard(
         rendered,
         guard_name="deferred_commitment",

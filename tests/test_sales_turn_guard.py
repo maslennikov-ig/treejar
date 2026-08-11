@@ -24,6 +24,7 @@ from src.llm.sales_turn_guard import (
     carry_the_company_question,
     collapse_question_form,
     commit_to_what_you_deferred,
+    only_asks_were_dropped,
     refuse_to_chase_the_name,
 )
 
@@ -340,3 +341,51 @@ def test_the_commitment_survives_the_grounding_policy() -> None:
 
     assert enforced.action is GroundingOutputAction.UNCHANGED
     assert "come back to you" in enforced.text
+
+
+# --- what the fold is allowed to take -------------------------------------
+
+
+def test_the_fold_proof_admits_the_two_shapes_it_was_measured_on() -> None:
+    """S01's punctuated questions and R04's noun list, both still legal folds."""
+
+    inline = "We stock 40 oak desks. What is your budget? How many seats?"
+    form = (
+        "We stock 40 oak desks.\n"
+        "For a quotation, please share:\n"
+        "1. delivery address\n"
+        "2. seat count\n"
+        "3. timeline"
+    )
+
+    assert only_asks_were_dropped(inline, collapse_question_form(inline))
+    assert only_asks_were_dropped(form, collapse_question_form(form))
+
+
+def test_the_fold_proof_refuses_a_lost_answer_and_an_invented_sentence() -> None:
+    """The two ways a reduction stops being one, and both raise a flag.
+
+    A guard that takes the price the customer asked for has not folded a
+    question, and a guard that writes a new sentence has stopped being
+    deterministic. Neither is allowed to reach the customer on its own say-so.
+    """
+
+    original = "We stock 40 oak desks at AED 1,200. What is your budget?"
+
+    assert not only_asks_were_dropped(original, "What is your budget?")
+    assert not only_asks_were_dropped(
+        original, "We stock 40 oak desks at AED 1,200. Shall I call you tomorrow?"
+    )
+
+
+def test_a_single_item_under_a_lead_in_is_not_a_form_and_is_protected() -> None:
+    """One item is an answer, not a list with items deleted.
+
+    The proof mirrors the fold's own two-item minimum. If it did not, a guard
+    could drop the only thing under "please share:" and still pass.
+    """
+
+    original = "Please share:\n1. the delivery address"
+
+    assert only_asks_were_dropped(original, original)
+    assert not only_asks_were_dropped(original, "Please share:")

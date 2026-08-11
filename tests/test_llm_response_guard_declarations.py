@@ -22,7 +22,9 @@ EXPECTED_MODES = {
     "closed_question": GuardMode.REPLACING,
     "premature_quote_details": GuardMode.REPLACING,
     "first_turn_opening": GuardMode.REPLACING,
-    "selling_turn": GuardMode.REMOVING,
+    "question_form": GuardMode.REDUCING,
+    "name_chase": GuardMode.REDUCING,
+    "company_question": GuardMode.REPLACING,
     "deferred_commitment": GuardMode.REPLACING,
     "grounding_output": GuardMode.REMOVING,
 }
@@ -42,6 +44,23 @@ def test_every_customer_text_guard_has_one_explained_declaration() -> None:
         for declaration in RESPONSE_GUARD_DECLARATIONS.values()
         if declaration.mode is GuardMode.REPLACING
     )
+    assert all(
+        declaration.reduction_preserves is not None
+        for declaration in RESPONSE_GUARD_DECLARATIONS.values()
+        if declaration.mode is GuardMode.REDUCING
+    )
+
+
+def test_one_guard_per_declaration_so_no_member_inherits_a_stricter_mode() -> None:
+    """The three selling-turn guards are declared apart, and here is why.
+
+    They shared one declaration until 2026-08-11. The bundle had to take its
+    strictest member's mode, so a purely additive question was suppressed as a
+    removal and a measured fold was deferred to a paid judge.
+    """
+
+    assert "selling_turn" not in RESPONSE_GUARD_DECLARATIONS
+    assert RESPONSE_GUARD_DECLARATIONS["company_question"].mode is GuardMode.REPLACING
 
 
 @pytest.mark.parametrize(
@@ -117,7 +136,40 @@ def test_replacing_guard_requires_coverage_of_what_it_removed(
     assert [flag.reason for flag in uncovered.flags] == ["replacement_coverage_failed"]
 
 
-@pytest.mark.parametrize("guard_name", ["selling_turn", "grounding_output"])
+@pytest.mark.parametrize("guard_name", ["question_form", "name_chase"])
+def test_reducing_guard_drops_asks_but_refuses_to_lose_content(
+    guard_name: str,
+) -> None:
+    original = "We stock 40 oak desks. What is your budget? How many seats?"
+    declaration = RESPONSE_GUARD_DECLARATIONS[guard_name]
+
+    reduced = apply_declared_guard(
+        original,
+        declaration=declaration,
+        guard=lambda _text: "We stock 40 oak desks. What is your budget?",
+    )
+    lost_content = apply_declared_guard(
+        original,
+        declaration=declaration,
+        guard=lambda _text: "What is your budget?",
+        flag_details=("detected_example",),
+    )
+    invented = apply_declared_guard(
+        original,
+        declaration=declaration,
+        guard=lambda _text: "We stock 40 oak desks. Shall I call you tomorrow?",
+    )
+
+    assert reduced.text == "We stock 40 oak desks. What is your budget?"
+    assert reduced.flags == ()
+    assert lost_content.text == original
+    assert [flag.reason for flag in lost_content.flags] == ["reduction_lost_content"]
+    assert lost_content.flags[0].details == ("detected_example",)
+    assert invented.text == original
+    assert [flag.reason for flag in invented.flags] == ["reduction_lost_content"]
+
+
+@pytest.mark.parametrize("guard_name", ["grounding_output"])
 def test_removing_guard_returns_the_original_text_and_a_flag(guard_name: str) -> None:
     original = "Keep this sentence. Remove this sentence."
     candidate = "Keep this sentence."
@@ -136,15 +188,35 @@ def test_removing_guard_returns_the_original_text_and_a_flag(guard_name: str) ->
     assert application.flags[0].details == ("detected_example",)
 
 
-def test_render_reply_keeps_removing_candidates_non_visible() -> None:
-    selling_text = "Which category suits you? What quantity do you need?"
-    grounding_text = (
-        "We can assess your used desks. Would you like help choosing replacements?"
-    )
+def test_render_reply_folds_the_selling_turn_without_asking_anyone() -> None:
+    """One question per reply, still deterministic and still free.
+
+    Measured 2026-08-09 on S01 and R04: a customer handed a form answers none
+    of it and leaves. Nothing here needs a second opinion, so nothing here
+    raises a flag or spends a call.
+    """
+
     selling = render_reply(
-        selling_text,
+        "Which category suits you? What quantity do you need?",
         state=ReplyPolicyState(language="en"),
         provenance="model",
+    )
+    additive = render_reply(
+        "We supply height-adjustable desks in oak and walnut.",
+        state=ReplyPolicyState(language="en", owes_company_question=True),
+        provenance="model",
+    )
+
+    assert selling.text == "Which category suits you?"
+    assert selling.flags == ()
+    assert additive.text.startswith("We supply height-adjustable desks")
+    assert additive.text.endswith("?")
+    assert additive.flags == ()
+
+
+def test_render_reply_keeps_removing_candidates_non_visible() -> None:
+    grounding_text = (
+        "We can assess your used desks. Would you like help choosing replacements?"
     )
     grounding = render_reply(
         grounding_text,
@@ -152,9 +224,6 @@ def test_render_reply_keeps_removing_candidates_non_visible() -> None:
         provenance="model",
     )
 
-    assert selling.text == selling_text
-    assert [flag.guard_name for flag in selling.flags] == ["selling_turn"]
-    assert selling.flags[0].candidate == "Which category suits you?"
     assert grounding.text == grounding_text
     assert [flag.guard_name for flag in grounding.flags] == ["grounding_output"]
     assert grounding.flags[0].candidate is not None

@@ -1,0 +1,75 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-t6ug-selling-turn-declarations",
+  "goal_id": "tj-t6ug",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "accepted",
+  "sequence": 3,
+  "acceptance_boundary_id": "selling-turn-guard-declaration-granularity",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "response-policy-guard-contract",
+      "sales-turn-guard",
+      "protected-replay-tooling"
+    ],
+    "risk_models": [
+      "customer-visible-selling-behavior",
+      "suppressed-deterministic-fix",
+      "unnecessary-paid-judge-calls",
+      "protected-corpus-handling"
+    ],
+    "test_environments": [
+      "focused-unit-tests",
+      "protected-60-output-replay"
+    ],
+    "rollback_boundary": "one-local-main-commit",
+    "acceptance_proofs": [
+      "one-declaration-per-guard",
+      "executable-reduction-proof",
+      "behavior-preserving-replay-before-and-after",
+      "end-to-end-selling-turn-coverage"
+    ]
+  },
+  "work_areas": [
+    "contract",
+    "implementation",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-t6ug",
+    "criteria": [
+      {
+        "criterion_id": "AC-01",
+        "text": "Each of the three selling-turn guards has its own declaration, so no member inherits a stricter mode from a bundle; the additive company question applies again and raises no flag.",
+        "text_digest": "12897b7d1aa148f49c3e3629c365ae9aceb2749d16836fd4d6769270218886bc"
+      },
+      {
+        "criterion_id": "AC-02",
+        "text": "The measured question fold applies deterministically again, under an executable proof that only the reply's own asks were dropped; when the proof fails the guard edits nothing and raises a flag for the judge.",
+        "text_digest": "5a3bb40e3e8157d39495353ebeb767b934380cdfb62331ff4d3cf63745d8d29c"
+      },
+      {
+        "criterion_id": "AC-03",
+        "text": "The protected 60-output replay produces the same aggregate digest before and after the change, run from a tracked entry point rather than by hand, and no paid call is made.",
+        "text_digest": "9a33e4d5876d484fb4ce2d38027b6a22100fe464df47d63283f9acb46413fdd8"
+      }
+    ],
+    "source_digest": "46ad3f88ce0db57ba1ffe0f652efcb1c0102c14f71fcb704cf98e8d8d6f51174"
+  },
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-t6ug",
+      "stream_owner": "tj-t6ug-root-implementation",
+      "artifact_path": ".codex/stages/tj-t6ug-selling-turn-declarations/artifacts/tj-t6ug.md"
+    }
+  ],
+  "scope_anchor": ".codex/goals/tj-t6ug/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "46ad3f88ce0db57ba1ffe0f652efcb1c0102c14f71fcb704cf98e8d8d6f51174"
+}

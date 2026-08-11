@@ -2,9 +2,9 @@
 
 Updated: 2026-08-11
 Current branch: `main`
-Current stage id: `tj-n7p4-judged-repairs`
-Status: both requested stages are accepted and their epics are closed. Stage 2
-used one repair-judge call for $0.001265216 and none in its measured round.
+Current stage id: `tj-t6ug-selling-turn-declarations`
+Status: both requested stages are accepted and their epics are closed. A third,
+single-task stage fixed one defect their audit found and is accepted too.
 
 Documentation: no external/versioned boundary — this stage changes first-party
 Python prompt and policy text and uses an existing provider client.
@@ -14,17 +14,17 @@ Python prompt and policy text and uses an existing provider client.
 - Every customer-facing reply goes through `src.llm.response_policy.render_reply`.
   Provenance is metadata and cannot select a shorter policy chain.
 - The six text guards now declare their effect. Closed-question, premature
-  quote details, first-turn opening, and deferred commitment are replacing;
-  selling-turn and grounding-output are removing and expose flags. `.3`
-  removed the legacy application bridge: only a flagged turn reaches the
-  second vendor, and an unflagged turn makes no repair call.
+  quote details, first-turn opening, and the additive company question are
+  replacing; the question fold and the name-chase refusal are reducing and
+  prove they took only the reply's own asks; grounding-output is removing and
+  exposes a flag. `.3` removed the legacy application bridge: only a flagged
+  turn reaches the second vendor, and an unflagged turn makes no repair call.
 - Every text guard is bounded: letters or digits in, letters or digits out. It
   catches F5. The second vendor now supplies the semantic half by approving or
   rewriting the complete reply, while deterministic reclassification remains
   the formal lower bound. One protected correction was read and accepted, so
   `tj-rt7w.14` closes with the recorded evidence.
-- The opening, selling-turn, closed-question, and premature quote-detail guards
-  are pure module functions with explicit state, not engine closures.
+- Every text guard is a pure module function with explicit state, not a closure.
 - `src/llm/money.py` owns every currency pattern in `src/llm/`, enforced by an
   AST test.
 - The unsupported customer-owned-furniture service family remains blocked by
@@ -81,6 +81,8 @@ Python prompt and policy text and uses an existing provider client.
 - `a1d9532` — `tj-n7p4.6`, hand unresolved repairs to a manager.
 - `0764ce2` — `tj-n7p4.4`, align the harness with production repair.
 - `5c7a099` — `tj-n7p4.5`, measure the judged-repair architecture.
+- `tj-t6ug` — declare the three selling-turn guards apart, and add the third
+  guard mode with an executable reduction proof.
 
 Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
 
@@ -121,15 +123,13 @@ zero judging calls, $0.005458**. Report:
   20 replies and 300 criteria blind with zero red flags.
 - Criticals did not rise: baseline 1, candidate 1. Dialog 28 no longer promises
   recruitment routing or callback; dialog 789 remains fixed.
-- The candidate harness code on dialog 1067 is a numeric-detector false
-  positive on a catalog-supported SKU. It remains in the frozen result and is
-  tracked as `tj-2p4c`.
+- Dialog 1067's harness critical is a numeric-detector false positive on a
+  catalog-supported SKU, left in the frozen result and tracked as `tj-2p4c`.
 - Paired weighted delta +0.32, 95% CI -0.86 to +1.82; raw delta +0.25,
   95% CI -0.10 to +0.70. Both are inconclusive.
 - Rules 14 and 15 stayed 0 to 0 and were applicable on 0/20 openings. This
   frozen first-turn set cannot decide whether the list is too tight.
-- The public summary's stale GLM judge label is tracked as `tj-9dp2`; protected
-  run-state proves `root-orchestrator` and zero judging calls.
+- The stale GLM judge label is `tj-9dp2`; run-state proves `root-orchestrator`.
 
 ## Constraints
 
@@ -182,7 +182,7 @@ different thing, paid, and fires only on a flag.
 
 ## Next recommended
 
-Next stage id: not opened; first candidate `tj-2m5m`.
+Next stage id: not opened; first candidate `tj-2m5m`. `tj-t6ug` is accepted.
 Recommended action: start a new task from current Beads truth for `tj-2m5m`,
 then `tj-swgu`, `tj-vz7o.12`, `tj-wvo4`, and `tj-odeq`.
 
@@ -194,5 +194,7 @@ Use $orchestrator-stage for `tj-2m5m` after inspecting current Beads truth.
 
 - `tj-2p4c`: supported SKU digits can falsely trip numeric grounding.
 - `tj-9dp2`: root-only public summaries carry a stale GLM judge label.
+- The two reducing guards are unmeasured on live multi-turn traffic: every
+  frozen set in this project is first-turn only.
 - Deterministic-route retirement: explicitly outside this stream.
 - Deployment and any live proof: not authorized or performed here.

@@ -159,6 +159,86 @@ def _drop_trailing_questions(line: str) -> str:
     return " ".join(part for part in kept if part.strip()).strip()
 
 
+def _ask_item_lines(lines: list[str]) -> set[int]:
+    """The item lines of a form, found the same way the fold finds them.
+
+    A noun under "please share:" is an ask with the question mark left off, so
+    the proof below has to treat it as one. It mirrors `_collapse_ask_list`
+    exactly, two-item minimum included: a single item is not a form and the
+    fold leaves it alone, so the proof must protect it.
+    """
+
+    items: set[int] = set()
+    for index, line in enumerate(lines):
+        if not _ASK_LIST_LEAD_IN_RE.search(line):
+            continue
+        cursor = index + 1
+        while cursor < len(lines) and not lines[cursor].strip():
+            cursor += 1
+        found: list[int] = []
+        while cursor < len(lines) and (
+            _LIST_ITEM_RE.match(lines[cursor]) or not lines[cursor].strip()
+        ):
+            if lines[cursor].strip():
+                found.append(cursor)
+            cursor += 1
+        if len(found) >= 2:
+            items.update(found)
+    return items
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"\w+", str(text or "").casefold(), flags=re.UNICODE)
+
+
+def _appear_in_order(required: Sequence[str], available: Sequence[str]) -> bool:
+    cursor = iter(available)
+    return all(any(word == candidate for candidate in cursor) for word in required)
+
+
+def _content_words(text: str) -> list[str]:
+    """Every word the fold is not allowed to touch.
+
+    Everything that is not a question and not an item of a form. This is the
+    line between the two removals: a surplus question costs the customer
+    nothing, and anything else costs them the answer they came for.
+    """
+
+    lines = text.split("\n")
+    forms = _ask_item_lines(lines)
+    kept: list[str] = []
+    for index, line in enumerate(lines):
+        if index in forms:
+            continue
+        for sentence in _SENTENCE_SPLIT_RE.split(line):
+            if sentence.strip() and not _is_question(sentence):
+                kept.extend(_words(sentence))
+    return kept
+
+
+def only_asks_were_dropped(text: str, candidate: str) -> bool:
+    """Whether the fold took surplus asks and nothing else.
+
+    `collapse_question_form` and `refuse_to_chase_the_name` both remove without
+    writing a replacement, so under D1 neither may be trusted on its say-so.
+    What makes them safe is narrower than a replacement and provable: they take
+    only the reply's own surplus asks, and everything the customer came for
+    survives in place.
+
+    Two clauses, and both are needed. Nothing is invented -- the candidate's
+    words are a subsequence of the original's, so no guard can quietly write
+    customer-facing text here. And every content word survives in order. When
+    either fails the guard does not edit the reply; it raises a flag and the
+    judge reads it, which is exactly what D1 asks for in the case where the
+    deterministic rule turns out to be wrong about a particular reply.
+    """
+
+    available = _words(candidate)
+    if not _appear_in_order(available, _words(text)):
+        return False
+    return _appear_in_order(_content_words(text), available)
+
+
 def refuse_to_chase_the_name(
     text: str,
     *,
