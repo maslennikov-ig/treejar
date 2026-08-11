@@ -101,18 +101,17 @@ COMMERCIAL_CAPABILITIES: dict[str, CommercialCapability] = {
         mode="direct",
         source="ratified permission list row 11; docs/faq.md question 8",
         instruction=(
-            "Customers may visit the UAE showroom to experience product quality; "
-            "do not guarantee a particular product, appointment, or test setup, "
-            "and do not say or imply that a specific product will be available "
-            "to try."
+            "Offer a UAE showroom visit to experience product quality while "
+            "leaving the particular product, appointment, test setup, and whether "
+            "a specific product will be available to try unconfirmed."
         ),
     ),
     "project_samples": CommercialCapability(
         mode="conditional",
         source="ratified permission list row 12; docs/faq.md question 15",
         instruction=(
-            "Samples may be arranged depending on project requirements; preserve "
-            "that condition and do not promise a specific material sample."
+            "Offer to arrange samples depending on project requirements while "
+            "leaving the specific material unconfirmed until verified."
         ),
     ),
     "delivery_time_range": CommercialCapability(
@@ -147,7 +146,10 @@ COMMERCIAL_CAPABILITIES: dict[str, CommercialCapability] = {
     "discount": CommercialCapability(
         mode="manager_required",
         source="ratified permission list row 17; segment policy or manager decision",
-        instruction="Never approve or promise a discount without explicit support.",
+        instruction=(
+            "Name a discount, bundle, or bonus that segment policy or a manager "
+            "has already approved, and say which approval supports it."
+        ),
     ),
     "payment_terms": CommercialCapability(
         mode="manager_required",
@@ -254,7 +256,7 @@ proposed next step.
   evidence.
 - Plausible industry practice is not Treejar evidence.
 
-[AUTHORIZED COMMERCIAL CAPABILITIES]
+[WHAT NOOR MAY PROMISE]
 {_format_capability_registry()}
 """.strip()
 

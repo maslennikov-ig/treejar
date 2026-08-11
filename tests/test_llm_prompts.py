@@ -158,6 +158,21 @@ def test_commercial_capability_registry_uses_evidence_authorization_modes() -> N
     )
 
 
+def test_commercial_capability_registry_states_positive_permissions() -> None:
+    forbidden_phrases = ("never", "do not", "don't", "cannot", "must not")
+
+    offenders = {
+        name: phrase
+        for name, capability in COMMERCIAL_CAPABILITIES.items()
+        for phrase in forbidden_phrases
+        if phrase in capability.instruction.casefold()
+    }
+
+    assert offenders == {}
+    assert "[WHAT NOOR MAY PROMISE]" in EVIDENCE_GROUNDING_POLICY
+    assert "[AUTHORIZED COMMERCIAL CAPABILITIES]" not in EVIDENCE_GROUNDING_POLICY
+
+
 @pytest.mark.asyncio
 async def test_customer_owned_furniture_prompt_covers_the_service_promise_family() -> (
     None

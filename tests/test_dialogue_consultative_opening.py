@@ -27,7 +27,7 @@ from src.dialogue.claim_contract import (
     signals_a_project,
     substantive_reply_directive,
 )
-from src.llm.communication_policy import EVIDENCE_GROUNDING_POLICY
+from src.llm.communication_policy import COMMERCIAL_CAPABILITIES
 
 # --- the trigger ------------------------------------------------------------
 
@@ -208,9 +208,9 @@ def test_the_directive_unlocks_no_fact_and_no_commercial_term() -> None:
 
     Stated as the act to perform rather than the act to avoid, on the owner's
     observation of 2026-08-10 that this model follows a positive instruction and
-    loses a prohibition. The ban itself is not lost: it lives once, in the
-    immutable grounding policy, where `discount` is a manager-required
-    capability. Rule 11 was the worst-scoring charged rule in the rubric at
+    loses a prohibition. The commercial bound lives once as the positive,
+    manager-required `discount` capability. Rule 11 was the worst-scoring
+    charged rule in the rubric at
     0.28/2 and then 0.00 while it was worded as two prohibitions wrapped around
     one permission."""
 
@@ -218,9 +218,12 @@ def test_the_directive_unlocks_no_fact_and_no_commercial_term() -> None:
 
     assert "quote every figure at the catalog price" in lowered
     assert "where a tool in this run has confirmed it" in lowered
-    # The prohibition is not repeated here, and is not lost either.
+    # The commercial condition is not repeated here, and is not lost either.
     assert "never" not in lowered
-    assert "Never approve or promise a discount" in EVIDENCE_GROUNDING_POLICY
+    discount = COMMERCIAL_CAPABILITIES["discount"]
+    assert discount.mode == "manager_required"
+    assert "already approved" in discount.instruction.casefold()
+    assert "never" not in discount.instruction.casefold()
 
 
 def test_the_directive_carries_the_job_but_no_longer_the_widening() -> None:

@@ -3,8 +3,8 @@
 Updated: 2026-08-11
 Current branch: `main`
 Active stage id: `tj-mshi-permission-list`
-Status: `tj-mshi.1` and `.2` are accepted. Root-owned implementation continues
-with `.3`, then `.4`, and the measured round `.5`. No paid call has occurred in
+Status: `tj-mshi.1`, `.2`, and `.3` are accepted. Root-owned implementation
+continues with `.4`, then the measured round `.5`. No paid call has occurred in
 this stage yet.
 
 Documentation: no external/versioned boundary — this stage changes first-party
@@ -127,10 +127,9 @@ zero judging calls, $0.004661**. Report:
 ## Two owner decisions of 2026-08-11, and what they queued
 
 **Say what Noor may promise, not what he may not.** Prohibitions hold badly on
-Luna, and the list of things Treejar does not do has no end. Epic `tj-mshi`,
-ratified and ready to execute; `tj-mshi.1` is closed. The registry that holds
-the list already exists — `COMMERCIAL_CAPABILITIES`, eight entries, four modes,
-under-populated and phrased backwards.
+Luna, and the list of things Treejar does not do has no end. Epic `tj-mshi` is
+ratified; `.1`–`.3` are accepted. `COMMERCIAL_CAPABILITIES` now holds all 25
+ratified entries in five modes, phrased as permissions with their conditions.
 
 **No automatic deletions.** Where a check finds doubt, a judge reads it and
 either approves the text or writes the correction. Epic `tj-n7p4`. Audited on
@@ -161,8 +160,8 @@ different thing, paid, and fires only on a flag.
 Next stage id: `tj-mshi-permission-list`; `tj-n7p4-judged-repairs` stays
 unopened until this stage passes readiness and closeout.
 
-Recommended action: `tj-mshi.3`, rewriting every registry instruction as a
-positive permission while preserving its ratified condition.
+Recommended action: `tj-mshi.4`, deleting the prompt prohibitions the positive
+registry now subsumes while leaving grounding-output behavior tests untouched.
 
 After those, the product track that has waited behind the cleanup: two P0 epics
 (`tj-2m5m`, `tj-swgu`), then the reader findings this round confirmed still live

@@ -2,7 +2,7 @@
   "schema_version": "noor-e2e-traceability/v1",
   "goal_id": "tj-ee5f",
   "scope_source_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
-  "source_set_digest": "faf3bc34a6bb43d3e80c0fb5d97d0d49325bc58c29e04621f1ad4814f61f4d53",
+  "source_set_digest": "5eb94c8f33840a8e7b0537e524683fffc0390ad9b06d8beb32a3e0a7249a5400",
   "precedence_order": [
     "current repository and runtime contracts",
     "original and updated requirements",
@@ -47,12 +47,12 @@
     },
     "runtime-truth": {
       "path": ".codex/handoff.md",
-      "content_digest": "1250662db399ea858a791b11c07dbddbc5f63ef05961df47bc2824e416c96a21",
+      "content_digest": "2eab188a96c0db68711d370270da30b3326455eac066d311c7ea355567b0e465",
       "sections": [
         {
           "start_locator": "# Orchestrator Handoff",
           "end_locator": null,
-          "content_digest": "1250662db399ea858a791b11c07dbddbc5f63ef05961df47bc2824e416c96a21"
+          "content_digest": "2eab188a96c0db68711d370270da30b3326455eac066d311c7ea355567b0e465"
         }
       ]
     },
@@ -179,12 +179,12 @@
     },
     "grounding-policy": {
       "path": "src/llm/communication_policy.py",
-      "content_digest": "8e031592a7dfe85b90e1beea136d3ba3b444de806d7c0ca17ff6bf3dee1b2460",
+      "content_digest": "013992184285b6960531d09adab6eb2dd18b79a76855b3843b8012a79dc5c585",
       "sections": [
         {
           "start_locator": "\"\"\"Compact runtime policy derived from the client dialogue rules.\"\"\"",
           "end_locator": null,
-          "content_digest": "8e031592a7dfe85b90e1beea136d3ba3b444de806d7c0ca17ff6bf3dee1b2460"
+          "content_digest": "013992184285b6960531d09adab6eb2dd18b79a76855b3843b8012a79dc5c585"
         }
       ]
     },
