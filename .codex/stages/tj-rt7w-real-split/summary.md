@@ -1,12 +1,15 @@
 # Stage tj-rt7w-real-split
 
-Status: in_progress
+Status: accepted
 Base: `main` at `19556ba`
 Acceptance owner: root orchestrator (Claude)
 
 Documentation: no external/versioned boundary — internal first-party Python,
 no new dependency, no public contract or version-sensitive behaviour changed.
 
+docs-reviewed: updated — this summary, the handoff and the `tj-rt7w.10`
+artifact record the split, the bound it now holds, and the one regression it
+caused; no stable contract, navigation, ops or migration doc changes.
 project-index: reviewed-no-change — no module added, moved or renamed; all of
 it lands inside `src/llm/message_processor.py`.
 graph-reviewed: no-change-needed — Graphify is not initialised.
@@ -119,11 +122,17 @@ Confirmed red on the pre-split source (six closures, one 1,527-line function)
 and green after. `tests/test_llm_engine_structure.py` was not touched — it
 asserts on the facade, which is exactly why it could not see this.
 
+## Delivery
+
+Three local commits on `main`: `c9d22f9`, `e600a55`, `190a462`. No push, PR,
+merge, deploy, production or staging mutation, model-configuration change,
+paid call, or real-user message.
+
 ## Verification
 
 - Ruff, format: clean over `src/ tests/`.
 - Mypy: clean over 173 source files.
-- Pytest: full suite green; the three structural and patch-point files pass.
+- Pytest: `3557 passed, 19 skipped`, zero failures.
 - Protected replay: 31 stored raw assistant outputs re-rendered through the
   full policy chain at `19556ba` and at the tip produce the identical digest
   `1ac73ad9…`.
