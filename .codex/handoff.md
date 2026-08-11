@@ -3,8 +3,8 @@
 Updated: 2026-08-11
 Current branch: `main`
 Current stage id: `tj-n7p4-judged-repairs`
-Status: stage 1 is accepted at `5ef5eeb`. Stage 2 `.1` is accepted; `.2` is
-next. No stage-2 paid call has occurred.
+Status: stage 1 is accepted at `5ef5eeb`. Stage 2 `.1` and `.2` are accepted;
+`.3` is next. No stage-2 paid call has occurred.
 
 Documentation: no external/versioned boundary — this stage changes first-party
 Python prompt and policy text and uses an existing provider client.
@@ -13,6 +13,11 @@ Python prompt and policy text and uses an existing provider client.
 
 - Every customer-facing reply goes through `src.llm.response_policy.render_reply`.
   Provenance is metadata and cannot select a shorter policy chain.
+- The six text guards now declare their effect. Closed-question, premature
+  quote details, first-turn opening, and deferred commitment are replacing;
+  selling-turn and grounding-output are removing and expose flags. `.2` keeps
+  one named legacy candidate bridge solely for unchanged replay; `.3` removes
+  it when the repair judge consumes those flags.
 - Every text guard is bounded: letters or digits in, letters or digits out. It
   catches F5. It does not stop a guard shrinking four sentences to one word --
   `tj-rt7w.14`, recorded rather than promised.
@@ -149,8 +154,8 @@ different thing, paid, and fires only on a flag.
 Next stage id: `tj-n7p4-judged-repairs`; it is now the active implementation
 stage and stays sequential through `.1`, `.2`, `.3`, `.6`, `.4`, `.5`.
 
-Recommended action: implement `tj-n7p4.2`, declare each of the six guards as
-replacing or removing, and prove all 60 protected outputs unchanged.
+Recommended action: implement `tj-n7p4.3`, replace the `.2` compatibility bridge
+with the second-vendor repair judge, and root-read every protected correction.
 
 After stage 2, the product track that has waited behind the cleanup: two P0 epics
 (`tj-2m5m`, `tj-swgu`), then the reader findings this round confirmed still live

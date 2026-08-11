@@ -189,3 +189,24 @@ def apply_opening_guard(
         parts[-1] = f"{parts[-1].rstrip()} {name_question}"
 
     return "\n\n".join(parts)
+
+
+def opening_replacement_covers(text: str, replacement: str) -> bool:
+    """Whether the opening replacement retains every non-header word."""
+
+    is_arabic = _AR_CAPABILITY in replacement
+    identity = _AR_IDENTITY if is_arabic else _EN_IDENTITY
+    capability = _AR_CAPABILITY if is_arabic else _EN_CAPABILITY
+    if identity not in replacement or capability not in replacement:
+        return False
+
+    body = text.strip()
+    body = _strip_legacy_identity(body) or body
+    if not is_arabic:
+        body = _strip_generic_english_opening(body) or body
+    body = _strip_own_capability(body, capability).strip()
+    body = _drop_identity_sentences(body)
+
+    required = iter(re.findall(r"\w+", body.casefold(), flags=re.UNICODE))
+    available = iter(re.findall(r"\w+", replacement.casefold(), flags=re.UNICODE))
+    return all(any(word == candidate for candidate in available) for word in required)

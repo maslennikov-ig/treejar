@@ -25,8 +25,8 @@ subagent is used.
 ## Current checkpoint
 
 Stage 1 `tj-mshi-permission-list` is accepted at `5ef5eeb`. Stage 2 is opened
-from that exact tip. `.1` is accepted and `.2` is next. No stage-2 paid call has
-occurred.
+from that exact tip. `.1` and `.2` are accepted and `.3` is next. No stage-2
+paid call has occurred.
 
 ## Acceptance boundary
 
@@ -49,3 +49,27 @@ the same path production would send.
 - Ruff and format passed; Mypy passed over 173 source files; Pytest passed with
   3565 tests and 19 skips; artifact, stage-sizing, traceability, and process
   verification passed.
+
+### tj-n7p4.2 — accepted
+
+- `closed_question` — **replacing**: a standalone known-slot question becomes
+  a localized acknowledgement and the next action.
+- `premature_quote_details` — **replacing**: the answer stays and pre-consent
+  detail collection becomes the quotation opt-in.
+- `first_turn_opening` — **replacing**: duplicate greeting and identity are
+  removed only after canonical identity and capability cover them.
+- `selling_turn` — **removing**: trailing or repeated questions can disappear
+  without equivalent text.
+- `deferred_commitment` — **replacing**: it only inserts a named commitment and
+  preserves the original reply.
+- `grounding_output` — **removing**: unsupported sentences can disappear
+  without equivalent text.
+- Eight new contract tests passed without editing any existing test. Removing
+  declarations return original text plus a flag; replacing declarations reject
+  uncovered output. The named legacy candidate bridge preserves output only
+  until `.3` consumes the flags.
+- The protected replay matched all 60 raw and rendered digests with zero
+  coverage failures and aggregate `1b0b2963…`; only the one known grounding
+  flag fired.
+- Ruff and format passed over 371 files; Mypy passed over 173 source files;
+  Pytest passed with 3573 tests and 19 skips; process verification passed.

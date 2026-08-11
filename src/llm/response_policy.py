@@ -6,6 +6,7 @@ import logging
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from functools import partial
 from typing import Literal
 
@@ -15,7 +16,7 @@ from src.llm.grounding_output import (
     classify_grounding_output,
     repair_grounding_output,
 )
-from src.llm.opening_guard import apply_opening_guard
+from src.llm.opening_guard import apply_opening_guard, opening_replacement_covers
 from src.llm.sales_turn_guard import (
     carry_the_company_question,
     collapse_question_form,
@@ -60,6 +61,45 @@ class RenderedReply:
     text: str
     provenance: ReplyProvenance
     grounding: GroundingOutputResult
+    flags: tuple[ReplyGuardFlag, ...] = ()
+
+
+class GuardMode(StrEnum):
+    """Whether a deterministic guard covers or merely detects a removal."""
+
+    REPLACING = "replacing"
+    REMOVING = "removing"
+
+
+ReplacementCoverage = Callable[[str, str], bool]
+
+
+@dataclass(frozen=True, slots=True)
+class GuardDeclaration:
+    """The customer-text effect a guard is allowed to have."""
+
+    name: str
+    mode: GuardMode
+    reason: str
+    replacement_covers: ReplacementCoverage | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ReplyGuardFlag:
+    """A deterministic question for the repair judge, never a verdict."""
+
+    guard_name: str
+    reason: str
+    details: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class GuardApplication:
+    """Guard output before any temporary replay-compatibility bridge."""
+
+    text: str
+    candidate: str
+    flags: tuple[ReplyGuardFlag, ...] = ()
 
 
 def apply_first_turn_opening_guard(
@@ -222,6 +262,18 @@ def guard_premature_quote_detail_collection(
     ):
         return text
 
+    prefix = _premature_quote_request_prefix(text)
+    offer = (
+        "هل ترغب أن أجهز عرض سعر رسمي؟"
+        if is_arabic_customer_language(language)
+        else "Would you like me to prepare a formal quotation?"
+    )
+    return f"{prefix}\n\n{offer}" if prefix else offer
+
+
+def _premature_quote_request_prefix(text: str) -> str:
+    """Text before the quote-detail request that a replacement must retain."""
+
     quote_match = re.search(
         r"\b(?:quote|quotation|commercial\s+(?:offer|proposal))\b|"
         r"(?:عرض\s+السعر|عرض\s+أسعار|عرض\s+تجاري)",
@@ -246,13 +298,80 @@ def guard_premature_quote_detail_collection(
         boundary = text.rfind(separator, 0, request_start)
         if boundary >= 0:
             sentence_starts.append(boundary + len(separator))
-    prefix = text[: max(sentence_starts)].rstrip()
-    offer = (
-        "هل ترغب أن أجهز عرض سعر رسمي؟"
-        if is_arabic_customer_language(language)
-        else "Would you like me to prepare a formal quotation?"
+    return text[: max(sentence_starts)].rstrip()
+
+
+def _normalized_words(text: str) -> tuple[str, ...]:
+    return tuple(re.findall(r"\w+", str(text or "").casefold(), flags=re.UNICODE))
+
+
+def _words_appear_in_order(required: Sequence[str], available: Sequence[str]) -> bool:
+    cursor = iter(available)
+    return all(any(word == candidate for candidate in cursor) for word in required)
+
+
+def _closed_question_replacement_covers(_before: str, after: str) -> bool:
+    normalized = " ".join(after.casefold().split())
+    english = "i already have" in normalized and (
+        "continue with your request" in normalized or "please share" in normalized
     )
-    return f"{prefix}\n\n{offer}" if prefix else offer
+    arabic = (
+        "لدي" in normalized
+        and "بالفعل" in normalized
+        and ("سأتابع طلبك" in normalized or "يرجى مشاركة" in normalized)
+    )
+    return english or arabic
+
+
+def _premature_quote_replacement_covers(before: str, after: str) -> bool:
+    has_opt_in = (
+        "Would you like me to prepare a formal quotation?" in after
+        or "هل ترغب أن أجهز عرض سعر رسمي؟" in after
+    )
+    prefix_words = _normalized_words(_premature_quote_request_prefix(before))
+    return has_opt_in and _words_appear_in_order(prefix_words, _normalized_words(after))
+
+
+def _additive_replacement_covers(before: str, after: str) -> bool:
+    return _words_appear_in_order(_normalized_words(before), _normalized_words(after))
+
+
+RESPONSE_GUARD_DECLARATIONS: dict[str, GuardDeclaration] = {
+    "closed_question": GuardDeclaration(
+        name="closed_question",
+        mode=GuardMode.REPLACING,
+        reason="Replaces a standalone known-slot question with acknowledgement and the next action.",
+        replacement_covers=_closed_question_replacement_covers,
+    ),
+    "premature_quote_details": GuardDeclaration(
+        name="premature_quote_details",
+        mode=GuardMode.REPLACING,
+        reason="Keeps the answer and replaces pre-consent data collection with quotation opt-in.",
+        replacement_covers=_premature_quote_replacement_covers,
+    ),
+    "first_turn_opening": GuardDeclaration(
+        name="first_turn_opening",
+        mode=GuardMode.REPLACING,
+        reason="Deduplicates greeting and identity only after the canonical identity and capability replace them.",
+        replacement_covers=opening_replacement_covers,
+    ),
+    "selling_turn": GuardDeclaration(
+        name="selling_turn",
+        mode=GuardMode.REMOVING,
+        reason="May drop trailing or repeated questions without writing equivalent text.",
+    ),
+    "deferred_commitment": GuardDeclaration(
+        name="deferred_commitment",
+        mode=GuardMode.REPLACING,
+        reason="Only inserts a named follow-up commitment and preserves the original reply.",
+        replacement_covers=_additive_replacement_covers,
+    ),
+    "grounding_output": GuardDeclaration(
+        name="grounding_output",
+        mode=GuardMode.REMOVING,
+        reason="May drop unsupported sentences without replacing their content.",
+    ),
+}
 
 
 def _has_meaningful_reply(text: str) -> bool:
@@ -277,6 +396,101 @@ def apply_guard_with_reply_bound(
     return candidate
 
 
+def apply_declared_guard(
+    text: str,
+    *,
+    declaration: GuardDeclaration,
+    guard: Callable[[str], str],
+    flagged: bool | None = None,
+    flag_details: tuple[str, ...] = (),
+) -> GuardApplication:
+    """Apply one declaration without letting a removing guard edit the reply."""
+
+    candidate = guard(text)
+    detected = candidate != text if flagged is None else flagged
+    if declaration.mode is GuardMode.REMOVING:
+        if not detected:
+            return GuardApplication(text=text, candidate=candidate)
+        return GuardApplication(
+            text=text,
+            candidate=candidate,
+            flags=(
+                ReplyGuardFlag(
+                    guard_name=declaration.name,
+                    reason="removing_guard_triggered",
+                    details=flag_details,
+                ),
+            ),
+        )
+
+    if candidate == text:
+        return GuardApplication(text=text, candidate=candidate)
+    covers = declaration.replacement_covers
+    if covers is not None and covers(text, candidate):
+        return GuardApplication(text=candidate, candidate=candidate)
+
+    logger.error(
+        "Response guard replacement lacked coverage: guard=%s before_chars=%d "
+        "after_chars=%d",
+        declaration.name,
+        len(text),
+        len(candidate),
+    )
+    return GuardApplication(
+        text=text,
+        candidate=candidate,
+        flags=(
+            ReplyGuardFlag(
+                guard_name=declaration.name,
+                reason="replacement_coverage_failed",
+                details=flag_details,
+            ),
+        ),
+    )
+
+
+def apply_legacy_removing_candidate(
+    application: GuardApplication,
+    *,
+    declaration: GuardDeclaration,
+) -> str:
+    """Preserve pre-judge output only for the behavior-neutral `.2` replay."""
+
+    if declaration.mode is not GuardMode.REMOVING or not application.flags:
+        return application.text
+    return apply_guard_with_reply_bound(
+        application.text,
+        guard_name=f"{declaration.name}_legacy_candidate",
+        guard=lambda _current: application.candidate,
+    )
+
+
+def _render_declared_guard(
+    text: str,
+    *,
+    guard_name: str,
+    guard: Callable[[str], str],
+    flagged: bool | None = None,
+    flag_details: tuple[str, ...] = (),
+) -> tuple[str, tuple[ReplyGuardFlag, ...]]:
+    declaration = RESPONSE_GUARD_DECLARATIONS[guard_name]
+    application = apply_declared_guard(
+        text,
+        declaration=declaration,
+        guard=guard,
+        flagged=flagged,
+        flag_details=flag_details,
+    )
+    if declaration.mode is GuardMode.REMOVING:
+        rendered = apply_legacy_removing_candidate(
+            application,
+            declaration=declaration,
+        )
+    else:
+        rendered = application.text
+    return rendered, application.flags
+
+
 def append_required_tool_disclosure(text: str, disclosure: str | None) -> str:
     """Append a required disclosure once, using normalized comparison."""
 
@@ -295,7 +509,8 @@ def render_reply(
 ) -> RenderedReply:
     """Apply the one customer-facing text policy, independent of provenance."""
 
-    rendered = apply_guard_with_reply_bound(
+    raised_flags: list[ReplyGuardFlag] = []
+    rendered, flags = _render_declared_guard(
         text,
         guard_name="closed_question",
         guard=partial(
@@ -307,7 +522,8 @@ def render_reply(
             delivery_address=state.delivery_address,
         ),
     )
-    rendered = apply_guard_with_reply_bound(
+    raised_flags.extend(flags)
+    rendered, flags = _render_declared_guard(
         rendered,
         guard_name="premature_quote_details",
         guard=partial(
@@ -316,7 +532,8 @@ def render_reply(
             quote_consent_granted=state.quote_consent_granted,
         ),
     )
-    rendered = apply_guard_with_reply_bound(
+    raised_flags.extend(flags)
+    rendered, flags = _render_declared_guard(
         rendered,
         guard_name="first_turn_opening",
         guard=partial(
@@ -327,7 +544,8 @@ def render_reply(
             anchor_line=state.anchor_line,
         ),
     )
-    rendered = apply_guard_with_reply_bound(
+    raised_flags.extend(flags)
+    rendered, flags = _render_declared_guard(
         rendered,
         guard_name="selling_turn",
         guard=partial(
@@ -338,12 +556,15 @@ def render_reply(
             customer_name=state.customer_name,
             owes_company_question=state.owes_company_question,
         ),
+        flag_details=("deterministic_guard_would_remove_content",),
     )
-    rendered = apply_guard_with_reply_bound(
+    raised_flags.extend(flags)
+    rendered, flags = _render_declared_guard(
         rendered,
         guard_name="deferred_commitment",
         guard=partial(commit_to_what_you_deferred, language=state.language),
     )
+    raised_flags.extend(flags)
     violations = classify_grounding_output(
         rendered,
         inventory_confirmed=state.inventory_confirmed,
@@ -356,11 +577,14 @@ def render_reply(
         inventory_confirmed=state.inventory_confirmed,
         grounded_amounts=state.grounded_amounts,
     )
-    rendered = apply_guard_with_reply_bound(
+    rendered, flags = _render_declared_guard(
         rendered,
         guard_name="grounding_output",
         guard=lambda _current: grounding.text,
+        flagged=bool(violations),
+        flag_details=tuple(violation.value for violation in violations),
     )
+    raised_flags.extend(flags)
     rendered = apply_guard_with_reply_bound(
         rendered,
         guard_name="tool_disclosures",
@@ -373,4 +597,5 @@ def render_reply(
         text=rendered,
         provenance=provenance,
         grounding=grounding,
+        flags=tuple(raised_flags),
     )
