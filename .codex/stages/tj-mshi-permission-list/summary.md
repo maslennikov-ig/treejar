@@ -1,6 +1,6 @@
 # Stage tj-mshi-permission-list
 
-Status: in progress
+Status: accepted
 Base: `main` at `ee34629`
 Acceptance owner: root orchestrator
 
@@ -20,8 +20,10 @@ parallel writes would make the measured change and rollback boundary unclear.
 
 ## Current checkpoint
 
-`tj-mshi.1` through `.5` are accepted. Child implementation is complete; stage
-readiness and slice closeout remain.
+`tj-mshi.1` through `.5` and epic `tj-mshi` are closed. Stage readiness and
+slice closeout passed; safe workspace cleanup found no child workspace to
+remove. `tj-n7p4-judged-repairs` remains unopened until this accepted stage is
+committed locally.
 
 The owner explicitly authorized updating
 `test_commercial_capability_registry_uses_evidence_authorization_modes` on
@@ -105,3 +107,13 @@ future-check prohibition owned by `.4`. Neither is a grounding backstop test.
 The owner authorized both as declared contract replacements on 2026-08-11;
 their replacement assertions preserve the condition while testing the new
 positive permission contract.
+
+## Closeout reviews
+
+- `docs-reviewed: updated - the measured-round report, stage summary, child
+  artifacts, and handoff state the permission contract, paired result,
+  protected evidence boundary, and instrument limitations.`
+- `project-index: reviewed-no-change - no module, public facade, or navigation
+  entry was added, removed, or renamed.`
+- `graph-reviewed: no-change-needed - Graphify is not initialized in this
+  repository.`

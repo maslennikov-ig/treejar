@@ -3,7 +3,7 @@
   "stage_id": "tj-mshi-permission-list",
   "goal_id": "tj-mshi",
   "profile_at_creation": "balanced-v2.19",
-  "status": "in_progress",
+  "status": "accepted",
   "sequence": 1,
   "acceptance_boundary_id": "ratified-commercial-permission-list",
   "acceptance_owner": "root-orchestrator",

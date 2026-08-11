@@ -2,9 +2,10 @@
 
 Updated: 2026-08-11
 Current branch: `main`
-Active stage id: `tj-mshi-permission-list`
-Status: `tj-mshi.1` through `.5` are accepted. Child implementation is complete;
-stage readiness and slice closeout remain.
+Accepted stage id: `tj-mshi-permission-list`
+Status: `tj-mshi.1` through `.5`, `tj-mshi`, and `tj-riim` are closed. Stage
+readiness, slice closeout, and safe workspace cleanup passed. Stage 2 remains
+unopened until this closeout is committed locally.
 
 Documentation: no external/versioned boundary — this stage changes first-party
 Python prompt and policy text and uses an existing provider client.
@@ -61,6 +62,7 @@ Python prompt and policy text and uses an existing provider client.
 - `d64cec5` — `tj-mshi.2`, fill the ratified 25-entry registry.
 - `1b3f34c` — `tj-mshi.3`, turn every entry into a positive permission.
 - `6649d2c` — `tj-mshi.4`, remove registry-subsumed prohibitions.
+- `5c26f57` — `tj-mshi.5`, run and report the blind paired measurement.
 
 Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
 
@@ -71,6 +73,8 @@ Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
 - `.4` protected replay: all 60 stored raw assistant outputs re-render through
   the full policy chain with zero changes, digest `1b0b2963…`.
 - `test_llm_grounding_output.py` stayed byte-identical and passed all 107 tests.
+- Stage closeout passed 107 affected-package, 29 security, and 145 integration
+  tests, then readiness and process verification.
 
 ## The measured round, `tj-mshi.5`
 
@@ -143,11 +147,11 @@ different thing, paid, and fires only on a flag.
 
 ## Next recommended
 
-Next stage id: `tj-mshi-permission-list`; `tj-n7p4-judged-repairs` stays
-unopened until this stage passes readiness and closeout.
+Next stage id: `tj-n7p4-judged-repairs`; stage 1 is accepted and stage 2 stays
+unopened until the closeout commit is recorded.
 
-Recommended action: validate and accept the `.5` artifact, close `tj-riim` and
-`tj-mshi.5`, then run stage readiness and slice closeout.
+Recommended action: commit the accepted stage 1 closeout, then open
+`tj-n7p4-judged-repairs` and begin `tj-n7p4.1`.
 
 After stage 2, the product track that has waited behind the cleanup: two P0 epics
 (`tj-2m5m`, `tj-swgu`), then the reader findings this round confirmed still live

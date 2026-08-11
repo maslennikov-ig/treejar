@@ -62,7 +62,7 @@ cleanup_notes: root-owned main worktree; no child worktree or branch existed
 risk_level: medium
 verification_tier: release
 risk_tags:
-  - prompt-contract-change
+  - authorization
 affected_surfaces:
   - backend
 invariants:

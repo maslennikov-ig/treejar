@@ -61,9 +61,7 @@ cleanup_notes: root-owned main worktree; no child worktree or branch exists
 risk_level: high
 verification_tier: release
 risk_tags:
-  - prompt-contract-change
-  - paid-model-calls
-  - protected-corpus-handling
+  - authorization
 affected_surfaces:
   - backend
 invariants:
