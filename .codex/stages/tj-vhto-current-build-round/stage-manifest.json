@@ -1,0 +1,70 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-vhto-current-build-round",
+  "goal_id": "tj-vhto",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "accepted",
+  "sequence": 4,
+  "acceptance_boundary_id": "current-build-measured-round",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "acceptance-harness",
+      "paired-comparison-tooling"
+    ],
+    "risk_models": [
+      "paid-generation-calls",
+      "unsupportable-quality-claim",
+      "protected-corpus-handling"
+    ],
+    "test_environments": [
+      "frozen-twenty-openings",
+      "focused-unit-tests"
+    ],
+    "rollback_boundary": "one-local-main-commit",
+    "acceptance_proofs": [
+      "blind-root-reading",
+      "attributed-paired-delta",
+      "reproducible-pairing-entry-point"
+    ]
+  },
+  "work_areas": [
+    "proof",
+    "tests",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-vhto",
+    "criteria": [
+      {
+        "criterion_id": "AC-01",
+        "text": "Exactly 20 Luna generation calls and zero scoring calls are made on the frozen seed-20260810 twenty, with the root orchestrator reading blind and no paid second reader.",
+        "text_digest": "5b1a5b3071acbb8a1b3c4463d2834580226cb785b6c465b346327c02fdf80e20"
+      },
+      {
+        "criterion_id": "AC-02",
+        "text": "Coverage, language and evaluation are complete at 20/20, the current weighted and raw scores are reported with their intervals, and the score is cut by attainable ceiling rather than quoted as one aggregate.",
+        "text_digest": "240efab0b8f903a114aa2e28ebab72adbf633adf80ae6d717342d76a0b3ab58d"
+      },
+      {
+        "criterion_id": "AC-03",
+        "text": "Every paired delta is attributed to a named cause or refused, and any claim the first-turn set cannot support is refused in the report rather than hedged.",
+        "text_digest": "82b36b355da876d153af9a6b72ef312c70629dbf6b7e30e64a0de1ffe5c7fa8e"
+      }
+    ],
+    "source_digest": "a804004eb372d89dceb9f4395d3ef390f7c2119c10640963ac0d8519d064d652"
+  },
+  "scope_anchor": ".codex/goals/tj-vhto/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "a804004eb372d89dceb9f4395d3ef390f7c2119c10640963ac0d8519d064d652",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-vhto",
+      "stream_owner": "tj-vhto-root-measurement",
+      "artifact_path": ".codex/stages/tj-vhto-current-build-round/artifacts/tj-vhto.md"
+    }
+  ]
+}

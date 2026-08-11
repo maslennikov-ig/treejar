@@ -2,9 +2,9 @@
 
 Updated: 2026-08-11
 Current branch: `main`
-Current stage id: `tj-t6ug-selling-turn-declarations`
-Status: both requested stages are accepted and their epics are closed. A third,
-single-task stage fixed one defect their audit found and is accepted too.
+Current stage id: `tj-vhto-current-build-round`
+Status: two requested stages accepted, one audit fix accepted, and one measured
+round on the shipped build accepted. The build scores 15.3/30 weighted.
 
 Documentation: no external/versioned boundary — this stage changes first-party
 Python prompt and policy text and uses an existing provider client.
@@ -113,23 +113,24 @@ Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
   project-index, blocking-review, cleanup, and debt checks. `tj-n7p4` and the
   fully delivered `tj-rt7w` parent epic are closed.
 
-## The measured round, `tj-mshi.5`
+## The measured round, `tj-vhto`
 
-Run at `6649d2c` on the frozen seed-`20260810` twenty: **20 Luna calls,
-zero judging calls, $0.005458**. Report:
-`docs/reports/2026-08-11-permission-list-measured-round.md`.
+Run at `3682203` on the frozen seed-`20260810` twenty: **20 Luna calls, one
+repair-judge call, zero scoring calls, $0.005386**. Report:
+`docs/reports/2026-08-11-where-the-bot-stands-on-the-shipped-build.md`.
 
-- 20/20 responses, 20/20 root evaluations, 20/20 language; the root read all
-  20 replies and 300 criteria blind with zero red flags.
-- Criticals did not rise: baseline 1, candidate 1. Dialog 28 no longer promises
-  recruitment routing or callback; dialog 789 remains fixed.
-- Dialog 1067's harness critical is a numeric-detector false positive on a
-  catalog-supported SKU, left in the frozen result and tracked as `tj-2p4c`.
-- Paired weighted delta +0.32, 95% CI -0.86 to +1.82; raw delta +0.25,
-  95% CI -0.10 to +0.70. Both are inconclusive.
-- Rules 14 and 15 stayed 0 to 0 and were applicable on 0/20 openings. This
-  frozen first-turn set cannot decide whether the list is too tight.
-- The stale GLM judge label is `tj-9dp2`; run-state proves `root-orchestrator`.
+- Weighted **15.3/30** (12.6-17.9); raw **12.8/30** (12.0-13.5); 20/20 coverage
+  and language; 300/300 criteria read blind before any comparison.
+- By attainable ceiling: greeting-only openings 9.5 of 9.6 (99%); openings with
+  a real request 22.4 of 30 (75%). The missing quarter is one behaviour - the
+  bot asks quantity, not what the customer is trying to do.
+- Criticals 1 to 1 against both baselines; the one is `tj-2p4c`.
+- Paired raw delta -0.60, interval excluding zero, on a change that cannot
+  affect a first turn. That is the instrument's floor, measured, and it retires
+  the earlier round's +0.50 raw as a result.
+- Five openings carry all the movement: 819 at -22.5 is a repair-judge provider
+  failure, 28 at -12.2 is reader drift, 366 at +5.6 is generation variance.
+- Rules 14 and 15 applicable on 0/20 again; `tj-ge07`.
 
 ## Constraints
 
@@ -163,26 +164,21 @@ duplicate identity lines the anchor replaces, so that one is *replacing* and
 stays deterministic; `grounding_output` removes and replaces nothing, once in
 sixty, and that is where the judge belongs.
 
-Documents, ready to hand over:
+Both were delivered. Specs, plan and the ratified list live under
+`docs/superpowers/specs/2026-08-11-*` and `docs/plans/2026-08-11-*`; the
+combined orchestrator prompt at `docs/plans/2026-08-11-orchestrator-prompt.md`
+is spent and kept only as the record of what was asked for.
 
-- **One prompt for both stages, run in sequence:**
-  `docs/plans/2026-08-11-orchestrator-prompt.md`. Passes
-  `orch-prompts prompt-check`.
-- Specs: `docs/superpowers/specs/2026-08-11-what-noor-may-promise-spec.md` and
-  `docs/superpowers/specs/2026-08-11-nothing-is-deleted-without-a-judge-spec.md`.
-- `docs/plans/2026-08-11-permission-list-plan.md`, and the ratified list at
-  `docs/plans/2026-08-11-promise-types-for-ratification.md`.
-
-**Paid calls are authorised in advance**, owner, 2026-08-11: 20 Luna generation
-calls per measured round; up to 25 second-vendor repair-judge calls across
-`tj-n7p4`; ceiling $2.00 for both stages, against about $0.05 expected. The
-**scoring** judge is the orchestrator reading blind and costs nothing --
-`--second-reader` is never passed. The **repair** judge in `tj-n7p4` is a
-different thing, paid, and fires only on a flag.
+**Paid calls.** The advance authorisation for `tj-mshi` and `tj-n7p4` is spent
+and those stages are closed; `tj-vhto` was authorised separately in session.
+Any further round needs fresh authority. The **scoring** judge is the
+orchestrator reading blind and costs nothing -- `--second-reader` is never
+passed. The **repair** judge is a different thing, paid, and fires on a flag.
 
 ## Next recommended
 
-Next stage id: not opened; first candidate `tj-2m5m`. `tj-t6ug` is accepted.
+Next stage id: not opened; first candidate `tj-2m5m`. `tj-t6ug` and `tj-vhto`
+are accepted.
 Recommended action: start a new task from current Beads truth for `tj-2m5m`,
 then `tj-swgu`, `tj-vz7o.12`, `tj-wvo4`, and `tj-odeq`.
 
@@ -194,7 +190,10 @@ Use $orchestrator-stage for `tj-2m5m` after inspecting current Beads truth.
 
 - `tj-2p4c`: supported SKU digits can falsely trip numeric grounding.
 - `tj-9dp2`: root-only public summaries carry a stale GLM judge label.
-- The two reducing guards are unmeasured on live multi-turn traffic: every
-  frozen set in this project is first-turn only.
+- `tj-0s42`: the repair judge falls back to a manager after one failed call.
+- `tj-4q79`: the root judge drifts between sittings by more than the paired
+  deltas being reported; this bounds every single-round claim.
+- `tj-ge07`: no frozen set has a second turn, so the selling-turn guards and
+  rules 14/15 are unobservable.
 - Deterministic-route retirement: explicitly outside this stream.
 - Deployment and any live proof: not authorized or performed here.
