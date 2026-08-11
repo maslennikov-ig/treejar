@@ -2,7 +2,7 @@
   "schema_version": "noor-e2e-traceability/v1",
   "goal_id": "tj-ee5f",
   "scope_source_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
-  "source_set_digest": "c0bf9c57aca2b662f7e9a833b3fd0957ba0a6d66193327a7f056e4ff81fa66a2",
+  "source_set_digest": "faf3bc34a6bb43d3e80c0fb5d97d0d49325bc58c29e04621f1ad4814f61f4d53",
   "precedence_order": [
     "current repository and runtime contracts",
     "original and updated requirements",
@@ -36,23 +36,23 @@
     },
     "orchestration-contract": {
       "path": ".codex/orchestrator.toml",
-      "content_digest": "dbb22d55e4a83ab50d1c13e34a1c45a8dc131cad42bd2dbbd1601fb183d9a2b6",
+      "content_digest": "3c1b32ebec66cbd19138be93360ba0aa4c1820b693b409eec6c0efb0e357f2c9",
       "sections": [
         {
           "start_locator": "schema_version = 2",
           "end_locator": null,
-          "content_digest": "dbb22d55e4a83ab50d1c13e34a1c45a8dc131cad42bd2dbbd1601fb183d9a2b6"
+          "content_digest": "3c1b32ebec66cbd19138be93360ba0aa4c1820b693b409eec6c0efb0e357f2c9"
         }
       ]
     },
     "runtime-truth": {
       "path": ".codex/handoff.md",
-      "content_digest": "121ccc0f0b76b48181bf517deabd3ec04581b019e27059f9a7dee758a8facf91",
+      "content_digest": "1250662db399ea858a791b11c07dbddbc5f63ef05961df47bc2824e416c96a21",
       "sections": [
         {
           "start_locator": "# Orchestrator Handoff",
           "end_locator": null,
-          "content_digest": "121ccc0f0b76b48181bf517deabd3ec04581b019e27059f9a7dee758a8facf91"
+          "content_digest": "1250662db399ea858a791b11c07dbddbc5f63ef05961df47bc2824e416c96a21"
         }
       ]
     },
@@ -179,12 +179,12 @@
     },
     "grounding-policy": {
       "path": "src/llm/communication_policy.py",
-      "content_digest": "3e3387b9621c9cf2daafd2adce4b3c5c4318b8c722159da40864034d700427e4",
+      "content_digest": "8e031592a7dfe85b90e1beea136d3ba3b444de806d7c0ca17ff6bf3dee1b2460",
       "sections": [
         {
           "start_locator": "\"\"\"Compact runtime policy derived from the client dialogue rules.\"\"\"",
           "end_locator": null,
-          "content_digest": "3e3387b9621c9cf2daafd2adce4b3c5c4318b8c722159da40864034d700427e4"
+          "content_digest": "8e031592a7dfe85b90e1beea136d3ba3b444de806d7c0ca17ff6bf3dee1b2460"
         }
       ]
     },

@@ -116,19 +116,39 @@ async def test_build_system_prompt_keeps_policy_when_base_prompt_is_overridden()
 
 def test_commercial_capability_registry_uses_evidence_authorization_modes() -> None:
     expected_modes = {
+        "quotation": "tool_required",
+        "operational_price": "tool_required",
+        "stock": "tool_required",
+        "order_status": "tool_required",
+        "product_options": "tool_required",
+        "product_alternative": "tool_required",
+        "supply_categories": "direct",
+        "help_find": "direct",
+        "selection_confirmation": "direct",
+        "deferred_answer": "conditional",
         "showroom_visit": "direct",
         "project_samples": "conditional",
-        "stock": "tool_required",
-        "operational_price": "tool_required",
-        "quotation": "tool_required",
-        "order_status": "tool_required",
+        "delivery_time_range": "conditional",
+        "assembly_installation": "conditional",
+        "specific_delivery_date": "manager_required",
+        "made_to_order": "manager_required",
         "discount": "manager_required",
-        "exceptional_terms": "manager_required",
+        "payment_terms": "manager_required",
+        "warranty_after_sales": "manager_required",
+        "off_catalog_sourcing": "manager_required",
+        "site_visit": "manager_required",
+        "manager_callback": "manager_required",
+        "customer_owned_furniture": "not_offered",
+        "recruitment": "not_offered",
+        "partnership_supplier_pitch": "not_offered",
     }
 
     assert {
         name: capability.mode for name, capability in COMMERCIAL_CAPABILITIES.items()
     } == expected_modes
+    assert all(
+        capability.source.strip() for capability in COMMERCIAL_CAPABILITIES.values()
+    )
     assert "docs/faq.md" in COMMERCIAL_CAPABILITIES["showroom_visit"].source
     assert "specific product will be available to try" in (
         COMMERCIAL_CAPABILITIES["showroom_visit"].instruction

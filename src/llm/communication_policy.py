@@ -11,6 +11,7 @@ CapabilityMode = Literal[
     "conditional",
     "tool_required",
     "manager_required",
+    "not_offered",
 ]
 
 
@@ -22,9 +23,83 @@ class CommercialCapability:
 
 
 COMMERCIAL_CAPABILITIES: dict[str, CommercialCapability] = {
+    "quotation": CommercialCapability(
+        mode="tool_required",
+        source="ratified permission list row 1; quotation tool result",
+        instruction=(
+            "Say a quotation or draft exists only after its tool returns success."
+        ),
+    ),
+    "operational_price": CommercialCapability(
+        mode="tool_required",
+        source="ratified permission list row 2; product-search result",
+        instruction=(
+            "Use an operational price or quotation rate only after the inventory "
+            "tool confirms it."
+        ),
+    ),
+    "stock": CommercialCapability(
+        mode="tool_required",
+        source="ratified permission list row 3; inventory tool result",
+        instruction="State current availability only after the stock tool confirms it.",
+    ),
+    "order_status": CommercialCapability(
+        mode="tool_required",
+        source="ratified permission list row 4; order-status tool result",
+        instruction="State order or delivery status only from the status tool result.",
+    ),
+    "product_options": CommercialCapability(
+        mode="tool_required",
+        source="ratified permission list row 5; product-search result",
+        instruction=(
+            "Show product options from rows returned by the product-search tool in "
+            "this reply."
+        ),
+    ),
+    "product_alternative": CommercialCapability(
+        mode="tool_required",
+        source="ratified permission list row 6; product-search result",
+        instruction=(
+            "Offer an alternative to an unavailable item when the product-search "
+            "tool returned that alternative in this reply."
+        ),
+    ),
+    "supply_categories": CommercialCapability(
+        mode="direct",
+        source="ratified permission list row 7; Treejar product catalogue",
+        instruction=(
+            "Name categories Treejar supplies while leaving specific items, prices, "
+            "and stock to verified tool results."
+        ),
+    ),
+    "help_find": CommercialCapability(
+        mode="direct",
+        source="ratified permission list row 8; owner decision 2026-08-11",
+        instruction=(
+            "Offer to help find or choose an option while carrying no unsupported "
+            "fact or deadline."
+        ),
+    ),
+    "selection_confirmation": CommercialCapability(
+        mode="direct",
+        source="ratified permission list row 9; current conversation",
+        instruction=(
+            "Restate the customer's selection using only details the customer gave "
+            "in this conversation."
+        ),
+    ),
+    "deferred_answer": CommercialCapability(
+        mode="conditional",
+        source="ratified permission list row 10; owner decision 2026-08-11",
+        instruction=(
+            "When no available tool can answer in this turn, name what will be "
+            "checked and with whom, say that you will return with the answer, and "
+            "leave the answer unconfirmed."
+        ),
+    ),
     "showroom_visit": CommercialCapability(
         mode="direct",
-        source="docs/faq.md question 8",
+        source="ratified permission list row 11; docs/faq.md question 8",
         instruction=(
             "Customers may visit the UAE showroom to experience product quality; "
             "do not guarantee a particular product, appointment, or test setup, "
@@ -34,48 +109,111 @@ COMMERCIAL_CAPABILITIES: dict[str, CommercialCapability] = {
     ),
     "project_samples": CommercialCapability(
         mode="conditional",
-        source="docs/faq.md question 15",
+        source="ratified permission list row 12; docs/faq.md question 15",
         instruction=(
             "Samples may be arranged depending on project requirements; preserve "
             "that condition and do not promise a specific material sample."
         ),
     ),
-    "stock": CommercialCapability(
-        mode="tool_required",
-        source="Zoho Inventory tool result",
-        instruction="State current availability only after the stock tool confirms it.",
+    "delivery_time_range": CommercialCapability(
+        mode="conditional",
+        source="ratified permission list row 13; delivery FAQ",
+        instruction="State delivery timing only as the range provided by the FAQ.",
     ),
-    "operational_price": CommercialCapability(
-        mode="tool_required",
-        source="Zoho Inventory operational rate",
+    "assembly_installation": CommercialCapability(
+        mode="conditional",
+        source="ratified permission list row 14; owner decision 2026-08-11",
         instruction=(
-            "Use an operational price or quotation rate only after the inventory "
-            "tool confirms it."
+            "Commit to confirming whether assembly or installation is available "
+            "while leaving provision of the service unconfirmed."
         ),
     ),
-    "quotation": CommercialCapability(
-        mode="tool_required",
-        source="quotation tool result",
+    "specific_delivery_date": CommercialCapability(
+        mode="manager_required",
+        source="ratified permission list row 15; manager escalation result",
         instruction=(
-            "Say a quotation or draft exists only after its tool returns success."
+            "State a specific delivery date after the escalation tool succeeds, as "
+            "the manager's commitment."
         ),
     ),
-    "order_status": CommercialCapability(
-        mode="tool_required",
-        source="order-status tool result",
-        instruction="State order or delivery status only from the status tool result.",
+    "made_to_order": CommercialCapability(
+        mode="manager_required",
+        source="ratified permission list row 16; manager escalation result",
+        instruction=(
+            "Offer made-to-order or customized supply after the escalation tool "
+            "succeeds, as the manager's commitment."
+        ),
     ),
     "discount": CommercialCapability(
         mode="manager_required",
-        source="approved segment policy or manager decision",
+        source="ratified permission list row 17; segment policy or manager decision",
         instruction="Never approve or promise a discount without explicit support.",
     ),
-    "exceptional_terms": CommercialCapability(
+    "payment_terms": CommercialCapability(
         mode="manager_required",
-        source="manager decision",
+        source="ratified permission list row 18; manager escalation result",
         instruction=(
-            "Payment exceptions, special delivery commitments, custom services, "
-            "and unsupported commercial commitments require manager confirmation."
+            "State payment terms or promise an invoice after the escalation tool "
+            "succeeds, as the manager's commitment."
+        ),
+    ),
+    "warranty_after_sales": CommercialCapability(
+        mode="manager_required",
+        source="ratified permission list row 19; manager escalation result",
+        instruction=(
+            "State a warranty or after-sales commitment after the escalation tool "
+            "succeeds, as the manager's commitment."
+        ),
+    ),
+    "off_catalog_sourcing": CommercialCapability(
+        mode="manager_required",
+        source="ratified permission list row 20; manager escalation result",
+        instruction=(
+            "Offer to source an item outside the catalogue after the escalation "
+            "tool succeeds, as the manager's commitment."
+        ),
+    ),
+    "site_visit": CommercialCapability(
+        mode="manager_required",
+        source="ratified permission list row 21; manager escalation result",
+        instruction=(
+            "Offer a site visit or survey after the escalation tool succeeds, as "
+            "the manager's commitment."
+        ),
+    ),
+    "manager_callback": CommercialCapability(
+        mode="manager_required",
+        source="ratified permission list row 22; manager escalation result",
+        instruction=(
+            "Say a manager will phone the customer after the escalation tool "
+            "succeeds, as the manager's commitment."
+        ),
+    ),
+    "customer_owned_furniture": CommercialCapability(
+        mode="not_offered",
+        source="ratified permission list row 23; owner decision 2026-08-11",
+        instruction=(
+            "When asked to buy, value, resell, broker, or assess customer-owned "
+            "furniture, say Treejar supplies office furniture and offer help "
+            "choosing new items or furnishing the space."
+        ),
+    ),
+    "recruitment": CommercialCapability(
+        mode="not_offered",
+        source="ratified permission list row 24; owner decision 2026-08-11",
+        instruction=(
+            "For a job, internship, or CV request, identify this as the sales "
+            "channel and name the official application route, leaving the "
+            "application with the sender."
+        ),
+    ),
+    "partnership_supplier_pitch": CommercialCapability(
+        mode="not_offered",
+        source="ratified permission list row 25; owner decision 2026-08-11",
+        instruction=(
+            "For a partnership, reseller, or supplier pitch, offer a pass to the "
+            "commercial team after successful escalation; otherwise name the "
+            "official route."
         ),
     ),
 }

@@ -1,0 +1,93 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-mshi-permission-list",
+  "goal_id": "tj-mshi",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "in_progress",
+  "sequence": 1,
+  "acceptance_boundary_id": "ratified-commercial-permission-list",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "commercial-capability-registry",
+      "prompt-composition",
+      "acceptance-measurement"
+    ],
+    "risk_models": [
+      "unsupported-commercial-commitments",
+      "prompt-contract-regression",
+      "paid-model-calls",
+      "protected-corpus-handling"
+    ],
+    "test_environments": [
+      "focused-unit-tests",
+      "protected-raw-output-replay",
+      "frozen-twenty-openings"
+    ],
+    "rollback_boundary": "one-local-main-commit-per-child",
+    "acceptance_proofs": [
+      "exact-ratified-registry-coverage",
+      "positive-permission-contract",
+      "unchanged-grounding-backstop",
+      "blind-measured-round"
+    ]
+  },
+  "work_areas": [
+    "decision",
+    "contract",
+    "implementation",
+    "consumer_adoption",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-mshi",
+    "source_digest": "e78bfdfc44526989d8019dafbd0b0f2b04aafb1bedf9c71b2449b28e1e6b83f8",
+    "criteria": [
+      {
+        "criterion_id": "AC-01",
+        "text": "tj-mshi.2 is closed only after COMMERCIAL_CAPABILITIES contains exactly the 22 ratified promises and 3 redirects with their ratified modes, conditions, and sources; direct and not_offered are valid modes; focused tests prove the set; behavior remains unchanged.",
+        "text_digest": "5c53be609c7a516d1e3b29e720d70e987de01727844c22059cc340740fa0301e"
+      },
+      {
+        "criterion_id": "AC-02",
+        "text": "tj-mshi.3 is closed only after every registry instruction and its rendered header state a positive permission with its unchanged condition, no registry instruction contains the forbidden negative forms named by the plan, and focused tests prove the contract.",
+        "text_digest": "197fb08e1ecc48480326ad3a0318fb113716193e6d98f8cd066ec0df7917baeb"
+      },
+      {
+        "criterion_id": "AC-03",
+        "text": "tj-mshi.4 is closed only after every prompt prohibition subsumed by the registry is removed without a compensating prohibition; test_llm_grounding_output.py stays untouched and green; the one named prompt-presence test is replaced by registry coverage and recorded as a declared removal; the recruitment redirect is read by the root and tj-riim closes only if it holds.",
+        "text_digest": "396b22baf320d961c10a753e8b5b201447cf5858c19d9550f20b588be1d9ca40"
+      },
+      {
+        "criterion_id": "AC-04",
+        "text": "tj-mshi.5 is closed only after the frozen twenty openings at seed 20260810 are generated with exactly 20 authorized Luna calls, read blind by the root without --second-reader, compared with the 2026-08-11 baseline, and report criticals, dialog 28, rules 14 and 15, coverage, language, cost, and any finding that the list is too tight.",
+        "text_digest": "6c0b1b84a324a7fd51b92dfd24b0c4ff6480677ce81ea89e3b63c11a49ef66e1"
+      },
+      {
+        "criterion_id": "AC-05",
+        "text": "Each child .2 through .5 has one local main commit and one validated tracked artifact; the required Ruff, format, Mypy, full Pytest, and process gates pass per child; the 31 protected raw outputs replay unchanged through .4; corpus text stays outside Git.",
+        "text_digest": "9e6186a085095f62f00184eee58e0429e51e26c3df9f86b01f32dccaff7c6214"
+      },
+      {
+        "criterion_id": "AC-06",
+        "text": "The stage closes only after check_stage_ready.py and run_stage_closeout.py pass at slice_acceptance, the stage summary and Beads truth match accepted work, .codex/handoff.md remains at or below 200 lines and is re-pinned, and no deterministic commitment check, customer-text repair path, push, PR, deploy, live mutation, model configuration change, or real-user message occurs.",
+        "text_digest": "a57c25e150a7001dee2030d385fd03fb490eef3bfbcda1b35b3f696be2753290"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-mshi/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "e78bfdfc44526989d8019dafbd0b0f2b04aafb1bedf9c71b2449b28e1e6b83f8",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-mshi.2",
+      "stream_owner": "tj-mshi.2-root-implementation",
+      "artifact_path": ".codex/stages/tj-mshi-permission-list/artifacts/tj-mshi.2.md"
+    }
+  ]
+}

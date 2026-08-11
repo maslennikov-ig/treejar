@@ -2,12 +2,13 @@
 
 Updated: 2026-08-11
 Current branch: `main`
-Accepted stage id: `tj-rt7w-measured-round`
-Status: `tj-rt7w.1`-`.13` closed, including `.7`. `.14` is open and owes a
-measured round of its own. The epic's structural work is done and measured.
+Active stage id: `tj-mshi-permission-list`
+Status: `tj-mshi.1` and `.2` are accepted. Root-owned implementation continues
+with `.3`, then `.4`, and the measured round `.5`. No paid call has occurred in
+this stage yet.
 
-Documentation: no external/versioned boundary — this stage changes internal
-first-party Python structure only.
+Documentation: no external/versioned boundary — this stage changes first-party
+Python prompt and policy text and uses an existing provider client.
 
 ## Current truth
 
@@ -157,11 +158,11 @@ different thing, paid, and fires only on a flag.
 
 ## Next recommended
 
-Next stage id: `tj-mshi-permission-list`, then `tj-n7p4-judged-repairs`.
+Next stage id: `tj-mshi-permission-list`; `tj-n7p4-judged-repairs` stays
+unopened until this stage passes readiness and closeout.
 
-Recommended action: `tj-mshi.2`, the first orchestrator-owned child of the
-permission list. `tj-mshi.1` is closed, so the registry can be filled from the
-ratified document immediately.
+Recommended action: `tj-mshi.3`, rewriting every registry instruction as a
+positive permission while preserving its ratified condition.
 
 After those, the product track that has waited behind the cleanup: two P0 epics
 (`tj-2m5m`, `tj-swgu`), then the reader findings this round confirmed still live
