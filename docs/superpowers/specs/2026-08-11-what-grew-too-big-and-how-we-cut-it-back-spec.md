@@ -217,8 +217,19 @@ outputs read by eye before anything else moves.
 Only after 4 and 5, because they remove most of the closure state that makes the
 split hard. Target: `process_message` under 300 lines, `engine.py` under 12 000,
 with catalog planning, quote/order routing and response rendering as their own
-modules. This is the largest step and the least urgent; it may be deferred
-without blocking anything above.
+modules.
+
+**This step is intended, not optional.** It differs from steps 1–5 in kind, not
+in importance: each of those closes a defect that has already happened and been
+measured, while this one closes none and instead makes future change cheaper.
+That is a different sort of claim and deserves a different sort of decision, so
+its *size* is settled after Step 5 rather than now — steps 4 and 5 will have
+removed perhaps 1 500–2 000 lines and most of the closure state, and the
+remaining difficulty can then be measured instead of estimated.
+
+What it must not become is indefinite deferral. Steps 4 and 5 do not flatten the
+growth curve of F1 on their own; at +5 854 lines in twelve days, skipping this
+step returns the same audit in a month against a larger file.
 
 ### Step 7 — Re-measure
 
@@ -237,9 +248,11 @@ count and a read of the three previously ungrounded paths.
   future change, not a present failure.
 - **It does not claim a score will improve.** No step above targets the rubric.
   Anyone reporting a score move from this work must show it exceeds reader noise.
-- **It does not claim the deterministic paths should be removed.** F6 measures
-  them as scoring worse; it does not measure what breaks without them. Retiring
-  any of them is a separate decision with its own evidence, and is deliberately
-  not in the seven steps.
+- **It does not claim the deterministic paths should be removed.** This is the
+  largest simplification available — 8 259 lines — and it is left out on purpose.
+  F6 measures those paths as scoring worse; it does not measure what breaks
+  without them, and they carry fact guarantees and side effects that reach
+  quotations, orders and the CRM. Retiring any of them is a separate decision
+  with its own evidence, and should not begin until steps 1–6 are closed.
 - **Line counts are a proxy.** They locate concentration, not badness. F2, F3,
   F4 and F5 are the substantive findings; F1 is where they live.
