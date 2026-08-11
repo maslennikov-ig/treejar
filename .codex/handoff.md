@@ -140,27 +140,27 @@ declined.
 
 ## Next recommended
 
-Next stage id: `tj-vz7o-real-openings-remediation`. The rerun is done and
-reported in `docs/reports/2026-08-10-the-rerun-and-what-the-judge-saw.md`. Next
-is `.12`, whose four findings need no paid call: three are confirmed defects in
-the reply, and the fourth may be a harness artefact and must be reproduced
-against the real fact-extraction path before any guard is written. Haiku is not
-a project instrument under the owner decision.
+Next stage id: `tj-rt7w-overcomplication`. Owner call, 2026-08-11: audit the
+over-complication, then run a fix cycle. Measured audit in
+`docs/superpowers/specs/2026-08-11-what-grew-too-big-and-how-we-cut-it-back-spec.md`,
+epic `tj-rt7w`, seven children. **Three of the four response exits skip grounding
+entirely** (`.5`) -- the structure that let the "UAE delivery with installation"
+clause out; nothing bounds what a guard may delete (`.2`); money is parsed by four
+regex families (`.3`); the guards are closures in a 1827-line `process_message`
+(`.4`, `.6`). Only 41 lines of `engine.py` are dead: every step replaces live code.
 
-Recommended action: work `.12`, then decide whether a third measured round earns
-its cost -- the last one moved the score by less than its own uncertainty.
-
-Still owed and unrelated to the corpus: **measure `7c34d55`** against the
-15-scenario baseline **18.94 +/- 3.74**, reading rules 7, 11 and 13 per-rule.
-Then `tj-jlx4`, two scenarios outside their own spread with nothing in the diff
-to explain it.
+Recommended action: `.1`, the unverified used-furniture offer and the one safety
+item, then `.2`, `.3`, `.4`, `.5` alone because it changes behaviour, and `.7`,
+a paired round expecting **no** score movement. `.6` may be deferred. Also owed:
+measure `7c34d55` against baseline **18.94 +/- 3.74** on rules 7, 11, 13.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for `tj-vz7o-real-openings-remediation`.
-Read `AGENTS.md`, `.codex/orchestrator.toml`, this handoff, the corpus-bridge
-spec, and both 2026-08-10 corpus-bridge reports. Preserve both rulers, keep
-corpus text outside Git, and never compare runs across judges.
+Use $orchestrator-stage for `tj-rt7w-overcomplication`. Read `AGENTS.md`,
+`.codex/orchestrator.toml`, this handoff, and the 2026-08-11 over-complication
+spec with its six rules. Preserve both rulers, keep corpus text outside Git,
+never compare runs across judges, and never let a refactor and a behaviour
+change ride in the same measured round.
 
 ## Approval gates
 
