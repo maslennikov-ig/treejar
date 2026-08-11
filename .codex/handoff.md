@@ -2,10 +2,9 @@
 
 Updated: 2026-08-11
 Current branch: `main`
-Accepted stage id: `tj-mshi-permission-list`
-Status: `tj-mshi.1` through `.5`, `tj-mshi`, and `tj-riim` are closed. Stage
-readiness, slice closeout, and safe workspace cleanup passed. Stage 2 remains
-unopened until this closeout is committed locally.
+Current stage id: `tj-n7p4-judged-repairs`
+Status: stage 1 is accepted at `5ef5eeb`. Stage 2 is open from that exact tip;
+`tj-n7p4.1` is the active child. No stage-2 paid call has occurred.
 
 Documentation: no external/versioned boundary — this stage changes first-party
 Python prompt and policy text and uses an existing provider client.
@@ -147,11 +146,11 @@ different thing, paid, and fires only on a flag.
 
 ## Next recommended
 
-Next stage id: `tj-n7p4-judged-repairs`; stage 1 is accepted and stage 2 stays
-unopened until the closeout commit is recorded.
+Next stage id: `tj-n7p4-judged-repairs`; it is now the active implementation
+stage and stays sequential through `.1`, `.2`, `.3`, `.6`, `.4`, `.5`.
 
-Recommended action: commit the accepted stage 1 closeout, then open
-`tj-n7p4-judged-repairs` and begin `tj-n7p4.1`.
+Recommended action: implement `tj-n7p4.1`, split pure classification from the
+named deterministic repair, and prove all 60 protected outputs unchanged.
 
 After stage 2, the product track that has waited behind the cleanup: two P0 epics
 (`tj-2m5m`, `tj-swgu`), then the reader findings this round confirmed still live
@@ -172,7 +171,5 @@ complete and comparable with 2026-08-11 because the judge is the same.
 - `tj-rt7w.14`: the R2 bound has no semantic half; a fix owes a measured round.
 - `tj-2p4c`: supported SKU digits can falsely trip numeric grounding.
 - `tj-9dp2`: root-only public summaries carry a stale GLM judge label.
-- `tj-n7p4`: the judged-repair architecture, specified and queued behind
-  `tj-mshi`.
 - Deterministic-route retirement: explicitly outside this stream.
 - Deployment and any live proof: not authorized or performed here.

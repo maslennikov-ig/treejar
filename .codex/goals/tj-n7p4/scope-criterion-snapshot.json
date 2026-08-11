@@ -1,0 +1,44 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-n7p4",
+  "source_kind": "beads",
+  "source_id": "tj-n7p4",
+  "source_digest": "981ed9ac1c86b099f8156a90e94db6bb717560b5fef1d81786513c6ca847d449",
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "text": "tj-n7p4.1 is closed only after classify_grounding_output is the pure deterministic decision used by response_policy and the acceptance harness, deterministic repair is isolated behind one named function, all other guard sources remain byte-identical, and the protected 60-output replay is unchanged.",
+      "text_digest": "1bcbf28178e4cbff4d07d98768356483d62909c3cbdb9cc16f1042b85141ed8e"
+    },
+    {
+      "criterion_id": "AC-02",
+      "text": "tj-n7p4.2 is closed only after each of the six response guards is declared replacing or removing with one-line reasons; replacing guards prove removed meaning is covered by added text, removing guards raise a flag without editing text, and the protected 60-output replay is unchanged.",
+      "text_digest": "2297946d74eb951b20405f2bb5d384960def56b74abb845f2d7ca8211bf9c542"
+    },
+    {
+      "criterion_id": "AC-03",
+      "text": "tj-n7p4.3 is closed only after the second-vendor repair judge supports approve, correct, and cannot-fix; records flags, answers, and model identity; rejects empty corrections; re-classifies corrections before send; and root-reads every corrected protected reply against the text it replaces.",
+      "text_digest": "3e8de6e191d2829c8d642e651208e2ef2c341513d11b57e24b07fad055bf019f"
+    },
+    {
+      "criterion_id": "AC-04",
+      "text": "tj-n7p4.6 is closed only after judge unavailability or rejected correction produces a counted manager handoff that tells the customer, with no fallback path restoring deterministic sentence deletion.",
+      "text_digest": "5cd7c569030fa5e9efde5104b1474d611e74ede4005716324ca314b3c3270523"
+    },
+    {
+      "criterion_id": "AC-05",
+      "text": "tj-n7p4.4 is closed only after the acceptance harness uses the same triggered repair path as production, journals every repair-judge call against the authorized stage cap, and proves a no-trigger run makes no extra call.",
+      "text_digest": "fa10e7590120e8605032c34502c0d54a14c30c40a7e69215ec11c573fa69b222"
+    },
+    {
+      "criterion_id": "AC-06",
+      "text": "tj-n7p4.5 is closed only after exactly 20 authorized Luna generation calls plus only triggered repair-judge calls are run on the frozen seed-20260810 twenty without a paid scoring reader; the root blind reading reports criticals, trigger and answer counts, fallback counts, cost, and every rewrite comparison.",
+      "text_digest": "2684c02ae1f5337d40e951423866c9f45eb568e11062512c377dc8de3a276b2f"
+    },
+    {
+      "criterion_id": "AC-07",
+      "text": "Each child .1, .2, .3, .6, .4, and .5 has one local main commit and one validated tracked artifact; required Ruff, format, Mypy, full Pytest, process, replay, and reading gates pass; stage readiness and slice closeout pass; corpus text stays outside Git; no push, deploy, live mutation, model configuration change, or real-user message occurs.",
+      "text_digest": "c7eb37ad3cc2a43ff18de8b9faebd4755f9e75001ebe61e25f5b3e0dc26e3972"
+    }
+  ]
+}
