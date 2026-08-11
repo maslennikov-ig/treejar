@@ -13,6 +13,9 @@ from pydantic_ai import RunContext
 
 from src.core.config import settings
 from src.llm.order_handoff import is_high_confidence_first_turn_order
+from src.llm.response_policy import (
+    last_assistant_asked_quote_customer_details as _last_assistant_asked_quote_customer_details,
+)
 from src.llm.safety import PATH_CORE_CHAT, model_name_for_path
 from src.llm.verified_answers import is_quote_or_proposal_request
 from src.services.runtime_execution_evidence import build_runtime_tool_trace
@@ -47,7 +50,6 @@ if TYPE_CHECKING:
         _first_selection_over_texts,
         _has_affirmative_quote_resume_intent,
         _is_pending_sales_order_quote,
-        _last_assistant_asked_quote_customer_details,
         _last_assistant_offered_single_stock_price_quote_option,
         _missing_quantity_order_runtime_result,
         _missing_quantity_product_references_message,
@@ -101,7 +103,6 @@ _ENGINE_BIND_NAMES = (
     "_first_selection_over_texts",
     "_has_affirmative_quote_resume_intent",
     "_is_pending_sales_order_quote",
-    "_last_assistant_asked_quote_customer_details",
     "_last_assistant_offered_single_stock_price_quote_option",
     "_missing_quantity_order_runtime_result",
     "_missing_quantity_product_references_message",

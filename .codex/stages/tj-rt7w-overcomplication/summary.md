@@ -60,7 +60,22 @@ Deliver `tj-rt7w.1` through `tj-rt7w.6` in dependency order. Keep
   passed with 3536 tests and 19 skips; process verification is recorded in the
   child artifact.
 
-### tj-rt7w.4 — pending
+### tj-rt7w.4 — accepted
+
+- Change: the first-turn opening, selling-turn, closed-question, and premature
+  quote-detail guards are pure functions in `src/llm/response_policy.py` with
+  explicit scalar and sequence state. None closes over `process_message`.
+- Direct evidence: four new unit tests construct no conversation. The existing
+  acceptance harness imports the production opening, deferral, and grounding
+  guard objects; no guard implementation is copied into it.
+- Behaviour evidence: no existing test was edited. An exact before/after replay
+  over all twenty stored raw outputs found zero mismatches for each guard and
+  for the complete chain. An AST check found zero target guard closures inside
+  `process_message`.
+- Gate: the focused guard-and-engine set passed 909 tests. Ruff and format
+  passed over `src/` and `tests/`; Mypy passed over 170 source files; Pytest
+  passed with 3540 tests and 19 skips; process verification is recorded in the
+  child artifact.
 
 ### tj-rt7w.5 — pending
 

@@ -50,6 +50,11 @@
       "task_id": "tj-rt7w.3",
       "stream_owner": "tj-rt7w.3-root-implementation",
       "artifact_path": ".codex/stages/tj-rt7w-overcomplication/artifacts/tj-rt7w.3.md"
+    },
+    {
+      "task_id": "tj-rt7w.4",
+      "stream_owner": "tj-rt7w.4-root-implementation",
+      "artifact_path": ".codex/stages/tj-rt7w-overcomplication/artifacts/tj-rt7w.4.md"
     }
   ]
 }

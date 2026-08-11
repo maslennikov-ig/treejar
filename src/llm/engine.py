@@ -18,7 +18,7 @@ from collections.abc import (
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from decimal import Decimal, InvalidOperation
-from functools import wraps
+from functools import partial, wraps
 from html import escape
 from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 from uuid import UUID
@@ -106,10 +106,7 @@ from src.integrations.inventory.zoho_inventory import (
     extract_sale_order_data,
 )
 from src.integrations.messaging.base import MessagingProvider
-from src.llm.closed_question_guard import (
-    apply_closed_question_guard,
-    response_asks_customer_name,
-)
+from src.llm.closed_question_guard import response_asks_customer_name
 from src.llm.communication_policy import finalize_evidence_grounding_prompt
 from src.llm.context import build_message_history
 from src.llm.fact_extractor import (
@@ -126,12 +123,20 @@ from src.llm.money import (
     BUDGET_AED_CURRENCY_PATTERN,
     canonical_amount,
 )
-from src.llm.opening_guard import apply_opening_guard
 from src.llm.order_quote_routes import QuotationItem, _order_quote_route_for_turn
 from src.llm.order_status import format_order_status
 from src.llm.pii import EMAIL_PATTERN, PHONE_PATTERN, mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
-from src.llm.response_policy import apply_guard_with_reply_bound
+from src.llm.response_policy import (
+    apply_first_turn_opening_guard,
+    apply_guard_with_reply_bound,
+    apply_selling_turn_guard,
+    guard_premature_quote_detail_collection,
+    repair_closed_questions,
+)
+from src.llm.response_policy import (
+    last_assistant_asked_quote_customer_details as _last_assistant_asked_quote_customer_details,
+)
 from src.llm.safety import (
     PATH_CORE_CHAT,
     OpenRouterTelemetryChatModel,
@@ -141,10 +146,7 @@ from src.llm.safety import (
     run_agent_with_safety,
 )
 from src.llm.sales_turn_guard import (
-    carry_the_company_question,
-    collapse_question_form,
     commit_to_what_you_deferred,
-    refuse_to_chase_the_name,
 )
 from src.llm.verified_answers import (
     VerifiedAnswerDecision,
@@ -10690,120 +10692,21 @@ def _has_active_sales_detail_capture_context(
     return any(term in history_text for term in context_terms)
 
 
-def _last_assistant_asked_quote_customer_details(
-    recent_history: list[str] | None,
-    *,
-    quote_context_active: bool = False,
-) -> bool:
-    last_assistant = _normalize_text(_last_assistant_message(recent_history))
-    if not last_assistant:
-        return False
-    text_has_quote_context = bool(
-        re.search(
-            r"\b(?:quote|quotation|commercial\s+(?:offer|proposal))\b",
-            last_assistant,
-        )
-        or re.search(
-            r"(?:عرض\s+السعر|عرض\s+أسعار|عرض\s+تجاري)",
-            last_assistant,
-        )
-    )
-    if not quote_context_active and not text_has_quote_context:
-        return False
-
-    english_field = (
-        r"(?:company(?:\s+name)?|(?:specific\s+)?delivery\s+address|address|"
-        r"(?:customer|full)\s+name|(?:customer\s+)?email(?:\s+address)?|"
-        r"(?:phone|mobile)(?:\s+number)?)"
-    )
-    english_field_value = (
-        rf"(?:(?:your|the)\s+)?{english_field}"
-        r"(?=\s*(?:[(),;:/?!.]|\d{1,2}[.)]|$|\band\b|\bor\b|\bfor\b|"
-        r"\bto\b|\bbefore\b|\bso\b))"
-    )
-    english_field_prefix = r"\s*(?:[:,-]\s*)?(?:\d{1,2}[.)]\s*)?"
-    english_requests = (
-        rf"\b(?:please\s+)?(?:share|provide|send){english_field_prefix}"
-        rf"{english_field_value}",
-        rf"\b(?:can|could|may)\s+i\s+(?:get|have)\s+{english_field_value}",
-        rf"\b(?:can|could|may)\s+you\s+(?:share|provide|send)"
-        rf"{english_field_prefix}{english_field_value}",
-        rf"\bwhat(?:'s|\s+is)\s+(?:your|the)\s+{english_field_value}",
-        rf"\bplease\s+let\s+me\s+know\s+{english_field_value}",
-        rf"\b(?:please\s+)?confirm\s+{english_field_value}",
-        rf"\b(?:i|we)(?:'ll)?\s+(?:just\s+)?need{english_field_prefix}"
-        rf"{english_field_value}",
-        r"\b(?:please\s+)?confirm\s+you\s+are\s+buying\s+as\s+an\s+individual\b",
-    )
-    if any(re.search(pattern, last_assistant) for pattern in english_requests):
-        return True
-
-    arabic_field = (
-        r"(?:اسم\s+العميل|اسم\s+الشركة|عنوان\s+التوصيل(?:\s+المحدد)?|"
-        r"البريد\s+الإلكتروني|رقم\s+الهاتف)"
-    )
-    arabic_field_value = (
-        rf"{arabic_field}"
-        r"(?=\s*(?:[،؛,:.?؟!]|$|و|أو|لإعداد|قبل))"
-    )
-    return bool(
-        re.search(
-            rf"(?:يرجى\s+(?:مشاركة|تزويد)|"
-            rf"هل\s+يمكنك\s+(?:مشاركة|تزويد|إرسال)|"
-            rf"(?:من\s+فضلك\s+)?(?:شارك|زودني|أرسل)|(?:أحتاج|نحتاج))"
-            rf"\s*[:،-]?\s*{arabic_field_value}",
-            last_assistant,
-        )
-    )
-
-
 def _guard_premature_quote_detail_collection(
     text: str,
     *,
     conversation: Conversation,
     customer_text: str,
 ) -> str:
+    # Compatibility adapter for engine callers; the guard itself is pure and
+    # receives only explicit state in response_policy.
     del customer_text
     workflow = quote_workflow_from_metadata(conversation.metadata_)
-    if workflow.consent is QuoteConsent.GRANTED:
-        return text
-    if not _last_assistant_asked_quote_customer_details(
-        [f"assistant: {text}"],
-        quote_context_active=True,
-    ):
-        return text
-
-    quote_match = re.search(
-        r"\b(?:quote|quotation|commercial\s+(?:offer|proposal))\b|"
-        r"(?:عرض\s+السعر|عرض\s+أسعار|عرض\s+تجاري)",
+    return guard_premature_quote_detail_collection(
         text,
-        flags=re.IGNORECASE,
+        language=str(conversation.language),
+        quote_consent_granted=workflow.consent is QuoteConsent.GRANTED,
     )
-    detail_match = re.search(
-        r"\b(?:company(?:\s+name)?|(?:specific\s+)?delivery\s+address|"
-        r"(?:customer|full)\s+name|(?:customer\s+)?email(?:\s+address)?|"
-        r"(?:phone|mobile)(?:\s+number)?)\b|"
-        r"(?:اسم\s+العميل|اسم\s+الشركة|عنوان\s+التوصيل(?:\s+المحدد)?|"
-        r"البريد\s+الإلكتروني|رقم\s+الهاتف)",
-        text,
-        flags=re.IGNORECASE,
-    )
-    anchors = [
-        match.start() for match in (quote_match, detail_match) if match is not None
-    ]
-    request_start = min(anchors) if anchors else 0
-    sentence_starts = [0]
-    for separator in ("\n", ". ", "? ", "! "):
-        boundary = text.rfind(separator, 0, request_start)
-        if boundary >= 0:
-            sentence_starts.append(boundary + len(separator))
-    prefix = text[: max(sentence_starts)].rstrip()
-    offer = (
-        "هل ترغب أن أجهز عرض سعر رسمي؟"
-        if is_arabic_customer_language(conversation.language)
-        else "Would you like me to prepare a formal quotation?"
-    )
-    return f"{prefix}\n\n{offer}" if prefix else offer
 
 
 def _detail_capture_acknowledgement(
@@ -15636,56 +15539,6 @@ async def process_message(
     # Filled only on the name-gate path, where the catalog can be read.
     opening_anchor_line: list[str | None] = [None]
 
-    def _apply_first_turn_opening_guard(text: str) -> str:
-        assert conv is not None
-        return apply_opening_guard(
-            text,
-            language=str(conv.language),
-            is_first_turn=is_first_turn,
-            customer_name=_known_customer_name_for_guards(),
-            anchor_line=opening_anchor_line[0],
-        )
-
-    def _apply_selling_turn_guard(text: str, response_deps: SalesDeps) -> str:
-        """Rule 13, the one-question cap, and one name request per conversation.
-
-        Order matters. The form is collapsed first, so whatever the model asked
-        is down to one. The repeated name request goes next, because collapsing
-        may have been what left it standing. The company question is folded in
-        last, because the rubric and the directive both count a folded pair as
-        one and the cap must not then throw it away.
-
-        Rule 11's package total was guaranteed here until 2026-08-10 and fired
-        on 0 of 53 packets: it read `verified_catalog_selections`, written only
-        inside the catalog-decision tool path and empty on an ordinary selling
-        turn. Rather than wire a second route into it, the rule went back to
-        `project_consultation_directive` in positive form. If it still scores
-        zero next round, the guarantee comes back -- reading rows that exist.
-
-        The first turn is left alone: the opening guard owns it.
-        """
-
-        assert conv is not None
-        if is_first_turn or not text.strip():
-            return text
-        language = str(conv.language)
-
-        text = collapse_question_form(text)
-
-        text = refuse_to_chase_the_name(
-            text,
-            previous_assistant_turns=[
-                entry.removeprefix("assistant: ")
-                for entry in (response_deps.recent_history or ())
-                if entry.startswith("assistant: ")
-            ],
-            customer_name=_known_customer_name_for_guards(),
-        )
-
-        if _turn_owes_the_company_question(response_deps):
-            text = carry_the_company_question(text, language=language)
-        return text
-
     def _deferred_product_media_for_response(
         response_deps: SalesDeps,
         *,
@@ -15740,31 +15593,6 @@ async def process_message(
             or _string_value(conv.customer_name)
         )
 
-    def _repair_closed_questions(text: str) -> str:
-        assert conv is not None
-        customer_name = _known_customer_name_for_guards()
-        quote_details = _quote_customer_details_from_metadata(conv)
-        delivery_address = _string_value(quote_details.get("address"))
-        if delivery_address and not _is_specific_delivery_address(delivery_address):
-            delivery_address = ""
-        result = apply_closed_question_guard(
-            text,
-            language=str(conv.language),
-            customer_name=customer_name,
-            company=quote_details.get("company"),
-            customer_type=quote_details.get("customer_type"),
-            delivery_address=delivery_address,
-        )
-        if not result.repaired:
-            return text
-
-        logger.warning(
-            "Repaired closed customer question for conversation %s: %s",
-            conv.id,
-            result.reason,
-        )
-        return result.text
-
     def _build_llm_response(
         result: Any,
         model_name: str,
@@ -15774,28 +15602,49 @@ async def process_message(
         text_provenance: Literal["model", "model_repaired"] = "model",
         route_suffix: str | None = None,
     ) -> LLMResponse:
+        assert conv is not None
         response_deps = response_deps or deps
         final_text = unmask_pii(result.output, pii_map)
         if route_suffix:
             model_name = f"{model_name}|{route_suffix}"
+        quote_details = _quote_customer_details_from_metadata(conv)
+        delivery_address = _string_value(quote_details.get("address"))
+        if delivery_address and not _is_specific_delivery_address(delivery_address):
+            delivery_address = ""
         final_text = apply_guard_with_reply_bound(
             final_text,
             guard_name="closed_question",
-            guard=_repair_closed_questions,
+            guard=partial(
+                repair_closed_questions,
+                language=str(conv.language),
+                customer_name=_known_customer_name_for_guards(),
+                company=quote_details.get("company"),
+                customer_type=quote_details.get("customer_type"),
+                delivery_address=delivery_address,
+            ),
+        )
+        quote_workflow = quote_workflow_from_metadata(
+            response_deps.conversation.metadata_
         )
         final_text = apply_guard_with_reply_bound(
             final_text,
             guard_name="premature_quote_details",
-            guard=lambda current: _guard_premature_quote_detail_collection(
-                current,
-                conversation=response_deps.conversation,
-                customer_text=combined_text,
+            guard=partial(
+                guard_premature_quote_detail_collection,
+                language=str(response_deps.conversation.language),
+                quote_consent_granted=(quote_workflow.consent is QuoteConsent.GRANTED),
             ),
         )
         final_text = apply_guard_with_reply_bound(
             final_text,
             guard_name="first_turn_opening",
-            guard=_apply_first_turn_opening_guard,
+            guard=partial(
+                apply_first_turn_opening_guard,
+                language=str(conv.language),
+                is_first_turn=is_first_turn,
+                customer_name=_known_customer_name_for_guards(),
+                anchor_line=opening_anchor_line[0],
+            ),
         )
         # Only the model-written path. The deterministic routes compose their
         # own replies and were given their facts directly in `tj-ja1v`; running
@@ -15804,10 +15653,21 @@ async def process_message(
         final_text = apply_guard_with_reply_bound(
             final_text,
             guard_name="selling_turn",
-            guard=lambda current: _apply_selling_turn_guard(current, response_deps),
+            guard=partial(
+                apply_selling_turn_guard,
+                language=str(conv.language),
+                is_first_turn=is_first_turn,
+                previous_assistant_turns=[
+                    entry.removeprefix("assistant: ")
+                    for entry in (response_deps.recent_history or ())
+                    if entry.startswith("assistant: ")
+                ],
+                customer_name=_known_customer_name_for_guards(),
+                owes_company_question=_turn_owes_the_company_question(response_deps),
+            ),
         )
         # Every turn, including the first: `tj-vz7o.10.1` measured this failure
-        # on an opening, which `_apply_selling_turn_guard` deliberately skips.
+        # on an opening, which `apply_selling_turn_guard` deliberately skips.
         # Runs before grounding so grounding still has the last word on it.
         final_text = apply_guard_with_reply_bound(
             final_text,
@@ -15967,26 +15827,47 @@ async def process_message(
         allow_product_media: bool = True,
         tool_traces: tuple[RuntimeToolTrace, ...] = (),
     ) -> LLMResponse:
+        assert conv is not None
         response_deps = response_deps or deps
         final_text = unmask_pii(text, pii_map)
+        quote_details = _quote_customer_details_from_metadata(conv)
+        delivery_address = _string_value(quote_details.get("address"))
+        if delivery_address and not _is_specific_delivery_address(delivery_address):
+            delivery_address = ""
         final_text = apply_guard_with_reply_bound(
             final_text,
             guard_name="closed_question",
-            guard=_repair_closed_questions,
+            guard=partial(
+                repair_closed_questions,
+                language=str(conv.language),
+                customer_name=_known_customer_name_for_guards(),
+                company=quote_details.get("company"),
+                customer_type=quote_details.get("customer_type"),
+                delivery_address=delivery_address,
+            ),
+        )
+        quote_workflow = quote_workflow_from_metadata(
+            response_deps.conversation.metadata_
         )
         final_text = apply_guard_with_reply_bound(
             final_text,
             guard_name="premature_quote_details",
-            guard=lambda current: _guard_premature_quote_detail_collection(
-                current,
-                conversation=response_deps.conversation,
-                customer_text=combined_text,
+            guard=partial(
+                guard_premature_quote_detail_collection,
+                language=str(response_deps.conversation.language),
+                quote_consent_granted=(quote_workflow.consent is QuoteConsent.GRANTED),
             ),
         )
         final_text = apply_guard_with_reply_bound(
             final_text,
             guard_name="first_turn_opening",
-            guard=_apply_first_turn_opening_guard,
+            guard=partial(
+                apply_first_turn_opening_guard,
+                language=str(conv.language),
+                is_first_turn=is_first_turn,
+                customer_name=_known_customer_name_for_guards(),
+                anchor_line=opening_anchor_line[0],
+            ),
         )
         if conv is not None and not model_name.startswith("dialogue-kernel|"):
             record_legacy_route(
@@ -16018,6 +15899,7 @@ async def process_message(
     async def _build_policy_handoff_response(
         model_name: str, decision_language: str, decision_text: str
     ) -> LLMResponse:
+        assert conv is not None
         final_text = (
             decision_text
             if decision_text
@@ -16026,7 +15908,13 @@ async def process_message(
         final_text = apply_guard_with_reply_bound(
             final_text,
             guard_name="first_turn_opening",
-            guard=_apply_first_turn_opening_guard,
+            guard=partial(
+                apply_first_turn_opening_guard,
+                language=str(conv.language),
+                is_first_turn=is_first_turn,
+                customer_name=_known_customer_name_for_guards(),
+                anchor_line=opening_anchor_line[0],
+            ),
         )
         if conv is not None:
             record_legacy_route(
@@ -16927,15 +16815,32 @@ async def process_message(
             allow_product_media: bool = True,
         ) -> LLMResponse:
             final_text = unmask_pii(recovery_text, pii_map)
+            quote_details = _quote_customer_details_from_metadata(conv)
+            delivery_address = _string_value(quote_details.get("address"))
+            if delivery_address and not _is_specific_delivery_address(delivery_address):
+                delivery_address = ""
             final_text = apply_guard_with_reply_bound(
                 final_text,
                 guard_name="closed_question",
-                guard=_repair_closed_questions,
+                guard=partial(
+                    repair_closed_questions,
+                    language=str(conv.language),
+                    customer_name=_known_customer_name_for_guards(),
+                    company=quote_details.get("company"),
+                    customer_type=quote_details.get("customer_type"),
+                    delivery_address=delivery_address,
+                ),
             )
             final_text = apply_guard_with_reply_bound(
                 final_text,
                 guard_name="first_turn_opening",
-                guard=_apply_first_turn_opening_guard,
+                guard=partial(
+                    apply_first_turn_opening_guard,
+                    language=str(conv.language),
+                    is_first_turn=is_first_turn,
+                    customer_name=_known_customer_name_for_guards(),
+                    anchor_line=opening_anchor_line[0],
+                ),
             )
             record_legacy_route(
                 conv,
