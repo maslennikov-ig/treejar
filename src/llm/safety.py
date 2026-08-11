@@ -199,6 +199,13 @@ class LLMPathPolicy:
     # and it is indistinguishable from the code movement the judge is there to
     # detect.
     temperature: float | None = None
+    # None leaves the provider default. Set it False where the path has a small
+    # token budget and a structured answer: on a reasoning model the thinking
+    # is drawn from the same `max_tokens`, so it can starve the output the
+    # schema requires and the call fails with nothing to show for the spend.
+    # This belongs to the path rather than the model id -- the same vendor can
+    # be worth thinking on one job and not another.
+    reasoning_enabled: bool | None = None
 
 
 _POLICIES: dict[str, LLMPathPolicy] = {
@@ -298,13 +305,21 @@ _POLICIES: dict[str, LLMPathPolicy] = {
     PATH_RESPONSE_REPAIR_JUDGE: LLMPathPolicy(
         path=PATH_RESPONSE_REPAIR_JUDGE,
         scope="non_core",
-        max_tokens=800,
-        timeout_seconds=45.0,
-        output_tokens_limit=800,
+        # The judge returns a whole rewritten reply plus a rationale, so 800
+        # was tight before anything else was drawn from it.
+        max_tokens=1200,
+        # Halved on 2026-08-11 when the repair path gained a second attempt.
+        # The customer waits for this on their own turn, so the budget is the
+        # whole repair, not one call: 2 x 20s is under the 45s one attempt was
+        # already allowed. `max_attempts` stays 1 because the retry lives in
+        # `review_flagged_reply`, where the paid-call cap can count each try.
+        timeout_seconds=20.0,
+        output_tokens_limit=1200,
         total_tokens_limit=6000,
         request_limit=1,
         max_attempts=1,
         temperature=0.0,
+        reasoning_enabled=False,
     ),
     PATH_AUTO_FAQ_TRANSLATE: LLMPathPolicy(
         path=PATH_AUTO_FAQ_TRANSLATE,
@@ -419,13 +434,14 @@ def _openrouter_extra_body(
     *,
     model_name: str | None,
     cache_telemetry_enabled: bool,
+    reasoning_enabled: bool | None = None,
 ) -> dict[str, Any]:
     extra_body: dict[str, Any] = {}
     if cache_telemetry_enabled:
         extra_body["usage"] = {"include": True}
         if model_name and openrouter_supports_prompt_cache_control(model_name):
             extra_body["cache_control"] = {"type": "ephemeral"}
-    if (
+    if reasoning_enabled is False or (
         model_name
         and model_name.strip().lower() in _OPENROUTER_REASONING_DISABLED_MODEL_IDS
     ):
@@ -472,6 +488,7 @@ def model_settings_for_path(
         extra_body = _openrouter_extra_body(
             model_name=model_name,
             cache_telemetry_enabled=cache_telemetry_enabled,
+            reasoning_enabled=policy.reasoning_enabled,
         )
         if extra_body:
             settings_payload["extra_body"] = extra_body

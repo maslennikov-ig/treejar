@@ -2,9 +2,9 @@
 
 Updated: 2026-08-11
 Current branch: `main`
-Current stage id: `tj-vhto-current-build-round`
-Status: two requested stages accepted, one audit fix accepted, and one measured
-round on the shipped build accepted. The build scores 15.3/30 weighted.
+Current stage id: `tj-0s42-repair-retry`
+Status: the build scores 15.3/30 weighted on the frozen twenty. The repair
+path now retries once and records what actually failed.
 
 Documentation: no external/versioned boundary — this stage changes first-party
 Python prompt and policy text and uses an existing provider client.
@@ -88,30 +88,20 @@ Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
 
 ## Verification
 
-- `.5` gates: Ruff and format clean over `src/ tests/`; Mypy clean over 173
-  source files; Pytest `3561 passed, 19 skipped`; process verification passed.
-- `.3` gates: Ruff and format clean over `src/ tests/`; Mypy clean over 174
-  source files; Pytest `3585 passed, 19 skipped`; process verification passed.
-- `.3` protected replay: 60/60 source digests matched; exactly one reply was
-  flagged, corrected, changed and root-read. The single GLM call cost
-  $0.001265216; no corpus text entered Git.
-- `.6` gates: 17 repair tests and 849 affected response tests passed; full
-  Pytest `3590 passed, 19 skipped`; no paid call; process verification passed.
-- `.4` gates: production parity and two 20-case journal simulations passed;
-  full Pytest `3594 passed, 19 skipped`; no paid call; process passed.
-- `.4` protected replay: all 60 stored raw assistant outputs re-render through
-  the full policy chain with zero changes, digest `1b0b2963…`.
-- `.5` measured round: 20/20 generation, root reading and language; 20 Luna,
-  zero repair and scoring calls; zero flags, fallbacks and rewrites; $0.005444.
-- `.5` paired result: criticals 1 to 1; weighted delta +1.16 (95% CI -0.28 to
-  +3.00); raw delta +0.50 (95% CI +0.05 to +1.10). The one candidate critical
-  is the known SKU-detector false positive on dialog 1067.
-- `test_llm_grounding_output.py` stayed byte-identical and passed all 107 tests.
-- Stage closeout passed 107 affected-package, 29 security, and 145 integration
-  tests, then readiness and process verification.
-- Stage-2 closeout also passed 13 database/migration tests plus documentation,
-  project-index, blocking-review, cleanup, and debt checks. `tj-n7p4` and the
-  fully delivered `tj-rt7w` parent epic are closed.
+- Current gates at `tj-0s42`: Ruff and format clean over `src/ tests/ scripts/`;
+  Mypy clean over 174 source files; Pytest `3619 passed, 19 skipped`; process
+  verification and stage closeout passed.
+- Protected replay, run from `scripts/corpus_bridge/replay_policy_chain.py`:
+  all 60 stored raw outputs re-render unchanged, digest `1fc87c04…`. The one
+  `grounding_output` flag on dialog 789 is `tj-n7p4.3`'s recorded change.
+- `test_llm_grounding_output.py` has stayed byte-identical through every stage
+  since `tj-mshi.4` and passes all 107 tests.
+- Stage closeouts across `tj-mshi`, `tj-n7p4`, `tj-t6ug`, `tj-vhto` and
+  `tj-0s42` passed the affected-package, security, integration and
+  database/migration groups, plus documentation, project-index,
+  blocking-review, cleanup and debt checks.
+- Paid calls to date: `tj-mshi.5` $0.005458, `tj-n7p4` $0.006709, `tj-vhto`
+  $0.005386. `tj-t6ug` and `tj-0s42` made none.
 
 ## The measured round, `tj-vhto`
 
@@ -119,18 +109,21 @@ Run at `3682203` on the frozen seed-`20260810` twenty: **20 Luna calls, one
 repair-judge call, zero scoring calls, $0.005386**. Report:
 `docs/reports/2026-08-11-where-the-bot-stands-on-the-shipped-build.md`.
 
-- Weighted **15.3/30** (12.6-17.9); raw **12.8/30** (12.0-13.5); 20/20 coverage
-  and language; 300/300 criteria read blind before any comparison.
+- Weighted **15.3/30** (12.6-17.9); raw **12.8/30** (12.0-13.5); 20/20 coverage,
+  language and blind criterion reads.
 - By attainable ceiling: greeting-only openings 9.5 of 9.6 (99%); openings with
   a real request 22.4 of 30 (75%). The missing quarter is one behaviour - the
   bot asks quantity, not what the customer is trying to do.
-- Criticals 1 to 1 against both baselines; the one is `tj-2p4c`.
 - Paired raw delta -0.60, interval excluding zero, on a change that cannot
   affect a first turn. That is the instrument's floor, measured, and it retires
   the earlier round's +0.50 raw as a result.
-- Five openings carry all the movement: 819 at -22.5 is a repair-judge provider
-  failure, 28 at -12.2 is reader drift, 366 at +5.6 is generation variance.
-- Rules 14 and 15 applicable on 0/20 again; `tj-ge07`.
+- Five openings carry all the movement: 819 at -22.5 is a failed repair call,
+  28 at -12.2 is reader drift, 366 at +5.6 is generation variance. `tj-0s42`
+  fixed the first: one bounded counted retry, the failure class recorded
+  instead of blamed on the provider, reasoning off for that path and its
+  budget at 1200 tokens. The cause remains unproved until it fires again.
+- Criticals 1 to 1 against both baselines, the one being `tj-2p4c`. Rules 14
+  and 15 applicable on 0/20 again; `tj-ge07`.
 
 ## Constraints
 
@@ -177,8 +170,8 @@ passed. The **repair** judge is a different thing, paid, and fires on a flag.
 
 ## Next recommended
 
-Next stage id: not opened; first candidate `tj-2m5m`. `tj-t6ug` and `tj-vhto`
-are accepted.
+Next stage id: not opened; first candidate `tj-2m5m`. `tj-t6ug`, `tj-vhto` and
+`tj-0s42` are accepted.
 Recommended action: start a new task from current Beads truth for `tj-2m5m`,
 then `tj-swgu`, `tj-vz7o.12`, `tj-wvo4`, and `tj-odeq`.
 
@@ -190,7 +183,6 @@ Use $orchestrator-stage for `tj-2m5m` after inspecting current Beads truth.
 
 - `tj-2p4c`: supported SKU digits can falsely trip numeric grounding.
 - `tj-9dp2`: root-only public summaries carry a stale GLM judge label.
-- `tj-0s42`: the repair judge falls back to a manager after one failed call.
 - `tj-4q79`: the root judge drifts between sittings by more than the paired
   deltas being reported; this bounds every single-round claim.
 - `tj-ge07`: no frozen set has a second turn, so the selling-turn guards and

@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from functools import cache
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from pydantic_ai import Agent
+import httpx
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic_ai import Agent, UnexpectedModelBehavior
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from src.core.config import settings
@@ -29,7 +32,13 @@ from src.llm.safety import (
 )
 from src.services.customer_language import is_arabic_customer_language
 
+logger = logging.getLogger(__name__)
+
 REPAIR_JUDGE_MODEL = "z-ai/glm-5.2"
+# Two, not one. The path timeout was halved in the same change so the worst
+# case on the customer's turn did not grow: 2 x 20s is still under the 45s a
+# single attempt was already allowed to take.
+REPAIR_JUDGE_ATTEMPTS = 2
 
 REPAIR_JUDGE_PROMPT = """You are Treejar's second-vendor repair judge.
 A deterministic guard raised a question about a customer-facing reply. The flag
@@ -102,6 +111,7 @@ class RepairJudgeCounts:
     rejected_corrections: int = 0
     fallbacks: int = 0
     provider_failures: int = 0
+    retries: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +132,7 @@ class RepairJudgeTrace:
     cost_usd: float | None = None
     requires_handoff: bool = False
     rejection_reason: str | None = None
+    error_type: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +157,7 @@ def _trace(
     rejected_correction: bool = False,
     requires_handoff: bool = False,
     rejection_reason: str | None = None,
+    calls: int = 1,
 ) -> RepairJudgeTrace:
     answer = provider_result.decision.answer
     return RepairJudgeTrace(
@@ -153,7 +165,8 @@ def _trace(
         answer=answer,
         counts=RepairJudgeCounts(
             flags=len(flags),
-            calls=1,
+            calls=calls,
+            retries=calls - 1,
             approvals=int(answer == "approve"),
             corrections=int(answer == "correct"),
             cannot_fix=int(answer == "cannot_fix"),
@@ -176,19 +189,48 @@ def _trace(
     )
 
 
+def classify_repair_failure(error: BaseException | None) -> str:
+    """Name what actually went wrong, rather than blaming the provider.
+
+    On 2026-08-11 the repair path fired in a measured round for the first time
+    and the trace recorded `provider_unavailable`. Nothing had established
+    that. Every exception -- a transport error, a reply that failed the output
+    schema, a bug of ours -- was collapsed into the one label, so the round
+    could not tell whose fault it was and neither could anyone reading it.
+
+    Only the transport classes are the provider's. A reply that will not parse
+    is the model's, and it is the one worth retrying differently.
+    """
+
+    if error is None:
+        return "judge_call_failed"
+    if isinstance(
+        error, TimeoutError | httpx.HTTPError | ModelHTTPError | ModelAPIError
+    ):
+        return "provider_unavailable"
+    if isinstance(error, UnexpectedModelBehavior | ValidationError):
+        return "judge_output_invalid"
+    return "judge_call_failed"
+
+
 def unavailable_repair_judge_trace(
     flags: tuple[ReplyGuardFlag, ...],
+    *,
+    error: BaseException | None = None,
+    calls: int = 1,
+    retries: int = 0,
 ) -> RepairJudgeTrace:
-    """Count an attempted provider call that produced no judge answer."""
+    """Count attempted provider calls that produced no judge answer."""
 
     return RepairJudgeTrace(
         model=REPAIR_JUDGE_MODEL,
         answer="unavailable",
         counts=RepairJudgeCounts(
             flags=len(flags),
-            calls=1,
+            calls=calls,
             fallbacks=1,
-            provider_failures=1,
+            provider_failures=calls,
+            retries=retries,
         ),
         flags=tuple(
             RepairJudgeFlagRecord(
@@ -199,7 +241,8 @@ def unavailable_repair_judge_trace(
             for flag in flags
         ),
         requires_handoff=True,
-        rejection_reason="provider_unavailable",
+        rejection_reason=classify_repair_failure(error),
+        error_type=type(error).__name__ if error is not None else None,
     )
 
 
@@ -217,15 +260,47 @@ async def review_flagged_reply(
     if not flags:
         return JudgedRepair(text=text, provenance=provenance)
 
-    provider_result = await (runner or run_repair_judge)(
-        RepairJudgeRequest(reply=text, flags=flags, evidence=evidence)
-    )
+    request = RepairJudgeRequest(reply=text, flags=flags, evidence=evidence)
+    call = runner or run_repair_judge
+    attempts = 0
+    last_error: BaseException | None = None
+    provider_result: RepairJudgeProviderResult | None = None
+    while attempts < REPAIR_JUDGE_ATTEMPTS:
+        attempts += 1
+        try:
+            provider_result = await call(request)
+            break
+        except Exception as error:
+            last_error = error
+            logger.warning(
+                "Repair judge attempt failed: attempt=%d of %d class=%s reason=%s",
+                attempts,
+                REPAIR_JUDGE_ATTEMPTS,
+                type(error).__name__,
+                classify_repair_failure(error),
+            )
+    if provider_result is None:
+        # Every attempt is a paid call, so the caller's cap counts each one.
+        # Returning the trace rather than raising is what keeps that true: the
+        # harness journals per call, and a raise would hide the second.
+        return JudgedRepair(
+            text=text,
+            provenance=provenance,
+            remaining_flags=flags,
+            trace=unavailable_repair_judge_trace(
+                flags,
+                error=last_error,
+                calls=attempts,
+                retries=attempts - 1,
+            ),
+        )
+
     decision = provider_result.decision
     if decision.answer == "approve":
         return JudgedRepair(
             text=text,
             provenance=provenance,
-            trace=_trace(provider_result, flags=flags),
+            trace=_trace(provider_result, flags=flags, calls=attempts),
         )
     if decision.answer == "cannot_fix":
         return JudgedRepair(
@@ -236,6 +311,7 @@ async def review_flagged_reply(
                 provider_result,
                 flags=flags,
                 requires_handoff=True,
+                calls=attempts,
             ),
         )
 
@@ -251,6 +327,7 @@ async def review_flagged_reply(
                 rejected_correction=True,
                 requires_handoff=True,
                 rejection_reason="empty_correction",
+                calls=attempts,
             ),
         )
 
@@ -266,12 +343,13 @@ async def review_flagged_reply(
                 rejected_correction=True,
                 requires_handoff=True,
                 rejection_reason="correction_still_flagged",
+                calls=attempts,
             ),
         )
     return JudgedRepair(
         text=rerendered.text,
         provenance="model_repaired",
-        trace=_trace(provider_result, flags=flags),
+        trace=_trace(provider_result, flags=flags, calls=attempts),
     )
 
 

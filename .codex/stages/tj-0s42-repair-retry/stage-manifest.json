@@ -1,0 +1,75 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-0s42-repair-retry",
+  "goal_id": "tj-0s42",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "accepted",
+  "sequence": 5,
+  "acceptance_boundary_id": "repair-judge-failure-handling",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "repair-judge-runtime",
+      "llm-path-policy",
+      "acceptance-harness"
+    ],
+    "risk_models": [
+      "customer-loses-the-reply",
+      "misattributed-provider-blame",
+      "paid-call-cap-undercount",
+      "customer-turn-latency"
+    ],
+    "test_environments": [
+      "focused-unit-tests",
+      "protected-60-output-replay"
+    ],
+    "rollback_boundary": "one-local-main-commit",
+    "acceptance_proofs": [
+      "classified-failure-recorded",
+      "bounded-counted-retry",
+      "per-path-reasoning-switch",
+      "deterministic-chain-unchanged"
+    ]
+  },
+  "work_areas": [
+    "contract",
+    "implementation",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-0s42",
+    "criteria": [
+      {
+        "criterion_id": "AC-01",
+        "text": "A failed repair-judge call records what actually failed: the exception class and a classification separating a transport failure from an output the schema rejected from a fault of ours.",
+        "text_digest": "92aad18d4abb804cf420b52272e4a5635fa33dbae9dade5a08b768c078c96ff3"
+      },
+      {
+        "criterion_id": "AC-02",
+        "text": "A failing call is retried once before the customer loses the reply, both attempts are counted against the paid-call cap, and the worst-case wait on the customer's turn does not grow.",
+        "text_digest": "c64e7b4c8b372d88d72143a7cf919996103ca496649d5653a9a930eca8ca3b29"
+      },
+      {
+        "criterion_id": "AC-03",
+        "text": "The repair path stops competing for its own token budget: reasoning is disabled per path rather than per model id, and the budget fits a whole rewritten reply plus its rationale.",
+        "text_digest": "1ead1cec21f61d261a427d4ddbc6acf8430940869735b24f20c87257268ad87d"
+      }
+    ],
+    "source_digest": "6d48dd54ed7f30fea168f4585721b8973ddfc6d99887d0d4c3c6dbe204d5be3d"
+  },
+  "scope_anchor": ".codex/goals/tj-0s42/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "6d48dd54ed7f30fea168f4585721b8973ddfc6d99887d0d4c3c6dbe204d5be3d",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-0s42",
+      "stream_owner": "tj-0s42-root-implementation",
+      "artifact_path": ".codex/stages/tj-0s42-repair-retry/artifacts/tj-0s42.md"
+    }
+  ]
+}

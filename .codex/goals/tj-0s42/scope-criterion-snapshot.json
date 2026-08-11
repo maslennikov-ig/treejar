@@ -1,0 +1,24 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-0s42",
+  "source_kind": "beads",
+  "source_id": "tj-0s42",
+  "source_digest": "6d48dd54ed7f30fea168f4585721b8973ddfc6d99887d0d4c3c6dbe204d5be3d",
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "text": "A failed repair-judge call records what actually failed: the exception class and a classification separating a transport failure from an output the schema rejected from a fault of ours.",
+      "text_digest": "92aad18d4abb804cf420b52272e4a5635fa33dbae9dade5a08b768c078c96ff3"
+    },
+    {
+      "criterion_id": "AC-02",
+      "text": "A failing call is retried once before the customer loses the reply, both attempts are counted against the paid-call cap, and the worst-case wait on the customer's turn does not grow.",
+      "text_digest": "c64e7b4c8b372d88d72143a7cf919996103ca496649d5653a9a930eca8ca3b29"
+    },
+    {
+      "criterion_id": "AC-03",
+      "text": "The repair path stops competing for its own token budget: reasoning is disabled per path rather than per model id, and the budget fits a whole rewritten reply plus its rationale.",
+      "text_digest": "1ead1cec21f61d261a427d4ddbc6acf8430940869735b24f20c87257268ad87d"
+    }
+  ]
+}

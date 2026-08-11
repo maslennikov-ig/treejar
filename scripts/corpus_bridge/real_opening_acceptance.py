@@ -507,8 +507,10 @@ async def apply_shipped_output_guards(
         )
         trace = judged.trace
         content = judged.text
-    except Exception:
-        trace = unavailable_repair_judge_trace(rendered.flags)
+    except Exception as error:
+        # The round that found this recorded `provider_unavailable` for an
+        # exception nobody had classified. The class travels with the trace now.
+        trace = unavailable_repair_judge_trace(rendered.flags, error=error)
         content = rendered.text
 
     if trace is not None and trace.requires_handoff:

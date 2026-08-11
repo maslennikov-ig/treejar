@@ -5,21 +5,30 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from types import SimpleNamespace
 
+import httpx
 import pytest
+from pydantic_ai import UnexpectedModelBehavior
 
 from src.core.config import settings
 from src.llm.message_processor import _finalize_turn_response
 from src.llm.repair_judge import (
+    REPAIR_JUDGE_ATTEMPTS,
     REPAIR_JUDGE_MODEL,
     RepairJudgeDecision,
     RepairJudgeEvidence,
     RepairJudgeProviderResult,
     RepairJudgeRequest,
+    classify_repair_failure,
     review_flagged_reply,
 )
 from src.llm.response_policy import ReplyGuardFlag, ReplyPolicyState, render_reply
 from src.llm.response_runtime import LLMResponse, ProductMediaPayload
-from src.llm.safety import PATH_RESPONSE_REPAIR_JUDGE, policy_for_path
+from src.llm.safety import (
+    PATH_CORE_CHAT,
+    PATH_RESPONSE_REPAIR_JUDGE,
+    model_settings_for_path,
+    policy_for_path,
+)
 
 Runner = Callable[[RepairJudgeRequest], Awaitable[RepairJudgeProviderResult]]
 
@@ -506,13 +515,22 @@ async def test_repair_fallback_notifies_manager_replaces_unsafe_text_and_counts(
     assert finalized.repair_flags == ()
     assert finalized.deferred_product_media == ()
     assert finalized.repair_trace is not None
-    assert finalized.repair_trace.counts.calls == 1
     assert finalized.repair_trace.counts.fallbacks == 1
     assert finalized.repair_trace.requires_handoff is True
     assert recorded == [("openai/gpt-5.6-luna", finalized.text)]
     if outcome == "provider_unavailable":
+        # A failing call is retried once before the customer loses the reply,
+        # and both attempts are counted because both are paid.
         assert finalized.repair_trace.answer == "unavailable"
-        assert finalized.repair_trace.counts.provider_failures == 1
+        assert finalized.repair_trace.counts.calls == 2
+        assert finalized.repair_trace.counts.retries == 1
+        assert finalized.repair_trace.counts.provider_failures == 2
+        assert finalized.repair_trace.rejection_reason == "provider_unavailable"
+        assert finalized.repair_trace.error_type == "TimeoutError"
+    else:
+        # An answered call is not retried, whatever the answer was.
+        assert finalized.repair_trace.counts.calls == 1
+        assert finalized.repair_trace.counts.retries == 0
 
 
 @pytest.mark.asyncio
@@ -572,3 +590,132 @@ async def test_repair_fallback_reuses_an_active_manager_handoff(
     assert "manager" in finalized.text.lower()
     assert finalized.repair_trace is not None
     assert finalized.repair_trace.counts.fallbacks == 1
+
+
+# --- what failed, and whether it was worth asking twice --------------------
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (TimeoutError("slow"), "provider_unavailable"),
+        (httpx.ConnectError("refused"), "provider_unavailable"),
+        (UnexpectedModelBehavior("no tool call"), "judge_output_invalid"),
+        (ValueError("ours"), "judge_call_failed"),
+        (None, "judge_call_failed"),
+    ],
+)
+def test_a_failed_repair_names_whose_fault_it_was(
+    error: BaseException | None, expected: str
+) -> None:
+    """The round of 2026-08-11 recorded `provider_unavailable` for an exception
+    nobody had classified, so it could not say whether GLM was down or our own
+    schema had rejected a good reply. Those need different fixes."""
+
+    assert classify_repair_failure(error) == expected
+
+
+@pytest.mark.asyncio
+async def test_a_transient_failure_is_retried_once_and_then_answered() -> None:
+    """One hiccup should not cost the customer their reply."""
+
+    attempts = 0
+
+    async def flaky(request: RepairJudgeRequest) -> RepairJudgeProviderResult:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise TimeoutError("first attempt")
+        return RepairJudgeProviderResult(
+            decision=RepairJudgeDecision(
+                answer="approve", rationale="Supported by the evidence."
+            ),
+            model=REPAIR_JUDGE_MODEL,
+        )
+
+    judged = await review_flagged_reply(
+        "A supported reply.",
+        state=ReplyPolicyState(language="en"),
+        flags=(_flag(),),
+        evidence=RepairJudgeEvidence(language="en"),
+        runner=flaky,
+    )
+
+    assert attempts == 2
+    assert judged.text == "A supported reply."
+    assert judged.remaining_flags == ()
+    assert judged.trace is not None
+    assert judged.trace.answer == "approve"
+    assert judged.trace.counts.calls == 2
+    assert judged.trace.counts.retries == 1
+    assert judged.trace.requires_handoff is False
+
+
+@pytest.mark.asyncio
+async def test_the_retry_is_bounded_so_a_dead_provider_cannot_hold_the_turn() -> None:
+    """Two attempts, not a loop. The customer is waiting on this call."""
+
+    attempts = 0
+
+    async def dead(_request: RepairJudgeRequest) -> RepairJudgeProviderResult:
+        nonlocal attempts
+        attempts += 1
+        raise httpx.ConnectError("refused")
+
+    judged = await review_flagged_reply(
+        "A flagged reply.",
+        state=ReplyPolicyState(language="en"),
+        flags=(_flag(),),
+        evidence=RepairJudgeEvidence(language="en"),
+        runner=dead,
+    )
+
+    assert attempts == REPAIR_JUDGE_ATTEMPTS == 2
+    assert judged.trace is not None
+    assert judged.trace.counts.calls == 2
+    assert judged.trace.counts.provider_failures == 2
+    assert judged.trace.rejection_reason == "provider_unavailable"
+    assert judged.trace.error_type == "ConnectError"
+    assert judged.trace.requires_handoff is True
+
+
+def test_the_repair_budget_belongs_to_the_whole_repair_not_one_call() -> None:
+    """Two attempts must not double what the customer waits.
+
+    The path timeout is the per-call budget, so it was halved in the same
+    change that added the second attempt. The safety layer keeps
+    `max_attempts=1` because the retry lives where the paid-call cap can see
+    each try.
+    """
+
+    policy = policy_for_path(PATH_RESPONSE_REPAIR_JUDGE)
+
+    assert policy.max_attempts == 1
+    assert policy.timeout_seconds * REPAIR_JUDGE_ATTEMPTS <= 45.0
+
+
+def test_the_repair_judge_does_not_pay_for_thinking_it_cannot_afford() -> None:
+    """GLM 5.2 advertises `reasoning` and draws it from the same `max_tokens`.
+
+    A reasoning budget and a structured answer competing for 800 tokens is a
+    call that can fail with nothing to show for the spend, and until this
+    round every such failure was recorded as the provider being down. The
+    switch is on the path, not the model id: the same vendor scores rounds
+    elsewhere, where thinking is worth paying for.
+    """
+
+    policy = policy_for_path(PATH_RESPONSE_REPAIR_JUDGE)
+    body = model_settings_for_path(
+        PATH_RESPONSE_REPAIR_JUDGE, model_name=REPAIR_JUDGE_MODEL
+    )["extra_body"]
+
+    assert policy.reasoning_enabled is False
+    assert body["reasoning"] == {"enabled": False}
+    assert policy.max_tokens >= 1200
+
+
+def test_a_path_that_says_nothing_about_reasoning_leaves_the_provider_alone() -> None:
+    body = model_settings_for_path(PATH_CORE_CHAT, model_name="openai/gpt-5.6-luna")
+
+    assert policy_for_path(PATH_CORE_CHAT).reasoning_enabled is None
+    assert "reasoning" not in dict(body.get("extra_body") or {})

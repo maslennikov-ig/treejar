@@ -701,7 +701,7 @@ async def _finalize_turn_response(
                 type(error).__name__,
             )
             response.repair_trace = unavailable_repair_judge_trace(
-                response.repair_flags
+                response.repair_flags, error=error
             )
         else:
             response.text = judged.text
