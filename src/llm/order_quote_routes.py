@@ -25,15 +25,12 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
+    from src.llm.catalog_planning import SalesDeps, _verified_prose_response
     from src.llm.engine import (
         EXACT_QUOTE_PASS_2_DIRECTIVES,
         ORDER_HANDOFF_PASS_1_DIRECTIVES,
         ORDER_HANDOFF_PASS_2_DIRECTIVES,
         ORDER_RUNTIME_METADATA_KEY,
-        ExactQuoteCandidate,
-        LLMResponse,
-        PendingReferenceRoute,
-        SalesDeps,
         _accepts_exact_item_quote_followup,
         _active_pending_quote_selection_from_conversation,
         _active_quote_has_unresolved_items,
@@ -76,9 +73,13 @@ if TYPE_CHECKING:
         _store_pending_sales_order_quote,
         _verified_facts_for_product_references,
         _verified_facts_for_quotation_items,
-        _verified_prose_response,
         create_quotation,
         extract_exact_quote_candidate,
+    )
+    from src.llm.response_runtime import (
+        ExactQuoteCandidate,
+        LLMResponse,
+        PendingReferenceRoute,
     )
     from src.models.conversation import Conversation
 
@@ -145,6 +146,100 @@ def _bind_engine_globals() -> None:
 class QuotationItem:
     sku: str
     quantity: int
+
+
+ProcessStaticRoute = Literal[
+    "customer-facts-past-order",
+    "detail-capture",
+    "name-capture",
+    "post-quotation-accepted",
+    "post-quotation-ack",
+    "post-quotation-context-ack",
+    "proposal-clarify",
+    "quote-consent-required",
+    "sales-fallback",
+    "service-confirmation-handoff",
+    "showroom-location",
+    "verified-catalog-functional-failure",
+    "verified-policy-clarify",
+]
+
+
+def build_declared_static_response(
+    text: str,
+    *,
+    route: ProcessStaticRoute,
+    build_static_response: Callable[..., LLMResponse],
+    model_prefix: str | None = None,
+    **response_kwargs: Any,
+) -> LLMResponse:
+    """Render a process-level deterministic route from its declared label."""
+
+    if route == "customer-facts-past-order":
+        return build_static_response(
+            text,
+            f"{model_prefix}|customer-facts-past-order",
+            **response_kwargs,
+        )
+    if route == "post-quotation-accepted":
+        return build_static_response(
+            text,
+            f"{model_prefix}|post-quotation-accepted",
+            **response_kwargs,
+        )
+    if route == "post-quotation-ack":
+        return build_static_response(
+            text,
+            f"{model_prefix}|post-quotation-ack",
+            **response_kwargs,
+        )
+    if route == "post-quotation-context-ack":
+        return build_static_response(
+            text,
+            f"{model_prefix}|post-quotation-context-ack",
+            **response_kwargs,
+        )
+    if route == "proposal-clarify":
+        return build_static_response(
+            text,
+            f"{model_prefix}|proposal-clarify",
+            **response_kwargs,
+        )
+    if route == "sales-fallback":
+        return build_static_response(
+            text,
+            f"{model_prefix}|sales-fallback",
+            **response_kwargs,
+        )
+    if route == "service-confirmation-handoff":
+        return build_static_response(
+            text,
+            f"{model_prefix}|service-confirmation-handoff",
+            **response_kwargs,
+        )
+    if route == "showroom-location":
+        return build_static_response(
+            text,
+            f"{model_prefix}|showroom-location",
+            **response_kwargs,
+        )
+    if route == "verified-catalog-functional-failure":
+        return build_static_response(
+            text,
+            f"{model_prefix}|verified-catalog-functional-failure",
+            **response_kwargs,
+        )
+    if route == "verified-policy-clarify":
+        return build_static_response(
+            text,
+            f"{model_prefix}|verified-policy-clarify",
+            **response_kwargs,
+        )
+    if route == "detail-capture":
+        return build_static_response(text, "detail-capture", **response_kwargs)
+    if route == "name-capture":
+        return build_static_response(text, "name-capture", **response_kwargs)
+    return build_static_response(text, "quote-consent-required", **response_kwargs)
 
 
 @dataclass(frozen=True)

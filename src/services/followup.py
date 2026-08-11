@@ -1001,8 +1001,9 @@ async def _process_followup_for_conversation(db: Any, conv: Conversation) -> Non
     # Because this is a system-initiated message, we will call the LLM directly
     # and then use messaging_client to send it, and save the AI message manually to DB.
 
+    from src.llm.catalog_planning import SalesDeps
     from src.llm.context import build_message_history
-    from src.llm.engine import SalesDeps, sales_agent
+    from src.llm.engine import sales_agent
     from src.llm.pii import unmask_pii
     from src.llm.safety import (
         PATH_CORE_FOLLOWUP,

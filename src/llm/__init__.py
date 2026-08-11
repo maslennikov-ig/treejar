@@ -6,7 +6,8 @@ __all__ = [
 
 def __getattr__(name: str) -> object:
     if name in __all__:
-        from src.llm.engine import LLMResponse, process_message
+        from src.llm.engine import process_message
+        from src.llm.response_runtime import LLMResponse
 
         exports = {
             "LLMResponse": LLMResponse,

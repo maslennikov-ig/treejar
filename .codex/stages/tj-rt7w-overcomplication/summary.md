@@ -102,7 +102,23 @@ Deliver `tj-rt7w.1` through `tj-rt7w.6` in dependency order. Keep
   Pytest passed with 3546 tests and 19 skips; process verification is recorded
   in the child artifact.
 
-### tj-rt7w.6 — pending
+### tj-rt7w.6 — accepted
+
+- Change: the public `process_message` is now a 40-line facade and
+  `engine.py` is 11,849 lines. Catalog planning and materialization moved to
+  `catalog_planning.py`; response transport moved to `response_runtime.py`;
+  text policy remains in `response_policy.py`; quote and order routing and its
+  declared static routes remain in `order_quote_routes.py`; the orchestration
+  sequence is isolated in `message_processor.py`.
+- Structural evidence: a new AST test enforces both settled size limits and
+  rejects a second public `process_message` implementation. The existing
+  deterministic-route registry still discovers every customer-facing route.
+- Behaviour evidence: no existing test was edited. Re-rendering all twenty
+  protected raw outputs against commit `3199b1a` changed 0 outputs. The text
+  policy and guard source files are identical to that commit.
+- Gate: the focused engine and route set passed 917 tests. Ruff and format
+  passed over `src/` and `tests/`; Mypy passed over 173 source files; Pytest
+  passed with 3547 tests and 19 skips; process verification passed.
 
 ## Explicit defer
 
