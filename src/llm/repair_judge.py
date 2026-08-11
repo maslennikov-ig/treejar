@@ -98,6 +98,8 @@ class RepairJudgeCounts:
     corrections: int = 0
     cannot_fix: int = 0
     rejected_corrections: int = 0
+    fallbacks: int = 0
+    provider_failures: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,7 +112,7 @@ class RepairJudgeFlagRecord:
 @dataclass(frozen=True, slots=True)
 class RepairJudgeTrace:
     model: str
-    answer: Literal["approve", "correct", "cannot_fix"]
+    answer: Literal["approve", "correct", "cannot_fix", "unavailable"]
     counts: RepairJudgeCounts
     flags: tuple[RepairJudgeFlagRecord, ...]
     prompt_tokens: int | None = None
@@ -154,6 +156,7 @@ def _trace(
             corrections=int(answer == "correct"),
             cannot_fix=int(answer == "cannot_fix"),
             rejected_corrections=int(rejected_correction),
+            fallbacks=int(requires_handoff),
         ),
         flags=tuple(
             RepairJudgeFlagRecord(
@@ -168,6 +171,33 @@ def _trace(
         cost_usd=provider_result.cost_usd,
         requires_handoff=requires_handoff,
         rejection_reason=rejection_reason,
+    )
+
+
+def unavailable_repair_judge_trace(
+    flags: tuple[ReplyGuardFlag, ...],
+) -> RepairJudgeTrace:
+    """Count an attempted provider call that produced no judge answer."""
+
+    return RepairJudgeTrace(
+        model=REPAIR_JUDGE_MODEL,
+        answer="unavailable",
+        counts=RepairJudgeCounts(
+            flags=len(flags),
+            calls=1,
+            fallbacks=1,
+            provider_failures=1,
+        ),
+        flags=tuple(
+            RepairJudgeFlagRecord(
+                guard_name=flag.guard_name,
+                reason=flag.reason,
+                details=flag.details,
+            )
+            for flag in flags
+        ),
+        requires_handoff=True,
+        rejection_reason="provider_unavailable",
     )
 
 

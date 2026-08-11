@@ -85,7 +85,9 @@ from src.llm.pii import (
 from src.llm.repair_judge import (
     RepairJudgeEvidence,
     RepairJudgeRunner,
+    RepairJudgeTrace,
     review_flagged_reply,
+    unavailable_repair_judge_trace,
 )
 from src.llm.response_policy import (
     ReplyPolicyState,
@@ -685,50 +687,123 @@ async def _finalize_turn_response(
                     candidate=masked_candidate if flag.candidate is not None else None,
                 )
             )
-        judged = await review_flagged_reply(
-            masked_reply,
-            state=state,
-            flags=tuple(masked_flags),
-            evidence=RepairJudgeEvidence(
-                language=state.language,
-                customer_message=turn.masked_text,
-                inventory_confirmed=state.inventory_confirmed,
-                grounded_amounts=tuple(
-                    str(amount) for amount in (state.grounded_amounts or ())
+        try:
+            judged = await review_flagged_reply(
+                masked_reply,
+                state=state,
+                flags=tuple(masked_flags),
+                evidence=RepairJudgeEvidence(
+                    language=state.language,
+                    customer_message=turn.masked_text,
+                    inventory_confirmed=state.inventory_confirmed,
+                    grounded_amounts=tuple(
+                        str(amount) for amount in (state.grounded_amounts or ())
+                    ),
+                    executed_tool_names=tuple(sorted(turn.deps.executed_tool_names)),
+                    quote_consent_granted=state.quote_consent_granted,
                 ),
-                executed_tool_names=tuple(sorted(turn.deps.executed_tool_names)),
-                quote_consent_granted=state.quote_consent_granted,
-            ),
-            provenance=response.text_provenance,
-            runner=runner,
-        )
-        response.text = unmask_pii(judged.text, turn.pii_map)
-        response.text_provenance = judged.provenance
-        response.repair_flags = judged.remaining_flags
-        response.repair_trace = judged.trace
+                provenance=response.text_provenance,
+                runner=runner,
+            )
+        except Exception as error:
+            logger.warning(
+                "Repair judge unavailable; using manager handoff: error_type=%s",
+                type(error).__name__,
+            )
+            response.repair_trace = unavailable_repair_judge_trace(tuple(masked_flags))
+        else:
+            response.text = unmask_pii(judged.text, turn.pii_map)
+            response.text_provenance = judged.provenance
+            response.repair_flags = judged.remaining_flags
+            response.repair_trace = judged.trace
+
+        if response.repair_trace is not None and response.repair_trace.requires_handoff:
+            await _apply_repair_manager_handoff(
+                turn,
+                response,
+                state=state,
+                trace=response.repair_trace,
+            )
+
         response.deferred_product_media = tuple(
             item
             for item in response.deferred_product_media
             if _product_media_is_referenced(item, response.text)
         )
-        if judged.trace is not None:
+        if response.repair_trace is not None:
+            trace = response.repair_trace
             logger.info(
                 "Repair judge completed: model=%s answer=%s flags=%d "
                 "calls=%d approvals=%d corrections=%d cannot_fix=%d "
-                "rejected=%d requires_handoff=%s",
-                judged.trace.model,
-                judged.trace.answer,
-                judged.trace.counts.flags,
-                judged.trace.counts.calls,
-                judged.trace.counts.approvals,
-                judged.trace.counts.corrections,
-                judged.trace.counts.cannot_fix,
-                judged.trace.counts.rejected_corrections,
-                judged.trace.requires_handoff,
+                "rejected=%d fallbacks=%d provider_failures=%d "
+                "requires_handoff=%s",
+                trace.model,
+                trace.answer,
+                trace.counts.flags,
+                trace.counts.calls,
+                trace.counts.approvals,
+                trace.counts.corrections,
+                trace.counts.cannot_fix,
+                trace.counts.rejected_corrections,
+                trace.counts.fallbacks,
+                trace.counts.provider_failures,
+                trace.requires_handoff,
             )
 
     turn._record_reply_on_conversation(response.model, response.text)
     return response
+
+
+def _repair_manager_handoff_text(language: str) -> str:
+    if is_arabic_customer_language(language):
+        return "أريد أن أكون دقيقًا، لذلك طلبت من مديرنا مراجعة طلبك وتأكيد التفاصيل لك."
+    return (
+        "I couldn't safely verify my draft, so I've asked a manager to review "
+        "your request and confirm the details."
+    )
+
+
+def _repair_manager_handoff_reason(trace: RepairJudgeTrace) -> str:
+    guards = ",".join(sorted({flag.guard_name for flag in trace.flags})) or "unknown"
+    outcome = trace.rejection_reason or trace.answer
+    return (
+        "Repair judge fallback: "
+        f"outcome={outcome}; model={trace.model}; guards={guards}."
+    )
+
+
+async def _apply_repair_manager_handoff(
+    turn: _Turn,
+    response: LLMResponseT,
+    *,
+    state: ReplyPolicyState,
+    trace: RepairJudgeTrace,
+) -> None:
+    """Persist a handoff, then replace the unsafe draft with a customer notice."""
+
+    from src.integrations.notifications.escalation import notify_manager_escalation
+    from src.schemas.common import EscalationType
+
+    if not is_active_human_handoff(turn.deps.conversation.escalation_status):
+        await notify_manager_escalation(
+            conversation=turn.deps.conversation,
+            reason=_repair_manager_handoff_reason(trace),
+            recent_messages=turn.deps.recent_history or [],
+            db=turn.db,
+            escalation_type=EscalationType.GENERAL,
+        )
+
+    rendered = render_reply(
+        _repair_manager_handoff_text(state.language),
+        state=state,
+        provenance="deterministic_static",
+    )
+    if rendered.flags:
+        raise RuntimeError("repair manager handoff notice raised a removal flag")
+    response.text = rendered.text
+    response.text_provenance = rendered.provenance
+    response.repair_flags = ()
+    response.deferred_product_media = ()
 
 
 @dataclass(frozen=True)

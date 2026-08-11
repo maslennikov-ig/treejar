@@ -397,3 +397,178 @@ def test_repair_judge_uses_one_bounded_second_vendor_call() -> None:
     assert policy.request_limit == 1
     assert policy.max_attempts == 1
     assert policy.temperature == 0.0
+
+
+def _flagged_response_for_fallback() -> LLMResponse:
+    return LLMResponse(
+        text="We can assess your used desks.",
+        tokens_in=10,
+        tokens_out=10,
+        cost=0.001,
+        model="openai/gpt-5.6-luna",
+        deferred_product_media=(
+            ProductMediaPayload(
+                url="https://example.invalid/used-desk.jpg",
+                caption="Used desk",
+                product_key="used-desk",
+                reference_tokens=("used desk",),
+            ),
+        ),
+        repair_flags=(_flag(),),
+        repair_policy_state=ReplyPolicyState(language="en"),
+    )
+
+
+def _turn_for_fallback(
+    recorded: list[tuple[str, str]],
+    *,
+    language: str = "en",
+    escalation_status: str = "none",
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        masked_text="Can you buy my used desks?",
+        pii_map={},
+        db=object(),
+        deps=SimpleNamespace(
+            conversation=SimpleNamespace(
+                language=language,
+                escalation_status=escalation_status,
+            ),
+            executed_tool_names=(),
+            recent_history=[],
+        ),
+        _record_reply_on_conversation=lambda model, text: recorded.append(
+            (model, text)
+        ),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "outcome",
+    ["cannot_fix", "rejected_correction", "provider_unavailable"],
+)
+async def test_repair_fallback_notifies_manager_replaces_unsafe_text_and_counts(
+    outcome: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notifications: list[dict[str, object]] = []
+
+    async def notify_manager(**kwargs: object) -> None:
+        notifications.append(kwargs)
+
+    monkeypatch.setattr(
+        "src.integrations.notifications.escalation.notify_manager_escalation",
+        notify_manager,
+    )
+    if outcome == "cannot_fix":
+        runner = _runner(
+            RepairJudgeDecision(
+                answer="cannot_fix",
+                rationale="The evidence cannot support a safe reply.",
+            ),
+            [],
+        )
+    elif outcome == "rejected_correction":
+        runner = _runner(
+            RepairJudgeDecision(
+                answer="correct",
+                corrected_text="We can assess and buy your used desks.",
+                rationale="Attempted rewrite.",
+            ),
+            [],
+        )
+    else:
+
+        async def unavailable(
+            _request: RepairJudgeRequest,
+        ) -> RepairJudgeProviderResult:
+            raise TimeoutError("provider unavailable")
+
+        runner = unavailable
+
+    recorded: list[tuple[str, str]] = []
+    response = _flagged_response_for_fallback()
+    candidate = response.repair_flags[0].candidate
+
+    finalized = await _finalize_turn_response(
+        _turn_for_fallback(recorded),
+        response,
+        runner=runner,
+    )
+
+    assert len(notifications) == 1
+    assert "Repair judge fallback" in str(notifications[0]["reason"])
+    assert "manager" in finalized.text.lower()
+    assert "We can assess your used desks." not in finalized.text
+    assert candidate not in finalized.text
+    assert finalized.text_provenance == "deterministic_static"
+    assert finalized.repair_flags == ()
+    assert finalized.deferred_product_media == ()
+    assert finalized.repair_trace is not None
+    assert finalized.repair_trace.counts.calls == 1
+    assert finalized.repair_trace.counts.fallbacks == 1
+    assert finalized.repair_trace.requires_handoff is True
+    assert recorded == [("openai/gpt-5.6-luna", finalized.text)]
+    if outcome == "provider_unavailable":
+        assert finalized.repair_trace.answer == "unavailable"
+        assert finalized.repair_trace.counts.provider_failures == 1
+
+
+@pytest.mark.asyncio
+async def test_repair_fallback_tells_an_arabic_customer_in_arabic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def notify_manager(**_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(
+        "src.integrations.notifications.escalation.notify_manager_escalation",
+        notify_manager,
+    )
+    response = _flagged_response_for_fallback()
+    response.repair_policy_state = ReplyPolicyState(language="ar")
+
+    finalized = await _finalize_turn_response(
+        _turn_for_fallback([], language="ar"),
+        response,
+        runner=_runner(
+            RepairJudgeDecision(
+                answer="cannot_fix",
+                rationale="The evidence cannot support a safe reply.",
+            ),
+            [],
+        ),
+    )
+
+    assert "مديرنا" in finalized.text
+    assert "manager" not in finalized.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_repair_fallback_reuses_an_active_manager_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail_if_notified(**_kwargs: object) -> None:
+        raise AssertionError("an active manager handoff must not be duplicated")
+
+    monkeypatch.setattr(
+        "src.integrations.notifications.escalation.notify_manager_escalation",
+        fail_if_notified,
+    )
+
+    finalized = await _finalize_turn_response(
+        _turn_for_fallback([], escalation_status="pending"),
+        _flagged_response_for_fallback(),
+        runner=_runner(
+            RepairJudgeDecision(
+                answer="cannot_fix",
+                rationale="The evidence cannot support a safe reply.",
+            ),
+            [],
+        ),
+    )
+
+    assert "manager" in finalized.text.lower()
+    assert finalized.repair_trace is not None
+    assert finalized.repair_trace.counts.fallbacks == 1

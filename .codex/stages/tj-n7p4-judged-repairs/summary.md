@@ -25,7 +25,7 @@ subagent is used.
 ## Current checkpoint
 
 Stage 1 `tj-mshi-permission-list` is accepted at `5ef5eeb`. Stage 2 is opened
-from that exact tip. `.1`, `.2` and `.3` are accepted; `.6` is next. One
+from that exact tip. `.1`, `.2`, `.3` and `.6` are accepted; `.4` is next. One
 stage-2 repair-judge call cost $0.001265216.
 
 ## Acceptance boundary
@@ -97,3 +97,16 @@ the same path production would send.
   semantic reading closes `tj-rt7w.14` without a brittle length ratio.
 - Ruff and format passed over 373 files; Mypy passed over 174 source files;
   Pytest passed with 3585 tests and 19 skips; process verification passed.
+
+### tj-n7p4.6 — accepted
+
+- Provider unavailability, `cannot_fix`, and empty or still-flagged corrections
+  all enter one fallback boundary. The trace counts fallbacks separately and
+  records provider failures without exposing provider error text.
+- The unsafe draft and deterministic candidate are never sent. A manager
+  escalation is persisted first, then the customer receives a safe English or
+  Arabic notice. Existing active handoffs are reused rather than duplicated.
+- Five tests were red before implementation, then the 17 repair-judge tests
+  and 849 affected response-path tests passed. No paid call was made.
+- Ruff and format passed over 373 files; Mypy passed over 174 source files;
+  Pytest passed with 3590 tests and 19 skips; process verification passed.

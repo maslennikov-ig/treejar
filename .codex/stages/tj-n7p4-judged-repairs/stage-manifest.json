@@ -79,6 +79,11 @@
       "task_id": "tj-n7p4.3",
       "stream_owner": "tj-n7p4.3-root-implementation",
       "artifact_path": ".codex/stages/tj-n7p4-judged-repairs/artifacts/tj-n7p4.3.md"
+    },
+    {
+      "task_id": "tj-n7p4.6",
+      "stream_owner": "tj-n7p4.6-root-implementation",
+      "artifact_path": ".codex/stages/tj-n7p4-judged-repairs/artifacts/tj-n7p4.6.md"
     }
   ]
 }
