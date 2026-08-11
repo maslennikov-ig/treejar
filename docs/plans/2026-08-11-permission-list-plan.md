@@ -24,14 +24,17 @@ and only after `.1` is closed.** Rule P7.
 
 ## Per child
 
-### `tj-mshi.1` — ratify *(owner)*
+### `tj-mshi.1` — ratify *(owner)* — **closed 2026-08-11**
 
-The owner marks each of the 22 promises and 3 redirects in the list document.
-Three rows need a real decision rather than a tick, and the document says which
-and why. Row 10 in particular has to be reconciled with the owner's own
+Ratified as written. All 22 promises and 3 redirects ship with their proposed
+mode and condition, including row 10 — come back with an answer, permitted only
+when no tool can answer this turn — which the owner confirmed against their own
 2026-08-10 approval on dialog 819.
 
-Until this is closed nothing else in the epic may start.
+The same session added rule **P8**: doubt is resolved by a second model, not by
+deleting a sentence. That is epic `tj-n7p4` and it is not built here; this stage
+only has to avoid contradicting it, which it does by adding no text-editing path
+at all.
 
 ### `tj-mshi.2` — fill the registry
 
@@ -129,7 +132,9 @@ tj-mshi-permission-list --level slice_acceptance`.
   something, that is a finding about the registry's shape, not a licence to put
   the rule in `prompts.py`.
 - **No deterministic commitment check in this stage.** P5: it ships only after
-  `.5` measures a leak, and it owes its own round.
+  `.5` measures a leak, it owes its own round, and under P8 it would be a
+  trigger for `tj-n7p4`'s rewrite rather than a repair of its own.
+- **Nothing added here may edit customer-visible text.** P8.
 - **No existing test edited.** If a step needs one edited, the step is wrong —
   stop and say so.
 - No push, PR, deploy, production or staging mutation, or real-user message.

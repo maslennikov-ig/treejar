@@ -4,13 +4,14 @@ Date: 2026-08-11
 Spec: `docs/superpowers/specs/2026-08-11-what-noor-may-promise-spec.md`
 Beads: `tj-mshi.1`
 
-This is the list itself. **Nothing here ships until the owner marks each row.**
-Per rule P7 the corpus supplied the candidates and the counts; it does not
-supply permission.
+**Ratified by the owner on 2026-08-11, as written.** Every row below ships with
+the proposed mode and condition; the three rows called out at the end were
+confirmed rather than changed. `tj-mshi.1` is closed and this document is the
+source for `tj-mshi.2`.
 
-Mark each row **yes**, **no**, or **change the condition**. A row marked *no*
-does not become a prohibition — it simply is not on the list, and the redirect
-row at the bottom covers what Noor says when asked for it.
+Per rule P7 the corpus supplied the candidates and the counts; the permission is
+the owner's. A row that had been marked *no* would not have become a
+prohibition — it would simply be absent, with the redirect covering it.
 
 ## The modes
 

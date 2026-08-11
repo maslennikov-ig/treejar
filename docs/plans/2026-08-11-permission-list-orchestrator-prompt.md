@@ -1,7 +1,7 @@
 # Orchestrator prompt — `tj-mshi-permission-list`
 
-Hand to the Codex orchestrator verbatim, **after `tj-mshi.1` is closed**. Claude
-verifies the result.
+Hand to the Codex orchestrator verbatim. `tj-mshi.1` is closed: the owner
+ratified the list on 2026-08-11 as written. Claude verifies the result.
 
 ---
 
@@ -42,8 +42,10 @@ prompt as `[AUTHORIZED COMMERCIAL CAPABILITIES]`. It is the allowlist. It is
 under-populated and every instruction string in it is currently phrased as a
 prohibition.
 
-`tj-mshi.1` is the owner's ratification and is closed before you start. If it is
-not closed, stop and say so.
+`tj-mshi.1` is the owner's ratification and is **closed**: the list was ratified
+on 2026-08-11 as written, so every row in it ships with its proposed mode and
+condition. Do not re-open that decision; if a row looks wrong while you work,
+record the finding and continue.
 
 ## Constraints
 
@@ -62,8 +64,13 @@ The seven rules of the spec, non-negotiable here:
    stage, however obvious it looks.
 6. **P6.** A refactor and a behaviour change never ride in the same measured
    round. Nothing in this stage is a refactor.
-7. **P7.** Only the ratified rows go in. If a row you need is not ratified, stop
-   and ask; do not infer permission from the corpus counts.
+7. **P7.** Only the ratified rows go in. All 22 promises and 3 redirects are
+   ratified; nothing else is. Do not infer permission from the corpus counts.
+8. **P8.** Owner decision of 2026-08-11: doubt is resolved by a second model,
+   not by deleting a sentence. Nothing you add here may edit customer-visible
+   text without a model having written the replacement. The repair architecture
+   that makes that possible is a separate epic, `tj-n7p4`; this stage neither
+   builds it nor works around it.
 
 Also in force: no existing test may be edited. Add tests by addition only.
 
@@ -135,8 +142,12 @@ too tight; record that as a finding rather than reporting a success.
 
 ## Not in scope
 
+- Epic `tj-n7p4` — the second-model review and rewrite. Rule P8 binds you not to
+  contradict it; building any part of it here is out of scope.
+- The deterministic commitment check. It is step 5 of the spec, it depends on
+  `tj-n7p4`, and P5 means it waits for a measured leak in any case.
 - The three `tj-vz7o.12` defects that reproduced on 2026-08-11.
-- `tj-rt7w.14`, the missing semantic half of the guard bound.
+- `tj-rt7w.14`, now blocked on `tj-n7p4.2` rather than on a validator we write.
 - Retiring the deterministic routes.
 - Any change to the rubric, the applicability map, or the scoring rulers. Frozen.
 
