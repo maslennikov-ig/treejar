@@ -139,6 +139,27 @@ def test_commercial_capability_registry_uses_evidence_authorization_modes() -> N
 
 
 @pytest.mark.asyncio
+async def test_customer_owned_furniture_prompt_covers_the_service_promise_family() -> (
+    None
+):
+    db, redis = AsyncMock(), AsyncMock()
+    redis.get.return_value = None
+    db.execute.return_value.scalars.return_value.first.return_value = None
+
+    prompt = await build_system_prompt(
+        db, redis, SalesStage.GREETING.value, language="en"
+    )
+    instruction = prompt.split("[CUSTOMER-OWNED FURNITURE POLICY]", maxsplit=1)[1]
+
+    assert all(
+        service in instruction
+        for service in ("buy", "resell", "broker", "value", "assess")
+    )
+    assert "customer-owned furniture" in instruction
+    assert "manager confirms" in instruction
+
+
+@pytest.mark.asyncio
 async def test_build_system_prompt_appends_immutable_evidence_grounding_policy() -> (
     None
 ):

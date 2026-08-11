@@ -130,10 +130,21 @@ When you use `escalate_to_manager`:
 - Always provide a clear, specific reason
 """
 
-# Language is handled dynamically in build_system_prompt
-LANGUAGE_DIRECTIVE = """
+CUSTOMER_OWNED_FURNITURE_POLICY = """
+[CUSTOMER-OWNED FURNITURE POLICY]
+Do not say or imply that we will buy, resell, broker, value, or assess
+customer-owned furniture unless a manager confirms that exact service.
+""".strip()
+
+# Language is handled dynamically in build_system_prompt. The customer-owned
+# furniture rule rides in this local component so neither a database base-prompt
+# override nor the isolated acceptance harness can omit it.
+LANGUAGE_DIRECTIVE = (
+    """
 IMPORTANT: The user prefers to communicate in {language}. You MUST reply entirely in {language}, unless instructed otherwise or when quoting product names that are in English.
 """
+    + f"\n{CUSTOMER_OWNED_FURNITURE_POLICY}\n"
+)
 
 STAGE_RULES: dict[str, str] = {
     "greeting": """STAGE: GREETING

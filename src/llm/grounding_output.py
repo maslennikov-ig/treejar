@@ -23,6 +23,13 @@ class GroundingViolation(StrEnum):
     # here could see that no row existed. This one is the first that has to be
     # told what was actually verified.
     UNVERIFIED_PRICE = "unverified_price"
+    # `tj-rt7w.1`: a specific prompt rule was measured on the stored failure
+    # and one of three fresh attempts still offered to help with an unsupported
+    # customer-owned-furniture resale path. The prompt has therefore earned a
+    # bounded deterministic backstop for this exact service family.
+    UNVERIFIED_CUSTOMER_OWNED_FURNITURE_SERVICE = (
+        "unverified_customer_owned_furniture_service"
+    )
 
 
 class GroundingOutputAction(StrEnum):
@@ -84,6 +91,36 @@ _AR_SPECIFIC_PRODUCT_TRIAL_RE = re.compile(
 )
 _AR_NEGATION_RE = re.compile(
     r"(?:لا\s+(?:أستطيع|استطيع|يمكنني)|لا\s+يمكن|لن|ليس|ليست|غير\s+مؤكد)"
+)
+
+_EN_CUSTOMER_OWNED_ITEM_RE = re.compile(
+    r"\b(?:"
+    r"your\s+(?:(?:own|existing|used|pre[- ]owned|second[- ]hand)\s+)?"
+    r"(?:office\s+)?(?:furniture|desks?|tables?|chairs?|workstations?|"
+    r"cabinets?|sofas?|items?)"
+    r"|(?:customer[- ]owned|pre[- ]owned|second[- ]hand|used)\s+"
+    r"(?:office\s+)?(?:furniture|desks?|tables?|chairs?|workstations?|"
+    r"cabinets?|sofas?|items?)"
+    r"|(?:furniture|desks?|tables?|chairs?|workstations?|cabinets?|sofas?|items?)"
+    r"\s+(?:that\s+)?you\s+(?:already\s+)?(?:own|have)"
+    r")\b"
+)
+_EN_CUSTOMER_OWNED_SERVICE_RE = re.compile(
+    r"\b(?:i|we|treejar)\s+"
+    r"(?!(?:do\s+not|don't|cannot|can't|cant|are\s+unable)\b)"
+    r"(?:(?:can|will|would|do|are\s+able\s+to)\s+)?"
+    r"(?:help\s+(?:you\s+)?(?:to\s+)?)?"
+    r"(?:buy|purchase|sell|resell|broker|trade(?:\s+in)?|assess|value)\b"
+)
+_EN_CUSTOMER_OWNED_OPTIONS_RE = re.compile(
+    r"\b(?:i|we|treejar)\s+can\s+help\s+(?:you\s+)?"
+    r"(?:clarify|explore|with)\s+(?:the\s+)?"
+    r"(?:resale|selling|trade[- ]in|options?|next\s+steps?)\b"
+)
+_EN_CUSTOMER_OWNED_INTAKE_RE = re.compile(
+    r"\b(?:please\s+)?(?:share|send|provide)\b.{0,160}"
+    r"\b(?:photos?|pictures?|dimensions?|measurements?|condition|location|"
+    r"asking\s+price)\b"
 )
 
 _EN_STRONG_STOCK_CONTEXT_RE = re.compile(
@@ -205,6 +242,13 @@ _AR_PRICE_FALLBACK = (
     "أقدّم الأسعار من كتالوجنا فقط، ولا يتوفر لدي سعر مؤكد لذلك بعد. أخبرني بما "
     "تحتاجه وسأستخرج لك الرقم الدقيق من الكتالوج."
 )
+_EN_CUSTOMER_OWNED_SERVICE_FALLBACK = (
+    "Buying, resale, brokerage, valuation, or assessment of customer-owned "
+    "furniture is not a confirmed service."
+)
+_AR_CUSTOMER_OWNED_SERVICE_FALLBACK = (
+    "شراء أثاث العميل أو إعادة بيعه أو تقييمه ليست خدمة مؤكدة."
+)
 _EN_GENERIC_FALLBACK = (
     "I can only share confirmed product and inventory information. Current "
     "availability and a specific showroom trial are not confirmed."
@@ -316,6 +360,31 @@ def _has_specific_product_showroom_trial(sentence: str) -> bool:
             ):
                 return True
     return False
+
+
+def _has_unverified_customer_owned_furniture_service(
+    sentence: str,
+    *,
+    full_text: str,
+) -> bool:
+    full_visible = _normalized(visible_grounding_text(full_text))
+    if not _EN_CUSTOMER_OWNED_ITEM_RE.search(full_visible):
+        return False
+
+    visible = _normalized(visible_grounding_text(sentence))
+    return any(
+        _is_asserted_match(
+            visible,
+            match,
+            negation_pattern=_EN_NEGATION_RE,
+        )
+        for pattern in (
+            _EN_CUSTOMER_OWNED_SERVICE_RE,
+            _EN_CUSTOMER_OWNED_OPTIONS_RE,
+            _EN_CUSTOMER_OWNED_INTAKE_RE,
+        )
+        for match in pattern.finditer(visible)
+    )
 
 
 def _has_meaningful_check_object(
@@ -463,6 +532,13 @@ def _classify_sentence(
         violations.append(GroundingViolation.FUTURE_STOCK_CHECK)
     if _has_unverified_price(sentence, grounded=grounded_amounts):
         violations.append(GroundingViolation.UNVERIFIED_PRICE)
+    if _has_unverified_customer_owned_furniture_service(
+        sentence,
+        full_text=full_text,
+    ):
+        violations.append(
+            GroundingViolation.UNVERIFIED_CUSTOMER_OWNED_FURNITURE_SERVICE
+        )
     return tuple(violations)
 
 
@@ -491,7 +567,7 @@ def classify_grounding_output(
     inventory_confirmed: bool = False,
     grounded_amounts: Iterable[object] | None = None,
 ) -> tuple[GroundingViolation, ...]:
-    """Classify bounded unsupported showroom, inventory and price semantics."""
+    """Classify bounded unsupported product, inventory, price and service semantics."""
 
     return _classify(
         str(text or ""),
@@ -553,6 +629,12 @@ def _fallback(
         return _AR_PRICE_FALLBACK if arabic else _EN_PRICE_FALLBACK
     if GroundingViolation.SPECIFIC_PRODUCT_SHOWROOM_TRIAL in violations:
         return _AR_SHOWROOM_FALLBACK if arabic else _EN_SHOWROOM_FALLBACK
+    if GroundingViolation.UNVERIFIED_CUSTOMER_OWNED_FURNITURE_SERVICE in violations:
+        return (
+            _AR_CUSTOMER_OWNED_SERVICE_FALLBACK
+            if arabic
+            else _EN_CUSTOMER_OWNED_SERVICE_FALLBACK
+        )
     return _AR_GENERIC_FALLBACK if arabic else _EN_GENERIC_FALLBACK
 
 

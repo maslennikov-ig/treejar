@@ -234,6 +234,72 @@ def test_classify_grounding_output_covers_review_regressions(
 @pytest.mark.parametrize(
     "text",
     [
+        "We can buy your used office desks.",
+        "We can help you resell customer-owned chairs.",
+        "We can assess and value the conference table you already own.",
+        (
+            "Do you want to sell your own desk? I can help clarify the resale "
+            "options—please share its condition and location."
+        ),
+    ],
+)
+def test_customer_owned_furniture_service_promises_require_confirmation(
+    text: str,
+) -> None:
+    assert [item.value for item in classify_grounding_output(text)] == [
+        "unverified_customer_owned_furniture_service"
+    ]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        (
+            "We don't have confirmed information that we buy or resell "
+            "customer-owned furniture."
+        ),
+        "I can't confirm a customer-owned furniture buying or resale service.",
+        "Do you mean you'd like to sell a desk you already own?",
+        "We can sell furniture for your office.",
+        "The note says 'We can buy your used desk', but that service is unconfirmed.",
+    ],
+)
+def test_customer_owned_furniture_service_controls_stay_safe(text: str) -> None:
+    assert classify_grounding_output(text) == ()
+
+
+def test_customer_owned_furniture_service_repair_keeps_the_safe_question() -> None:
+    result = enforce_grounding_output(
+        "We can help you sell your existing desk. Are you looking for a replacement?",
+        language="en",
+    )
+
+    assert result.action is GroundingOutputAction.REPAIRED
+    assert [item.value for item in result.violations] == [
+        "unverified_customer_owned_furniture_service"
+    ]
+    assert result.text == "Are you looking for a replacement?"
+
+
+def test_customer_owned_furniture_service_repair_drops_unsupported_intake() -> None:
+    result = enforce_grounding_output(
+        (
+            "Do you want to sell your own desk? Please share photos, dimensions, "
+            "condition, location, and your asking price."
+        ),
+        language="en",
+    )
+
+    assert result.action is GroundingOutputAction.REPAIRED
+    assert [item.value for item in result.violations] == [
+        "unverified_customer_owned_furniture_service"
+    ]
+    assert result.text == "Do you want to sell your own desk?"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
         ("You're welcome to visit our UAE showroom to experience our product quality."),
         "I can't confirm that a specific chair will be available to try.",
         "There is no evidence that this chair will reduce back pain.",
