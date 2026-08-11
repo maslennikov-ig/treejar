@@ -3,9 +3,8 @@
 Updated: 2026-08-11
 Current branch: `main`
 Current stage id: `tj-n7p4-judged-repairs`
-Status: stage 1 is accepted at `5ef5eeb`. All six stage-2 children are
-implemented and measured; root closeout is next. Stage 2 used one repair-judge
-call for $0.001265216 and none in the final measured round.
+Status: both requested stages are accepted and their epics are closed. Stage 2
+used one repair-judge call for $0.001265216 and none in its measured round.
 
 Documentation: no external/versioned boundary — this stage changes first-party
 Python prompt and policy text and uses an existing provider client.
@@ -81,6 +80,7 @@ Python prompt and policy text and uses an existing provider client.
 - `f12cc5c` — `tj-n7p4.3`, add the second-vendor repair judge.
 - `a1d9532` — `tj-n7p4.6`, hand unresolved repairs to a manager.
 - `0764ce2` — `tj-n7p4.4`, align the harness with production repair.
+- `5c7a099` — `tj-n7p4.5`, measure the judged-repair architecture.
 
 Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
 
@@ -107,6 +107,9 @@ Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
 - `test_llm_grounding_output.py` stayed byte-identical and passed all 107 tests.
 - Stage closeout passed 107 affected-package, 29 security, and 145 integration
   tests, then readiness and process verification.
+- Stage-2 closeout also passed 13 database/migration tests plus documentation,
+  project-index, blocking-review, cleanup, and debt checks. `tj-n7p4` and the
+  fully delivered `tj-rt7w` parent epic are closed.
 
 ## The measured round, `tj-mshi.5`
 
@@ -179,13 +182,13 @@ different thing, paid, and fires only on a flag.
 
 ## Next recommended
 
-Next stage id: `tj-n7p4-judged-repairs` (root closeout).
-Recommended action: run readiness and slice closeout, close `tj-n7p4`, then
-resume `tj-2m5m`, `tj-swgu`, `tj-vz7o.12`, `tj-wvo4`, and `tj-odeq`.
+Next stage id: not opened; first candidate `tj-2m5m`.
+Recommended action: start a new task from current Beads truth for `tj-2m5m`,
+then `tj-swgu`, `tj-vz7o.12`, `tj-wvo4`, and `tj-odeq`.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for the next product task after this root closeout.
+Use $orchestrator-stage for `tj-2m5m` after inspecting current Beads truth.
 
 ## Explicit defers
 

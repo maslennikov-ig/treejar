@@ -1,6 +1,6 @@
 # Stage tj-n7p4-judged-repairs
 
-Status: in progress
+Status: accepted; `tj-n7p4` closed
 Base: `main` at `5ef5eeb`
 Acceptance owner: root orchestrator
 
@@ -25,8 +25,8 @@ subagent is used.
 ## Current checkpoint
 
 Stage 1 `tj-mshi-permission-list` is accepted at `5ef5eeb`. All six stage-2
-children are implemented and measured; root closeout is next. Stage 2 used one
-repair-judge call in `.3` for $0.001265216 and none in the measured round.
+children are accepted and `tj-n7p4` is closed. Stage 2 used one repair-judge
+call in `.3` for $0.001265216 and none in the measured round.
 
 ## Acceptance boundary
 
@@ -153,3 +153,13 @@ the same path production would send.
 - Ruff and format passed over 373 files; Mypy passed over 174 source files;
   after restoring mandatory handoff labels, Pytest passed with 3594 tests and
   19 skips; process verification passed.
+
+## Root closeout
+
+- Stage readiness passed with all six validated artifacts.
+- Slice acceptance passed 107 affected-package, 29 security, 13 database and
+  migration, and 145 integration tests.
+- Process, documentation, project-index, blocking-review, cleanup, and debt
+  checks passed. Graphify is not initialized, so no graph refresh was needed.
+- `tj-n7p4` and the fully delivered parent cleanup epic `tj-rt7w` are closed.
+  No push, deploy, live mutation, model change, or real-user message occurred.
