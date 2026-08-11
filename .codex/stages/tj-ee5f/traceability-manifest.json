@@ -2,7 +2,7 @@
   "schema_version": "noor-e2e-traceability/v1",
   "goal_id": "tj-ee5f",
   "scope_source_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
-  "source_set_digest": "0ce2de1fa154327d88050755c94deb84bf33f76679a86d849ed783b87ebb6df5",
+  "source_set_digest": "7695b068de3f2597270bbcaee28966210a671a39b8ec5f7680dabbaa92924b9f",
   "precedence_order": [
     "current repository and runtime contracts",
     "original and updated requirements",
@@ -36,12 +36,12 @@
     },
     "orchestration-contract": {
       "path": ".codex/orchestrator.toml",
-      "content_digest": "eeb015bc431a7598b119a43cabe8b261c37790b62fe4a27e326b4bf244c2972d",
+      "content_digest": "28332aa143eef5d23289435ce58581ca00ce391301d1aeba557c17b1bf7cb79b",
       "sections": [
         {
           "start_locator": "schema_version = 2",
           "end_locator": null,
-          "content_digest": "eeb015bc431a7598b119a43cabe8b261c37790b62fe4a27e326b4bf244c2972d"
+          "content_digest": "28332aa143eef5d23289435ce58581ca00ce391301d1aeba557c17b1bf7cb79b"
         }
       ]
     },

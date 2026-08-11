@@ -24,6 +24,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import replace
+from functools import partial
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic_ai._run_context import RunContext
@@ -166,6 +167,165 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger("src.llm.engine")
+
+
+# `tj-rt7w.10`. These three closed over nothing at all: they were nested only
+# because everything was. At module level they are unit-testable, and Mypy
+# checks their callers.
+def _is_first_turn(
+    history_messages: list[ModelRequestT | ModelResponseT],
+) -> bool:
+    user_turns = 0
+    assistant_turns = 0
+
+    for message in history_messages:
+        if isinstance(message, ModelRequest) and any(
+            isinstance(part, UserPromptPart) for part in message.parts
+        ):
+            user_turns += 1
+        elif isinstance(message, ModelResponse) and any(
+            isinstance(part, TextPart) for part in message.parts
+        ):
+            assistant_turns += 1
+
+    return assistant_turns == 0 and user_turns >= 1
+
+
+def _has_escalation(conversation: ConversationT) -> bool:
+    return is_active_human_handoff(conversation.escalation_status)
+
+
+def _deferred_product_media_for_response(
+    response_deps: SalesDepsT,
+    *,
+    allow_product_media: bool,
+    response_text: str,
+) -> tuple[ProductMediaPayloadT, ...]:
+    if response_deps.quotation_created:
+        if response_deps.pending_product_media:
+            logger.warning(
+                "Suppressed %d deferred product media item(s) after quotation "
+                "creation for conversation %s in %s mode",
+                len(response_deps.pending_product_media),
+                response_deps.conversation.id,
+                response_deps.tool_mode,
+            )
+        return ()
+    if allow_product_media:
+        referenced_media = tuple(
+            item
+            for item in response_deps.pending_product_media
+            if _product_media_is_referenced(item, response_text)
+        )
+        suppressed_count = len(response_deps.pending_product_media) - len(
+            referenced_media
+        )
+        if suppressed_count:
+            logger.info(
+                "Suppressed %d deferred product media item(s) not referenced "
+                "by the final response for conversation %s",
+                suppressed_count,
+                response_deps.conversation.id,
+            )
+        return referenced_media
+    if response_deps.pending_product_media:
+        logger.warning(
+            "Suppressed %d deferred product media item(s) for conversation %s "
+            "in %s mode",
+            len(response_deps.pending_product_media),
+            response_deps.conversation.id,
+            response_deps.tool_mode,
+        )
+    return ()
+
+
+# `tj-rt7w.10`. The repair-state trio closed over exactly `conv` and `db`, so it
+# is state passed in, not state captured. Twenty call sites -- several handing
+# the clearer to the order/quote adapter as a `Callable[[], Awaitable[None]]` --
+# keep their zero-argument shape through a `partial` bound once the conversation
+# is loaded.
+def _verified_policy_repair_state(conv: ConversationT) -> dict[str, int | str] | None:
+    metadata = conv.metadata_ if isinstance(conv.metadata_, dict) else {}
+    state = metadata.get(engine.VERIFIED_POLICY_REPAIR_KEY)
+    if not isinstance(state, dict):
+        return None
+    kind = state.get("kind")
+    count = state.get("count")
+    if not isinstance(kind, str) or not isinstance(count, int):
+        return None
+    return {"kind": kind, "count": count}
+
+
+async def _store_verified_policy_repair_state(
+    conv: ConversationT, db: AsyncSession, kind: str, count: int
+) -> None:
+    metadata = dict(conv.metadata_ or {})
+    metadata[engine.VERIFIED_POLICY_REPAIR_KEY] = {"kind": kind, "count": count}
+    conv.metadata_ = metadata
+    await db.flush()
+
+
+async def _drop_verified_policy_repair_state(
+    conv: ConversationT, db: AsyncSession
+) -> None:
+    metadata = dict(conv.metadata_ or {})
+    if engine.VERIFIED_POLICY_REPAIR_KEY not in metadata:
+        return
+    metadata.pop(engine.VERIFIED_POLICY_REPAIR_KEY, None)
+    conv.metadata_ = metadata
+    await db.flush()
+
+
+class _LazyModelRuntime:
+    """One chat model per turn, built the first time a run needs it.
+
+    `tj-rt7w.10`. This was a closure over a `nonlocal` -- the memo and the thing
+    it memoized were the same name, so neither could be read or tested on its
+    own. `OpenAIChatModel` stays engine-resolved because the suite patches it
+    there.
+    """
+
+    def __init__(self, db: AsyncSession) -> None:
+        self._db = db
+        self._runtime: tuple[str, OpenAIChatModelT] | None = None
+
+    async def get(self) -> tuple[str, OpenAIChatModelT]:
+        if self._runtime is None:
+            from src.core.config import get_system_config
+
+            name = model_name_for_path(
+                PATH_CORE_CHAT,
+                await get_system_config(
+                    self._db, "openrouter_model_main", settings.openrouter_model_main
+                ),
+            )
+            self._runtime = (
+                name,
+                engine.OpenAIChatModel(
+                    name,
+                    provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
+                    settings=model_settings_for_path(PATH_CORE_CHAT, model_name=name),
+                ),
+            )
+        return self._runtime
+
+
+async def _run_prose_agent_on(
+    model_runtime: _LazyModelRuntime, directive: str, run_deps: SalesDepsT
+) -> Any:
+    """Run the rewrite on its own, away from the product system prompt."""
+
+    runtime_model_name, runtime_model = await model_runtime.get()
+    return await run_agent_with_safety(
+        engine.prose_agent,
+        PATH_CORE_CHAT,
+        user_prompt=directive,
+        deps=run_deps,
+        message_history=[],
+        model=runtime_model,
+        model_name=runtime_model_name,
+        usage=RunUsage(),
+    )
 
 
 async def process_message_impl(
@@ -325,100 +485,8 @@ async def process_message_impl(
     combined_text = _strip_synthetic_test_marker(combined_text)
     dialogue_kernel_result: DialogueKernelResultT | None = None
 
-    def _is_first_turn(
-        history_messages: list[ModelRequestT | ModelResponseT],
-    ) -> bool:
-        user_turns = 0
-        assistant_turns = 0
-
-        for message in history_messages:
-            if isinstance(message, ModelRequest) and any(
-                isinstance(part, UserPromptPart) for part in message.parts
-            ):
-                user_turns += 1
-            elif isinstance(message, ModelResponse) and any(
-                isinstance(part, TextPart) for part in message.parts
-            ):
-                assistant_turns += 1
-
-        return assistant_turns == 0 and user_turns >= 1
-
-    def _has_escalation(conversation: ConversationT) -> bool:
-        return is_active_human_handoff(conversation.escalation_status)
-
-    def _get_verified_policy_repair_state() -> dict[str, int | str] | None:
-        assert conv is not None
-        metadata = conv.metadata_ if isinstance(conv.metadata_, dict) else {}
-        state = metadata.get(VERIFIED_POLICY_REPAIR_KEY)
-        if not isinstance(state, dict):
-            return None
-        kind = state.get("kind")
-        count = state.get("count")
-        if not isinstance(kind, str) or not isinstance(count, int):
-            return None
-        return {"kind": kind, "count": count}
-
-    async def _set_verified_policy_repair_state(kind: str, count: int) -> None:
-        assert conv is not None
-        metadata = dict(conv.metadata_ or {})
-        metadata[VERIFIED_POLICY_REPAIR_KEY] = {"kind": kind, "count": count}
-        conv.metadata_ = metadata
-        await db.flush()
-
-    async def _clear_verified_policy_repair_state() -> None:
-        assert conv is not None
-        metadata = dict(conv.metadata_ or {})
-        if VERIFIED_POLICY_REPAIR_KEY not in metadata:
-            return
-        metadata.pop(VERIFIED_POLICY_REPAIR_KEY, None)
-        conv.metadata_ = metadata
-        await db.flush()
-
     # Filled only on the name-gate path, where the catalog can be read.
     opening_anchor_line: list[str | None] = [None]
-
-    def _deferred_product_media_for_response(
-        response_deps: SalesDepsT,
-        *,
-        allow_product_media: bool,
-        response_text: str,
-    ) -> tuple[ProductMediaPayloadT, ...]:
-        if response_deps.quotation_created:
-            if response_deps.pending_product_media:
-                logger.warning(
-                    "Suppressed %d deferred product media item(s) after quotation "
-                    "creation for conversation %s in %s mode",
-                    len(response_deps.pending_product_media),
-                    response_deps.conversation.id,
-                    response_deps.tool_mode,
-                )
-            return ()
-        if allow_product_media:
-            referenced_media = tuple(
-                item
-                for item in response_deps.pending_product_media
-                if _product_media_is_referenced(item, response_text)
-            )
-            suppressed_count = len(response_deps.pending_product_media) - len(
-                referenced_media
-            )
-            if suppressed_count:
-                logger.info(
-                    "Suppressed %d deferred product media item(s) not referenced "
-                    "by the final response for conversation %s",
-                    suppressed_count,
-                    response_deps.conversation.id,
-                )
-            return referenced_media
-        if response_deps.pending_product_media:
-            logger.warning(
-                "Suppressed %d deferred product media item(s) for conversation %s "
-                "in %s mode",
-                len(response_deps.pending_product_media),
-                response_deps.conversation.id,
-                response_deps.tool_mode,
-            )
-        return ()
 
     name_gate_resume_customer_name: str | None = None
 
@@ -550,44 +618,11 @@ async def process_message_impl(
     # it out of reach of every route that runs before it. sales-opportunity is
     # one of those, and it needs the model to write its sentence (tj-swgu.3).
     # Memoised, so a turn that never reaches the model still pays nothing.
-    model_runtime: tuple[str, OpenAIChatModelT] | None = None
+    model_runtime_source = _LazyModelRuntime(db)
     failed_run_usage: RunUsageT | None = None
 
-    async def _ensure_model_runtime() -> tuple[str, OpenAIChatModelT]:
-        nonlocal model_runtime
-        if model_runtime is None:
-            from src.core.config import get_system_config
-
-            name = model_name_for_path(
-                PATH_CORE_CHAT,
-                await get_system_config(
-                    db, "openrouter_model_main", settings.openrouter_model_main
-                ),
-            )
-            model_runtime = (
-                name,
-                OpenAIChatModel(
-                    name,
-                    provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
-                    settings=model_settings_for_path(PATH_CORE_CHAT, model_name=name),
-                ),
-            )
-        return model_runtime
-
-    async def _run_prose_agent(directive: str, run_deps: SalesDepsT) -> Any:
-        """Run the rewrite on its own, away from the product system prompt."""
-
-        runtime_model_name, runtime_model = await _ensure_model_runtime()
-        return await run_agent_with_safety(
-            prose_agent,
-            PATH_CORE_CHAT,
-            user_prompt=directive,
-            deps=run_deps,
-            message_history=[],
-            model=runtime_model,
-            model_name=runtime_model_name,
-            usage=RunUsage(),
-        )
+    _ensure_model_runtime = model_runtime_source.get
+    _run_prose_agent = partial(_run_prose_agent_on, model_runtime_source)
 
     async def _run_agent(run_deps: SalesDepsT) -> Any:
         nonlocal failed_run_usage
@@ -699,6 +734,14 @@ async def process_message_impl(
     conv = await db.get(Conversation, conversation_id)
     if not conv:
         raise ValueError(f"Conversation {conversation_id} not found")
+
+    _get_verified_policy_repair_state = partial(_verified_policy_repair_state, conv)
+    _set_verified_policy_repair_state = partial(
+        _store_verified_policy_repair_state, conv, db
+    )
+    _clear_verified_policy_repair_state = partial(
+        _drop_verified_policy_repair_state, conv, db
+    )
 
     from src.core.cache import get_cached_crm_profile, set_cached_crm_profile
 
