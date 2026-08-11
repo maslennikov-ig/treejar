@@ -99,6 +99,51 @@ def prose_rewrite_unavailable() -> Generator[None, None, None]:
 
 
 @pytest.fixture(autouse=True)
+def repair_judge_is_local() -> Generator[None, None, None]:
+    """Keep route tests on a local second-vendor stand-in.
+
+    Route tests patch the primary sales model and assert the rest of the turn.
+    A removing guard now invokes a separate model, so leaving that collaborator
+    live would turn ordinary unit tests into external calls. Dedicated repair-
+    judge tests pass their own runner and cover all three decisions explicitly.
+    """
+
+    from unittest.mock import patch
+
+    from src.llm.repair_judge import (
+        RepairJudgeDecision,
+        RepairJudgeProviderResult,
+        RepairJudgeRequest,
+    )
+
+    async def correct_with_candidate(
+        request: RepairJudgeRequest,
+    ) -> RepairJudgeProviderResult:
+        corrected_text = next(
+            (
+                flag.candidate
+                for flag in reversed(request.flags)
+                if flag.candidate is not None
+            ),
+            request.reply,
+        )
+        return RepairJudgeProviderResult(
+            decision=RepairJudgeDecision(
+                answer="correct",
+                corrected_text=corrected_text,
+                rationale="Local route-test stand-in accepts the guarded candidate.",
+            ),
+            model="test/repair-judge",
+            prompt_tokens=0,
+            completion_tokens=0,
+            cost_usd=0.0,
+        )
+
+    with patch("src.llm.repair_judge.run_repair_judge", new=correct_with_candidate):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def cleanup_db_pool() -> Generator[None, None, None]:
     """Force SQLAlchemy to dispose of the connection pool after each test.
     This prevents 'different event loop' errors when engines are reused across tests.

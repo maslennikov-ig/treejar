@@ -15,7 +15,7 @@ from src.llm.response_policy import ReplyPolicyState, ReplyProvenance, render_re
         "deterministic_static",
     ],
 )
-def test_render_reply_applies_grounding_to_every_provenance(
+def test_render_reply_classifies_grounding_without_editing_any_provenance(
     provenance: ReplyProvenance,
 ) -> None:
     text = (
@@ -28,13 +28,16 @@ def test_render_reply_applies_grounding_to_every_provenance(
         provenance=provenance,
     )
 
-    assert "assess your used desks" not in rendered.text.casefold()
+    assert rendered.text == text
     assert "help choosing replacement desks" in rendered.text.casefold()
     assert rendered.provenance == provenance
     assert (
         GroundingViolation.UNVERIFIED_CUSTOMER_OWNED_FURNITURE_SERVICE
         in rendered.grounding.violations
     )
+    assert [flag.guard_name for flag in rendered.flags] == ["grounding_output"]
+    assert rendered.flags[0].candidate is not None
+    assert "assess your used desks" not in rendered.flags[0].candidate.casefold()
 
 
 def test_render_reply_turns_a_deferral_into_an_explicit_commitment() -> None:

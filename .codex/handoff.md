@@ -4,7 +4,8 @@ Updated: 2026-08-11
 Current branch: `main`
 Current stage id: `tj-n7p4-judged-repairs`
 Status: stage 1 is accepted at `5ef5eeb`. Stage 2 `.1` and `.2` are accepted;
-`.3` is next. No stage-2 paid call has occurred.
+`.3` is implemented and accepted locally; `.6` is next. One repair-judge call
+cost $0.001265216.
 
 Documentation: no external/versioned boundary — this stage changes first-party
 Python prompt and policy text and uses an existing provider client.
@@ -15,12 +16,14 @@ Python prompt and policy text and uses an existing provider client.
   Provenance is metadata and cannot select a shorter policy chain.
 - The six text guards now declare their effect. Closed-question, premature
   quote details, first-turn opening, and deferred commitment are replacing;
-  selling-turn and grounding-output are removing and expose flags. `.2` keeps
-  one named legacy candidate bridge solely for unchanged replay; `.3` removes
-  it when the repair judge consumes those flags.
+  selling-turn and grounding-output are removing and expose flags. `.3`
+  removed the legacy application bridge: only a flagged turn reaches the
+  second vendor, and an unflagged turn makes no repair call.
 - Every text guard is bounded: letters or digits in, letters or digits out. It
-  catches F5. It does not stop a guard shrinking four sentences to one word --
-  `tj-rt7w.14`, recorded rather than promised.
+  catches F5. The second vendor now supplies the semantic half by approving or
+  rewriting the complete reply, while deterministic reclassification remains
+  the formal lower bound. One protected correction was read and accepted, so
+  `tj-rt7w.14` closes with the recorded evidence.
 - The opening, selling-turn, closed-question, and premature quote-detail guards
   are pure module functions with explicit state, not engine closures.
 - `src/llm/money.py` owns every currency pattern in `src/llm/`, enforced by an
@@ -45,7 +48,10 @@ Python prompt and policy text and uses an existing provider client.
   transport is in `src/llm/response_runtime.py`; the turn sequence is in
   `src/llm/message_processor.py`; order/quote routes are in
   `src/llm/order_quote_routes.py`.
-- No existing test was edited anywhere in this epic.
+- In `.3`, the owner authorized two stale assertion updates: they now require
+  original visible text plus a non-visible repair candidate instead of silent
+  deterministic deletion. A local repair-judge stand-in keeps ordinary tests
+  isolated from the network.
 - The canonical runtime target remains `https://noor.starec.ai`; nothing has
   been pushed, deployed, or applied to production or staging.
 - Production data is Postgres in `noor-db-1` on `noor-server`, not Supabase.
@@ -74,6 +80,11 @@ Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
 
 - `.5` gates: Ruff and format clean over `src/ tests/`; Mypy clean over 173
   source files; Pytest `3561 passed, 19 skipped`; process verification passed.
+- `.3` gates: Ruff and format clean over `src/ tests/`; Mypy clean over 174
+  source files; Pytest `3585 passed, 19 skipped`; process verification passed.
+- `.3` protected replay: 60/60 source digests matched; exactly one reply was
+  flagged, corrected, changed and root-read. The single GLM call cost
+  $0.001265216; no corpus text entered Git.
 - `.4` protected replay: all 60 stored raw assistant outputs re-render through
   the full policy chain with zero changes, digest `1b0b2963…`.
 - `test_llm_grounding_output.py` stayed byte-identical and passed all 107 tests.
@@ -154,13 +165,14 @@ different thing, paid, and fires only on a flag.
 Next stage id: `tj-n7p4-judged-repairs`; it is now the active implementation
 stage and stays sequential through `.1`, `.2`, `.3`, `.6`, `.4`, `.5`.
 
-Recommended action: implement `tj-n7p4.3`, replace the `.2` compatibility bridge
-with the second-vendor repair judge, and root-read every protected correction.
+Recommended action: implement `tj-n7p4.6`, so provider failure, `cannot-fix`, or
+a rejected correction produces a counted manager handoff and customer-facing
+notice without deleting text.
 
 After stage 2, the product track that has waited behind the cleanup: two P0 epics
 (`tj-2m5m`, `tj-swgu`), then the reader findings this round confirmed still live
-— `tj-vz7o.12`, `tj-wvo4`, `tj-odeq`. `tj-riim` closes in `tj-mshi.5`, and
-`tj-rt7w.14` inside `tj-n7p4.3`.
+— `tj-vz7o.12`, `tj-wvo4`, `tj-odeq`. `tj-riim` closed in `tj-mshi.5`, and
+`tj-rt7w.14` closes with `.3`.
 
 ## Starter prompt for next orchestrator
 
@@ -173,7 +185,6 @@ complete and comparable with 2026-08-11 because the judge is the same.
 
 ## Explicit defers
 
-- `tj-rt7w.14`: the R2 bound has no semantic half; a fix owes a measured round.
 - `tj-2p4c`: supported SKU digits can falsely trip numeric grounding.
 - `tj-9dp2`: root-only public summaries carry a stale GLM judge label.
 - Deterministic-route retirement: explicitly outside this stream.

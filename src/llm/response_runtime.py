@@ -7,11 +7,18 @@ import re
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from src.dialogue.order_state import QuoteConsent
-from src.llm.response_policy import RenderedReply
+from src.llm.response_policy import (
+    RenderedReply,
+    ReplyGuardFlag,
+    ReplyPolicyState,
+)
 from src.services.runtime_execution_evidence import RuntimeToolTrace
+
+if TYPE_CHECKING:
+    from src.llm.repair_judge import RepairJudgeTrace
 
 
 @dataclass
@@ -29,6 +36,9 @@ class LLMResponse:
     ] = "model"
     deferred_product_media: tuple[ProductMediaPayload, ...] = ()
     tool_traces: tuple[RuntimeToolTrace, ...] = ()
+    repair_flags: tuple[ReplyGuardFlag, ...] = ()
+    repair_policy_state: ReplyPolicyState | None = None
+    repair_trace: RepairJudgeTrace | None = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +104,8 @@ def _response_from_rendered_reply(
         text_provenance=rendered.provenance,
         deferred_product_media=deferred_product_media,
         tool_traces=tool_traces,
+        repair_flags=rendered.flags,
+        repair_policy_state=rendered.policy_state,
     )
 
 

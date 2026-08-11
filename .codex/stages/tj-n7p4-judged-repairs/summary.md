@@ -25,8 +25,8 @@ subagent is used.
 ## Current checkpoint
 
 Stage 1 `tj-mshi-permission-list` is accepted at `5ef5eeb`. Stage 2 is opened
-from that exact tip. `.1` and `.2` are accepted and `.3` is next. No stage-2
-paid call has occurred.
+from that exact tip. `.1`, `.2` and `.3` are accepted; `.6` is next. One
+stage-2 repair-judge call cost $0.001265216.
 
 ## Acceptance boundary
 
@@ -73,3 +73,27 @@ the same path production would send.
   flag fired.
 - Ruff and format passed over 371 files; Mypy passed over 173 source files;
   Pytest passed with 3573 tests and 19 skips; process verification passed.
+
+### tj-n7p4.3 — accepted
+
+- A fixed second-vendor judge now answers approve, correct or cannot-fix for a
+  removal flag. Per-turn trace records flags, model, answers, tokens and cost;
+  no flag means no call.
+- Corrections pass through the complete reply policy again. Empty or still
+  flagged corrections are rejected and retain a counted handoff requirement.
+- One finalizer records the actual final reply once, masks reply and candidate
+  PII before the provider call, and filters deferred media against corrected
+  text. The `.2` legacy removal-candidate bridge is gone.
+- With owner authorization, two stale assertions that required automatic
+  deletion now require original text plus a non-visible candidate. A local
+  judge fixture prevents unit tests from making external calls.
+- Protected replay matched all 60 source digests, fired one flag and changed
+  exactly that reply: dialog 789. One GLM call returned one accepted correction
+  for $0.001265216; zero approvals, cannot-fix, rejected corrections or
+  handoffs. Final aggregate digest: `802c0e95…`.
+- The root read the correction beside the original and prior candidate. It
+  replaces the unsupported customer-furniture service with supported catalog
+  help and preserves confirmed context and the next question. This accepted
+  semantic reading closes `tj-rt7w.14` without a brittle length ratio.
+- Ruff and format passed over 373 files; Mypy passed over 174 source files;
+  Pytest passed with 3585 tests and 19 skips; process verification passed.

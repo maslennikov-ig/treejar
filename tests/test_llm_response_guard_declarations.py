@@ -136,19 +136,26 @@ def test_removing_guard_returns_the_original_text_and_a_flag(guard_name: str) ->
     assert application.flags[0].details == ("detected_example",)
 
 
-def test_render_reply_preserves_legacy_output_but_exposes_removal_flags() -> None:
+def test_render_reply_keeps_removing_candidates_non_visible() -> None:
+    selling_text = "Which category suits you? What quantity do you need?"
+    grounding_text = (
+        "We can assess your used desks. Would you like help choosing replacements?"
+    )
     selling = render_reply(
-        "Which category suits you? What quantity do you need?",
+        selling_text,
         state=ReplyPolicyState(language="en"),
         provenance="model",
     )
     grounding = render_reply(
-        "We can assess your used desks. Would you like help choosing replacements?",
+        grounding_text,
         state=ReplyPolicyState(language="en"),
         provenance="model",
     )
 
-    assert selling.text == "Which category suits you?"
+    assert selling.text == selling_text
     assert [flag.guard_name for flag in selling.flags] == ["selling_turn"]
-    assert "assess your used desks" not in grounding.text.casefold()
+    assert selling.flags[0].candidate == "Which category suits you?"
+    assert grounding.text == grounding_text
     assert [flag.guard_name for flag in grounding.flags] == ["grounding_output"]
+    assert grounding.flags[0].candidate is not None
+    assert "assess your used desks" not in grounding.flags[0].candidate.casefold()

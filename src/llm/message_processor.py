@@ -82,6 +82,11 @@ from src.llm.pii import (
     mask_pii,
     unmask_pii,
 )
+from src.llm.repair_judge import (
+    RepairJudgeEvidence,
+    RepairJudgeRunner,
+    review_flagged_reply,
+)
 from src.llm.response_policy import (
     ReplyPolicyState,
     render_reply,
@@ -513,7 +518,6 @@ class _Turn:
             )
         usage = result.usage()
         usage_telemetry = get_llm_usage_telemetry(result)
-        self._record_reply_on_conversation(model_name, rendered.text)
         return _response_from_rendered_reply(
             rendered,
             tokens_in=usage.input_tokens if usage else None,
@@ -545,7 +549,6 @@ class _Turn:
             provenance="deterministic_static",
             model_name=model_name,
         )
-        self._record_reply_on_conversation(model_name, rendered.text)
         return _response_from_rendered_reply(
             rendered,
             tokens_in=0,
@@ -581,11 +584,6 @@ class _Turn:
             provenance="deterministic_static",
             model_name=response_model,
         )
-        record_legacy_route(
-            self.conv,
-            self.dialogue_kernel_result,
-            legacy_route=response_model,
-        )
         return _response_from_rendered_reply(
             rendered,
             tokens_in=0,
@@ -619,7 +617,6 @@ class _Turn:
             provenance="deterministic_replacement",
             model_name=model_name,
         )
-        self._record_reply_on_conversation(model_name, rendered.text)
         return _response_from_rendered_reply(
             rendered,
             tokens_in=usage.input_tokens,
@@ -661,6 +658,77 @@ class _Turn:
         finally:
             if self.latency_trace is not None and agent_started is not None:
                 self.latency_trace.finish_phase("model_tools", agent_started)
+
+
+async def _finalize_turn_response(
+    turn: _Turn,
+    response: LLMResponseT,
+    *,
+    runner: RepairJudgeRunner | None = None,
+) -> LLMResponseT:
+    """Run flagged text through the judge, then record the actual final reply."""
+
+    if response.repair_flags:
+        state = response.repair_policy_state
+        if state is None:
+            raise RuntimeError("flagged reply is missing its policy state")
+
+        masked_reply, reply_pii = mask_pii(response.text)
+        turn.pii_map.update(reply_pii)
+        masked_flags = []
+        for flag in response.repair_flags:
+            masked_candidate, candidate_pii = mask_pii(flag.candidate or "")
+            turn.pii_map.update(candidate_pii)
+            masked_flags.append(
+                replace(
+                    flag,
+                    candidate=masked_candidate if flag.candidate is not None else None,
+                )
+            )
+        judged = await review_flagged_reply(
+            masked_reply,
+            state=state,
+            flags=tuple(masked_flags),
+            evidence=RepairJudgeEvidence(
+                language=state.language,
+                customer_message=turn.masked_text,
+                inventory_confirmed=state.inventory_confirmed,
+                grounded_amounts=tuple(
+                    str(amount) for amount in (state.grounded_amounts or ())
+                ),
+                executed_tool_names=tuple(sorted(turn.deps.executed_tool_names)),
+                quote_consent_granted=state.quote_consent_granted,
+            ),
+            provenance=response.text_provenance,
+            runner=runner,
+        )
+        response.text = unmask_pii(judged.text, turn.pii_map)
+        response.text_provenance = judged.provenance
+        response.repair_flags = judged.remaining_flags
+        response.repair_trace = judged.trace
+        response.deferred_product_media = tuple(
+            item
+            for item in response.deferred_product_media
+            if _product_media_is_referenced(item, response.text)
+        )
+        if judged.trace is not None:
+            logger.info(
+                "Repair judge completed: model=%s answer=%s flags=%d "
+                "calls=%d approvals=%d corrections=%d cannot_fix=%d "
+                "rejected=%d requires_handoff=%s",
+                judged.trace.model,
+                judged.trace.answer,
+                judged.trace.counts.flags,
+                judged.trace.counts.calls,
+                judged.trace.counts.approvals,
+                judged.trace.counts.corrections,
+                judged.trace.counts.cannot_fix,
+                judged.trace.counts.rejected_corrections,
+                judged.trace.requires_handoff,
+            )
+
+    turn._record_reply_on_conversation(response.model, response.text)
+    return response
 
 
 @dataclass(frozen=True)
@@ -2281,24 +2349,24 @@ async def process_message_impl(
 
     response = await _customer_facts_and_quotation_routes(turn, config)
     if response is not None:
-        return response
+        return await _finalize_turn_response(turn, response)
 
     response, order_runtime_blocks_kernel_reply = await _dialogue_kernel_route(
         turn, config
     )
     if response is not None:
-        return response
+        return await _finalize_turn_response(turn, response)
 
     facts = await _read_quote_facts(
         turn, order_runtime_blocks_kernel_reply=order_runtime_blocks_kernel_reply
     )
     response = await _capture_details_and_name_gate_routes(turn, facts)
     if response is not None:
-        return response
+        return await _finalize_turn_response(turn, response)
 
     response = await _pre_policy_routes(turn, facts)
     if response is not None:
-        return response
+        return await _finalize_turn_response(turn, response)
 
     resolved_pending_reference = await turn.pending_reference_route(
         db=turn.db,
@@ -2344,7 +2412,7 @@ async def process_message_impl(
             run_prose_agent=turn.run_prose_agent,
         )
     if order_quote_response is not None:
-        return order_quote_response
+        return await _finalize_turn_response(turn, order_quote_response)
 
     policy_decision, product_preference_frame_match = await _search_context_and_policy(
         turn, facts
@@ -2363,23 +2431,21 @@ async def process_message_impl(
             db_model_main=db_model_main,
             dynamic_model=dynamic_model,
         )
-        if response is not None:
-            return response
-        response = await _verified_catalog_plan_route(
-            turn,
-            db_model_main=db_model_main,
-            dynamic_model=dynamic_model,
-        )
-        if response is not None:
-            return response
-        return await _sales_agent_route(
-            turn,
-            db_model_main=db_model_main,
-            dynamic_model=dynamic_model,
-            claim_contract_every_catalog_turn=(
-                config.claim_contract_every_catalog_turn
-            ),
-        )
+        if response is None:
+            response = await _verified_catalog_plan_route(
+                turn,
+                db_model_main=db_model_main,
+                dynamic_model=dynamic_model,
+            )
+        if response is None:
+            response = await _sales_agent_route(
+                turn,
+                db_model_main=db_model_main,
+                dynamic_model=dynamic_model,
+                claim_contract_every_catalog_turn=(
+                    config.claim_contract_every_catalog_turn
+                ),
+            )
 
     except Exception:
         logger.exception(
@@ -2397,7 +2463,7 @@ async def process_message_impl(
             provenance="deterministic_static",
             model_name=response_model,
         )
-        return _response_from_rendered_reply(
+        response = _response_from_rendered_reply(
             rendered,
             tokens_in=0,
             tokens_out=0,
@@ -2405,3 +2471,5 @@ async def process_message_impl(
             model=response_model,
             usage_provenance="deterministic_static",
         )
+
+    return await _finalize_turn_response(turn, response)

@@ -61,6 +61,7 @@ class RenderedReply:
     text: str
     provenance: ReplyProvenance
     grounding: GroundingOutputResult
+    policy_state: ReplyPolicyState
     flags: tuple[ReplyGuardFlag, ...] = ()
 
 
@@ -91,6 +92,7 @@ class ReplyGuardFlag:
     guard_name: str
     reason: str
     details: tuple[str, ...] = ()
+    candidate: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -419,6 +421,7 @@ def apply_declared_guard(
                     guard_name=declaration.name,
                     reason="removing_guard_triggered",
                     details=flag_details,
+                    candidate=candidate,
                 ),
             ),
         )
@@ -444,24 +447,9 @@ def apply_declared_guard(
                 guard_name=declaration.name,
                 reason="replacement_coverage_failed",
                 details=flag_details,
+                candidate=candidate,
             ),
         ),
-    )
-
-
-def apply_legacy_removing_candidate(
-    application: GuardApplication,
-    *,
-    declaration: GuardDeclaration,
-) -> str:
-    """Preserve pre-judge output only for the behavior-neutral `.2` replay."""
-
-    if declaration.mode is not GuardMode.REMOVING or not application.flags:
-        return application.text
-    return apply_guard_with_reply_bound(
-        application.text,
-        guard_name=f"{declaration.name}_legacy_candidate",
-        guard=lambda _current: application.candidate,
     )
 
 
@@ -481,14 +469,7 @@ def _render_declared_guard(
         flagged=flagged,
         flag_details=flag_details,
     )
-    if declaration.mode is GuardMode.REMOVING:
-        rendered = apply_legacy_removing_candidate(
-            application,
-            declaration=declaration,
-        )
-    else:
-        rendered = application.text
-    return rendered, application.flags
+    return application.text, application.flags
 
 
 def append_required_tool_disclosure(text: str, disclosure: str | None) -> str:
@@ -597,5 +578,6 @@ def render_reply(
         text=rendered,
         provenance=provenance,
         grounding=grounding,
+        policy_state=state,
         flags=tuple(raised_flags),
     )
