@@ -1,0 +1,124 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-rt7w-verification-fixes",
+  "goal_id": "tj-rt7w",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "accepted",
+  "sequence": 2,
+  "acceptance_boundary_id": "overcomplication-verification-fixes",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "material_boundary_override",
+  "stage_boundary_reason": "independent_rollback_or_migration_boundary",
+  "boundary": {
+    "subsystems": [
+      "message-orchestration",
+      "money-parsing",
+      "orchestration-evidence"
+    ],
+    "risk_models": [
+      "silently-disabled-type-checking",
+      "disconnected-test-patch-points",
+      "behavior-preserving-refactor",
+      "stale-acceptance-pin"
+    ],
+    "test_environments": [
+      "focused-unit-tests",
+      "full-local-suite",
+      "static-type-probe"
+    ],
+    "rollback_boundary": "one-local-commit-per-child-on-main",
+    "acceptance_proofs": [
+      "wrong-arity-call-now-rejected",
+      "patch-point-set-derived-from-the-suite",
+      "single-currency-module-ast-proof",
+      "named-frozen-source-repin",
+      "full-suite-green-on-the-tip"
+    ]
+  },
+  "work_areas": [
+    "decision",
+    "contract",
+    "implementation",
+    "consumer_adoption",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-rt7w",
+    "source_digest": "6805c33059186402ec99fed558bcb2fdfeaec0c84521f2362cd3d009a004a92a",
+    "criteria": [
+      {
+        "criterion_id": "AC-01",
+        "text": "tj-rt7w.1 is closed only after a prompt-first fix removes the unverified used-furniture service promise from stored reply dialog_id 789, no other stored reply changes, a phrasing-family test passes, and the behavior change ships alone.",
+        "text_digest": "224e54bb51df65886699c4c81b9a555aa17a76c5593db51a78d7c32d423ad1ca"
+      },
+      {
+        "criterion_id": "AC-02",
+        "text": "tj-rt7w.2 is closed only after the shared text-policy chain prevents every existing guard from deleting a whole reply, catches the historical apostrophe regression against the pre-fix guard, and all twenty stored raw outputs re-render identically without editing existing tests.",
+        "text_digest": "90ec8868389410424973d1ff1fd74fe69703f73e002142d2ca4e02f485bb6b15"
+      },
+      {
+        "criterion_id": "AC-03",
+        "text": "tj-rt7w.3 is closed only after one money parser and canonical form serve engine, extraction, grounding, and opening guards, all four call sites agree on the twenty stored raw outputs, behavior is unchanged, and no existing test is edited.",
+        "text_digest": "b6fc41821035c1aead2892012ce8aba902825e15bcb85f9fc61fffb6e975c85f"
+      },
+      {
+        "criterion_id": "AC-04",
+        "text": "tj-rt7w.4 is closed only after the four named response guards are pure module functions taking explicit state, direct unit tests construct no conversation, the acceptance harness imports production functions, behavior is unchanged, and no existing test is edited.",
+        "text_digest": "2f9ebcdeb6e1af7c0c2b5ee9f1a25de65812cdfd76c4bc120e36b06aab205b4b"
+      },
+      {
+        "criterion_id": "AC-05",
+        "text": "tj-rt7w.5 is closed only after every customer-facing exit calls one render_reply text-policy chain with provenance passed explicitly, bypass tests fail for any new exit, every changed stored output is read and explained solely by newly applied grounding, and the behavior change ships alone.",
+        "text_digest": "dd17bf2e6d4d53aceb6e7767695b532f4ea7a33cd94db2e3d42797b4e2806f99"
+      },
+      {
+        "criterion_id": "AC-06",
+        "text": "tj-rt7w.6 is closed only after process_message is under 300 lines and engine.py is under 12000 lines, catalog planning, quote and order routing, and response rendering are separated into modules, behavior is unchanged, and no existing test is edited.",
+        "text_digest": "b7f6d2f14fe213a6e901886a50a22f0105e64c048d1020c4e889379dcdca2da3"
+      },
+      {
+        "criterion_id": "AC-07",
+        "text": "Each child commit passes ruff check, ruff format check, mypy, the full pytest suite, and process verification; final stage acceptance uses check_stage_ready.py and run_stage_closeout.py at slice_acceptance.",
+        "text_digest": "4002aa8702873776b337ab356ef256ef3fae8da62d1c456b630aaad6e0c28ca2"
+      },
+      {
+        "criterion_id": "AC-08",
+        "text": "Each closed child has a validated tracked artifact, the stage summary records change and proof per child, the handoff remains at or below 200 lines and is re-pinned, tj-rt7w.7 remains open and unstarted, exactly 3 authorized Luna calls are used only for tj-rt7w.1, and no other paid call, push, pull request, deploy, production or staging mutation, model configuration change, or real-user message occurs.",
+        "text_digest": "4a9624911b5835eeaf6a1877ba85c4484db1d9f3e2b484c2fedb956a0fffce7a"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-rt7w/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "6805c33059186402ec99fed558bcb2fdfeaec0c84521f2362cd3d009a004a92a",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-rt7w.8",
+      "stream_owner": "tj-rt7w.8-root-implementation",
+      "artifact_path": ".codex/stages/tj-rt7w-verification-fixes/artifacts/tj-rt7w.8.md"
+    },
+    {
+      "task_id": "tj-rt7w.9",
+      "stream_owner": "tj-rt7w.9-root-implementation",
+      "artifact_path": ".codex/stages/tj-rt7w-verification-fixes/artifacts/tj-rt7w.9.md"
+    },
+    {
+      "task_id": "tj-rt7w.11",
+      "stream_owner": "tj-rt7w.11-root-implementation",
+      "artifact_path": ".codex/stages/tj-rt7w-verification-fixes/artifacts/tj-rt7w.11.md"
+    },
+    {
+      "task_id": "tj-rt7w.12",
+      "stream_owner": "tj-rt7w.12-root-implementation",
+      "artifact_path": ".codex/stages/tj-rt7w-verification-fixes/artifacts/tj-rt7w.12.md"
+    },
+    {
+      "task_id": "tj-rt7w.13",
+      "stream_owner": "tj-rt7w.13-root-implementation",
+      "artifact_path": ".codex/stages/tj-rt7w-verification-fixes/artifacts/tj-rt7w.13.md"
+    }
+  ]
+}
