@@ -3,8 +3,8 @@
 Updated: 2026-08-11
 Current branch: `main`
 Current stage id: `tj-n7p4-judged-repairs`
-Status: stage 1 is accepted at `5ef5eeb`. Stage 2 is open from that exact tip;
-`tj-n7p4.1` is the active child. No stage-2 paid call has occurred.
+Status: stage 1 is accepted at `5ef5eeb`. Stage 2 `.1` is accepted; `.2` is
+next. No stage-2 paid call has occurred.
 
 Documentation: no external/versioned boundary — this stage changes first-party
 Python prompt and policy text and uses an existing provider client.
@@ -149,8 +149,8 @@ different thing, paid, and fires only on a flag.
 Next stage id: `tj-n7p4-judged-repairs`; it is now the active implementation
 stage and stays sequential through `.1`, `.2`, `.3`, `.6`, `.4`, `.5`.
 
-Recommended action: implement `tj-n7p4.1`, split pure classification from the
-named deterministic repair, and prove all 60 protected outputs unchanged.
+Recommended action: implement `tj-n7p4.2`, declare each of the six guards as
+replacing or removing, and prove all 60 protected outputs unchanged.
 
 After stage 2, the product track that has waited behind the cleanup: two P0 epics
 (`tj-2m5m`, `tj-swgu`), then the reader findings this round confirmed still live

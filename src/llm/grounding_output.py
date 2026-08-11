@@ -659,14 +659,15 @@ def _repair(
     return _tidy("".join(pieces))
 
 
-def enforce_grounding_output(
+def repair_grounding_output(
     text: str,
     *,
     language: str,
+    violations: Iterable[GroundingViolation] | None = None,
     inventory_confirmed: bool = False,
     grounded_amounts: Iterable[object] | None = None,
 ) -> GroundingOutputResult:
-    """Remove bounded violating sentences or fail closed with localized text.
+    """Apply the named deterministic repair to an explicit classification.
 
     `grounded_amounts` carries every sum of money verified for this turn --
     catalog rows read this turn plus figures the customer themselves wrote.
@@ -677,13 +678,20 @@ def enforce_grounding_output(
 
     original = str(text or "")
     try:
-        grounded = _grounded_set(grounded_amounts)
-        violations = _classify(
-            original,
-            inventory_confirmed=inventory_confirmed,
-            grounded_amounts=grounded,
+        grounded_values = (
+            tuple(grounded_amounts) if grounded_amounts is not None else None
         )
-        if not violations:
+        grounded = _grounded_set(grounded_values)
+        classified = (
+            tuple(violations)
+            if violations is not None
+            else classify_grounding_output(
+                original,
+                inventory_confirmed=inventory_confirmed,
+                grounded_amounts=grounded_values,
+            )
+        )
+        if not classified:
             return GroundingOutputResult(
                 text=original,
                 violations=(),
@@ -695,19 +703,19 @@ def enforce_grounding_output(
             inventory_confirmed=inventory_confirmed,
             grounded_amounts=grounded,
         )
-        if repaired and not _classify(
+        if repaired and not classify_grounding_output(
             repaired,
             inventory_confirmed=inventory_confirmed,
-            grounded_amounts=grounded,
+            grounded_amounts=grounded_values,
         ):
             return GroundingOutputResult(
                 text=repaired,
-                violations=violations,
+                violations=classified,
                 action=GroundingOutputAction.REPAIRED,
             )
         return GroundingOutputResult(
-            text=_fallback(violations, language=language),
-            violations=violations,
+            text=_fallback(classified, language=language),
+            violations=classified,
             action=GroundingOutputAction.REPLACED,
         )
     except Exception:
@@ -716,3 +724,8 @@ def enforce_grounding_output(
             violations=(),
             action=GroundingOutputAction.REPLACED,
         )
+
+
+# Compatibility name for existing callers. There is one repair function object;
+# production and the acceptance harness use its explicit repair name.
+enforce_grounding_output = repair_grounding_output

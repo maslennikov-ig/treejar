@@ -45,7 +45,10 @@ from src.llm.communication_policy import (
     COMMUNICATION_RULES_POLICY,
     finalize_evidence_grounding_prompt,
 )
-from src.llm.grounding_output import enforce_grounding_output
+from src.llm.grounding_output import (
+    classify_grounding_output,
+    repair_grounding_output,
+)
 from src.llm.opening_guard import apply_opening_guard
 from src.llm.prompts import BASE_SYSTEM_PROMPT, LANGUAGE_DIRECTIVE, STAGE_RULES
 from src.llm.sales_turn_guard import commit_to_what_you_deferred
@@ -465,9 +468,14 @@ def apply_shipped_output_guards(
         for product in catalog_evidence:
             if isinstance(product, dict) and product.get("price_aed") is not None:
                 grounded.append(product["price_aed"])
-    return enforce_grounding_output(
+    violations = classify_grounding_output(
+        text,
+        grounded_amounts=grounded,
+    )
+    return repair_grounding_output(
         text,
         language=language,
+        violations=violations,
         grounded_amounts=grounded,
     ).text
 

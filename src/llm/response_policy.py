@@ -10,7 +10,11 @@ from functools import partial
 from typing import Literal
 
 from src.llm.closed_question_guard import apply_closed_question_guard
-from src.llm.grounding_output import GroundingOutputResult, enforce_grounding_output
+from src.llm.grounding_output import (
+    GroundingOutputResult,
+    classify_grounding_output,
+    repair_grounding_output,
+)
 from src.llm.opening_guard import apply_opening_guard
 from src.llm.sales_turn_guard import (
     carry_the_company_question,
@@ -340,9 +344,15 @@ def render_reply(
         guard_name="deferred_commitment",
         guard=partial(commit_to_what_you_deferred, language=state.language),
     )
-    grounding = enforce_grounding_output(
+    violations = classify_grounding_output(
+        rendered,
+        inventory_confirmed=state.inventory_confirmed,
+        grounded_amounts=state.grounded_amounts,
+    )
+    grounding = repair_grounding_output(
         rendered,
         language=state.language,
+        violations=violations,
         inventory_confirmed=state.inventory_confirmed,
         grounded_amounts=state.grounded_amounts,
     )

@@ -64,5 +64,11 @@
   "scope_anchor": ".codex/goals/tj-n7p4/scope-criterion-snapshot.json",
   "scope_anchor_digest": "981ed9ac1c86b099f8156a90e94db6bb717560b5fef1d81786513c6ca847d449",
   "scope_ledger": "none",
-  "stream_artifacts": []
+  "stream_artifacts": [
+    {
+      "task_id": "tj-n7p4.1",
+      "stream_owner": "tj-n7p4.1-root-implementation",
+      "artifact_path": ".codex/stages/tj-n7p4-judged-repairs/artifacts/tj-n7p4.1.md"
+    }
+  ]
 }
