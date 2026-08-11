@@ -95,6 +95,56 @@ def test_every_patched_engine_name_the_processor_uses_still_goes_through_engine(
     )
 
 
+def _string_patch_targets_in_the_suite() -> set[str]:
+    found: set[str] = set()
+    for path in sorted(_TESTS.rglob("test_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+                and node.args[0].value.startswith("src.")
+            ):
+                found.add(node.args[0].value)
+    return found
+
+
+def _module_level_import_sources() -> dict[str, str]:
+    sources: dict[str, str] = {}
+    for node in _processor_module().body:
+        if isinstance(node, ast.ImportFrom) and node.module:
+            for alias in node.names:
+                sources[alias.asname or alias.name] = node.module
+    return sources
+
+
+def test_no_module_level_import_disconnects_a_patch_the_suite_relies_on() -> None:
+    """The same trap as above, one module out.
+
+    `tj-rt7w.10` hoisted `from src.core.config import get_system_config` to the
+    top of the file while extracting the turn's config reads. Twelve tests patch
+    `src.core.config.get_system_config`, and the module-level binding froze the
+    real one before the patch could land -- so twelve tests started running the
+    real config path against a mocked session. They failed loudly only because
+    the mock session returns coroutines; a stricter mock would have passed while
+    testing nothing.
+    """
+
+    sources = _module_level_import_sources()
+    disconnected = sorted(
+        target
+        for target in _string_patch_targets_in_the_suite()
+        if sources.get(target.rsplit(".", 1)[1]) == target.rsplit(".", 1)[0]
+    )
+
+    assert not disconnected, (
+        "the message processor binds these at import time, so the suite's "
+        f"patches of them are no-ops: {disconnected}"
+    )
+
+
 def test_the_processor_takes_no_untyped_runtime_module() -> None:
     """The split used to hand the engine in as `runtime: Any`.
 
