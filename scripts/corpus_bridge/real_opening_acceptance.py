@@ -1,4 +1,10 @@
-"""Run the frozen real-opening set through Luna and GLM outside Git."""
+"""Run the frozen real-opening set through Luna outside Git, and score it.
+
+The judge is the orchestrator itself, reading blind: `run` stops after the
+twenty generation calls and writes `reading-pack.json`, and `ingest-judgment`
+takes the reading back. `preflight --second-reader` adds a paid model beside
+that reading, never in place of it.
+"""
 
 from __future__ import annotations
 
@@ -61,7 +67,13 @@ from src.quality.schemas import (
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 GENERATOR_MODEL = "openai/gpt-5.6-luna"
-JUDGE_MODEL = "z-ai/glm-5.2"
+SECOND_READER_MODEL = "z-ai/glm-5.2"
+# The owner's standing decision, 2026-08-10 and reaffirmed 2026-08-11: the
+# result judge is the orchestrator itself, reading blind. A paid model may be
+# added beside it as a second reader, never in place of it. That is why the
+# root judge is the default here and `--second-reader` is the thing you have to
+# ask for: a deterministic guarantee beats a directive.
+ROOT_JUDGE = "root-orchestrator"
 GENERATOR_MAX_TOKENS = 1400
 JUDGE_MAX_TOKENS = 4000
 EXPECTED_OPENINGS = 20
@@ -113,8 +125,8 @@ def validate_complete_results(
     for item in results:
         if item.get("generator_model") != "openai/gpt-5.6-luna":
             raise ValueError("every result must come from Luna")
-        if item.get("judge_model") != "z-ai/glm-5.2":
-            raise ValueError("every result must have a GLM evaluation")
+        if item.get("judge_model") not in {SECOND_READER_MODEL, ROOT_JUDGE}:
+            raise ValueError("every result must be scored by the root judge or GLM")
         if not str(item.get("response") or "").strip():
             raise ValueError("every frozen opening needs a non-empty Luna response")
         failures = item.get("critical_failures")
@@ -713,8 +725,9 @@ def _provider_headers(title: str) -> dict[str, str]:
     }
 
 
-async def _pinned_model_catalog() -> dict[str, dict[str, Any]]:
-    models = (GENERATOR_MODEL, JUDGE_MODEL)
+async def _pinned_model_catalog(
+    models: tuple[str, ...],
+) -> dict[str, dict[str, Any]]:
     async with httpx.AsyncClient(
         base_url=settings.openrouter_base_url.rstrip("/"),
         headers=_provider_headers("Noor Real Opening Acceptance Preflight"),
@@ -723,7 +736,7 @@ async def _pinned_model_catalog() -> dict[str, dict[str, Any]]:
         pinned: dict[str, dict[str, Any]] = {}
         requirements = {
             GENERATOR_MODEL: {"max_tokens", "reasoning"},
-            JUDGE_MODEL: {"max_tokens", "response_format"},
+            SECOND_READER_MODEL: {"max_tokens", "response_format"},
         }
         for model in models:
             response = await client.get(f"/models/{model}/endpoints", timeout=30.0)
@@ -803,13 +816,18 @@ async def preflight(
     scenarios_path: pathlib.Path,
     output_dir: pathlib.Path,
     per_model_cap_usd: float,
+    second_reader: bool = False,
 ) -> dict[str, Any]:
     output_dir = ensure_protected_output(output_dir, repo_root=REPO_ROOT)
     if (output_dir / "preflight.json").exists():
         raise ValueError(f"preflight already exists: {output_dir}")
     scenarios = _load_frozen_scenarios(scenarios_path)
+    judge_model = SECOND_READER_MODEL if second_reader else ROOT_JUDGE
+    models = (
+        (GENERATOR_MODEL, SECOND_READER_MODEL) if second_reader else (GENERATOR_MODEL,)
+    )
     catalog, products = await asyncio.gather(
-        _pinned_model_catalog(), _fetch_catalog_summaries()
+        _pinned_model_catalog(models), _fetch_catalog_summaries()
     )
     if not products:
         raise ValueError("read-only catalog preflight returned no products")
@@ -829,7 +847,6 @@ async def preflight(
         }
     )
     generator_prices = _pricing(catalog, GENERATOR_MODEL)
-    judge_prices = _pricing(catalog, JUDGE_MODEL)
     estimates = {
         GENERATOR_MODEL: estimate_cost_usd(
             calls=EXPECTED_OPENINGS,
@@ -838,14 +855,16 @@ async def preflight(
             prompt_price=generator_prices[0],
             completion_price=generator_prices[1],
         ),
-        JUDGE_MODEL: estimate_cost_usd(
+    }
+    if second_reader:
+        judge_prices = _pricing(catalog, SECOND_READER_MODEL)
+        estimates[SECOND_READER_MODEL] = estimate_cost_usd(
             calls=EXPECTED_OPENINGS,
             max_input_tokens=judge_input_bound,
             max_output_tokens=JUDGE_MAX_TOKENS,
             prompt_price=judge_prices[0],
             completion_price=judge_prices[1],
-        ),
-    }
+        )
     too_expensive = {
         model: estimate
         for model, estimate in estimates.items()
@@ -885,16 +904,16 @@ async def preflight(
             ]
         ),
         "generation_model": GENERATOR_MODEL,
-        "judge_model": JUDGE_MODEL,
+        "judge_model": judge_model,
         "calls_per_model": EXPECTED_OPENINGS,
         "estimated_cost_usd": estimates,
         "per_model_cap_usd": {
-            GENERATOR_MODEL: per_model_cap_usd,
-            JUDGE_MODEL: per_model_cap_usd,
+            model: (0.0 if model == ROOT_JUDGE else per_model_cap_usd)
+            for model in (GENERATOR_MODEL, judge_model)
         },
         "input_token_upper_bounds": {
             GENERATOR_MODEL: generator_input_bound,
-            JUDGE_MODEL: judge_input_bound,
+            judge_model: (0 if judge_model == ROOT_JUDGE else judge_input_bound),
         },
         "model_catalog": public_catalog,
         "catalog_products": len(products),
@@ -1008,6 +1027,113 @@ def _judge_messages(
     ]
 
 
+def _reading_entry(
+    case: dict[str, Any], response: str, assessment: Any
+) -> dict[str, Any]:
+    """One opening exchange, prepared for the root judge to read blind.
+
+    It carries exactly what the second reader would have been sent -- the same
+    applicability instructions and the same frozen rubric text -- so the two
+    judges are answering the same question when both are used.
+    """
+
+    return {
+        "dialog_id": int(case["dialog_id"]),
+        "length_stratum": int(case["length_stratum"]),
+        "language": str(case["language"]),
+        "opening": str(case["opening"]),
+        "response": response,
+        "applicability_instructions": _format_applicability_instructions(
+            assessment.rule_applicability
+        ),
+        "rule_applicability": dict(assessment.rule_applicability),
+        "blocking_reasons": dict(assessment.blocking_reasons),
+    }
+
+
+def ingest_root_judgment(
+    output_dir: pathlib.Path, judgments_path: pathlib.Path
+) -> dict[str, Any]:
+    """Record the root judge's blind reading as this round's evaluation.
+
+    The judgment file is a JSON array of objects shaped exactly like the second
+    reader's reply -- `dialog_id`, `evaluation`, `red_flags` -- so the scoring,
+    the applicability finalisation, and the critical-failure derivation below
+    are the same code either way. Nothing here makes a model call.
+    """
+
+    output_dir = ensure_protected_output(output_dir, repo_root=REPO_ROOT)
+    preflight_doc = _read_object(output_dir / "preflight.json")
+    if str(preflight_doc["judge_model"]) != ROOT_JUDGE:
+        raise ValueError("this round was preflighted for a paid second reader")
+    cases_doc = json.loads(
+        (output_dir / "prepared-cases.json").read_text(encoding="utf-8")
+    )
+    cases = {int(case["dialog_id"]): case for case in cases_doc}
+    state_path = output_dir / "run-state.json"
+    state = _read_object(state_path)
+    records = state["records"]
+    payload = json.loads(judgments_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list) or len(payload) != EXPECTED_OPENINGS:
+        raise ValueError(f"expected {EXPECTED_OPENINGS} judgments")
+    seen: set[int] = set()
+    for item in payload:
+        dialog_id = int(item["dialog_id"])
+        if dialog_id in seen or dialog_id not in cases:
+            raise ValueError(f"judgment {dialog_id} is duplicated or unknown")
+        seen.add(dialog_id)
+        case = cases[dialog_id]
+        record = records[str(dialog_id)]
+        response_text = str(record["generation"]["content"])
+        assessment = _assessment(
+            opening=str(case["opening"]),
+            response=response_text,
+            language=str(case["language"]),
+            catalog_relevant=bool(case["catalog_relevant"]),
+        )
+        combined = CombinedJudgeResult.model_validate(
+            {"evaluation": item["evaluation"], "red_flags": item["red_flags"]}
+        )
+        evaluation = finalize_evaluation_result(
+            combined.evaluation,
+            applicability_map=assessment.rule_applicability,
+            diagnostic_blockers=assessment.blocking_reasons,
+            applicability_signals=assessment.signals,
+        )
+        language_ok = _language_matches(response_text, str(case["language"]))
+        ungrounded = find_ungrounded_numbers(response_text, case)
+        record["judge"] = {
+            "model": ROOT_JUDGE,
+            "provider_model": None,
+            "finish_reason": "stop",
+            "latency_ms": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "cost_micro_usd": 0,
+            "evaluation": evaluation.model_dump(mode="json"),
+            "red_flags": combined.red_flags.model_dump(mode="json"),
+            "ungrounded_numbers": ungrounded,
+            "language_ok": language_ok,
+            "critical_failures": critical_failure_codes(
+                red_flag_codes=[flag.code for flag in combined.red_flags.flags],
+                ungrounded_numbers=ungrounded,
+                language_ok=language_ok,
+            ),
+            "raw_verdict": None,
+        }
+    public = _analyze_completed_state(
+        preflight_doc=preflight_doc,
+        cases_doc=cases_doc,
+        state=state,
+    )
+    state["completed_at"] = datetime.now(UTC).isoformat()
+    state["public_summary"] = public
+    state["actual_cost_usd"] = _actual_cost_by_model(state, ROOT_JUDGE)
+    _write_protected_json(state_path, state)
+    _write_protected_json(output_dir / "analysis.json", public)
+    return public
+
+
 def _canonical_numeric_token(token: str) -> str:
     cleaned = token.rstrip("%").replace(",", "")
     try:
@@ -1050,8 +1176,10 @@ def find_ungrounded_numbers(response: str, case: dict[str, Any]) -> list[str]:
     return sorted(asserted - _allowed_numbers(case))
 
 
-def _actual_cost_by_model(state: dict[str, Any]) -> dict[str, float]:
-    totals = {GENERATOR_MODEL: 0.0, JUDGE_MODEL: 0.0}
+def _actual_cost_by_model(
+    state: dict[str, Any], judge_model: str = SECOND_READER_MODEL
+) -> dict[str, float]:
+    totals = {GENERATOR_MODEL: 0.0, judge_model: 0.0}
     records = state.get("records")
     if not isinstance(records, dict):
         return totals
@@ -1065,12 +1193,12 @@ def _actual_cost_by_model(state: dict[str, Any]) -> dict[str, float]:
                 int(generation.get("cost_micro_usd") or 0) / 1_000_000
             )
         if isinstance(judge, dict):
-            totals[JUDGE_MODEL] += int(judge.get("cost_micro_usd") or 0) / 1_000_000
+            totals[judge_model] += int(judge.get("cost_micro_usd") or 0) / 1_000_000
     return totals
 
 
 def _enforce_actual_caps(state: dict[str, Any], preflight_doc: dict[str, Any]) -> None:
-    actual = _actual_cost_by_model(state)
+    actual = _actual_cost_by_model(state, str(preflight_doc["judge_model"]))
     caps = preflight_doc["per_model_cap_usd"]
     exceeded = [
         f"{model}: ${cost:.6f} > ${float(caps[model]):.6f}"
@@ -1091,9 +1219,10 @@ def _analyze_completed_state(
     calls_started = state.get("calls_started")
     if not isinstance(records, dict) or not isinstance(calls_started, dict):
         raise ValueError("protected run state is incomplete")
+    judge_model = str(preflight_doc["judge_model"])
     if calls_started != {
         GENERATOR_MODEL: EXPECTED_OPENINGS,
-        JUDGE_MODEL: EXPECTED_OPENINGS,
+        judge_model: 0 if judge_model == ROOT_JUDGE else EXPECTED_OPENINGS,
     }:
         raise RuntimeError(f"paid-call journal is incomplete: {calls_started}")
 
@@ -1120,7 +1249,7 @@ def _analyze_completed_state(
                 "opening": str(record["opening"]),
                 "response": str(generation["content"]),
                 "generator_model": GENERATOR_MODEL,
-                "judge_model": JUDGE_MODEL,
+                "judge_model": judge_model,
                 "latency_ms": int(generation["latency_ms"]) + int(judge["latency_ms"]),
                 "luna_latency_ms": int(generation["latency_ms"]),
                 "glm_latency_ms": int(judge["latency_ms"]),
@@ -1146,7 +1275,7 @@ def _analyze_completed_state(
     public = build_public_summary(
         results, bootstrap_samples=BOOTSTRAP_SAMPLES, seed=BOOTSTRAP_SEED
     )
-    actual_costs = _actual_cost_by_model(state)
+    actual_costs = _actual_cost_by_model(state, judge_model)
     public["measurement"] = {
         "scenario_digest": str(preflight_doc["scenario_digest"]),
         "generation_prompt_set_digest": _sha256_json(
@@ -1158,7 +1287,7 @@ def _analyze_completed_state(
         "model_catalog_digest": _sha256_json(preflight_doc["model_catalog"]),
         "calls_started": {
             GENERATOR_MODEL: int(calls_started[GENERATOR_MODEL]),
-            JUDGE_MODEL: int(calls_started[JUDGE_MODEL]),
+            judge_model: int(calls_started[judge_model]),
         },
         "actual_cost_micro_usd": {
             model: round(cost * 1_000_000) for model, cost in actual_costs.items()
@@ -1173,7 +1302,7 @@ def _analyze_completed_state(
             )
             for model, arm in (
                 (GENERATOR_MODEL, "generation"),
-                (JUDGE_MODEL, "judge"),
+                (judge_model, "judge"),
             )
         },
     }
@@ -1209,6 +1338,7 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
     )
     if not isinstance(cases_doc, list) or len(cases_doc) != EXPECTED_OPENINGS:
         raise ValueError("prepared cases are incomplete")
+    judge_model = str(preflight_doc["judge_model"])
     state_path = output_dir / "run-state.json"
     state = (
         _read_object(state_path)
@@ -1216,7 +1346,7 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
         else {
             "schema_version": "treejar-real-opening-run-state/v1",
             "started_at": datetime.now(UTC).isoformat(),
-            "calls_started": {GENERATOR_MODEL: 0, JUDGE_MODEL: 0},
+            "calls_started": {GENERATOR_MODEL: 0, judge_model: 0},
             "records": {},
         }
     )
@@ -1311,20 +1441,28 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                 language=str(case["language"]),
                 catalog_relevant=bool(case["catalog_relevant"]),
             )
+            if judge_model == ROOT_JUDGE:
+                # No second reader was authorized, so the round stops at the
+                # generation arm and writes the pack the root judge reads.
+                record["reading"] = _reading_entry(case, response_text, assessment)
+                _write_protected_json(state_path, state)
+                continue
             if not isinstance(record.get("judge"), dict):
                 if record.get("judge_request_started_at") is not None:
                     raise RuntimeError(
                         f"dialog {dialog_id}: GLM request outcome is ambiguous; "
                         "refusing a duplicate paid call"
                     )
-                calls_started[JUDGE_MODEL] = (
-                    int(calls_started.get(JUDGE_MODEL) or 0) + 1
+                calls_started[SECOND_READER_MODEL] = (
+                    int(calls_started.get(SECOND_READER_MODEL) or 0) + 1
                 )
-                if int(calls_started[JUDGE_MODEL]) > EXPECTED_OPENINGS:
+                if int(calls_started[SECOND_READER_MODEL]) > EXPECTED_OPENINGS:
                     raise RuntimeError("GLM paid-call count would exceed 20")
                 record["judge_request_started_at"] = datetime.now(UTC).isoformat()
                 _write_protected_json(state_path, state)
-                order, quantizations = _provider_route(preflight_doc, JUDGE_MODEL)
+                order, quantizations = _provider_route(
+                    preflight_doc, SECOND_READER_MODEL
+                )
                 messages = _judge_messages(
                     opening=str(case["opening"]),
                     response=response_text,
@@ -1332,7 +1470,7 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                     assessment=assessment,
                 )
                 payload = build_base_payload(
-                    model=JUDGE_MODEL,
+                    model=SECOND_READER_MODEL,
                     messages=messages,
                     max_tokens=JUDGE_MAX_TOKENS,
                     reasoning_enabled=False,
@@ -1362,7 +1500,7 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                     language_ok=language_ok,
                 )
                 record["judge"] = {
-                    "model": JUDGE_MODEL,
+                    "model": SECOND_READER_MODEL,
                     "provider_model": body.get("model"),
                     "finish_reason": finish_reason,
                     "latency_ms": latency_ms,
@@ -1381,12 +1519,25 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                     flush=True,
                 )
 
+    if judge_model == ROOT_JUDGE:
+        pack = [records[str(int(case["dialog_id"]))]["reading"] for case in cases_doc]
+        _write_protected_json(output_dir / "reading-pack.json", pack)
+        state["actual_cost_usd"] = _actual_cost_by_model(state, judge_model)
+        _write_protected_json(state_path, state)
+        return {
+            "judge_model": ROOT_JUDGE,
+            "generation_complete": len(pack) == EXPECTED_OPENINGS,
+            "next": (
+                "read reading-pack.json, then `ingest-judgment --judgments <file>`"
+            ),
+        }
+
     public = _analyze_completed_state(
         preflight_doc=preflight_doc,
         cases_doc=cases_doc,
         state=state,
     )
-    actual_costs = _actual_cost_by_model(state)
+    actual_costs = _actual_cost_by_model(state, judge_model)
     state["completed_at"] = datetime.now(UTC).isoformat()
     state["public_summary"] = public
     state["actual_cost_usd"] = actual_costs
@@ -1417,8 +1568,19 @@ def _parse_args() -> argparse.Namespace:
     preflight_parser.add_argument(
         "--per-model-cap-usd", type=float, default=DEFAULT_MODEL_CAP_USD
     )
+    preflight_parser.add_argument(
+        "--second-reader",
+        action="store_true",
+        help=(
+            "also pay a second reader to score the round. The root judge "
+            "reads it either way; this only adds a second scale beside it."
+        ),
+    )
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("--output-dir", type=pathlib.Path, required=True)
+    ingest_parser = subparsers.add_parser("ingest-judgment")
+    ingest_parser.add_argument("--output-dir", type=pathlib.Path, required=True)
+    ingest_parser.add_argument("--judgments", type=pathlib.Path, required=True)
     analyze_parser = subparsers.add_parser("analyze")
     analyze_parser.add_argument("--output-dir", type=pathlib.Path, required=True)
     summary_parser = subparsers.add_parser("summary")
@@ -1435,11 +1597,15 @@ def main() -> int:
                     scenarios_path=args.scenarios,
                     output_dir=args.output_dir,
                     per_model_cap_usd=args.per_model_cap_usd,
+                    second_reader=args.second_reader,
                 )
             )
             print(json.dumps(_public_preflight(document), indent=2, sort_keys=True))
         elif args.command == "run":
             public = asyncio.run(run_paid_round(args.output_dir))
+            print(json.dumps(public, indent=2, sort_keys=True))
+        elif args.command == "ingest-judgment":
+            public = ingest_root_judgment(args.output_dir, args.judgments)
             print(json.dumps(public, indent=2, sort_keys=True))
         elif args.command == "analyze":
             public = analyze_protected_run(args.output_dir)

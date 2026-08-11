@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import pathlib
+import sys
+from unittest.mock import patch
 
 import pytest
 from scripts.corpus_bridge.real_opening_acceptance import (
+    ROOT_JUDGE,
     _load_frozen_scenarios,
+    _parse_args,
     apply_shipped_output_guards,
     build_generation_messages,
     build_public_summary,
@@ -17,6 +22,7 @@ from scripts.corpus_bridge.real_opening_acceptance import (
     estimate_cost_usd,
     expected_language,
     find_ungrounded_numbers,
+    preflight,
     validate_complete_results,
 )
 
@@ -359,3 +365,37 @@ def test_the_harness_commits_to_what_it_defers() -> None:
     )
 
     assert "I'll confirm assembly with our team and come back to you." in committed
+
+
+def test_the_round_judges_itself_unless_a_second_reader_is_asked_for() -> None:
+    """The owner's standing decision, as a default rather than a directive.
+
+    The judge is the orchestrator reading blind. A paid model may be added
+    beside that reading; it may not replace it. `preflight` therefore has to be
+    told `--second-reader` before any judging call can be paid for, and the run
+    that is not told stops after the generation arm.
+    """
+
+    signature = inspect.signature(preflight)
+    assert signature.parameters["second_reader"].default is False
+
+    argv = ["preflight", "--scenarios", "s.json", "--output-dir", "out"]
+    with patch.object(sys, "argv", ["prog", *argv]):
+        assert _parse_args().second_reader is False
+    with patch.object(sys, "argv", ["prog", *argv, "--second-reader"]):
+        assert _parse_args().second_reader is True
+
+
+def test_a_root_judged_result_is_a_complete_result() -> None:
+    """The scoring path is the same one either judge feeds."""
+
+    results = [_result(index) for index in range(1, 21)]
+    for item in results:
+        item["judge_model"] = ROOT_JUDGE
+        item["glm_latency_ms"] = 0
+
+    validate_complete_results(results, expected_dialog_ids=set(range(1, 21)))
+
+    results[0]["judge_model"] = "anthropic/claude-haiku-4.5"
+    with pytest.raises(ValueError, match="root judge"):
+        validate_complete_results(results, expected_dialog_ids=set(range(1, 21)))

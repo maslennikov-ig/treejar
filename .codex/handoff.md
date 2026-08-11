@@ -2,9 +2,9 @@
 
 Updated: 2026-08-11
 Current branch: `main`
-Accepted stage id: `tj-rt7w-real-split`
-Status: `tj-rt7w.1`-`.6`, `.8`, `.9`, `.10`-`.13` closed. `tj-rt7w.7` and `.14`
-are open; `.7` is the last thing between the epic and its close.
+Accepted stage id: `tj-rt7w-measured-round`
+Status: `tj-rt7w.1`-`.13` closed, including `.7`. `.14` is open and owes a
+measured round of its own. The epic's structural work is done and measured.
 
 Documentation: no external/versioned boundary — this stage changes internal
 first-party Python structure only.
@@ -44,8 +44,13 @@ first-party Python structure only.
 - The canonical runtime target remains `https://noor.starec.ai`; nothing has
   been pushed, deployed, or applied to production or staging.
 - Production data is Postgres in `noor-db-1` on `noor-server`, not Supabase.
-- Luna remains the main generation model. The owner requires the agent itself to
-  be the result judge, not the product's built-in judge.
+- Luna is the product's generation model; GLM is the alternate-vendor model for
+  a second opinion or alternate text. **The judge of a measured round is the
+  orchestrating agent itself, reading blind**, and a paid model may only be a
+  second reader beside it. That is now the harness default rather than a
+  directive: `real_opening_acceptance.py` stops after the generation arm and
+  writes `reading-pack.json`, and paying a second reader takes
+  `preflight --second-reader`.
 - The protected corpus remains outside Git under the git-common-dir
   orchestration state. Tracked evidence may carry `dialog_id` and integers only.
 - Both scoring rulers and applicability/rubric logic remain frozen. Never treat
@@ -78,18 +83,28 @@ Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
 - Guard, policy, catalog-planning, response-runtime, order-quote-route and
   engine sources are byte-identical to `19556ba`.
 
-## Active work
+## The measured round, `tj-rt7w.7`
 
-- `tj-rt7w.7` is open and now unblocked. It is the paired measured round after
-  the structural work, on the frozen twenty openings, seed `20260810`, paired
-  against `8cfbe91`. The expected result is no movement: no step in this epic
-  targets the rubric, and movement smaller than the instrument's uncertainty is
-  not evidence. It is run for the critical-failure count and for a read of the
-  three paths that now run grounding for the first time.
-- **`.7` needs current owner authority.** The owner recorded 20 Luna + 20 GLM
-  calls (about $0.18) for exactly this task; no paid call has been made in this
-  session, and the authority to spend must be current, not inherited.
-- Epic `tj-rt7w` stays in progress until `.7` is completed or dispositioned.
+Run at `33c8f1f` on the frozen seed-`20260810` twenty. The owner authorised
+20 Luna + 20 GLM and then chose to drop the second reader, so: **20 Luna calls,
+zero judging calls, $0.004661**. Report:
+`docs/reports/2026-08-11-the-round-after-the-cleanup.md`.
+
+- 20/20 responses, 20/20 evaluations, 20/20 language. **One critical failure in
+  1/20**, so the round does not pass its own fourth criterion.
+- The failure is `tj-riim`: on the recruitment opening the reply promises to
+  route the CV and call back, and can do neither. Not attributable to this epic
+  -- nothing here touches recruitment, and the stored `8e50dea` reply on that
+  opening was honest. Live defect either way.
+- **No paired score delta is reportable.** The judge changed, and the project
+  forbids comparing across judges; two judges on the same texts differed by 3.8
+  points systematically. This round is the baseline for the next one.
+- What the round was for is answered: the epic changed nothing it did not mean
+  to, and `tj-rt7w.1` holds in the live path -- dialog 789 no longer offers to
+  value customer-owned furniture.
+- The three out-of-scope `tj-vz7o.12` defects reproduce unchanged. New detail:
+  the missing-quote defect is inconsistent, not absent -- four openings on the
+  same run did quote priced rows.
 
 ## Constraints
 
@@ -110,25 +125,27 @@ Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
 
 ## Next recommended
 
-Next stage id: `tj-rt7w-measured-round`
+Next stage id: `tj-product-defects`
 
-Recommended action: `tj-rt7w.7`, once the owner confirms the paid calls now.
-Nothing else in the epic is blocked, and nothing else is worth doing first:
-`.14` owes a measured round of its own under R5, so it queues behind `.7` by
-the same rule.
+Recommended action: the product track, which has been deferred behind the
+cleanup and is now unblocked. Two P0 epics (`tj-2m5m`, `tj-swgu`), then the
+reader findings that this round confirmed still live: `tj-riim`, `tj-vz7o.12`,
+`tj-wvo4`, `tj-odeq`. `tj-rt7w.14` owes a measured round under R5 and queues
+with them.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for `tj-rt7w-measured-round` and Bead `tj-rt7w.7`. Ask
-for the paid-call authority by name and amount before spending anything. Run the
-paired round on the frozen twenty openings at seed `20260810` against `8cfbe91`,
-same second reader, judged by the agent itself per the standing owner decision.
-Report the delta with its uncertainty and per attainable ceiling, never an
-absolute level, and treat no movement as the expected result.
+Use $orchestrator-stage for the product track. Read `AGENTS.md`,
+`.codex/orchestrator.toml`, this handoff and
+`docs/reports/2026-08-11-the-round-after-the-cleanup.md` first. Take `tj-riim`
+and `tj-vz7o.12` in order of certainty, prompt-first and measured per R5, and
+never ride a refactor and a behaviour change in the same round per R6. The next
+measured round is the first one comparable with 2026-08-11, because the judge is
+the same. Ask for paid-call authority by name and amount before spending.
 
 ## Explicit defers
 
-- `tj-rt7w.7`: paired 20+20 measured round, open, waiting on current authority.
 - `tj-rt7w.14`: the R2 bound has no semantic half; a fix owes a measured round.
+- `tj-riim`: found by this round, not fixed here; a fix owes a measured round.
 - Deterministic-route retirement: explicitly outside this stream.
 - Deployment and any live proof: not authorized or performed here.

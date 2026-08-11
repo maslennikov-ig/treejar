@@ -28,6 +28,7 @@ Typical code-change gates in this repo include:
 
 ## Safety Boundaries
 
+- The judge of a measured round is the orchestrating agent itself, reading blind. A paid model may be added beside that reading as a second reader, never in place of it. Standing owner decision; the acceptance harness defaults to it.
 - Keep one task per branch or dedicated worktree.
 - Prefer dedicated worktrees for delegated or parallel streams.
 - Keep canonical runtime triage, deploy drift, and product fixes in separate delivery streams.
