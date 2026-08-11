@@ -6,7 +6,6 @@ import json
 import logging
 import math
 import re
-import sys
 from collections.abc import (
     Callable,
     Iterable,
@@ -78,7 +77,9 @@ from src.dialogue.runner import (
     expected_answer_match_payload,
     quote_consent_signal,
     record_legacy_route,
-    run_dialogue_kernel,
+)
+from src.dialogue.runner import (
+    run_dialogue_kernel as run_dialogue_kernel,
 )
 from src.dialogue.state import DialogueState, ExpectedAnswerFrame, ExpectedSlot
 from src.integrations.crm.zoho_crm import (
@@ -129,9 +130,15 @@ from src.llm.catalog_planning import (
     _track_sales_tool,
     _zoho_stock_for_catalog_candidates,
 )
+from src.llm.catalog_planning import (
+    _materialize_verified_catalog_recovery as _materialize_verified_catalog_recovery,
+)
+from src.llm.catalog_planning import (
+    _try_verified_catalog_plan as _try_verified_catalog_plan,
+)
 from src.llm.closed_question_guard import response_asks_customer_name
 from src.llm.communication_policy import finalize_evidence_grounding_prompt
-from src.llm.context import build_message_history
+from src.llm.context import build_message_history as build_message_history
 from src.llm.fact_extractor import (
     CustomerFactExtractionResult,
     ExtractedCustomerFact,
@@ -191,9 +198,11 @@ from src.llm.verified_answers import (
     build_service_handoff_response,
     build_service_runtime_directives,
     classify_product_match,
-    evaluate_verified_answer_policy,
     is_quote_or_proposal_hold,
     is_quote_or_proposal_request,
+)
+from src.llm.verified_answers import (
+    evaluate_verified_answer_policy as evaluate_verified_answer_policy,
 )
 from src.models.conversation import Conversation
 from src.models.product import Product
@@ -208,7 +217,9 @@ from src.services.bot_behavior_rules import (
     BehaviorRuleSearchContext,
     format_behavior_rules_prompt,
     rule_to_applied_dict,
-    search_behavior_rules,
+)
+from src.services.bot_behavior_rules import (
+    search_behavior_rules as search_behavior_rules,
 )
 from src.services.customer_identity import (
     build_bounded_returning_customer_context,
@@ -11823,27 +11834,29 @@ async def process_message(
 
     from src.llm.message_processor import process_message_impl
 
-    async def pending_reference_route(*args: Any, **kwargs: Any) -> Any:
-        return await _pending_reference_route_for_turn(*args, **kwargs)
+    # Both routes are adapter-owned, and two AST tests hold them to being
+    # selected here rather than re-inlined. `tj-rt7w.6` moved the orchestration
+    # sequence out to `message_processor` and kept these calls alive with
+    # `*args: Any` wrappers, which is the only reason those tests still pass.
+    # They are typed now; `tj-rt7w.10` removes them by putting the orchestration
+    # back where the tests say it lives.
+    async def pending_reference_route(**kwargs: Any) -> PendingReferenceRoute:
+        return await _pending_reference_route_for_turn(**kwargs)
 
-    async def order_quote_route(*args: Any, **kwargs: Any) -> Any:
-        return await _order_quote_route_for_turn(*args, **kwargs)
+    async def order_quote_route(**kwargs: Any) -> LLMResponse | None:
+        return await _order_quote_route_for_turn(**kwargs)
 
-    return cast(
-        "LLMResponse",
-        await process_message_impl(
-            runtime=sys.modules[__name__],
-            pending_reference_route=pending_reference_route,
-            order_quote_route=order_quote_route,
-            conversation_id=conversation_id,
-            combined_text=combined_text,
-            db=db,
-            redis=redis,
-            embedding_engine=embedding_engine,
-            zoho_client=zoho_client,
-            messaging_client=messaging_client,
-            crm_client=crm_client,
-            source_message_id=source_message_id,
-            latency_trace=latency_trace,
-        ),
+    return await process_message_impl(
+        pending_reference_route=pending_reference_route,
+        order_quote_route=order_quote_route,
+        conversation_id=conversation_id,
+        combined_text=combined_text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding_engine,
+        zoho_client=zoho_client,
+        messaging_client=messaging_client,
+        crm_client=crm_client,
+        source_message_id=source_message_id,
+        latency_trace=latency_trace,
     )

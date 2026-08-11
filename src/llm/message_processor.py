@@ -1,13 +1,133 @@
-"""Runtime implementation behind :func:`src.llm.engine.process_message`."""
+"""Runtime implementation behind :func:`src.llm.engine.process_message`.
+
+The split that created this module took the engine in as a parameter --
+``runtime: Any`` -- and read 160 names off it at the top of the call. That kept
+the ``src.llm.engine.*`` patch points the suite has always used, and it cost
+every type in the file: each of those names was ``Any``, so Mypy checked nothing
+across two thousand lines of the hottest path in the product. A call to
+``_catalog_planning_for_turn`` with four positional arguments and an invented
+keyword passed clean.
+
+Importing the module gets both. ``engine.foo`` is still resolved at the moment
+of use, so patching ``src.llm.engine.foo`` still lands, and Mypy knows what
+``engine.foo`` is. Most collaborators do not need even that and are imported
+from the module that defines them; the handful that must stay engine-resolved
+are the ones the suite patches, and
+``tests/test_llm_message_processor_patch_points.py`` derives that set from the
+suite rather than trusting anyone to keep a second list correct.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any, Literal, cast
+import datetime
+import json
+import logging
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import replace
+from typing import TYPE_CHECKING, Any, Literal
 
-from src.llm.order_quote_routes import build_declared_static_response
+from pydantic_ai._run_context import RunContext
+from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    UserPromptPart,
+)
+from pydantic_ai.providers.openrouter import OpenRouterProvider
+from pydantic_ai.usage import RunUsage
+
+import src.llm.engine as engine
+from src.core.config import settings
+from src.dialogue.order_guards import quotation_claimed_without_call
+from src.dialogue.order_state import (
+    QuoteConsent,
+    QuoteLifecycle,
+    QuoteWorkflowState,
+    quote_workflow_from_metadata,
+)
+from src.dialogue.runner import (
+    quote_consent_signal,
+    record_legacy_route,
+)
+from src.llm.catalog_planning import (
+    CLAIM_CONTRACT_SCOPE_KEY,
+    SalesDeps,
+    _catalog_decision_defects,
+    _catalog_decision_output_is_valid,
+    _catalog_decision_repair_directive,
+    _catalog_decision_runtime_directive,
+    _catalog_planning_for_turn,
+    _catalog_recovery_output_is_valid,
+    _claim_contract_directive,
+    _claim_contract_runs_every_catalog_turn,
+    _complete_verified_cross_sell_for_recovery,
+    _enforce_claim_contract,
+    _log_claim_contract,
+    _materialize_verified_catalog_facts,
+    _should_override_policy_for_catalog_fact_query,
+    _store_catalog_planning,
+    _turn_owes_the_company_question,
+    _verified_prose_response,
+    _verify_volunteered_claims,
+    catalog_anchor_line,
+    grounded_amounts_for_turn,
+)
+from src.llm.closed_question_guard import response_asks_customer_name
+from src.llm.grounding_output import GroundingOutputAction
+from src.llm.order_quote_routes import (
+    build_declared_static_response,
+)
+from src.llm.pii import (
+    mask_pii,
+    unmask_pii,
+)
+from src.llm.response_policy import (
+    ReplyPolicyState,
+    render_reply,
+)
+from src.llm.response_policy import (
+    last_assistant_asked_quote_customer_details as _last_assistant_asked_quote_customer_details,
+)
+from src.llm.response_runtime import (
+    PendingReferenceRoute,
+    _product_media_is_referenced,
+    _response_from_rendered_reply,
+)
+from src.llm.safety import (
+    PATH_CORE_CHAT,
+    get_llm_usage_telemetry,
+    model_name_for_path,
+    model_settings_for_path,
+    run_agent_with_safety,
+)
+from src.llm.verified_answers import (
+    build_clarification_response,
+    build_quote_or_proposal_clarification_response,
+    build_sales_fallback_response,
+    build_service_handoff_reason,
+    build_service_handoff_response,
+    build_service_runtime_directives,
+    is_quote_or_proposal_request,
+)
+from src.models.conversation import Conversation
+from src.services.bot_behavior_rules import (
+    BehaviorRuleSearchContext,
+    rule_to_applied_dict,
+)
+from src.services.customer_identity import build_bounded_returning_customer_context
+from src.services.customer_language import (
+    is_arabic_customer_language,
+    is_strongly_arabic_customer_text,
+)
+from src.services.escalation_state import is_active_human_handoff
+from src.services.runtime_execution_evidence import (
+    extract_runtime_tool_traces,
+)
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from pydantic_ai.messages import (
         ModelRequest as ModelRequestT,
     )
@@ -15,8 +135,12 @@ if TYPE_CHECKING:
         ModelResponse as ModelResponseT,
     )
     from pydantic_ai.usage import RunUsage as RunUsageT
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from src.dialogue.runner import DialogueKernelResult as DialogueKernelResultT
+    from src.integrations.crm.zoho_crm import ZohoCRMClient
+    from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
+    from src.integrations.messaging.base import MessagingProvider
     from src.llm.catalog_planning import SalesDeps as SalesDepsT
     from src.llm.response_policy import (
         RenderedReply as RenderedReplyT,
@@ -34,26 +158,31 @@ if TYPE_CHECKING:
         OpenRouterTelemetryChatModel as OpenAIChatModelT,
     )
     from src.models.conversation import Conversation as ConversationT
+    from src.rag.embeddings import EmbeddingEngine
+    from src.services.chat_latency import ChatLatencyTrace
     from src.services.runtime_execution_evidence import (
         RuntimeToolTrace as RuntimeToolTraceT,
     )
 
 
+logger = logging.getLogger("src.llm.engine")
+
+
 async def process_message_impl(
-    runtime: Any,
-    pending_reference_route: Any,
-    order_quote_route: Any,
-    conversation_id: Any,
+    *,
+    pending_reference_route: Callable[..., Awaitable[PendingReferenceRoute]],
+    order_quote_route: Callable[..., Awaitable[LLMResponseT | None]],
+    conversation_id: UUID,
     combined_text: str,
-    db: Any,
+    db: AsyncSession,
     redis: Any,
-    embedding_engine: Any,
-    zoho_client: Any,
-    messaging_client: Any,
-    crm_client: Any = None,
+    embedding_engine: EmbeddingEngine,
+    zoho_client: ZohoInventoryClient,
+    messaging_client: MessagingProvider,
+    crm_client: ZohoCRMClient | None = None,
     source_message_id: str | None = None,
-    latency_trace: Any = None,
-) -> Any:
+    latency_trace: ChatLatencyTrace | None = None,
+) -> LLMResponseT:
     """Process an incoming message through the PydanticAI agent.
 
     1. Loads conversation
@@ -63,232 +192,135 @@ async def process_message_impl(
     5. Unmasks PII in response when masking was enabled
     """
 
-    # Resolve through engine at call time so its established patch points stay valid.
-    BehaviorRuleSearchContext = runtime.BehaviorRuleSearchContext
-    CLAIM_CONTRACT_SCOPE_KEY = runtime.CLAIM_CONTRACT_SCOPE_KEY
-    Conversation = runtime.Conversation
-    DialogueKernelResult = runtime.DialogueKernelResult
-    GroundingOutputAction = runtime.GroundingOutputAction
-    LLMResponse = runtime.LLMResponse
-    MIXED_PRODUCT_SERVICE_DIRECTIVES = runtime.MIXED_PRODUCT_SERVICE_DIRECTIVES
-    ModelRequest = runtime.ModelRequest
-    ModelResponse = runtime.ModelResponse
-    OpenAIChatModel = runtime.OpenAIChatModel
-    OpenRouterProvider = runtime.OpenRouterProvider
-    PATH_CORE_CHAT = runtime.PATH_CORE_CHAT
-    PRODUCT_PREFERENCE_ANSWER_DIRECTIVES = runtime.PRODUCT_PREFERENCE_ANSWER_DIRECTIVES
-    ProductMediaPayload = runtime.ProductMediaPayload
-    QuoteConsent = runtime.QuoteConsent
-    QuoteLifecycle = runtime.QuoteLifecycle
-    QuoteWorkflowState = runtime.QuoteWorkflowState
-    RenderedReply = runtime.RenderedReply
-    ReplyPolicyState = runtime.ReplyPolicyState
-    ReplyProvenance = runtime.ReplyProvenance
-    RunContext = runtime.RunContext
-    RunUsage = runtime.RunUsage
-    RuntimeToolTrace = runtime.RuntimeToolTrace
-    SalesDeps = runtime.SalesDeps
-    TextPart = runtime.TextPart
-    UnexpectedModelBehavior = runtime.UnexpectedModelBehavior
-    UserPromptPart = runtime.UserPromptPart
-    VERIFIED_POLICY_REPAIR_KEY = runtime.VERIFIED_POLICY_REPAIR_KEY
+    # Resolved through the engine module at call time, so the patch points the
+    # suite has always used keep working -- and, because the module is imported
+    # rather than passed in as an object, mypy still checks every call below.
+    MIXED_PRODUCT_SERVICE_DIRECTIVES = engine.MIXED_PRODUCT_SERVICE_DIRECTIVES
+    OpenAIChatModel = engine.OpenAIChatModel
+    PRODUCT_PREFERENCE_ANSWER_DIRECTIVES = engine.PRODUCT_PREFERENCE_ANSWER_DIRECTIVES
+    VERIFIED_POLICY_REPAIR_KEY = engine.VERIFIED_POLICY_REPAIR_KEY
     _POST_QUOTATION_GENERIC_ACCEPTANCE_EXACT = (
-        runtime._POST_QUOTATION_GENERIC_ACCEPTANCE_EXACT
+        engine._POST_QUOTATION_GENERIC_ACCEPTANCE_EXACT
     )
-    _accepts_exact_item_quote_followup = runtime._accepts_exact_item_quote_followup
+    _accepts_exact_item_quote_followup = engine._accepts_exact_item_quote_followup
     _active_pending_quote_selection_from_conversation = (
-        runtime._active_pending_quote_selection_from_conversation
+        engine._active_pending_quote_selection_from_conversation
     )
     _capture_expected_answer_frames_from_assistant_response = (
-        runtime._capture_expected_answer_frames_from_assistant_response
-    )
-    _catalog_decision_defects = runtime._catalog_decision_defects
-    _catalog_decision_output_is_valid = runtime._catalog_decision_output_is_valid
-    _catalog_decision_repair_directive = runtime._catalog_decision_repair_directive
-    _catalog_decision_runtime_directive = runtime._catalog_decision_runtime_directive
-    _catalog_planning_for_turn = runtime._catalog_planning_for_turn
-    _catalog_recovery_output_is_valid = runtime._catalog_recovery_output_is_valid
-    _claim_contract_directive = runtime._claim_contract_directive
-    _claim_contract_runs_every_catalog_turn = (
-        runtime._claim_contract_runs_every_catalog_turn
+        engine._capture_expected_answer_frames_from_assistant_response
     )
     _clear_pending_quote_brief_confirmation = (
-        runtime._clear_pending_quote_brief_confirmation
+        engine._clear_pending_quote_brief_confirmation
     )
-    _complete_verified_cross_sell_for_recovery = (
-        runtime._complete_verified_cross_sell_for_recovery
-    )
-    _consume_name_gate_pending_request = runtime._consume_name_gate_pending_request
-    _create_or_reuse_sales_opportunity = runtime._create_or_reuse_sales_opportunity
-    _customer_facts_int_config = runtime._customer_facts_int_config
-    _detail_capture_acknowledgement = runtime._detail_capture_acknowledgement
-    _dialogue_kernel_bool_config = runtime._dialogue_kernel_bool_config
+    _consume_name_gate_pending_request = engine._consume_name_gate_pending_request
+    _create_or_reuse_sales_opportunity = engine._create_or_reuse_sales_opportunity
+    _customer_facts_int_config = engine._customer_facts_int_config
+    _detail_capture_acknowledgement = engine._detail_capture_acknowledgement
+    _dialogue_kernel_bool_config = engine._dialogue_kernel_bool_config
     _dialogue_kernel_product_preference_match = (
-        runtime._dialogue_kernel_product_preference_match
+        engine._dialogue_kernel_product_preference_match
     )
-    _enforce_claim_contract = runtime._enforce_claim_contract
-    _exact_quote_followup_candidates = runtime._exact_quote_followup_candidates
+    _exact_quote_followup_candidates = engine._exact_quote_followup_candidates
     _extract_ordered_unlabeled_quote_brief = (
-        runtime._extract_ordered_unlabeled_quote_brief
+        engine._extract_ordered_unlabeled_quote_brief
     )
-    _extract_pending_name_gate_reply_name = (
-        runtime._extract_pending_name_gate_reply_name
-    )
-    _extract_quote_customer_details = runtime._extract_quote_customer_details
-    _extract_sales_memory_updates = runtime._extract_sales_memory_updates
-    _extract_sales_opportunity_request = runtime._extract_sales_opportunity_request
-    _extract_terse_quote_customer_details = (
-        runtime._extract_terse_quote_customer_details
-    )
+    _extract_pending_name_gate_reply_name = engine._extract_pending_name_gate_reply_name
+    _extract_quote_customer_details = engine._extract_quote_customer_details
+    _extract_sales_memory_updates = engine._extract_sales_memory_updates
+    _extract_sales_opportunity_request = engine._extract_sales_opportunity_request
+    _extract_terse_quote_customer_details = engine._extract_terse_quote_customer_details
     _has_active_sales_detail_capture_context = (
-        runtime._has_active_sales_detail_capture_context
+        engine._has_active_sales_detail_capture_context
     )
-    _has_affirmative_quote_resume_intent = runtime._has_affirmative_quote_resume_intent
-    _has_canonical_quote_workflow = runtime._has_canonical_quote_workflow
-    _has_detail_capture_handoff_blocker = runtime._has_detail_capture_handoff_blocker
-    _has_explicit_quote_hold = runtime._has_explicit_quote_hold
-    _has_explicit_quote_opt_in = runtime._has_explicit_quote_opt_in
-    _has_pending_proposal_decision = runtime._has_pending_proposal_decision
+    _has_affirmative_quote_resume_intent = engine._has_affirmative_quote_resume_intent
+    _has_canonical_quote_workflow = engine._has_canonical_quote_workflow
+    _has_detail_capture_handoff_blocker = engine._has_detail_capture_handoff_blocker
+    _has_explicit_quote_hold = engine._has_explicit_quote_hold
+    _has_explicit_quote_opt_in = engine._has_explicit_quote_opt_in
+    _has_pending_proposal_decision = engine._has_pending_proposal_decision
     _has_quote_customer_details_beyond_name = (
-        runtime._has_quote_customer_details_beyond_name
+        engine._has_quote_customer_details_beyond_name
     )
     _has_quote_reply_purchase_selection_update = (
-        runtime._has_quote_reply_purchase_selection_update
+        engine._has_quote_reply_purchase_selection_update
     )
     _has_quote_resume_consultative_priority = (
-        runtime._has_quote_resume_consultative_priority
+        engine._has_quote_resume_consultative_priority
     )
-    _has_quoted_quote_frame = runtime._has_quoted_quote_frame
-    _is_mixed_product_service_request = runtime._is_mixed_product_service_request
-    _is_name_gate_completion_reply = runtime._is_name_gate_completion_reply
-    _is_neutral_detail_capture_update = runtime._is_neutral_detail_capture_update
-    _is_post_quotation_acceptance = runtime._is_post_quotation_acceptance
+    _has_quoted_quote_frame = engine._has_quoted_quote_frame
+    _is_mixed_product_service_request = engine._is_mixed_product_service_request
+    _is_name_gate_completion_reply = engine._is_name_gate_completion_reply
+    _is_neutral_detail_capture_update = engine._is_neutral_detail_capture_update
+    _is_post_quotation_acceptance = engine._is_post_quotation_acceptance
     _is_post_quotation_context_preserving_reply = (
-        runtime._is_post_quotation_context_preserving_reply
+        engine._is_post_quotation_context_preserving_reply
     )
-    _is_product_preference_answer = runtime._is_product_preference_answer
-    _is_service_confirmation_reply = runtime._is_service_confirmation_reply
-    _is_specific_delivery_address = runtime._is_specific_delivery_address
+    _is_product_preference_answer = engine._is_product_preference_answer
+    _is_service_confirmation_reply = engine._is_service_confirmation_reply
+    _is_specific_delivery_address = engine._is_specific_delivery_address
     _last_assistant_asked_quote_brief_confirmation = (
-        runtime._last_assistant_asked_quote_brief_confirmation
+        engine._last_assistant_asked_quote_brief_confirmation
     )
-    _last_assistant_asked_quote_customer_details = (
-        runtime._last_assistant_asked_quote_customer_details
-    )
-    _last_assistant_message = runtime._last_assistant_message
+    _last_assistant_message = engine._last_assistant_message
     _last_assistant_offered_quote_for_selection = (
-        runtime._last_assistant_offered_quote_for_selection
+        engine._last_assistant_offered_quote_for_selection
     )
-    _log_claim_contract = runtime._log_claim_contract
-    _mark_quotation_accepted = runtime._mark_quotation_accepted
-    _materialize_verified_catalog_facts = runtime._materialize_verified_catalog_facts
-    _materialize_verified_catalog_recovery = (
-        runtime._materialize_verified_catalog_recovery
-    )
+    _mark_quotation_accepted = engine._mark_quotation_accepted
     _name_gate_pending_intent_from_metadata = (
-        runtime._name_gate_pending_intent_from_metadata
+        engine._name_gate_pending_intent_from_metadata
     )
     _name_gate_pending_request_from_metadata = (
-        runtime._name_gate_pending_request_from_metadata
+        engine._name_gate_pending_request_from_metadata
     )
-    _normalize_customer_facts_mode = runtime._normalize_customer_facts_mode
-    _normalize_text = runtime._normalize_text
+    _normalize_customer_facts_mode = engine._normalize_customer_facts_mode
+    _materialize_verified_catalog_recovery = (
+        engine._materialize_verified_catalog_recovery
+    )
+    _normalize_text = engine._normalize_text
     _order_quote_route_for_turn = order_quote_route
+    _try_verified_catalog_plan = engine._try_verified_catalog_plan
+    _string_value = engine._string_value
     _pending_quote_brief_confirmation_from_metadata = (
-        runtime._pending_quote_brief_confirmation_from_metadata
+        engine._pending_quote_brief_confirmation_from_metadata
     )
-    _pending_quote_has_unresolved_items = runtime._pending_quote_has_unresolved_items
+    _pending_quote_has_unresolved_items = engine._pending_quote_has_unresolved_items
     _pending_reference_route_for_turn = pending_reference_route
-    _post_quotation_accepted_response = runtime._post_quotation_accepted_response
+    _post_quotation_accepted_response = engine._post_quotation_accepted_response
     _post_quotation_acknowledgement_response = (
-        runtime._post_quotation_acknowledgement_response
+        engine._post_quotation_acknowledgement_response
     )
     _post_quotation_context_acknowledgement_response = (
-        runtime._post_quotation_context_acknowledgement_response
+        engine._post_quotation_context_acknowledgement_response
     )
-    _product_media_is_referenced = runtime._product_media_is_referenced
-    _product_preference_frame_directives = runtime._product_preference_frame_directives
-    _quote_customer_details_from_metadata = (
-        runtime._quote_customer_details_from_metadata
-    )
-    _quote_intent_frame_from_metadata = runtime._quote_intent_frame_from_metadata
-    _quote_intent_frame_from_text = runtime._quote_intent_frame_from_text
-    _quote_offer_allowed_for_turn = runtime._quote_offer_allowed_for_turn
-    _response_from_rendered_reply = cast(
-        "Callable[..., LLMResponseT]", runtime._response_from_rendered_reply
-    )
-    _run_customer_facts_layer = runtime._run_customer_facts_layer
-    _sales_opportunity_response = runtime._sales_opportunity_response
-    _sales_opportunity_title = runtime._sales_opportunity_title
-    _service_confirmation_handoff_text = runtime._service_confirmation_handoff_text
-    _should_override_policy_for_catalog_fact_query = (
-        runtime._should_override_policy_for_catalog_fact_query
-    )
-    _showroom_location_response = runtime._showroom_location_response
-    _store_applied_bot_rules = runtime._store_applied_bot_rules
-    _store_catalog_planning = runtime._store_catalog_planning
-    _store_confirmed_quote_brief_address = runtime._store_confirmed_quote_brief_address
+    _product_preference_frame_directives = engine._product_preference_frame_directives
+    _quote_customer_details_from_metadata = engine._quote_customer_details_from_metadata
+    _quote_intent_frame_from_metadata = engine._quote_intent_frame_from_metadata
+    _quote_intent_frame_from_text = engine._quote_intent_frame_from_text
+    _quote_offer_allowed_for_turn = engine._quote_offer_allowed_for_turn
+    _run_customer_facts_layer = engine._run_customer_facts_layer
+    _sales_opportunity_response = engine._sales_opportunity_response
+    _sales_opportunity_title = engine._sales_opportunity_title
+    _service_confirmation_handoff_text = engine._service_confirmation_handoff_text
+    _showroom_location_response = engine._showroom_location_response
+    _store_applied_bot_rules = engine._store_applied_bot_rules
+    _store_confirmed_quote_brief_address = engine._store_confirmed_quote_brief_address
     _store_extracted_quote_customer_details = (
-        runtime._store_extracted_quote_customer_details
+        engine._store_extracted_quote_customer_details
     )
-    _store_kernel_quantity_prompt_frame = runtime._store_kernel_quantity_prompt_frame
-    _store_name_gate_pending_request = runtime._store_name_gate_pending_request
-    _store_quote_intent_frame = runtime._store_quote_intent_frame
-    _store_quote_workflow = runtime._store_quote_workflow
-    _store_sales_memory_updates = runtime._store_sales_memory_updates
-    _string_value = cast("Callable[[object], str]", runtime._string_value)
-    _strip_synthetic_test_marker = runtime._strip_synthetic_test_marker
-    _suspend_quote_workflow = runtime._suspend_quote_workflow
-    _try_verified_catalog_plan = runtime._try_verified_catalog_plan
-    _turn_owes_the_company_question = runtime._turn_owes_the_company_question
-    _turn_runtime_directives = runtime._turn_runtime_directives
-    _verified_prose_response = runtime._verified_prose_response
-    _verify_volunteered_claims = runtime._verify_volunteered_claims
-    build_bounded_returning_customer_context = (
-        runtime.build_bounded_returning_customer_context
-    )
-    build_clarification_response = runtime.build_clarification_response
-    build_message_history = runtime.build_message_history
-    build_quote_or_proposal_clarification_response = (
-        runtime.build_quote_or_proposal_clarification_response
-    )
-    build_sales_fallback_response = runtime.build_sales_fallback_response
-    build_service_handoff_reason = runtime.build_service_handoff_reason
-    build_service_handoff_response = runtime.build_service_handoff_response
-    build_service_runtime_directives = runtime.build_service_runtime_directives
-    catalog_anchor_line = runtime.catalog_anchor_line
-    datetime = runtime.datetime
-    evaluate_verified_answer_policy = runtime.evaluate_verified_answer_policy
-    extract_runtime_tool_traces = runtime.extract_runtime_tool_traces
-    get_llm_usage_telemetry = runtime.get_llm_usage_telemetry
-    grounded_amounts_for_turn = runtime.grounded_amounts_for_turn
-    is_active_human_handoff = cast(
-        "Callable[[object], bool]", runtime.is_active_human_handoff
-    )
-    is_arabic_customer_language = runtime.is_arabic_customer_language
-    is_quote_or_proposal_request = runtime.is_quote_or_proposal_request
-    is_strongly_arabic_customer_text = runtime.is_strongly_arabic_customer_text
-    json = runtime.json
-    logger = runtime.logger
-    mask_pii = runtime.mask_pii
-    model_name_for_path = runtime.model_name_for_path
-    model_settings_for_path = runtime.model_settings_for_path
-    prose_agent = runtime.prose_agent
-    quotation_claimed_without_call = runtime.quotation_claimed_without_call
-    quote_consent_signal = runtime.quote_consent_signal
-    quote_workflow_from_metadata = runtime.quote_workflow_from_metadata
-    record_legacy_route = runtime.record_legacy_route
-    render_reply = cast("Callable[..., RenderedReplyT]", runtime.render_reply)
-    replace = runtime.replace
-    response_asks_customer_name = runtime.response_asks_customer_name
-    rule_to_applied_dict = runtime.rule_to_applied_dict
-    run_agent_with_safety = runtime.run_agent_with_safety
-    run_dialogue_kernel = runtime.run_dialogue_kernel
-    sales_agent = runtime.sales_agent
-    search_behavior_rules = runtime.search_behavior_rules
-    settings = runtime.settings
-    unmask_pii = runtime.unmask_pii
-
+    _store_kernel_quantity_prompt_frame = engine._store_kernel_quantity_prompt_frame
+    _store_name_gate_pending_request = engine._store_name_gate_pending_request
+    _store_quote_intent_frame = engine._store_quote_intent_frame
+    _store_quote_workflow = engine._store_quote_workflow
+    _store_sales_memory_updates = engine._store_sales_memory_updates
+    _strip_synthetic_test_marker = engine._strip_synthetic_test_marker
+    _suspend_quote_workflow = engine._suspend_quote_workflow
+    _turn_runtime_directives = engine._turn_runtime_directives
+    build_message_history = engine.build_message_history
+    evaluate_verified_answer_policy = engine.evaluate_verified_answer_policy
+    prose_agent = engine.prose_agent
+    run_dialogue_kernel = engine.run_dialogue_kernel
+    sales_agent = engine.sales_agent
+    search_behavior_rules = engine.search_behavior_rules
     context_started = latency_trace.start_phase() if latency_trace is not None else None
     combined_text = _strip_synthetic_test_marker(combined_text)
     dialogue_kernel_result: DialogueKernelResultT | None = None
@@ -1417,7 +1449,7 @@ async def process_message_impl(
             allow_product_media=False,
         )
 
-    pending_reference_route = await _pending_reference_route_for_turn(
+    resolved_pending_reference = await _pending_reference_route_for_turn(
         db=db,
         conversation=conv,
         recent_history=deps.recent_history,
@@ -1443,7 +1475,7 @@ async def process_message_impl(
             assistant_supports_quote_resume=assistant_supports_quote_resume,
             quote_detail_context_active=quote_detail_context_active,
             has_pending_quote_selection=has_pending_quote_selection,
-            pending_reference_route=pending_reference_route,
+            pending_reference_route=resolved_pending_reference,
             zoho_client=zoho_client,
             crm_context=crm_context,
             trace_enabled=dialogue_kernel_trace_enabled,
@@ -1618,7 +1650,7 @@ async def process_message_impl(
                 assistant_supports_quote_resume=assistant_supports_quote_resume,
                 quote_detail_context_active=quote_detail_context_active,
                 has_pending_quote_selection=has_pending_quote_selection,
-                pending_reference_route=pending_reference_route,
+                pending_reference_route=resolved_pending_reference,
                 zoho_client=zoho_client,
                 crm_context=crm_context,
                 trace_enabled=dialogue_kernel_trace_enabled,
