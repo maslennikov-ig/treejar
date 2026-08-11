@@ -3,9 +3,8 @@
 Updated: 2026-08-11
 Current branch: `main`
 Active stage id: `tj-mshi-permission-list`
-Status: `tj-mshi.1` through `.4` are accepted. Root-owned implementation
-continues with the measured round `.5`. No paid call has occurred in this stage
-yet.
+Status: `tj-mshi.1` through `.5` are accepted. Child implementation is complete;
+stage readiness and slice closeout remain.
 
 Documentation: no external/versioned boundary — this stage changes first-party
 Python prompt and policy text and uses an existing provider client.
@@ -59,53 +58,39 @@ Python prompt and policy text and uses an existing provider client.
 
 ## Delivered commits
 
-- `e647458` — `.1`, block unsupported used-furniture service promises.
-- `75962a6` — `.2`, prevent guards from blanking replies.
-- `7c0bd64` — `.3`, centralize money parsing.
-- `7c6427b` — `.4`, extract pure response-policy guards.
-- `3199b1a` — `.5`, route every reply through one text policy.
-- `4640602` — `.6`, split message processing runtime (facade only).
-- `dab7795` — `.13`, merge `21d4dec`: the Step 6 revision had never reached main.
-- `a4e3647` — `.8`, the stage close left main red on a pin it was right to trip.
-- `dce7442` — `.9`, the message processor gets its types back.
-- `8a80c1f` — `.11`/`.12`, last two currency patterns move in.
-- `c9d22f9` — `.10` step A, the eight closures that needed no design decision.
-- `e600a55` — `.10` step B, the alias preamble goes.
-- `190a462` — `.10` step C, the turn becomes an object and its phases functions.
+- `d64cec5` — `tj-mshi.2`, fill the ratified 25-entry registry.
+- `1b3f34c` — `tj-mshi.3`, turn every entry into a positive permission.
+- `6649d2c` — `tj-mshi.4`, remove registry-subsumed prohibitions.
 
 Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
 
 ## Verification
 
-- Tip gates: Ruff and format clean over `src/ tests/`; Mypy clean over 173
-  source files; Pytest `3557 passed, 19 skipped`; process verification passed.
-- Protected replay: 31 stored raw assistant outputs re-render through the full
-  policy chain to an identical digest at `19556ba` and at the tip.
-- Guard, policy, catalog-planning, response-runtime, order-quote-route and
-  engine sources are byte-identical to `19556ba`.
+- `.5` gates: Ruff and format clean over `src/ tests/`; Mypy clean over 173
+  source files; Pytest `3561 passed, 19 skipped`; process verification passed.
+- `.4` protected replay: all 60 stored raw assistant outputs re-render through
+  the full policy chain with zero changes, digest `1b0b2963…`.
+- `test_llm_grounding_output.py` stayed byte-identical and passed all 107 tests.
 
-## The measured round, `tj-rt7w.7`
+## The measured round, `tj-mshi.5`
 
-Run at `33c8f1f` on the frozen seed-`20260810` twenty. The owner authorised
-20 Luna + 20 GLM and then chose to drop the second reader, so: **20 Luna calls,
-zero judging calls, $0.004661**. Report:
-`docs/reports/2026-08-11-the-round-after-the-cleanup.md`.
+Run at `6649d2c` on the frozen seed-`20260810` twenty: **20 Luna calls,
+zero judging calls, $0.005458**. Report:
+`docs/reports/2026-08-11-permission-list-measured-round.md`.
 
-- 20/20 responses, 20/20 evaluations, 20/20 language. **One critical failure in
-  1/20**, so the round does not pass its own fourth criterion.
-- The failure is `tj-riim`: on the recruitment opening the reply promises to
-  route the CV and call back, and can do neither. Not attributable to this epic
-  -- nothing here touches recruitment, and the stored `8e50dea` reply on that
-  opening was honest. Live defect either way.
-- **No paired score delta is reportable.** The judge changed, and the project
-  forbids comparing across judges; two judges on the same texts differed by 3.8
-  points systematically. This round is the baseline for the next one.
-- What the round was for is answered: the epic changed nothing it did not mean
-  to, and `tj-rt7w.1` holds in the live path -- dialog 789 no longer offers to
-  value customer-owned furniture.
-- The three out-of-scope `tj-vz7o.12` defects reproduce unchanged. New detail:
-  the missing-quote defect is inconsistent, not absent -- four openings on the
-  same run did quote priced rows.
+- 20/20 responses, 20/20 root evaluations, 20/20 language; the root read all
+  20 replies and 300 criteria blind with zero red flags.
+- Criticals did not rise: baseline 1, candidate 1. Dialog 28 no longer promises
+  recruitment routing or callback; dialog 789 remains fixed.
+- The candidate harness code on dialog 1067 is a numeric-detector false
+  positive on a catalog-supported SKU. It remains in the frozen result and is
+  tracked as `tj-2p4c`.
+- Paired weighted delta +0.32, 95% CI -0.86 to +1.82; raw delta +0.25,
+  95% CI -0.10 to +0.70. Both are inconclusive.
+- Rules 14 and 15 stayed 0 to 0 and were applicable on 0/20 openings. This
+  frozen first-turn set cannot decide whether the list is too tight.
+- The public summary's stale GLM judge label is tracked as `tj-9dp2`; protected
+  run-state proves `root-orchestrator` and zero judging calls.
 
 ## Constraints
 
@@ -119,8 +104,8 @@ zero judging calls, $0.004661**. Report:
 
 ## Documentation and graph review
 
-- `docs-reviewed: updated` — handoff, stage summary and artifact describe the
-  split, its bound, and the regression it caused.
+- `docs-reviewed: updated` — report, handoff, stage summary and artifact state
+  the paired result, protected evidence boundary, and instrument limitations.
 - `project-index: reviewed-no-change` — no module added, moved or renamed.
 - `graph-reviewed: no-change-needed` — Graphify is not initialized.
 
@@ -128,8 +113,9 @@ zero judging calls, $0.004661**. Report:
 
 **Say what Noor may promise, not what he may not.** Prohibitions hold badly on
 Luna, and the list of things Treejar does not do has no end. Epic `tj-mshi` is
-ratified; `.1`–`.3` are accepted. `COMMERCIAL_CAPABILITIES` now holds all 25
-ratified entries in five modes, phrased as permissions with their conditions.
+ratified; `.1`–`.4` are accepted and `.5` is measured. `COMMERCIAL_CAPABILITIES`
+holds all 25 ratified entries in five modes, phrased as permissions with their
+conditions.
 
 **No automatic deletions.** Where a check finds doubt, a judge reads it and
 either approves the text or writes the correction. Epic `tj-n7p4`. Audited on
@@ -160,12 +146,12 @@ different thing, paid, and fires only on a flag.
 Next stage id: `tj-mshi-permission-list`; `tj-n7p4-judged-repairs` stays
 unopened until this stage passes readiness and closeout.
 
-Recommended action: `tj-mshi.5`, the frozen seed-`20260810` twenty generated by
-Luna and read blind by the root without `--second-reader`.
+Recommended action: validate and accept the `.5` artifact, close `tj-riim` and
+`tj-mshi.5`, then run stage readiness and slice closeout.
 
-After those, the product track that has waited behind the cleanup: two P0 epics
+After stage 2, the product track that has waited behind the cleanup: two P0 epics
 (`tj-2m5m`, `tj-swgu`), then the reader findings this round confirmed still live
-— `tj-vz7o.12`, `tj-wvo4`, `tj-odeq`. `tj-riim` closes inside `tj-mshi.4`, and
+— `tj-vz7o.12`, `tj-wvo4`, `tj-odeq`. `tj-riim` closes in `tj-mshi.5`, and
 `tj-rt7w.14` inside `tj-n7p4.3`.
 
 ## Starter prompt for next orchestrator
@@ -174,15 +160,14 @@ Use $orchestrator-stage for `tj-mshi-permission-list` and epic `tj-mshi`.
 Hand `docs/plans/2026-08-11-orchestrator-prompt.md` verbatim. It covers both
 stages and gates the second on the first being accepted; the repo contract's
 single-active-stage rule and the fact that both touch the same reply path are
-why they are sequential rather than parallel. The next measured
-round is the first one comparable with 2026-08-11, because the judge is the
-same. Ask for paid-call authority by name and amount before spending.
+why they are sequential rather than parallel. The first measured round is
+complete and comparable with 2026-08-11 because the judge is the same.
 
 ## Explicit defers
 
 - `tj-rt7w.14`: the R2 bound has no semantic half; a fix owes a measured round.
-- `tj-riim`: the positive redirect is accepted in `.4`; close only if the new
-  dialog 28 reply in `.5` actually holds it.
+- `tj-2p4c`: supported SKU digits can falsely trip numeric grounding.
+- `tj-9dp2`: root-only public summaries carry a stale GLM judge label.
 - `tj-n7p4`: the judged-repair architecture, specified and queued behind
   `tj-mshi`.
 - Deterministic-route retirement: explicitly outside this stream.

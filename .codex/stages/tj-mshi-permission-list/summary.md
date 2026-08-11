@@ -20,8 +20,8 @@ parallel writes would make the measured change and rollback boundary unclear.
 
 ## Current checkpoint
 
-`tj-mshi.1` through `.4` are accepted. `tj-mshi.5` is the next child. No paid
-call has occurred in this stage yet.
+`tj-mshi.1` through `.5` are accepted. Child implementation is complete; stage
+readiness and slice closeout remain.
 
 The owner explicitly authorized updating
 `test_commercial_capability_registry_uses_evidence_authorization_modes` on
@@ -73,6 +73,26 @@ shim or second registry is introduced.
   `tj-riim` in `.5`.
 - Ruff and format passed; Mypy passed over 173 source files; Pytest passed with
   3561 tests and 19 skips; process verification passed.
+
+### tj-mshi.5 — accepted
+
+- Exactly 20 authorized Luna generation calls and zero judging calls completed
+  on the frozen seed-`20260810` set. Cost was $0.005458; 20/20 responses,
+  20/20 root evaluations, and 20/20 language passed.
+- The root read all 20 replies and 300 criteria blind with zero red flags.
+  Dialog 28 no longer promises recruitment routing or a callback; dialog 789
+  still rejects customer-owned-furniture buying, resale, or assessment.
+- Criticals did not rise: 1 to 1. The candidate harness code is dialog 1067
+  `hallucination`, a frozen-detector false positive on a catalog-supported SKU;
+  `tj-2p4c` tracks it without changing the ruler.
+- Paired weighted delta was +0.32 with 95% CI -0.86 to +1.82; raw delta was
+  +0.25 with 95% CI -0.10 to +0.70. Both are inconclusive.
+- Rules 14 and 15 stayed 0 to 0 and were applicable on 0/20 openings. This
+  corpus cannot decide whether the permission list is too tight.
+- Ruff and format passed; Mypy passed over 173 source files; Pytest passed with
+  3561 tests and 19 skips; artifact and process verification passed.
+- Full report:
+  `docs/reports/2026-08-11-permission-list-measured-round.md`.
 
 ## Acceptance note for the remaining children
 

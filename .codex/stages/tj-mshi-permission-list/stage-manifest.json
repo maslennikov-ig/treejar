@@ -98,6 +98,11 @@
       "task_id": "tj-mshi.4",
       "stream_owner": "tj-mshi.4-root-implementation",
       "artifact_path": ".codex/stages/tj-mshi-permission-list/artifacts/tj-mshi.4.md"
+    },
+    {
+      "task_id": "tj-mshi.5",
+      "stream_owner": "tj-mshi.5-root-measurement",
+      "artifact_path": ".codex/stages/tj-mshi-permission-list/artifacts/tj-mshi.5.md"
     }
   ]
 }
