@@ -352,137 +352,8 @@ async def process_message_impl(
     5. Unmasks PII in response when masking was enabled
     """
 
-    # Resolved through the engine module at call time, so the patch points the
-    # suite has always used keep working -- and, because the module is imported
-    # rather than passed in as an object, mypy still checks every call below.
-    MIXED_PRODUCT_SERVICE_DIRECTIVES = engine.MIXED_PRODUCT_SERVICE_DIRECTIVES
-    OpenAIChatModel = engine.OpenAIChatModel
-    PRODUCT_PREFERENCE_ANSWER_DIRECTIVES = engine.PRODUCT_PREFERENCE_ANSWER_DIRECTIVES
-    VERIFIED_POLICY_REPAIR_KEY = engine.VERIFIED_POLICY_REPAIR_KEY
-    _POST_QUOTATION_GENERIC_ACCEPTANCE_EXACT = (
-        engine._POST_QUOTATION_GENERIC_ACCEPTANCE_EXACT
-    )
-    _accepts_exact_item_quote_followup = engine._accepts_exact_item_quote_followup
-    _active_pending_quote_selection_from_conversation = (
-        engine._active_pending_quote_selection_from_conversation
-    )
-    _capture_expected_answer_frames_from_assistant_response = (
-        engine._capture_expected_answer_frames_from_assistant_response
-    )
-    _clear_pending_quote_brief_confirmation = (
-        engine._clear_pending_quote_brief_confirmation
-    )
-    _consume_name_gate_pending_request = engine._consume_name_gate_pending_request
-    _create_or_reuse_sales_opportunity = engine._create_or_reuse_sales_opportunity
-    _customer_facts_int_config = engine._customer_facts_int_config
-    _detail_capture_acknowledgement = engine._detail_capture_acknowledgement
-    _dialogue_kernel_bool_config = engine._dialogue_kernel_bool_config
-    _dialogue_kernel_product_preference_match = (
-        engine._dialogue_kernel_product_preference_match
-    )
-    _exact_quote_followup_candidates = engine._exact_quote_followup_candidates
-    _extract_ordered_unlabeled_quote_brief = (
-        engine._extract_ordered_unlabeled_quote_brief
-    )
-    _extract_pending_name_gate_reply_name = engine._extract_pending_name_gate_reply_name
-    _extract_quote_customer_details = engine._extract_quote_customer_details
-    _extract_sales_memory_updates = engine._extract_sales_memory_updates
-    _extract_sales_opportunity_request = engine._extract_sales_opportunity_request
-    _extract_terse_quote_customer_details = engine._extract_terse_quote_customer_details
-    _has_active_sales_detail_capture_context = (
-        engine._has_active_sales_detail_capture_context
-    )
-    _has_affirmative_quote_resume_intent = engine._has_affirmative_quote_resume_intent
-    _has_canonical_quote_workflow = engine._has_canonical_quote_workflow
-    _has_detail_capture_handoff_blocker = engine._has_detail_capture_handoff_blocker
-    _has_explicit_quote_hold = engine._has_explicit_quote_hold
-    _has_explicit_quote_opt_in = engine._has_explicit_quote_opt_in
-    _has_pending_proposal_decision = engine._has_pending_proposal_decision
-    _has_quote_customer_details_beyond_name = (
-        engine._has_quote_customer_details_beyond_name
-    )
-    _has_quote_reply_purchase_selection_update = (
-        engine._has_quote_reply_purchase_selection_update
-    )
-    _has_quote_resume_consultative_priority = (
-        engine._has_quote_resume_consultative_priority
-    )
-    _has_quoted_quote_frame = engine._has_quoted_quote_frame
-    _is_mixed_product_service_request = engine._is_mixed_product_service_request
-    _is_name_gate_completion_reply = engine._is_name_gate_completion_reply
-    _is_neutral_detail_capture_update = engine._is_neutral_detail_capture_update
-    _is_post_quotation_acceptance = engine._is_post_quotation_acceptance
-    _is_post_quotation_context_preserving_reply = (
-        engine._is_post_quotation_context_preserving_reply
-    )
-    _is_product_preference_answer = engine._is_product_preference_answer
-    _is_service_confirmation_reply = engine._is_service_confirmation_reply
-    _is_specific_delivery_address = engine._is_specific_delivery_address
-    _last_assistant_asked_quote_brief_confirmation = (
-        engine._last_assistant_asked_quote_brief_confirmation
-    )
-    _last_assistant_message = engine._last_assistant_message
-    _last_assistant_offered_quote_for_selection = (
-        engine._last_assistant_offered_quote_for_selection
-    )
-    _mark_quotation_accepted = engine._mark_quotation_accepted
-    _name_gate_pending_intent_from_metadata = (
-        engine._name_gate_pending_intent_from_metadata
-    )
-    _name_gate_pending_request_from_metadata = (
-        engine._name_gate_pending_request_from_metadata
-    )
-    _normalize_customer_facts_mode = engine._normalize_customer_facts_mode
-    _materialize_verified_catalog_recovery = (
-        engine._materialize_verified_catalog_recovery
-    )
-    _normalize_text = engine._normalize_text
-    _order_quote_route_for_turn = order_quote_route
-    _try_verified_catalog_plan = engine._try_verified_catalog_plan
-    _string_value = engine._string_value
-    _pending_quote_brief_confirmation_from_metadata = (
-        engine._pending_quote_brief_confirmation_from_metadata
-    )
-    _pending_quote_has_unresolved_items = engine._pending_quote_has_unresolved_items
-    _pending_reference_route_for_turn = pending_reference_route
-    _post_quotation_accepted_response = engine._post_quotation_accepted_response
-    _post_quotation_acknowledgement_response = (
-        engine._post_quotation_acknowledgement_response
-    )
-    _post_quotation_context_acknowledgement_response = (
-        engine._post_quotation_context_acknowledgement_response
-    )
-    _product_preference_frame_directives = engine._product_preference_frame_directives
-    _quote_customer_details_from_metadata = engine._quote_customer_details_from_metadata
-    _quote_intent_frame_from_metadata = engine._quote_intent_frame_from_metadata
-    _quote_intent_frame_from_text = engine._quote_intent_frame_from_text
-    _quote_offer_allowed_for_turn = engine._quote_offer_allowed_for_turn
-    _run_customer_facts_layer = engine._run_customer_facts_layer
-    _sales_opportunity_response = engine._sales_opportunity_response
-    _sales_opportunity_title = engine._sales_opportunity_title
-    _service_confirmation_handoff_text = engine._service_confirmation_handoff_text
-    _showroom_location_response = engine._showroom_location_response
-    _store_applied_bot_rules = engine._store_applied_bot_rules
-    _store_confirmed_quote_brief_address = engine._store_confirmed_quote_brief_address
-    _store_extracted_quote_customer_details = (
-        engine._store_extracted_quote_customer_details
-    )
-    _store_kernel_quantity_prompt_frame = engine._store_kernel_quantity_prompt_frame
-    _store_name_gate_pending_request = engine._store_name_gate_pending_request
-    _store_quote_intent_frame = engine._store_quote_intent_frame
-    _store_quote_workflow = engine._store_quote_workflow
-    _store_sales_memory_updates = engine._store_sales_memory_updates
-    _strip_synthetic_test_marker = engine._strip_synthetic_test_marker
-    _suspend_quote_workflow = engine._suspend_quote_workflow
-    _turn_runtime_directives = engine._turn_runtime_directives
-    build_message_history = engine.build_message_history
-    evaluate_verified_answer_policy = engine.evaluate_verified_answer_policy
-    prose_agent = engine.prose_agent
-    run_dialogue_kernel = engine.run_dialogue_kernel
-    sales_agent = engine.sales_agent
-    search_behavior_rules = engine.search_behavior_rules
     context_started = latency_trace.start_phase() if latency_trace is not None else None
-    combined_text = _strip_synthetic_test_marker(combined_text)
+    combined_text = engine._strip_synthetic_test_marker(combined_text)
     dialogue_kernel_result: DialogueKernelResultT | None = None
 
     # Filled only on the name-gate path, where the catalog can be read.
@@ -492,11 +363,11 @@ async def process_message_impl(
 
     def _known_customer_name_for_guards() -> str:
         assert conv is not None
-        quote_details = _quote_customer_details_from_metadata(conv)
+        quote_details = engine._quote_customer_details_from_metadata(conv)
         return (
-            _string_value(name_gate_resume_customer_name)
-            or _string_value(quote_details.get("name"))
-            or _string_value(conv.customer_name)
+            engine._string_value(name_gate_resume_customer_name)
+            or engine._string_value(quote_details.get("name"))
+            or engine._string_value(conv.customer_name)
         )
 
     def _render_customer_reply(
@@ -507,9 +378,11 @@ async def process_message_impl(
         model_name: str,
     ) -> RenderedReplyT:
         assert conv is not None
-        quote_details = _quote_customer_details_from_metadata(conv)
-        delivery_address = _string_value(quote_details.get("address"))
-        if delivery_address and not _is_specific_delivery_address(delivery_address):
+        quote_details = engine._quote_customer_details_from_metadata(conv)
+        delivery_address = engine._string_value(quote_details.get("address"))
+        if delivery_address and not engine._is_specific_delivery_address(
+            delivery_address
+        ):
             delivery_address = ""
         quote_workflow = quote_workflow_from_metadata(
             response_deps.conversation.metadata_
@@ -521,9 +394,9 @@ async def process_message_impl(
                 is_first_turn=is_first_turn,
                 customer_name=_known_customer_name_for_guards() or None,
                 anchor_line=opening_anchor_line[0],
-                company=_string_value(quote_details.get("company")) or None,
+                company=engine._string_value(quote_details.get("company")) or None,
                 customer_type=(
-                    _string_value(quote_details.get("customer_type")) or None
+                    engine._string_value(quote_details.get("customer_type")) or None
                 ),
                 delivery_address=delivery_address or None,
                 previous_assistant_turns=tuple(
@@ -539,7 +412,8 @@ async def process_message_impl(
                     customer_text=combined_text,
                 ),
                 required_tool_disclosure=(
-                    _string_value(response_deps.required_cross_sell_disclosure) or None
+                    engine._string_value(response_deps.required_cross_sell_disclosure)
+                    or None
                 ),
             ),
             provenance=provenance,
@@ -594,7 +468,7 @@ async def process_message_impl(
                 dialogue_kernel_result,
                 legacy_route=model_name,
             )
-            _capture_expected_answer_frames_from_assistant_response(
+            engine._capture_expected_answer_frames_from_assistant_response(
                 conv,
                 response_text=rendered.text,
                 dialogue_kernel_mode=dialogue_kernel_mode,
@@ -633,7 +507,7 @@ async def process_message_impl(
         run_usage = RunUsage()
         try:
             result = await run_agent_with_safety(
-                sales_agent,
+                engine.sales_agent,
                 PATH_CORE_CHAT,
                 user_prompt=masked_text,
                 deps=run_deps,
@@ -674,7 +548,7 @@ async def process_message_impl(
                 dialogue_kernel_result,
                 legacy_route=model_name,
             )
-            _capture_expected_answer_frames_from_assistant_response(
+            engine._capture_expected_answer_frames_from_assistant_response(
                 conv,
                 response_text=rendered.text,
                 dialogue_kernel_mode=dialogue_kernel_mode,
@@ -761,7 +635,7 @@ async def process_message_impl(
     pii_map: dict[str, str] = {}
 
     # Process history (also populates pii_map when PII masking is enabled).
-    history = await build_message_history(db, conversation_id, pii_map)
+    history = await engine.build_message_history(db, conversation_id, pii_map)
 
     # Keep contact details visible by default for deterministic fact extraction.
     masked_text, new_piis = mask_pii(combined_text)
@@ -818,14 +692,14 @@ async def process_message_impl(
 
     from src.core.config import get_system_config
 
-    customer_facts_mode = _normalize_customer_facts_mode(
+    customer_facts_mode = engine._normalize_customer_facts_mode(
         await get_system_config(
             db,
             "customer_facts_mode",
             settings.customer_facts_mode,
         )
     )
-    customer_facts_trace_enabled = _dialogue_kernel_bool_config(
+    customer_facts_trace_enabled = engine._dialogue_kernel_bool_config(
         await get_system_config(
             db,
             "customer_facts_trace_enabled",
@@ -833,7 +707,7 @@ async def process_message_impl(
         ),
         default=settings.customer_facts_trace_enabled,
     )
-    customer_facts_fast_extractor_enabled = _dialogue_kernel_bool_config(
+    customer_facts_fast_extractor_enabled = engine._dialogue_kernel_bool_config(
         await get_system_config(
             db,
             "customer_facts_fast_extractor_enabled",
@@ -841,7 +715,7 @@ async def process_message_impl(
         ),
         default=settings.customer_facts_fast_extractor_enabled,
     )
-    customer_facts_max_context_orders = _customer_facts_int_config(
+    customer_facts_max_context_orders = engine._customer_facts_int_config(
         await get_system_config(
             db,
             "customer_facts_max_context_orders",
@@ -863,7 +737,7 @@ async def process_message_impl(
         "dialogue_kernel_mode",
         settings.dialogue_kernel_mode,
     )
-    dialogue_kernel_trace_enabled = _dialogue_kernel_bool_config(
+    dialogue_kernel_trace_enabled = engine._dialogue_kernel_bool_config(
         await get_system_config(
             db,
             "dialogue_kernel_trace_enabled",
@@ -877,7 +751,7 @@ async def process_message_impl(
         settings.dialogue_kernel_enforced_flows,
     )
 
-    customer_facts_run = await _run_customer_facts_layer(
+    customer_facts_run = await engine._run_customer_facts_layer(
         db,
         conversation=conv,
         text=combined_text,
@@ -902,7 +776,9 @@ async def process_message_impl(
             allow_product_media=False,
         )
 
-    if _has_pending_proposal_decision(conv) and _is_post_quotation_acceptance(
+    if engine._has_pending_proposal_decision(
+        conv
+    ) and engine._is_post_quotation_acceptance(
         combined_text,
         recent_history,
     ):
@@ -912,7 +788,7 @@ async def process_message_impl(
         from src.schemas.common import EscalationType
 
         accepted_at = datetime.datetime.now(datetime.UTC)
-        _mark_quotation_accepted(
+        engine._mark_quotation_accepted(
             conv,
             accepted_at=accepted_at,
             customer_text=combined_text,
@@ -934,7 +810,7 @@ async def process_message_impl(
         )
         db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
         return build_declared_static_response(
-            _post_quotation_accepted_response(str(conv.language)),
+            engine._post_quotation_accepted_response(str(conv.language)),
             route="post-quotation-accepted",
             build_static_response=_build_static_response,
             model_prefix=db_model_main,
@@ -942,50 +818,51 @@ async def process_message_impl(
         )
 
     if (
-        _has_pending_proposal_decision(conv)
-        and _normalize_text(combined_text) in _POST_QUOTATION_GENERIC_ACCEPTANCE_EXACT
+        engine._has_pending_proposal_decision(conv)
+        and engine._normalize_text(combined_text)
+        in engine._POST_QUOTATION_GENERIC_ACCEPTANCE_EXACT
     ):
         db_model_main = await get_system_config(
             db, "openrouter_model_main", settings.openrouter_model_main
         )
         db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
         return build_declared_static_response(
-            _post_quotation_acknowledgement_response(str(conv.language)),
+            engine._post_quotation_acknowledgement_response(str(conv.language)),
             route="post-quotation-ack",
             build_static_response=_build_static_response,
             model_prefix=db_model_main,
             allow_product_media=False,
         )
 
-    if _has_quoted_quote_frame(conv) and _is_post_quotation_context_preserving_reply(
-        combined_text
-    ):
+    if engine._has_quoted_quote_frame(
+        conv
+    ) and engine._is_post_quotation_context_preserving_reply(combined_text):
         db_model_main = await get_system_config(
             db, "openrouter_model_main", settings.openrouter_model_main
         )
         db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
         return build_declared_static_response(
-            _post_quotation_context_acknowledgement_response(str(conv.language)),
+            engine._post_quotation_context_acknowledgement_response(str(conv.language)),
             route="post-quotation-context-ack",
             build_static_response=_build_static_response,
             model_prefix=db_model_main,
             allow_product_media=False,
         )
 
-    if _has_explicit_quote_hold(combined_text):
-        await _suspend_quote_workflow(
+    if engine._has_explicit_quote_hold(combined_text):
+        await engine._suspend_quote_workflow(
             db,
             conv,
             consent=quote_consent_signal(combined_text, []) or QuoteConsent.DECLINED,
         )
 
     order_runtime_blocks_kernel_reply = (
-        _active_pending_quote_selection_from_conversation(conv) is not None
-        or _quote_intent_frame_from_metadata(conv) is not None
+        engine._active_pending_quote_selection_from_conversation(conv) is not None
+        or engine._quote_intent_frame_from_metadata(conv) is not None
     )
 
     try:
-        dialogue_kernel_result = await run_dialogue_kernel(
+        dialogue_kernel_result = await engine.run_dialogue_kernel(
             conversation=conv,
             text=combined_text,
             recent_history=recent_history,
@@ -1017,15 +894,15 @@ async def process_message_impl(
         kernel_grant_is_current_turn = (
             kernel_consent_value == QuoteConsent.GRANTED.value
             and (
-                _has_explicit_quote_opt_in(combined_text)
+                engine._has_explicit_quote_opt_in(combined_text)
                 or (
-                    _last_assistant_offered_quote_for_selection(recent_history)
-                    and _has_affirmative_quote_resume_intent(combined_text)
+                    engine._last_assistant_offered_quote_for_selection(recent_history)
+                    and engine._has_affirmative_quote_resume_intent(combined_text)
                 )
             )
         )
         canonical_blocks_stale_kernel_grant = (
-            _has_canonical_quote_workflow(conv)
+            engine._has_canonical_quote_workflow(conv)
             and current_workflow.consent
             in {QuoteConsent.DEFERRED, QuoteConsent.DECLINED}
             and kernel_workflow.consent is QuoteConsent.GRANTED
@@ -1038,12 +915,12 @@ async def process_message_impl(
                 and kernel_workflow.consent is not QuoteConsent.GRANTED
             )
             or (
-                not _has_canonical_quote_workflow(conv)
+                not engine._has_canonical_quote_workflow(conv)
                 and current_workflow.consent is QuoteConsent.NOT_REQUESTED
                 and kernel_workflow.consent is not QuoteConsent.GRANTED
             )
         ):
-            await _store_quote_workflow(db, conv, kernel_workflow)
+            await engine._store_quote_workflow(db, conv, kernel_workflow)
     if (
         dialogue_kernel_result is not None
         and dialogue_kernel_result.should_use_kernel
@@ -1055,7 +932,7 @@ async def process_message_impl(
         )
     ):
         if dialogue_kernel_result.decision.flow == "name_gate":
-            await _store_name_gate_pending_request(db, conv, combined_text)
+            await engine._store_name_gate_pending_request(db, conv, combined_text)
         if dialogue_kernel_result.decision.flow == "quote_details":
             raw_details = dialogue_kernel_result.decision.metadata.get(
                 "quote_customer_details"
@@ -1074,9 +951,11 @@ async def process_message_impl(
                     quote_details["company"] = company.strip()
                 if isinstance(customer_type, str) and customer_type.strip():
                     quote_details["customer_type"] = customer_type.strip()
-                await _store_extracted_quote_customer_details(db, conv, quote_details)
+                await engine._store_extracted_quote_customer_details(
+                    db, conv, quote_details
+                )
         if dialogue_kernel_result.decision.flow == "product_selection":
-            await _store_kernel_quantity_prompt_frame(
+            await engine._store_kernel_quantity_prompt_frame(
                 db,
                 conv,
                 combined_text=combined_text,
@@ -1090,24 +969,28 @@ async def process_message_impl(
         )
 
     customer_name_was_unknown = not str(conv.customer_name or "").strip()
-    current_quote_customer_details = _extract_quote_customer_details(combined_text)
-    current_quote_intent_frame: Mapping[str, Any] | None = (
-        _quote_intent_frame_from_text(combined_text)
-    )
-    current_sales_memory_updates = _extract_sales_memory_updates(combined_text)
-    current_sales_opportunity_request = _extract_sales_opportunity_request(
+    current_quote_customer_details = engine._extract_quote_customer_details(
         combined_text
     )
-    pending_name_gate_request = _name_gate_pending_request_from_metadata(conv)
-    pending_name_gate_intent = _name_gate_pending_intent_from_metadata(conv)
+    current_quote_intent_frame: Mapping[str, Any] | None = (
+        engine._quote_intent_frame_from_text(combined_text)
+    )
+    current_sales_memory_updates = engine._extract_sales_memory_updates(combined_text)
+    current_sales_opportunity_request = engine._extract_sales_opportunity_request(
+        combined_text
+    )
+    pending_name_gate_request = engine._name_gate_pending_request_from_metadata(conv)
+    pending_name_gate_intent = engine._name_gate_pending_intent_from_metadata(conv)
     resumed_name_gate_intent: str | None = None
     pending_quote_selection_at_start = (
-        _active_pending_quote_selection_from_conversation(conv)
+        engine._active_pending_quote_selection_from_conversation(conv)
     )
     has_pending_quote_selection = pending_quote_selection_at_start is not None
     pending_unconsented_detail_keys: set[str] = set()
     if has_pending_quote_selection and not current_quote_customer_details:
-        identity_candidates = _extract_terse_quote_customer_details(combined_text)
+        identity_candidates = engine._extract_terse_quote_customer_details(
+            combined_text
+        )
         pending_unconsented_detail_keys = set(identity_candidates).intersection(
             {"customer_type", "email", "phone", "address"}
         )
@@ -1117,14 +1000,14 @@ async def process_message_impl(
             if key in {"name", "company"}
         }
     pending_exact_quote_followup_candidates = (
-        _exact_quote_followup_candidates(
+        engine._exact_quote_followup_candidates(
             selection=pending_quote_selection_at_start,
             combined_text=combined_text,
             masked_text=masked_text,
         )
         if pending_quote_selection_at_start is not None
-        and _accepts_exact_item_quote_followup(pending_quote_selection_at_start)
-        and _pending_quote_has_unresolved_items(pending_quote_selection_at_start)
+        and engine._accepts_exact_item_quote_followup(pending_quote_selection_at_start)
+        and engine._pending_quote_has_unresolved_items(pending_quote_selection_at_start)
         else ()
     )
     assistant_asked_quote_details = _last_assistant_asked_quote_customer_details(
@@ -1133,37 +1016,37 @@ async def process_message_impl(
             has_pending_quote_selection or order_runtime_blocks_kernel_reply
         ),
     )
-    assistant_offered_quote_selection = _last_assistant_offered_quote_for_selection(
-        recent_history
+    assistant_offered_quote_selection = (
+        engine._last_assistant_offered_quote_for_selection(recent_history)
     )
     quote_offer_reply_has_consultative_priority = (
-        _has_quote_resume_consultative_priority(combined_text)
-        or _has_quote_resume_consultative_priority(masked_text)
+        engine._has_quote_resume_consultative_priority(combined_text)
+        or engine._has_quote_resume_consultative_priority(masked_text)
     )
-    quote_reply_updates_purchase_selection = _has_quote_reply_purchase_selection_update(
-        combined_text, masked_text
+    quote_reply_updates_purchase_selection = (
+        engine._has_quote_reply_purchase_selection_update(combined_text, masked_text)
     )
     assistant_supports_quote_resume = assistant_asked_quote_details or (
         assistant_offered_quote_selection
         and not quote_offer_reply_has_consultative_priority
         and (
-            _has_explicit_quote_opt_in(combined_text)
-            or _has_explicit_quote_opt_in(masked_text)
-            or _has_affirmative_quote_resume_intent(combined_text)
-            or _has_affirmative_quote_resume_intent(masked_text)
+            engine._has_explicit_quote_opt_in(combined_text)
+            or engine._has_explicit_quote_opt_in(masked_text)
+            or engine._has_affirmative_quote_resume_intent(combined_text)
+            or engine._has_affirmative_quote_resume_intent(masked_text)
         )
     )
     explicit_quote_consent = not quote_offer_reply_has_consultative_priority and (
-        _has_explicit_quote_opt_in(combined_text)
-        or _has_explicit_quote_opt_in(masked_text)
+        engine._has_explicit_quote_opt_in(combined_text)
+        or engine._has_explicit_quote_opt_in(masked_text)
         or (
             (
                 assistant_offered_quote_selection
                 or (has_pending_quote_selection and assistant_asked_quote_details)
             )
             and (
-                _has_affirmative_quote_resume_intent(combined_text)
-                or _has_affirmative_quote_resume_intent(masked_text)
+                engine._has_affirmative_quote_resume_intent(combined_text)
+                or engine._has_affirmative_quote_resume_intent(masked_text)
             )
         )
     )
@@ -1173,7 +1056,7 @@ async def process_message_impl(
             consent=QuoteConsent.GRANTED,
             lifecycle=QuoteLifecycle.QUOTE_REQUESTED,
         )
-        await _store_quote_workflow(db, conv, quote_workflow)
+        await engine._store_quote_workflow(db, conv, quote_workflow)
     quote_consent_granted = quote_workflow.consent is QuoteConsent.GRANTED
     unconsented_quote_details = (
         not quote_consent_granted
@@ -1194,24 +1077,26 @@ async def process_message_impl(
     )
     quote_brief_confirmation_details: dict[str, str] | None = None
     confirmed_quote_brief_address: str | None = None
-    pending_quote_brief_confirmation = _pending_quote_brief_confirmation_from_metadata(
-        conv
+    pending_quote_brief_confirmation = (
+        engine._pending_quote_brief_confirmation_from_metadata(conv)
     )
     if (
         pending_quote_brief_confirmation
-        and _last_assistant_asked_quote_brief_confirmation(recent_history)
-        and _has_affirmative_quote_resume_intent(combined_text)
+        and engine._last_assistant_asked_quote_brief_confirmation(recent_history)
+        and engine._has_affirmative_quote_resume_intent(combined_text)
     ):
         current_quote_customer_details = {
             **current_quote_customer_details,
             **pending_quote_brief_confirmation,
         }
-        confirmed_quote_brief_address = _string_value(
+        confirmed_quote_brief_address = engine._string_value(
             pending_quote_brief_confirmation.get("address")
         )
-        await _clear_pending_quote_brief_confirmation(db, conv)
+        await engine._clear_pending_quote_brief_confirmation(db, conv)
     if quote_detail_context_active:
-        unlabeled_quote_brief = _extract_ordered_unlabeled_quote_brief(combined_text)
+        unlabeled_quote_brief = engine._extract_ordered_unlabeled_quote_brief(
+            combined_text
+        )
         if unlabeled_quote_brief and unlabeled_quote_brief.needs_confirmation:
             quote_brief_confirmation_details = unlabeled_quote_brief.details
             current_quote_customer_details = {}
@@ -1221,34 +1106,34 @@ async def process_message_impl(
                 **current_quote_customer_details,
                 **terse_quote_customer_details,
             }
-            await _clear_pending_quote_brief_confirmation(db, conv)
+            await engine._clear_pending_quote_brief_confirmation(db, conv)
         else:
             terse_quote_customer_details = (
                 {}
                 if pending_exact_quote_followup_candidates
-                else _extract_terse_quote_customer_details(combined_text)
+                else engine._extract_terse_quote_customer_details(combined_text)
             )
             if terse_quote_customer_details:
                 current_quote_customer_details = {
                     **current_quote_customer_details,
                     **terse_quote_customer_details,
                 }
-                await _clear_pending_quote_brief_confirmation(db, conv)
+                await engine._clear_pending_quote_brief_confirmation(db, conv)
     if (
         not quote_detail_context_active
         and current_quote_customer_details
         and pending_quote_brief_confirmation
     ):
-        await _clear_pending_quote_brief_confirmation(db, conv)
+        await engine._clear_pending_quote_brief_confirmation(db, conv)
     # A bare "Alex" is only a name because we just asked for one. Until
     # 2026-08-10 the only thing that ever asked was the name gate, so this read
     # its parked request; now any route can ask, and the reply has to land the
     # same way. The condition is on what we actually sent, not on what the
     # engine believes it did.
     if pending_name_gate_request or response_asks_customer_name(
-        _last_assistant_message(recent_history)
+        engine._last_assistant_message(recent_history)
     ):
-        pending_reply_name = _extract_pending_name_gate_reply_name(
+        pending_reply_name = engine._extract_pending_name_gate_reply_name(
             combined_text,
             current_quote_customer_details,
         )
@@ -1261,7 +1146,7 @@ async def process_message_impl(
     if (
         is_first_turn
         and customer_name_was_unknown
-        and not _string_value(current_quote_customer_details.get("name"))
+        and not engine._string_value(current_quote_customer_details.get("name"))
     ):
         # The turn is no longer spent on the question. It runs to the end like
         # any other, and `apply_opening_guard` folds the name request onto the
@@ -1287,13 +1172,13 @@ async def process_message_impl(
                 if key in {"name", "company"}
             }
         )
-        await _store_extracted_quote_customer_details(
+        await engine._store_extracted_quote_customer_details(
             db,
             conv,
             allowed_quote_customer_details,
         )
         if quote_consent_granted and confirmed_quote_brief_address:
-            await _store_confirmed_quote_brief_address(
+            await engine._store_confirmed_quote_brief_address(
                 db,
                 conv,
                 confirmed_quote_brief_address,
@@ -1302,11 +1187,11 @@ async def process_message_impl(
         current_quote_intent_frame is not None
         and pending_quote_selection_at_start is None
     ):
-        await _store_quote_intent_frame(db, conv, combined_text)
+        await engine._store_quote_intent_frame(db, conv, combined_text)
     if current_sales_memory_updates:
-        await _store_sales_memory_updates(db, conv, current_sales_memory_updates)
+        await engine._store_sales_memory_updates(db, conv, current_sales_memory_updates)
 
-    name_gate_completion_reply = _is_name_gate_completion_reply(
+    name_gate_completion_reply = engine._is_name_gate_completion_reply(
         combined_text,
         current_quote_customer_details,
         pending_request_exists=bool(pending_name_gate_request),
@@ -1314,24 +1199,30 @@ async def process_message_impl(
     if (
         name_gate_completion_reply
         and quote_detail_context_active
-        and _has_quote_customer_details_beyond_name(current_quote_customer_details)
+        and engine._has_quote_customer_details_beyond_name(
+            current_quote_customer_details
+        )
     ):
-        await _consume_name_gate_pending_request(db, conv)
+        await engine._consume_name_gate_pending_request(db, conv)
         pending_name_gate_request = None
     elif name_gate_completion_reply:
-        captured_customer_name = _string_value(current_quote_customer_details["name"])
+        captured_customer_name = engine._string_value(
+            current_quote_customer_details["name"]
+        )
         resumed_name_gate_intent = pending_name_gate_intent
-        pending_name_gate_request = await _consume_name_gate_pending_request(db, conv)
+        pending_name_gate_request = await engine._consume_name_gate_pending_request(
+            db, conv
+        )
         if pending_name_gate_request:
             name_gate_resume_customer_name = captured_customer_name
             combined_text = pending_name_gate_request
             masked_text, pending_piis = mask_pii(combined_text)
             pii_map.update(pending_piis)
-            resumed_quote_customer_details = _extract_quote_customer_details(
+            resumed_quote_customer_details = engine._extract_quote_customer_details(
                 combined_text
             )
             if resumed_quote_customer_details:
-                if not _string_value(resumed_quote_customer_details.get("name")):
+                if not engine._string_value(resumed_quote_customer_details.get("name")):
                     resumed_quote_customer_details = {
                         **resumed_quote_customer_details,
                         "name": captured_customer_name,
@@ -1342,7 +1233,7 @@ async def process_message_impl(
                         for key, value in resumed_quote_customer_details.items()
                         if key in {"name", "company"}
                     }
-                await _store_extracted_quote_customer_details(
+                await engine._store_extracted_quote_customer_details(
                     db,
                     conv,
                     resumed_quote_customer_details,
@@ -1363,12 +1254,14 @@ async def process_message_impl(
                     "again, and do not ask what they need again.",
                 ),
             )
-            current_quote_customer_details = _quote_customer_details_from_metadata(conv)
-            current_quote_intent_frame = _quote_intent_frame_from_metadata(
+            current_quote_customer_details = (
+                engine._quote_customer_details_from_metadata(conv)
+            )
+            current_quote_intent_frame = engine._quote_intent_frame_from_metadata(
                 conv
-            ) or _quote_intent_frame_from_text(combined_text)
-            current_sales_opportunity_request = _extract_sales_opportunity_request(
-                combined_text
+            ) or engine._quote_intent_frame_from_text(combined_text)
+            current_sales_opportunity_request = (
+                engine._extract_sales_opportunity_request(combined_text)
             )
         else:
             # Nothing was parked, so there is no prior request to resume. If a
@@ -1376,23 +1269,23 @@ async def process_message_impl(
             # detail it was waiting for, and the quote route below owes an
             # answer -- not "Thank you, Alex. How can I help you?"
             if (
-                not _has_detail_capture_handoff_blocker(combined_text)
+                not engine._has_detail_capture_handoff_blocker(combined_text)
                 and not has_pending_quote_selection
             ):
                 if (
-                    _has_active_sales_detail_capture_context(
+                    engine._has_active_sales_detail_capture_context(
                         conv,
                         deps.recent_history,
                     )
                     and not quote_reply_updates_purchase_selection
-                    and _is_neutral_detail_capture_update(
+                    and engine._is_neutral_detail_capture_update(
                         text=combined_text,
                         customer_details=current_quote_customer_details,
                         sales_memory_updates=current_sales_memory_updates,
                     )
                 ):
                     return build_declared_static_response(
-                        _detail_capture_acknowledgement(
+                        engine._detail_capture_acknowledgement(
                             current_quote_customer_details,
                             current_sales_memory_updates,
                         ),
@@ -1420,7 +1313,7 @@ async def process_message_impl(
             allow_product_media=False,
         )
 
-    offer_quote_for_turn = await _quote_offer_allowed_for_turn(
+    offer_quote_for_turn = await engine._quote_offer_allowed_for_turn(
         db,
         conv,
         combined_text,
@@ -1432,9 +1325,9 @@ async def process_message_impl(
         )
 
     if current_sales_opportunity_request is not None:
-        opportunity_result = await _create_or_reuse_sales_opportunity(
+        opportunity_result = await engine._create_or_reuse_sales_opportunity(
             deps,
-            title=_sales_opportunity_title(deps),
+            title=engine._sales_opportunity_title(deps),
             amount=current_sales_opportunity_request.amount,
             allow_reuse=True,
         )
@@ -1444,7 +1337,7 @@ async def process_message_impl(
             else "sales-opportunity-unverified"
         )
         return await _verified_prose_response(
-            verified_text=_sales_opportunity_response(
+            verified_text=engine._sales_opportunity_response(
                 current_sales_opportunity_request,
                 opportunity_result,
                 language=str(conv.language),
@@ -1460,7 +1353,7 @@ async def process_message_impl(
     if (
         not quote_detail_context_active
         and not quote_reply_updates_purchase_selection
-        and _has_active_sales_detail_capture_context(conv, deps.recent_history)
+        and engine._has_active_sales_detail_capture_context(conv, deps.recent_history)
         # An acknowledgement is not an answer. The customer's opening question
         # is stored while the name gate runs, and on 2026-08-09 R03 showed what
         # happens when this route fires on the turn that completes the gate:
@@ -1476,14 +1369,14 @@ async def process_message_impl(
         # route below either completes it or asks for what is still missing
         # while carrying the verified price and stock, and both beat a receipt.
         and not has_pending_quote_selection
-        and _is_neutral_detail_capture_update(
+        and engine._is_neutral_detail_capture_update(
             text=combined_text,
             customer_details=current_quote_customer_details,
             sales_memory_updates=current_sales_memory_updates,
         )
     ):
         return build_declared_static_response(
-            _detail_capture_acknowledgement(
+            engine._detail_capture_acknowledgement(
                 current_quote_customer_details,
                 current_sales_memory_updates,
             ),
@@ -1492,7 +1385,7 @@ async def process_message_impl(
             allow_product_media=False,
         )
 
-    resolved_pending_reference = await _pending_reference_route_for_turn(
+    resolved_pending_reference = await pending_reference_route(
         db=db,
         conversation=conv,
         recent_history=deps.recent_history,
@@ -1501,7 +1394,7 @@ async def process_message_impl(
     )
     order_quote_response = None
     if not unconsented_quote_details:
-        order_quote_response = await _order_quote_route_for_turn(
+        order_quote_response = await order_quote_route(
             phase="pre_policy",
             db=db,
             conversation=conv,
@@ -1564,7 +1457,7 @@ async def process_message_impl(
         if crm_context:
             segment = crm_context.get("Segment") or crm_context.get("segment")
         segment = segment or metadata.get("segment")
-        rules = await search_behavior_rules(
+        rules = await engine.search_behavior_rules(
             db,
             context=BehaviorRuleSearchContext(
                 message=masked_text,
@@ -1575,14 +1468,14 @@ async def process_message_impl(
             embedding_engine=embedding_engine,
         )
         deps.behavior_rules = [rule_to_applied_dict(rule) for rule in rules]
-        await _store_applied_bot_rules(db, conv, deps.behavior_rules)
+        await engine._store_applied_bot_rules(db, conv, deps.behavior_rules)
     except Exception:
         logger.warning("Bot behavior rule search failed", exc_info=True)
     finally:
         if latency_trace is not None and behavior_started is not None:
             latency_trace.finish_phase("behavior_rag", behavior_started)
 
-    policy_decision = evaluate_verified_answer_policy(
+    policy_decision = engine.evaluate_verified_answer_policy(
         masked_text, deps.faq_context or []
     )
     if _should_override_policy_for_catalog_fact_query(
@@ -1599,7 +1492,7 @@ async def process_message_impl(
     if (
         assistant_offered_quote_selection
         and quote_offer_reply_has_consultative_priority
-        and not _has_detail_capture_handoff_blocker(combined_text)
+        and not engine._has_detail_capture_handoff_blocker(combined_text)
     ):
         policy_decision = replace(
             policy_decision,
@@ -1608,7 +1501,7 @@ async def process_message_impl(
             requires_manager_handoff=False,
             sales_fallback_intent=None,
         )
-    product_preference_frame_match = _dialogue_kernel_product_preference_match(
+    product_preference_frame_match = engine._dialogue_kernel_product_preference_match(
         dialogue_kernel_result
     )
 
@@ -1639,7 +1532,7 @@ async def process_message_impl(
                 dialogue_kernel_result,
                 legacy_route=response_model,
             )
-            _capture_expected_answer_frames_from_assistant_response(
+            engine._capture_expected_answer_frames_from_assistant_response(
                 conv,
                 response_text=rendered.text,
                 dialogue_kernel_mode=dialogue_kernel_mode,
@@ -1676,7 +1569,7 @@ async def process_message_impl(
 
         order_quote_response = None
         if not unconsented_quote_details:
-            order_quote_response = await _order_quote_route_for_turn(
+            order_quote_response = await order_quote_route(
                 phase="post_policy",
                 db=db,
                 conversation=conv,
@@ -1719,7 +1612,7 @@ async def process_message_impl(
             and policy_decision.question_class == "service_low_risk"
             and policy_decision.policy_action == "allow"
             and is_quote_or_proposal_request(masked_text)
-            and not _has_explicit_quote_hold(masked_text)
+            and not engine._has_explicit_quote_hold(masked_text)
         ):
             await _clear_verified_policy_repair_state()
             return build_declared_static_response(
@@ -1732,8 +1625,8 @@ async def process_message_impl(
             )
 
         if not policy_decision.is_order_status and (
-            _is_mixed_product_service_request(masked_text)
-            or _is_mixed_product_service_request(combined_text)
+            engine._is_mixed_product_service_request(masked_text)
+            or engine._is_mixed_product_service_request(combined_text)
         ):
             result = await _run_agent(
                 replace(
@@ -1741,16 +1634,19 @@ async def process_message_impl(
                     tool_mode="full",
                     runtime_directives=(
                         *deps.runtime_directives,
-                        *MIXED_PRODUCT_SERVICE_DIRECTIVES,
+                        *engine.MIXED_PRODUCT_SERVICE_DIRECTIVES,
                     ),
                 )
             )
             await _clear_verified_policy_repair_state()
             return _build_llm_response(result, db_model_main)
 
-        if not policy_decision.is_order_status and _is_service_confirmation_reply(
-            combined_text,
-            deps.recent_history,
+        if (
+            not policy_decision.is_order_status
+            and engine._is_service_confirmation_reply(
+                combined_text,
+                deps.recent_history,
+            )
         ):
             from src.integrations.notifications.escalation import (
                 notify_manager_escalation,
@@ -1771,7 +1667,7 @@ async def process_message_impl(
                 )
             await _clear_verified_policy_repair_state()
             return build_declared_static_response(
-                _service_confirmation_handoff_text(),
+                engine._service_confirmation_handoff_text(),
                 route="service-confirmation-handoff",
                 build_static_response=_build_static_response,
                 model_prefix=db_model_main,
@@ -1788,7 +1684,7 @@ async def process_message_impl(
         ):
             await _clear_verified_policy_repair_state()
             return build_declared_static_response(
-                _showroom_location_response(str(deps.conversation.language)),
+                engine._showroom_location_response(str(deps.conversation.language)),
                 route="showroom-location",
                 build_static_response=_build_static_response,
                 model_prefix=db_model_main,
@@ -1800,12 +1696,18 @@ async def process_message_impl(
             and policy_decision.sales_fallback_intent is None
             and (
                 product_preference_frame_match is not None
-                or _is_product_preference_answer(combined_text, deps.recent_history)
-                or _is_product_preference_answer(masked_text, deps.recent_history)
+                or engine._is_product_preference_answer(
+                    combined_text, deps.recent_history
+                )
+                or engine._is_product_preference_answer(
+                    masked_text, deps.recent_history
+                )
             )
         ):
             frame_directives = (
-                _product_preference_frame_directives(product_preference_frame_match)
+                engine._product_preference_frame_directives(
+                    product_preference_frame_match
+                )
                 if product_preference_frame_match is not None
                 else ()
             )
@@ -1815,7 +1717,7 @@ async def process_message_impl(
                     tool_mode="full",
                     runtime_directives=(
                         *deps.runtime_directives,
-                        *PRODUCT_PREFERENCE_ANSWER_DIRECTIVES,
+                        *engine.PRODUCT_PREFERENCE_ANSWER_DIRECTIVES,
                         *frame_directives,
                     ),
                 )
@@ -1900,7 +1802,7 @@ async def process_message_impl(
             await _clear_verified_policy_repair_state()
             return _build_llm_response(result, db_model_main)
 
-        verified_catalog_plan = await _try_verified_catalog_plan(deps)
+        verified_catalog_plan = await engine._try_verified_catalog_plan(deps)
         if verified_catalog_plan is not None:
             fallback_text, plan_traces = verified_catalog_plan
             decision_directive = _catalog_decision_runtime_directive(deps)
@@ -1992,7 +1894,7 @@ async def process_message_impl(
             return replace(response, tool_traces=plan_traces)
 
         run_deps = deps
-        turn_directives = _turn_runtime_directives(
+        turn_directives = engine._turn_runtime_directives(
             combined_text,
             masked_text,
             sales_stage=str(getattr(deps.conversation, "sales_stage", "") or ""),
@@ -2008,9 +1910,9 @@ async def process_message_impl(
         try:
             result = await _run_agent(run_deps)
         except (UnexpectedModelBehavior, TimeoutError):
-            explicit_quote_hold = _has_explicit_quote_hold(
+            explicit_quote_hold = engine._has_explicit_quote_hold(
                 masked_text
-            ) or _has_explicit_quote_hold(combined_text)
+            ) or engine._has_explicit_quote_hold(combined_text)
             await _complete_verified_cross_sell_for_recovery(
                 RunContext(
                     deps=run_deps,
@@ -2023,7 +1925,7 @@ async def process_message_impl(
                 explicit_quote_hold=explicit_quote_hold,
             )
             recovery_traces = tuple(run_deps.recovery_tool_traces)
-            recovery_text = _materialize_verified_catalog_recovery(
+            recovery_text = engine._materialize_verified_catalog_recovery(
                 run_deps,
                 recovery_traces,
                 explicit_quote_hold=explicit_quote_hold,
@@ -2040,12 +1942,12 @@ async def process_message_impl(
                 cost=dynamic_model.provider_cost_snapshot(),
             )
         recovery_traces = tuple(run_deps.recovery_tool_traces)
-        recovery_text = _materialize_verified_catalog_recovery(
+        recovery_text = engine._materialize_verified_catalog_recovery(
             run_deps,
             recovery_traces,
             explicit_quote_hold=(
-                _has_explicit_quote_hold(masked_text)
-                or _has_explicit_quote_hold(combined_text)
+                engine._has_explicit_quote_hold(masked_text)
+                or engine._has_explicit_quote_hold(combined_text)
             ),
         )
         if recovery_text is not None and not _catalog_recovery_output_is_valid(
