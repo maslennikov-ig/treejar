@@ -25,8 +25,8 @@ subagent is used.
 ## Current checkpoint
 
 Stage 1 `tj-mshi-permission-list` is accepted at `5ef5eeb`. Stage 2 is opened
-from that exact tip. `.1`, `.2`, `.3` and `.6` are accepted; `.4` is next. One
-stage-2 repair-judge call cost $0.001265216.
+from that exact tip. `.1`, `.2`, `.3`, `.6` and `.4` are accepted; `.5` is next.
+One stage-2 repair-judge call cost $0.001265216.
 
 ## Acceptance boundary
 
@@ -110,3 +110,23 @@ the same path production would send.
   and 849 affected response-path tests passed. No paid call was made.
 - Ruff and format passed over 373 files; Mypy passed over 174 source files;
   Pytest passed with 3590 tests and 19 skips; process verification passed.
+
+### tj-n7p4.4 — accepted
+
+- The frozen-opening harness now calls the same `render_reply`, PII-safe repair
+  review, reclassification and manager-notice functions as production. A
+  direct parity test proves the same triggered reply leaves both boundaries.
+- Preflight always resolves and prices the fixed repair model, authorizes at
+  most 20 repair calls for the 20-opening round, and combines that allowance
+  with an optional paid scoring reader only when explicitly requested.
+- The protected journal records generation, repair and scoring calls by arm
+  before dispatch. A Luna result is durable before repair; completed repair
+  results are replayable, while an ambiguous attempt is never duplicated.
+- Local twenty-case simulations prove one trigger records one repair call and
+  a no-trigger round records none. `repair-reading-pack.json` holds protected
+  before/after evidence separately from the blind scoring pack. No paid call
+  or corpus read occurred in this child.
+- With owner authorization, three old synchronous harness assertions and the
+  `.1` harness patch-point assertion now exercise the async production path.
+- Ruff and format passed over 374 files; Mypy passed over 174 source files;
+  Pytest passed with 3594 tests and 19 skips; process verification passed.

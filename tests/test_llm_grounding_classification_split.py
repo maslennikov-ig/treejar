@@ -82,39 +82,27 @@ def test_response_policy_passes_classification_to_the_named_repair(
     assert events == [("classify", expected), ("repair", expected)]
 
 
-def test_acceptance_harness_passes_classification_to_the_named_repair(
+async def test_acceptance_harness_uses_the_same_rendered_flag_path_as_production(
     monkeypatch: Any,
 ) -> None:
-    events: list[tuple[str, tuple[GroundingViolation, ...]]] = []
-    expected = (GroundingViolation.UNVERIFIED_PRICE,)
+    calls = 0
+    production_render = response_policy.render_reply
 
-    def classify(text: str, **kwargs: object) -> tuple[GroundingViolation, ...]:
-        del text, kwargs
-        events.append(("classify", expected))
-        return expected
+    def render(*args: object, **kwargs: object) -> response_policy.RenderedReply:
+        nonlocal calls
+        calls += 1
+        return production_render(*args, **kwargs)
 
-    def repair(text: str, **kwargs: object) -> GroundingOutputResult:
-        violations = tuple(kwargs["violations"])
-        events.append(("repair", violations))
-        return _unchanged_repair(text, language="en", violations=violations)
+    monkeypatch.setattr(real_opening_acceptance, "render_reply", render)
 
-    monkeypatch.setattr(
-        real_opening_acceptance,
-        "classify_grounding_output",
-        classify,
-    )
-    monkeypatch.setattr(
-        real_opening_acceptance,
-        "repair_grounding_output",
-        repair,
-    )
-
-    rendered = real_opening_acceptance.apply_shipped_output_guards(
+    rendered = await real_opening_acceptance.apply_shipped_output_guards(
         "A useful answer.",
         language="en",
         anchor_line=None,
         catalog_evidence=[],
+        customer_message="Hello",
     )
 
-    assert "A useful answer." in rendered
-    assert events == [("classify", expected), ("repair", expected)]
+    assert "A useful answer." in rendered.content
+    assert rendered.repair_trace is None
+    assert calls == 1

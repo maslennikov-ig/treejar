@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cache
 from typing import Literal
 
@@ -13,6 +13,7 @@ from pydantic_ai import Agent
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from src.core.config import settings
+from src.llm.pii import mask_pii, unmask_pii
 from src.llm.response_policy import (
     ReplyGuardFlag,
     ReplyPolicyState,
@@ -26,6 +27,7 @@ from src.llm.safety import (
     model_settings_for_path,
     run_agent_with_safety,
 )
+from src.services.customer_language import is_arabic_customer_language
 
 REPAIR_JUDGE_MODEL = "z-ai/glm-5.2"
 
@@ -270,6 +272,55 @@ async def review_flagged_reply(
         text=rerendered.text,
         provenance="model_repaired",
         trace=_trace(provider_result, flags=flags),
+    )
+
+
+async def review_flagged_reply_with_pii(
+    text: str,
+    *,
+    state: ReplyPolicyState,
+    flags: tuple[ReplyGuardFlag, ...],
+    evidence: RepairJudgeEvidence,
+    provenance: ReplyProvenance = "model",
+    pii_map: dict[str, str] | None = None,
+    runner: RepairJudgeRunner | None = None,
+) -> JudgedRepair:
+    """Run the production repair path while keeping reply evidence masked."""
+
+    mapping = pii_map if pii_map is not None else {}
+    masked_text, text_pii = mask_pii(text)
+    mapping.update(text_pii)
+    masked_customer, customer_pii = mask_pii(evidence.customer_message)
+    mapping.update(customer_pii)
+    masked_flags: list[ReplyGuardFlag] = []
+    for flag in flags:
+        masked_candidate, candidate_pii = mask_pii(flag.candidate or "")
+        mapping.update(candidate_pii)
+        masked_flags.append(
+            replace(
+                flag,
+                candidate=masked_candidate if flag.candidate is not None else None,
+            )
+        )
+    judged = await review_flagged_reply(
+        masked_text,
+        state=state,
+        flags=tuple(masked_flags),
+        evidence=replace(evidence, customer_message=masked_customer),
+        provenance=provenance,
+        runner=runner,
+    )
+    return replace(judged, text=unmask_pii(judged.text, mapping))
+
+
+def repair_manager_handoff_text(language: str) -> str:
+    """The same safe customer notice used by production and acceptance."""
+
+    if is_arabic_customer_language(language):
+        return "أريد أن أكون دقيقًا، لذلك طلبت من مديرنا مراجعة طلبك وتأكيد التفاصيل لك."
+    return (
+        "I couldn't safely verify my draft, so I've asked a manager to review "
+        "your request and confirm the details."
     )
 
 

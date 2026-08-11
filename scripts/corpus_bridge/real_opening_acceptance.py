@@ -21,6 +21,7 @@ import statistics
 import sys
 import time
 import uuid
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -45,13 +46,22 @@ from src.llm.communication_policy import (
     COMMUNICATION_RULES_POLICY,
     finalize_evidence_grounding_prompt,
 )
-from src.llm.grounding_output import (
-    classify_grounding_output,
-    repair_grounding_output,
-)
-from src.llm.opening_guard import apply_opening_guard
 from src.llm.prompts import BASE_SYSTEM_PROMPT, LANGUAGE_DIRECTIVE, STAGE_RULES
-from src.llm.sales_turn_guard import commit_to_what_you_deferred
+from src.llm.repair_judge import (
+    REPAIR_JUDGE_MODEL,
+    REPAIR_JUDGE_PROMPT,
+    RepairJudgeDecision,
+    RepairJudgeEvidence,
+    RepairJudgeProviderResult,
+    RepairJudgeRequest,
+    RepairJudgeRunner,
+    RepairJudgeTrace,
+    repair_manager_handoff_text,
+    review_flagged_reply_with_pii,
+    run_repair_judge,
+    unavailable_repair_judge_trace,
+)
+from src.llm.response_policy import ReplyPolicyState, render_reply
 from src.models.conversation import Conversation
 from src.models.message import Message
 from src.quality.evaluator import (
@@ -80,6 +90,8 @@ ROOT_JUDGE = "root-orchestrator"
 GENERATOR_MAX_TOKENS = 1400
 JUDGE_MAX_TOKENS = 4000
 EXPECTED_OPENINGS = 20
+REPAIR_JUDGE_CALL_CAP = EXPECTED_OPENINGS
+REPAIR_JUDGE_MAX_TOKENS = 800
 SELECTION_SEED = 20260810
 DEFAULT_MODEL_CAP_USD = 1.0
 BOOTSTRAP_SEED = 20260810
@@ -435,13 +447,24 @@ def build_generation_messages(
     ]
 
 
-def apply_shipped_output_guards(
+@dataclass(frozen=True, slots=True)
+class ShippedOutputResult:
+    """The exact customer text plus protected repair evidence for the round."""
+
+    content: str
+    pre_repair_content: str
+    repair_trace: RepairJudgeTrace | None = None
+
+
+async def apply_shipped_output_guards(
     raw_content: str,
     *,
     language: str,
     anchor_line: str | None,
     catalog_evidence: object,
-) -> str:
+    customer_message: str = "",
+    runner: RepairJudgeRunner | None = None,
+) -> ShippedOutputResult:
     """Everything production would do to this text before the customer sees it.
 
     The 2026-08-10 round applied `apply_opening_guard` and stopped, so it
@@ -455,29 +478,54 @@ def apply_shipped_output_guards(
     set: every case is one customer opening with no prior conversation.
     """
 
-    text = apply_opening_guard(
-        raw_content,
-        language=language,
-        is_first_turn=True,
-        customer_name=None,
-        anchor_line=anchor_line,
-    )
-    text = commit_to_what_you_deferred(text, language=language)
     grounded: list[object] = []
     if isinstance(catalog_evidence, list):
         for product in catalog_evidence:
             if isinstance(product, dict) and product.get("price_aed") is not None:
                 grounded.append(product["price_aed"])
-    violations = classify_grounding_output(
-        text,
-        grounded_amounts=grounded,
-    )
-    return repair_grounding_output(
-        text,
+    grounded_amounts = tuple(grounded) if grounded else None
+    state = ReplyPolicyState(
         language=language,
-        violations=violations,
-        grounded_amounts=grounded,
-    ).text
+        is_first_turn=True,
+        customer_name=None,
+        anchor_line=anchor_line,
+        grounded_amounts=grounded_amounts,
+    )
+    rendered = render_reply(raw_content, state=state, provenance="model")
+    try:
+        judged = await review_flagged_reply_with_pii(
+            rendered.text,
+            state=state,
+            flags=rendered.flags,
+            evidence=RepairJudgeEvidence(
+                language=language,
+                customer_message=customer_message,
+                grounded_amounts=tuple(str(amount) for amount in grounded),
+            ),
+            provenance=rendered.provenance,
+            runner=runner,
+        )
+        trace = judged.trace
+        content = judged.text
+    except Exception:
+        trace = unavailable_repair_judge_trace(rendered.flags)
+        content = rendered.text
+
+    if trace is not None and trace.requires_handoff:
+        fallback = render_reply(
+            repair_manager_handoff_text(language),
+            state=state,
+            provenance="deterministic_static",
+        )
+        if fallback.flags:
+            raise RuntimeError("repair manager handoff notice raised a removal flag")
+        content = fallback.text
+
+    return ShippedOutputResult(
+        content=content,
+        pre_repair_content=rendered.text,
+        repair_trace=trace,
+    )
 
 
 def catalog_matches(
@@ -831,9 +879,7 @@ async def preflight(
         raise ValueError(f"preflight already exists: {output_dir}")
     scenarios = _load_frozen_scenarios(scenarios_path)
     judge_model = SECOND_READER_MODEL if second_reader else ROOT_JUDGE
-    models = (
-        (GENERATOR_MODEL, SECOND_READER_MODEL) if second_reader else (GENERATOR_MODEL,)
-    )
+    models = (GENERATOR_MODEL, REPAIR_JUDGE_MODEL)
     catalog, products = await asyncio.gather(
         _pinned_model_catalog(models), _fetch_catalog_summaries()
     )
@@ -854,7 +900,18 @@ async def preflight(
             "maximum_luna_response_bytes": 24_000,
         }
     )
+    repair_input_bound = conservative_input_token_bound(
+        {
+            "system": REPAIR_JUDGE_PROMPT,
+            "maximum_customer_message_bytes": max(
+                len(str(case["opening"]).encode("utf-8")) for case in cases
+            ),
+            "maximum_reply_bytes": 24_000,
+            "maximum_candidate_bytes": 24_000,
+        }
+    )
     generator_prices = _pricing(catalog, GENERATOR_MODEL)
+    repair_prices = _pricing(catalog, REPAIR_JUDGE_MODEL)
     estimates = {
         GENERATOR_MODEL: estimate_cost_usd(
             calls=EXPECTED_OPENINGS,
@@ -863,10 +920,17 @@ async def preflight(
             prompt_price=generator_prices[0],
             completion_price=generator_prices[1],
         ),
+        REPAIR_JUDGE_MODEL: estimate_cost_usd(
+            calls=REPAIR_JUDGE_CALL_CAP,
+            max_input_tokens=repair_input_bound,
+            max_output_tokens=REPAIR_JUDGE_MAX_TOKENS,
+            prompt_price=repair_prices[0],
+            completion_price=repair_prices[1],
+        ),
     }
     if second_reader:
         judge_prices = _pricing(catalog, SECOND_READER_MODEL)
-        estimates[SECOND_READER_MODEL] = estimate_cost_usd(
+        estimates[SECOND_READER_MODEL] += estimate_cost_usd(
             calls=EXPECTED_OPENINGS,
             max_input_tokens=judge_input_bound,
             max_output_tokens=JUDGE_MAX_TOKENS,
@@ -897,6 +961,22 @@ async def preflight(
         }
         for model, entry in catalog.items()
     }
+    calls_per_model = {
+        GENERATOR_MODEL: EXPECTED_OPENINGS,
+        REPAIR_JUDGE_MODEL: REPAIR_JUDGE_CALL_CAP
+        + (EXPECTED_OPENINGS if second_reader else 0),
+    }
+    if not second_reader:
+        calls_per_model[ROOT_JUDGE] = 0
+    input_token_upper_bounds = {
+        GENERATOR_MODEL: generator_input_bound,
+        REPAIR_JUDGE_MODEL: max(
+            repair_input_bound,
+            judge_input_bound if second_reader else 0,
+        ),
+    }
+    if not second_reader:
+        input_token_upper_bounds[ROOT_JUDGE] = 0
     document = {
         "schema_version": "treejar-real-opening-preflight/v1",
         "created_at": datetime.now(UTC).isoformat(),
@@ -913,16 +993,17 @@ async def preflight(
         ),
         "generation_model": GENERATOR_MODEL,
         "judge_model": judge_model,
-        "calls_per_model": EXPECTED_OPENINGS,
+        "calls_per_model": calls_per_model,
+        "repair_judge_authority": {
+            "model": REPAIR_JUDGE_MODEL,
+            "call_cap": REPAIR_JUDGE_CALL_CAP,
+        },
         "estimated_cost_usd": estimates,
         "per_model_cap_usd": {
             model: (0.0 if model == ROOT_JUDGE else per_model_cap_usd)
-            for model in (GENERATOR_MODEL, judge_model)
+            for model in calls_per_model
         },
-        "input_token_upper_bounds": {
-            GENERATOR_MODEL: generator_input_bound,
-            judge_model: (0 if judge_model == ROOT_JUDGE else judge_input_bound),
-        },
+        "input_token_upper_bounds": input_token_upper_bounds,
         "model_catalog": public_catalog,
         "catalog_products": len(products),
         "paid_calls_made": 0,
@@ -1187,7 +1268,11 @@ def find_ungrounded_numbers(response: str, case: dict[str, Any]) -> list[str]:
 def _actual_cost_by_model(
     state: dict[str, Any], judge_model: str = SECOND_READER_MODEL
 ) -> dict[str, float]:
-    totals = {GENERATOR_MODEL: 0.0, judge_model: 0.0}
+    totals = {
+        GENERATOR_MODEL: 0.0,
+        REPAIR_JUDGE_MODEL: 0.0,
+        judge_model: 0.0,
+    }
     records = state.get("records")
     if not isinstance(records, dict):
         return totals
@@ -1195,14 +1280,147 @@ def _actual_cost_by_model(
         if not isinstance(record, dict):
             continue
         generation = record.get("generation")
+        if not isinstance(generation, dict):
+            generation = record.get("generation_raw")
+        repair_judge = record.get("repair_judge")
         judge = record.get("judge")
         if isinstance(generation, dict):
             totals[GENERATOR_MODEL] += (
                 int(generation.get("cost_micro_usd") or 0) / 1_000_000
             )
+        if isinstance(repair_judge, dict):
+            totals[REPAIR_JUDGE_MODEL] += (
+                int(repair_judge.get("cost_micro_usd") or 0) / 1_000_000
+            )
         if isinstance(judge, dict):
             totals[judge_model] += int(judge.get("cost_micro_usd") or 0) / 1_000_000
     return totals
+
+
+def _repair_request_digest(request: RepairJudgeRequest) -> str:
+    return _sha256_json(
+        {
+            "reply": request.reply,
+            "flags": [
+                {
+                    "guard_name": flag.guard_name,
+                    "reason": flag.reason,
+                    "details": list(flag.details),
+                    "candidate": flag.candidate,
+                }
+                for flag in request.flags
+            ],
+            "evidence": asdict(request.evidence),
+        }
+    )
+
+
+def _stored_repair_result(document: dict[str, Any]) -> RepairJudgeProviderResult:
+    return RepairJudgeProviderResult(
+        decision=RepairJudgeDecision(
+            answer=str(document["answer"]),
+            corrected_text=(
+                str(document["corrected_text"])
+                if document.get("corrected_text") is not None
+                else None
+            ),
+            rationale=str(document["rationale"]),
+        ),
+        model=str(document["model"]),
+        prompt_tokens=(
+            int(document["prompt_tokens"])
+            if document.get("prompt_tokens") is not None
+            else None
+        ),
+        completion_tokens=(
+            int(document["completion_tokens"])
+            if document.get("completion_tokens") is not None
+            else None
+        ),
+        cost_usd=(
+            float(document["cost_micro_usd"]) / 1_000_000
+            if document.get("cost_micro_usd") is not None
+            else None
+        ),
+    )
+
+
+def _journaled_repair_runner(
+    *,
+    state: dict[str, Any],
+    record: dict[str, Any],
+    state_path: pathlib.Path,
+    preflight_doc: dict[str, Any],
+) -> RepairJudgeRunner:
+    async def run(request: RepairJudgeRequest) -> RepairJudgeProviderResult:
+        request_digest = _repair_request_digest(request)
+        stored = record.get("repair_judge")
+        if isinstance(stored, dict):
+            if stored.get("request_digest") != request_digest:
+                raise RuntimeError("stored repair-judge request digest drift")
+            return _stored_repair_result(stored)
+        if record.get("repair_judge_request_started_at") is not None:
+            raise RuntimeError(
+                "repair-judge request outcome is ambiguous; refusing a duplicate paid call"
+            )
+
+        by_arm = state["calls_started_by_arm"]
+        by_model = state["calls_started"]
+        by_arm["repair_judge"] = int(by_arm.get("repair_judge") or 0) + 1
+        by_model[REPAIR_JUDGE_MODEL] = int(by_model.get(REPAIR_JUDGE_MODEL) or 0) + 1
+        authority = preflight_doc.get("repair_judge_authority") or {
+            "model": REPAIR_JUDGE_MODEL,
+            "call_cap": REPAIR_JUDGE_CALL_CAP,
+        }
+        if authority.get("model") != REPAIR_JUDGE_MODEL:
+            raise RuntimeError("repair-judge model is outside preflight authority")
+        if int(by_arm["repair_judge"]) > int(authority["call_cap"]):
+            raise RuntimeError("repair-judge paid-call count would exceed its cap")
+        model_cap = int(
+            (preflight_doc.get("calls_per_model") or {}).get(
+                REPAIR_JUDGE_MODEL, REPAIR_JUDGE_CALL_CAP
+            )
+        )
+        if int(by_model[REPAIR_JUDGE_MODEL]) > model_cap:
+            raise RuntimeError("repair-judge model call count would exceed preflight")
+
+        record["repair_judge_request_started_at"] = datetime.now(UTC).isoformat()
+        record["repair_judge_request_digest"] = request_digest
+        _write_protected_json(state_path, state)
+        started = time.perf_counter()
+        result = await run_repair_judge(request)
+        record["repair_judge"] = {
+            "request_digest": request_digest,
+            "answer": result.decision.answer,
+            "corrected_text": result.decision.corrected_text,
+            "rationale": result.decision.rationale,
+            "model": result.model,
+            "prompt_tokens": result.prompt_tokens,
+            "completion_tokens": result.completion_tokens,
+            "cost_micro_usd": (
+                round(result.cost_usd * 1_000_000)
+                if result.cost_usd is not None
+                else None
+            ),
+            "latency_ms": round((time.perf_counter() - started) * 1000),
+        }
+        _write_protected_json(state_path, state)
+        _enforce_actual_caps(state, preflight_doc)
+        return result
+
+    return run
+
+
+def _repair_trace_document(
+    result: ShippedOutputResult,
+) -> dict[str, Any] | None:
+    if result.repair_trace is None:
+        return None
+    return {
+        "input_content": result.pre_repair_content,
+        "output_content": result.content,
+        "trace": asdict(result.repair_trace),
+    }
 
 
 def _enforce_actual_caps(state: dict[str, Any], preflight_doc: dict[str, Any]) -> None:
@@ -1217,6 +1435,51 @@ def _enforce_actual_caps(state: dict[str, Any], preflight_doc: dict[str, Any]) -
         raise RuntimeError("actual model cost cap exceeded: " + "; ".join(exceeded))
 
 
+def _calls_started_by_arm(state: dict[str, Any], *, judge_model: str) -> dict[str, int]:
+    value = state.get("calls_started_by_arm")
+    if isinstance(value, dict):
+        return {
+            "generation": int(value.get("generation") or 0),
+            "repair_judge": int(value.get("repair_judge") or 0),
+            "scoring_judge": int(value.get("scoring_judge") or 0),
+        }
+    calls = state.get("calls_started")
+    if not isinstance(calls, dict):
+        return {"generation": 0, "repair_judge": 0, "scoring_judge": 0}
+    return {
+        "generation": int(calls.get(GENERATOR_MODEL) or 0),
+        "repair_judge": 0,
+        "scoring_judge": (
+            0 if judge_model == ROOT_JUDGE else int(calls.get(judge_model) or 0)
+        ),
+    }
+
+
+def _aggregate_repair_counts(records: dict[str, Any]) -> dict[str, int]:
+    keys = (
+        "flags",
+        "calls",
+        "approvals",
+        "corrections",
+        "cannot_fix",
+        "rejected_corrections",
+        "fallbacks",
+        "provider_failures",
+    )
+    totals = {key: 0 for key in keys}
+    for record in records.values():
+        if not isinstance(record, dict):
+            continue
+        repair = record.get("repair_trace")
+        trace = repair.get("trace") if isinstance(repair, dict) else None
+        counts = trace.get("counts") if isinstance(trace, dict) else None
+        if not isinstance(counts, dict):
+            continue
+        for key in keys:
+            totals[key] += int(counts.get(key) or 0)
+    return totals
+
+
 def _analyze_completed_state(
     *,
     preflight_doc: dict[str, Any],
@@ -1228,17 +1491,52 @@ def _analyze_completed_state(
     if not isinstance(records, dict) or not isinstance(calls_started, dict):
         raise ValueError("protected run state is incomplete")
     judge_model = str(preflight_doc["judge_model"])
-    if calls_started != {
-        GENERATOR_MODEL: EXPECTED_OPENINGS,
-        judge_model: 0 if judge_model == ROOT_JUDGE else EXPECTED_OPENINGS,
-    }:
+    by_arm = _calls_started_by_arm(state, judge_model=judge_model)
+    expected_scoring = 0 if judge_model == ROOT_JUDGE else EXPECTED_OPENINGS
+    if (
+        by_arm["generation"] != EXPECTED_OPENINGS
+        or by_arm["scoring_judge"] != expected_scoring
+        or not 0 <= by_arm["repair_judge"] <= REPAIR_JUDGE_CALL_CAP
+    ):
         raise RuntimeError(f"paid-call journal is incomplete: {calls_started}")
+    expected_model_calls = {
+        GENERATOR_MODEL: EXPECTED_OPENINGS,
+        REPAIR_JUDGE_MODEL: by_arm["repair_judge"] + expected_scoring,
+    }
+    if judge_model == ROOT_JUDGE:
+        expected_model_calls[ROOT_JUDGE] = 0
+    if any(
+        int(calls_started.get(model) or 0) != expected
+        for model, expected in expected_model_calls.items()
+    ):
+        raise RuntimeError(f"paid-call model journal is incomplete: {calls_started}")
 
     results: list[dict[str, object]] = []
     for case in cases_doc:
         record = records[str(int(case["dialog_id"]))]
         generation = record["generation"]
         judge = record["judge"]
+        repair_judge = record.get("repair_judge")
+        repair_prompt_tokens = (
+            int(repair_judge.get("prompt_tokens") or 0)
+            if isinstance(repair_judge, dict)
+            else 0
+        )
+        repair_completion_tokens = (
+            int(repair_judge.get("completion_tokens") or 0)
+            if isinstance(repair_judge, dict)
+            else 0
+        )
+        repair_cost_micro_usd = (
+            int(repair_judge.get("cost_micro_usd") or 0)
+            if isinstance(repair_judge, dict)
+            else 0
+        )
+        repair_latency_ms = (
+            int(repair_judge.get("latency_ms") or 0)
+            if isinstance(repair_judge, dict)
+            else 0
+        )
         evaluation = EvaluationResult.model_validate(judge["evaluation"])
         corrected_ungrounded = find_ungrounded_numbers(str(generation["content"]), case)
         corrected_failures = critical_failure_codes(
@@ -1258,14 +1556,19 @@ def _analyze_completed_state(
                 "response": str(generation["content"]),
                 "generator_model": GENERATOR_MODEL,
                 "judge_model": judge_model,
-                "latency_ms": int(generation["latency_ms"]) + int(judge["latency_ms"]),
+                "latency_ms": int(generation["latency_ms"])
+                + repair_latency_ms
+                + int(judge["latency_ms"]),
                 "luna_latency_ms": int(generation["latency_ms"]),
-                "glm_latency_ms": int(judge["latency_ms"]),
+                "glm_latency_ms": repair_latency_ms + int(judge["latency_ms"]),
                 "prompt_tokens": int(generation["prompt_tokens"])
+                + repair_prompt_tokens
                 + int(judge["prompt_tokens"]),
                 "completion_tokens": int(generation["completion_tokens"])
+                + repair_completion_tokens
                 + int(judge["completion_tokens"]),
                 "cost_micro_usd": int(generation["cost_micro_usd"])
+                + repair_cost_micro_usd
                 + int(judge["cost_micro_usd"]),
                 "weighted_score": float(evaluation.total_score),
                 "attainable_score": attainable_weighted_score(evaluation.criteria),
@@ -1294,9 +1597,10 @@ def _analyze_completed_state(
         ).hexdigest(),
         "model_catalog_digest": _sha256_json(preflight_doc["model_catalog"]),
         "calls_started": {
-            GENERATOR_MODEL: int(calls_started[GENERATOR_MODEL]),
-            judge_model: int(calls_started[judge_model]),
+            model: int(count) for model, count in sorted(calls_started.items())
         },
+        "calls_started_by_arm": by_arm,
+        "repair": _aggregate_repair_counts(records),
         "actual_cost_micro_usd": {
             model: round(cost * 1_000_000) for model, cost in actual_costs.items()
         },
@@ -1352,9 +1656,21 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
         _read_object(state_path)
         if state_path.exists()
         else {
-            "schema_version": "treejar-real-opening-run-state/v1",
+            "schema_version": "treejar-real-opening-run-state/v2",
             "started_at": datetime.now(UTC).isoformat(),
-            "calls_started": {GENERATOR_MODEL: 0, judge_model: 0},
+            "calls_started": {
+                model: 0
+                for model in {
+                    GENERATOR_MODEL,
+                    REPAIR_JUDGE_MODEL,
+                    judge_model,
+                }
+            },
+            "calls_started_by_arm": {
+                "generation": 0,
+                "repair_judge": 0,
+                "scoring_judge": 0,
+            },
             "records": {},
         }
     )
@@ -1364,6 +1680,13 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
     calls_started = state.get("calls_started")
     if not isinstance(calls_started, dict):
         raise ValueError("protected run state has no call journal")
+    calls_started_by_arm = state.setdefault(
+        "calls_started_by_arm",
+        _calls_started_by_arm(state, judge_model=judge_model),
+    )
+    if not isinstance(calls_started_by_arm, dict):
+        raise ValueError("protected run state has no arm call journal")
+    calls_started.setdefault(REPAIR_JUDGE_MODEL, 0)
 
     async with httpx.AsyncClient(
         base_url=settings.openrouter_base_url.rstrip("/"),
@@ -1388,32 +1711,56 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
             if not isinstance(record, dict):
                 raise ValueError("protected record must be an object")
             if not isinstance(record.get("generation"), dict):
-                if record.get("generation_request_started_at") is not None:
-                    raise RuntimeError(
-                        f"dialog {dialog_id}: Luna request outcome is ambiguous; "
-                        "refusing a duplicate paid call"
+                generation_raw = record.get("generation_raw")
+                if not isinstance(generation_raw, dict):
+                    if record.get("generation_request_started_at") is not None:
+                        raise RuntimeError(
+                            f"dialog {dialog_id}: Luna request outcome is ambiguous; "
+                            "refusing a duplicate paid call"
+                        )
+                    calls_started[GENERATOR_MODEL] = (
+                        int(calls_started.get(GENERATOR_MODEL) or 0) + 1
                     )
-                calls_started[GENERATOR_MODEL] = (
-                    int(calls_started.get(GENERATOR_MODEL) or 0) + 1
-                )
-                if int(calls_started[GENERATOR_MODEL]) > EXPECTED_OPENINGS:
-                    raise RuntimeError("Luna paid-call count would exceed 20")
-                record["generation_request_started_at"] = datetime.now(UTC).isoformat()
-                _write_protected_json(state_path, state)
-                order, quantizations = _provider_route(preflight_doc, GENERATOR_MODEL)
-                payload = build_base_payload(
-                    model=GENERATOR_MODEL,
-                    messages=case["generation_messages"],
-                    max_tokens=GENERATOR_MAX_TOKENS,
-                    reasoning_enabled=False,
-                    provider_order=order,
-                    provider_quantizations=quantizations,
-                )
-                body, latency_ms = await _request_once(client, payload)
-                raw_content, finish_reason = _message_content(body)
-                if finish_reason == "length":
-                    raise RuntimeError(f"dialog {dialog_id}: Luna response truncated")
-                response = apply_shipped_output_guards(
+                    calls_started_by_arm["generation"] = (
+                        int(calls_started_by_arm.get("generation") or 0) + 1
+                    )
+                    if int(calls_started_by_arm["generation"]) > EXPECTED_OPENINGS:
+                        raise RuntimeError("Luna paid-call count would exceed 20")
+                    record["generation_request_started_at"] = datetime.now(
+                        UTC
+                    ).isoformat()
+                    _write_protected_json(state_path, state)
+                    order, quantizations = _provider_route(
+                        preflight_doc, GENERATOR_MODEL
+                    )
+                    payload = build_base_payload(
+                        model=GENERATOR_MODEL,
+                        messages=case["generation_messages"],
+                        max_tokens=GENERATOR_MAX_TOKENS,
+                        reasoning_enabled=False,
+                        provider_order=order,
+                        provider_quantizations=quantizations,
+                    )
+                    body, latency_ms = await _request_once(client, payload)
+                    raw_content, finish_reason = _message_content(body)
+                    if finish_reason == "length":
+                        raise RuntimeError(
+                            f"dialog {dialog_id}: Luna response truncated"
+                        )
+                    generation_raw = {
+                        "model": GENERATOR_MODEL,
+                        "provider_model": body.get("model"),
+                        "content": raw_content,
+                        "finish_reason": finish_reason,
+                        "latency_ms": latency_ms,
+                        **_usage(body),
+                    }
+                    record["generation_raw"] = generation_raw
+                    _write_protected_json(state_path, state)
+                    _enforce_actual_caps(state, preflight_doc)
+
+                raw_content = str(generation_raw["content"])
+                shipped = await apply_shipped_output_guards(
                     raw_content,
                     language=str(case["language"]),
                     anchor_line=(
@@ -1422,16 +1769,22 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                         else None
                     ),
                     catalog_evidence=case["catalog_evidence"],
+                    customer_message=str(case["opening"]),
+                    runner=_journaled_repair_runner(
+                        state=state,
+                        record=record,
+                        state_path=state_path,
+                        preflight_doc=preflight_doc,
+                    ),
                 )
                 record["generation"] = {
-                    "model": GENERATOR_MODEL,
-                    "provider_model": body.get("model"),
-                    "content": response,
+                    **generation_raw,
+                    "content": shipped.content,
                     "raw_content": raw_content,
-                    "finish_reason": finish_reason,
-                    "latency_ms": latency_ms,
-                    **_usage(body),
                 }
+                repair_trace = _repair_trace_document(shipped)
+                if repair_trace is not None:
+                    record["repair_trace"] = repair_trace
                 _write_protected_json(state_path, state)
                 _enforce_actual_caps(state, preflight_doc)
                 print(
@@ -1464,8 +1817,14 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                 calls_started[SECOND_READER_MODEL] = (
                     int(calls_started.get(SECOND_READER_MODEL) or 0) + 1
                 )
-                if int(calls_started[SECOND_READER_MODEL]) > EXPECTED_OPENINGS:
-                    raise RuntimeError("GLM paid-call count would exceed 20")
+                calls_started_by_arm["scoring_judge"] = (
+                    int(calls_started_by_arm.get("scoring_judge") or 0) + 1
+                )
+                if int(calls_started_by_arm["scoring_judge"]) > EXPECTED_OPENINGS:
+                    raise RuntimeError("scoring-judge paid-call count would exceed 20")
+                model_cap = int(preflight_doc["calls_per_model"][SECOND_READER_MODEL])
+                if int(calls_started[SECOND_READER_MODEL]) > model_cap:
+                    raise RuntimeError("GLM model call count would exceed preflight")
                 record["judge_request_started_at"] = datetime.now(UTC).isoformat()
                 _write_protected_json(state_path, state)
                 order, quantizations = _provider_route(
@@ -1527,6 +1886,16 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                     flush=True,
                 )
 
+    repair_pack = [
+        {
+            "dialog_id": int(record["dialog_id"]),
+            **record["repair_trace"],
+        }
+        for record in records.values()
+        if isinstance(record, dict) and isinstance(record.get("repair_trace"), dict)
+    ]
+    _write_protected_json(output_dir / "repair-reading-pack.json", repair_pack)
+
     if judge_model == ROOT_JUDGE:
         pack = [records[str(int(case["dialog_id"]))]["reading"] for case in cases_doc]
         _write_protected_json(output_dir / "reading-pack.json", pack)
@@ -1560,6 +1929,7 @@ def _public_preflight(document: dict[str, Any]) -> dict[str, Any]:
         "generation_model": document["generation_model"],
         "judge_model": document["judge_model"],
         "calls_per_model": document["calls_per_model"],
+        "repair_judge_authority": document["repair_judge_authority"],
         "estimated_cost_usd": document["estimated_cost_usd"],
         "per_model_cap_usd": document["per_model_cap_usd"],
         "catalog_products": document["catalog_products"],

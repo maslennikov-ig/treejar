@@ -6,10 +6,14 @@ import inspect
 import json
 import pathlib
 import sys
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 from scripts.corpus_bridge.real_opening_acceptance import (
+    GENERATOR_MODEL,
+    REPAIR_JUDGE_CALL_CAP,
+    REPAIR_JUDGE_MODEL,
     ROOT_JUDGE,
     _load_frozen_scenarios,
     _parse_args,
@@ -23,8 +27,18 @@ from scripts.corpus_bridge.real_opening_acceptance import (
     expected_language,
     find_ungrounded_numbers,
     preflight,
+    run_paid_round,
     validate_complete_results,
 )
+
+from src.llm.message_processor import _finalize_turn_response
+from src.llm.repair_judge import (
+    RepairJudgeDecision,
+    RepairJudgeProviderResult,
+    RepairJudgeRequest,
+)
+from src.llm.response_policy import ReplyPolicyState, render_reply
+from src.llm.response_runtime import LLMResponse
 
 
 def _result(
@@ -322,7 +336,8 @@ def test_numeric_grounding_normalizes_catalog_names_and_opening_ranges() -> None
     assert find_ungrounded_numbers("Options start at AED 901.", case) == ["901"]
 
 
-def test_the_harness_applies_the_guards_that_ship() -> None:
+@pytest.mark.asyncio
+async def test_the_harness_applies_the_guards_that_ship() -> None:
     """`tj-vz7o.10.1`. The round measured the model plus one guard.
 
     Production runs `apply_opening_guard`, then the deferral guard, then
@@ -333,38 +348,332 @@ def test_the_harness_applies_the_guards_that_ship() -> None:
     cannot be told from a real one after the fact.
     """
 
-    invented = apply_shipped_output_guards(
-        "Our ergonomic chairs start from AED 500 in our catalog. "
-        "What are you furnishing?",
+    calls: list[RepairJudgeRequest] = []
+
+    async def correct(request: RepairJudgeRequest) -> RepairJudgeProviderResult:
+        calls.append(request)
+        return RepairJudgeProviderResult(
+            decision=RepairJudgeDecision(
+                answer="correct",
+                corrected_text=(
+                    "I can help you explore verified catalog options. "
+                    "What are you furnishing?"
+                ),
+                rationale="Remove the unsupported service and keep useful help.",
+            ),
+            model=REPAIR_JUDGE_MODEL,
+        )
+
+    invented = await apply_shipped_output_guards(
+        "We can assess and buy your used desks. What are you furnishing?",
         language="en",
         anchor_line=None,
         catalog_evidence=[],
+        customer_message="I need an ergonomic chair.",
+        runner=correct,
     )
 
-    assert "AED 500" not in invented
-    assert "What are you furnishing?" in invented
+    assert "buy your used desks" not in invented.content
+    assert "What are you furnishing?" in invented.content
+    assert invented.repair_trace is not None
+    assert invented.repair_trace.counts.calls == 1
+    assert len(calls) == 1
 
 
-def test_a_price_on_a_retrieved_row_survives_the_harness_guards() -> None:
-    kept = apply_shipped_output_guards(
+@pytest.mark.asyncio
+async def test_a_price_on_a_retrieved_row_survives_without_a_repair_call() -> None:
+    calls = 0
+
+    async def fail_if_called(
+        _request: RepairJudgeRequest,
+    ) -> RepairJudgeProviderResult:
+        nonlocal calls
+        calls += 1
+        raise AssertionError("a no-trigger reply must not call the repair judge")
+
+    kept = await apply_shipped_output_guards(
         "The XTEN-S workstation is AED 566.87.",
         language="en",
         anchor_line=None,
         catalog_evidence=[{"name": "XTEN-S", "price_aed": 566.87, "stock": 4}],
+        customer_message="What does XTEN-S cost?",
+        runner=fail_if_called,
     )
 
-    assert "566.87" in kept
+    assert "566.87" in kept.content
+    assert kept.repair_trace is None
+    assert calls == 0
 
 
-def test_the_harness_commits_to_what_it_defers() -> None:
-    committed = apply_shipped_output_guards(
+@pytest.mark.asyncio
+async def test_triggered_harness_reply_matches_the_production_finalizer() -> None:
+    raw = "We can assess and buy your used desks."
+    state = ReplyPolicyState(language="en", is_first_turn=True)
+
+    async def correct(_request: RepairJudgeRequest) -> RepairJudgeProviderResult:
+        return RepairJudgeProviderResult(
+            decision=RepairJudgeDecision(
+                answer="correct",
+                corrected_text="I can help you choose furniture from our catalog.",
+                rationale="Use the supported catalog path.",
+            ),
+            model=REPAIR_JUDGE_MODEL,
+        )
+
+    harness = await apply_shipped_output_guards(
+        raw,
+        language="en",
+        anchor_line=None,
+        catalog_evidence=[],
+        customer_message="Can you buy my desks?",
+        runner=correct,
+    )
+    rendered = render_reply(raw, state=state, provenance="model")
+    production = await _finalize_turn_response(
+        SimpleNamespace(
+            masked_text="Can you buy my desks?",
+            pii_map={},
+            deps=SimpleNamespace(executed_tool_names=()),
+            _record_reply_on_conversation=lambda _model, _text: None,
+        ),
+        LLMResponse(
+            text=rendered.text,
+            tokens_in=10,
+            tokens_out=10,
+            cost=0.001,
+            model=GENERATOR_MODEL,
+            repair_flags=rendered.flags,
+            repair_policy_state=state,
+        ),
+        runner=correct,
+    )
+
+    assert harness.content == production.text
+    assert harness.repair_trace is not None
+    assert production.repair_trace is not None
+    assert harness.repair_trace.answer == production.repair_trace.answer == "correct"
+    assert harness.repair_trace.counts == production.repair_trace.counts
+
+
+@pytest.mark.asyncio
+async def test_the_harness_commits_to_what_it_defers() -> None:
+    committed = await apply_shipped_output_guards(
         "Whether assembly can be included still needs confirmation.",
         language="en",
         anchor_line=None,
         catalog_evidence=[],
+        customer_message="Can assembly be included?",
     )
 
-    assert "I'll confirm assembly with our team and come back to you." in committed
+    assert (
+        "I'll confirm assembly with our team and come back to you." in committed.content
+    )
+
+
+@pytest.mark.asyncio
+async def test_preflight_authorizes_the_repair_model_and_round_call_cap(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenarios_path = tmp_path / "scenarios.json"
+    scenarios_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "treejar-real-openings/v1",
+                "selection_seed": 20260810,
+                "scenarios": [
+                    {
+                        "dialog_id": dialog_id,
+                        "length_stratum": (dialog_id - 1) // 5 + 1,
+                        "opening": f"Opening {dialog_id}",
+                    }
+                    for dialog_id in range(1, 21)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    requested_models: list[tuple[str, ...]] = []
+
+    async def model_catalog(models: tuple[str, ...]) -> dict[str, dict[str, object]]:
+        requested_models.append(models)
+        return {
+            model: {
+                "id": model,
+                "pricing": {"prompt": "0.000001", "completion": "0.000002"},
+                "provider_order": ["test"],
+                "provider_quantizations": ["fp8"],
+            }
+            for model in models
+        }
+
+    async def catalog_products() -> list[dict[str, object]]:
+        return [{"name": "Desk", "sku": "D-1", "price": 1000, "stock": 9}]
+
+    monkeypatch.setattr(
+        "scripts.corpus_bridge.real_opening_acceptance._pinned_model_catalog",
+        model_catalog,
+    )
+    monkeypatch.setattr(
+        "scripts.corpus_bridge.real_opening_acceptance._fetch_catalog_summaries",
+        catalog_products,
+    )
+
+    document = await preflight(
+        scenarios_path=scenarios_path,
+        output_dir=tmp_path / "protected",
+        per_model_cap_usd=1.0,
+    )
+
+    assert requested_models == [(GENERATOR_MODEL, REPAIR_JUDGE_MODEL)]
+    assert document["calls_per_model"] == {
+        GENERATOR_MODEL: 20,
+        REPAIR_JUDGE_MODEL: REPAIR_JUDGE_CALL_CAP,
+        ROOT_JUDGE: 0,
+    }
+    assert document["repair_judge_authority"] == {
+        "model": REPAIR_JUDGE_MODEL,
+        "call_cap": REPAIR_JUDGE_CALL_CAP,
+    }
+
+
+def _prepared_round_files(output_dir: pathlib.Path) -> None:
+    output_dir.mkdir(mode=0o700)
+    preflight_doc = {
+        "schema_version": "treejar-real-opening-preflight/v1",
+        "paid_calls_made": 0,
+        "judge_model": ROOT_JUDGE,
+        "scenario_digest": "a" * 64,
+        "model_catalog": {
+            GENERATOR_MODEL: {
+                "provider_order": ["test"],
+                "provider_quantizations": ["fp8"],
+            },
+            REPAIR_JUDGE_MODEL: {
+                "provider_order": ["test"],
+                "provider_quantizations": ["fp8"],
+            },
+        },
+        "per_model_cap_usd": {
+            GENERATOR_MODEL: 1.0,
+            REPAIR_JUDGE_MODEL: 1.0,
+            ROOT_JUDGE: 0.0,
+        },
+    }
+    cases = [
+        {
+            "dialog_id": dialog_id,
+            "length_stratum": (dialog_id - 1) // 5 + 1,
+            "opening": f"Opening {dialog_id}",
+            "language": "en",
+            "catalog_evidence": [],
+            "catalog_relevant": False,
+            "anchor_line": None,
+            "generation_messages": [
+                {"role": "user", "content": f"Opening {dialog_id}"}
+            ],
+            "generation_prompt_digest": str(dialog_id).zfill(64),
+        }
+        for dialog_id in range(1, 21)
+    ]
+    for name, value in (
+        ("preflight.json", preflight_doc),
+        ("prepared-cases.json", cases),
+    ):
+        path = output_dir / name
+        path.write_text(json.dumps(value), encoding="utf-8")
+        path.chmod(0o600)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("triggered", [False, True])
+async def test_round_journals_only_triggered_repair_calls(
+    triggered: bool,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_dir = tmp_path / ("triggered" if triggered else "clean")
+    _prepared_round_files(output_dir)
+    generation_calls = 0
+    repair_calls = 0
+
+    async def request_once(
+        _client: object,
+        _payload: dict[str, object],
+    ) -> tuple[dict[str, object], int]:
+        nonlocal generation_calls
+        generation_calls += 1
+        content = (
+            "We can assess and buy your used desks."
+            if triggered and generation_calls == 1
+            else "I can help you explore our office furniture catalog."
+        )
+        return (
+            {
+                "model": GENERATOR_MODEL,
+                "choices": [
+                    {
+                        "message": {"content": content},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 10,
+                    "cost": 0.0001,
+                },
+            },
+            5,
+        )
+
+    async def repair(request: RepairJudgeRequest) -> RepairJudgeProviderResult:
+        nonlocal repair_calls
+        repair_calls += 1
+        return RepairJudgeProviderResult(
+            decision=RepairJudgeDecision(
+                answer="correct",
+                corrected_text="I can help you choose furniture from our catalog.",
+                rationale="Use the supported catalog path.",
+            ),
+            model=REPAIR_JUDGE_MODEL,
+            prompt_tokens=20,
+            completion_tokens=10,
+            cost_usd=0.0002,
+        )
+
+    monkeypatch.setattr(
+        "scripts.corpus_bridge.real_opening_acceptance._request_once",
+        request_once,
+    )
+    monkeypatch.setattr(
+        "scripts.corpus_bridge.real_opening_acceptance.run_repair_judge",
+        repair,
+    )
+    monkeypatch.setattr(
+        "scripts.corpus_bridge.real_opening_acceptance._provider_headers",
+        lambda _title: {},
+    )
+
+    result = await run_paid_round(output_dir)
+    state = json.loads((output_dir / "run-state.json").read_text(encoding="utf-8"))
+    repair_pack = json.loads(
+        (output_dir / "repair-reading-pack.json").read_text(encoding="utf-8")
+    )
+
+    assert result["generation_complete"] is True
+    assert generation_calls == 20
+    assert repair_calls == int(triggered)
+    assert state["calls_started_by_arm"] == {
+        "generation": 20,
+        "repair_judge": int(triggered),
+        "scoring_judge": 0,
+    }
+    assert state["calls_started"][REPAIR_JUDGE_MODEL] == int(triggered)
+    assert len(repair_pack) == int(triggered)
+    if triggered:
+        first = state["records"]["1"]
+        assert first["repair_judge"]["answer"] == "correct"
+        assert "buy your used desks" not in first["generation"]["content"]
 
 
 def test_the_round_judges_itself_unless_a_second_reader_is_asked_for() -> None:

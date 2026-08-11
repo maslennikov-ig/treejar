@@ -86,7 +86,8 @@ from src.llm.repair_judge import (
     RepairJudgeEvidence,
     RepairJudgeRunner,
     RepairJudgeTrace,
-    review_flagged_reply,
+    repair_manager_handoff_text,
+    review_flagged_reply_with_pii,
     unavailable_repair_judge_trace,
 )
 from src.llm.response_policy import (
@@ -675,23 +676,11 @@ async def _finalize_turn_response(
         if state is None:
             raise RuntimeError("flagged reply is missing its policy state")
 
-        masked_reply, reply_pii = mask_pii(response.text)
-        turn.pii_map.update(reply_pii)
-        masked_flags = []
-        for flag in response.repair_flags:
-            masked_candidate, candidate_pii = mask_pii(flag.candidate or "")
-            turn.pii_map.update(candidate_pii)
-            masked_flags.append(
-                replace(
-                    flag,
-                    candidate=masked_candidate if flag.candidate is not None else None,
-                )
-            )
         try:
-            judged = await review_flagged_reply(
-                masked_reply,
+            judged = await review_flagged_reply_with_pii(
+                response.text,
                 state=state,
-                flags=tuple(masked_flags),
+                flags=response.repair_flags,
                 evidence=RepairJudgeEvidence(
                     language=state.language,
                     customer_message=turn.masked_text,
@@ -703,6 +692,7 @@ async def _finalize_turn_response(
                     quote_consent_granted=state.quote_consent_granted,
                 ),
                 provenance=response.text_provenance,
+                pii_map=turn.pii_map,
                 runner=runner,
             )
         except Exception as error:
@@ -710,9 +700,11 @@ async def _finalize_turn_response(
                 "Repair judge unavailable; using manager handoff: error_type=%s",
                 type(error).__name__,
             )
-            response.repair_trace = unavailable_repair_judge_trace(tuple(masked_flags))
+            response.repair_trace = unavailable_repair_judge_trace(
+                response.repair_flags
+            )
         else:
-            response.text = unmask_pii(judged.text, turn.pii_map)
+            response.text = judged.text
             response.text_provenance = judged.provenance
             response.repair_flags = judged.remaining_flags
             response.repair_trace = judged.trace
@@ -754,15 +746,6 @@ async def _finalize_turn_response(
     return response
 
 
-def _repair_manager_handoff_text(language: str) -> str:
-    if is_arabic_customer_language(language):
-        return "أريد أن أكون دقيقًا، لذلك طلبت من مديرنا مراجعة طلبك وتأكيد التفاصيل لك."
-    return (
-        "I couldn't safely verify my draft, so I've asked a manager to review "
-        "your request and confirm the details."
-    )
-
-
 def _repair_manager_handoff_reason(trace: RepairJudgeTrace) -> str:
     guards = ",".join(sorted({flag.guard_name for flag in trace.flags})) or "unknown"
     outcome = trace.rejection_reason or trace.answer
@@ -794,7 +777,7 @@ async def _apply_repair_manager_handoff(
         )
 
     rendered = render_reply(
-        _repair_manager_handoff_text(state.language),
+        repair_manager_handoff_text(state.language),
         state=state,
         provenance="deterministic_static",
     )

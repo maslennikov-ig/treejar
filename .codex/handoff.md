@@ -3,8 +3,8 @@
 Updated: 2026-08-11
 Current branch: `main`
 Current stage id: `tj-n7p4-judged-repairs`
-Status: stage 1 is accepted at `5ef5eeb`. Stage 2 `.1`, `.2`, `.3` and `.6`
-are accepted locally; `.4` is next. One repair-judge call cost $0.001265216.
+Status: stage 1 is accepted at `5ef5eeb`. Stage 2 `.1`, `.2`, `.3`, `.6` and
+`.4` are accepted locally; `.5` is next. One repair-judge call cost $0.001265216.
 
 Documentation: no external/versioned boundary — this stage changes first-party
 Python prompt and policy text and uses an existing provider client.
@@ -78,6 +78,7 @@ Python prompt and policy text and uses an existing provider client.
 - `7248844` — `tj-n7p4.1`, split grounding classification from repair.
 - `d81a744` — `tj-n7p4.2`, declare replacing and removing guard contracts.
 - `f12cc5c` — `tj-n7p4.3`, add the second-vendor repair judge.
+- `a1d9532` — `tj-n7p4.6`, hand unresolved repairs to a manager.
 
 Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
 
@@ -92,6 +93,8 @@ Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
   $0.001265216; no corpus text entered Git.
 - `.6` gates: 17 repair tests and 849 affected response tests passed; full
   Pytest `3590 passed, 19 skipped`; no paid call; process verification passed.
+- `.4` gates: production parity and two 20-case journal simulations passed;
+  full Pytest `3594 passed, 19 skipped`; no paid call; process passed.
 - `.4` protected replay: all 60 stored raw assistant outputs re-render through
   the full policy chain with zero changes, digest `1b0b2963…`.
 - `test_llm_grounding_output.py` stayed byte-identical and passed all 107 tests.
@@ -172,8 +175,8 @@ different thing, paid, and fires only on a flag.
 Next stage id: `tj-n7p4-judged-repairs`; it is now the active implementation
 stage and stays sequential through `.1`, `.2`, `.3`, `.6`, `.4`, `.5`.
 
-Recommended action: implement `tj-n7p4.4`, so the acceptance harness uses the
-same judged repair and counted fallback path that production would send.
+Recommended action: run `tj-n7p4.5`: exactly 20 authorized Luna calls, only
+triggered repair calls, root blind scoring, then root-read every rewrite.
 
 After stage 2, the product track that has waited behind the cleanup: two P0 epics
 (`tj-2m5m`, `tj-swgu`), then the reader findings this round confirmed still live
@@ -182,7 +185,7 @@ After stage 2, the product track that has waited behind the cleanup: two P0 epic
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for `tj-n7p4.4` inside the active `tj-n7p4` stage.
+Use $orchestrator-stage for `tj-n7p4.5` inside the active `tj-n7p4` stage.
 
 ## Explicit defers
 
