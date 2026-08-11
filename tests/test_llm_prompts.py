@@ -69,7 +69,7 @@ async def test_build_system_prompt_includes_compact_communication_policy() -> No
     assert "tailors solutions" in policy
     assert "solution, not just a product" in policy
     assert "multiple options" in policy
-    assert "approved discount" in policy
+    assert "approved discount" not in policy
     assert "FU1 before the 24h WhatsApp window closes" in policy
     assert "3d/7d via allowed templates" in policy
     assert "exact next step" in policy
@@ -173,8 +173,29 @@ def test_commercial_capability_registry_states_positive_permissions() -> None:
     assert "[AUTHORIZED COMMERCIAL CAPABILITIES]" not in EVIDENCE_GROUNDING_POLICY
 
 
+def test_recruitment_redirect_keeps_the_application_with_the_sender() -> None:
+    capability = COMMERCIAL_CAPABILITIES["recruitment"]
+    instruction = capability.instruction.casefold()
+
+    assert capability.mode == "not_offered"
+    assert all(request in instruction for request in ("job", "internship", "cv"))
+    assert "sales channel" in instruction
+    assert "official application route" in instruction
+    assert "leaving the application with the sender" in instruction
+    assert not any(
+        unsupported in instruction
+        for unsupported in (
+            "forward",
+            "route your",
+            "call you",
+            "callback",
+            "shortlist",
+        )
+    )
+
+
 @pytest.mark.asyncio
-async def test_customer_owned_furniture_prompt_covers_the_service_promise_family() -> (
+async def test_customer_owned_furniture_redirect_covers_the_service_promise_family() -> (
     None
 ):
     db, redis = AsyncMock(), AsyncMock()
@@ -184,14 +205,20 @@ async def test_customer_owned_furniture_prompt_covers_the_service_promise_family
     prompt = await build_system_prompt(
         db, redis, SalesStage.GREETING.value, language="en"
     )
-    instruction = prompt.split("[CUSTOMER-OWNED FURNITURE POLICY]", maxsplit=1)[1]
+    capability = COMMERCIAL_CAPABILITIES["customer_owned_furniture"]
+    instruction = capability.instruction
 
+    assert capability.mode == "not_offered"
     assert all(
         service in instruction
         for service in ("buy", "resell", "broker", "value", "assess")
     )
     assert "customer-owned furniture" in instruction
-    assert "manager confirms" in instruction
+    assert "Treejar supplies office furniture" in instruction
+    assert "choosing new items or furnishing the space" in instruction
+    assert prompt.count(instruction) == 1
+    assert "[CUSTOMER-OWNED FURNITURE POLICY]" not in prompt
+    assert 'DO NOT reply with "I will check"' not in prompt
 
 
 @pytest.mark.asyncio
@@ -234,9 +261,12 @@ async def test_build_system_prompt_appends_immutable_evidence_grounding_policy()
     assert "use one verified tool, one useful clarification, or manager handoff" in (
         prompt
     )
-    assert "never offer or promise to check, confirm, look up, or verify it later" in (
-        prompt
+    assert COMMERCIAL_CAPABILITIES["deferred_answer"].instruction in prompt
+    assert COMMERCIAL_CAPABILITIES["stock"].instruction in prompt
+    future_check_prohibition = (
+        "never offer or promise to check, confirm, look up, or verify it later"
     )
+    assert future_check_prohibition not in prompt
     normalized_prompt = " ".join(prompt.split())
     assert (
         "A later disclaimer does not cancel an earlier positive promise"

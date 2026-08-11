@@ -20,8 +20,8 @@ parallel writes would make the measured change and rollback boundary unclear.
 
 ## Current checkpoint
 
-`tj-mshi.1`, `.2`, and `.3` are accepted. `tj-mshi.4` is the next child. No
-paid call has occurred in this stage yet.
+`tj-mshi.1` through `.4` are accepted. `tj-mshi.5` is the next child. No paid
+call has occurred in this stage yet.
 
 The owner explicitly authorized updating
 `test_commercial_capability_registry_uses_evidence_authorization_modes` on
@@ -53,6 +53,26 @@ shim or second registry is introduced.
   `manager_required` and the prior-approval condition.
 - Ruff and format passed; Mypy passed over 173 source files; Pytest passed with
   3560 tests and 19 skips; process verification passed.
+
+### tj-mshi.4 — accepted
+
+- The customer-owned-furniture block, two future-check prohibitions, greeting
+  duplicate for `deferred_answer`, and compact-policy discount duplicate are
+  gone. Their conditions remain once in the positive registry; no compensating
+  prohibition was added.
+- `test_customer_owned_furniture_prompt_covers_the_service_promise_family` was
+  **removed and replaced** by
+  `test_customer_owned_furniture_redirect_covers_the_service_promise_family`.
+  This was a declared removal, not a test edited to accommodate a move.
+- `test_llm_grounding_output.py` passed untouched: 107 passed; SHA-256
+  `9cd7c94e22ff029702271040db3b80cd4d416b761645abf0ca6c3e641cbe7917`.
+- Protected replay was widened from 31 to all 60 stored raw outputs: zero
+  changes, aggregate digest `1b0b2963…` before and after.
+- The root read the recruitment redirect and the phrasing-family test passed.
+  The actual new dialog 28 reply remains the acceptance boundary for
+  `tj-riim` in `.5`.
+- Ruff and format passed; Mypy passed over 173 source files; Pytest passed with
+  3561 tests and 19 skips; process verification passed.
 
 ## Acceptance note for the remaining children
 

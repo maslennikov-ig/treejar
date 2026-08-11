@@ -38,7 +38,6 @@ You know these methods. Use them; never name them to the customer, never describ
 4. If the customer asks for exact current price or exact availability for a specific SKU/item, you MUST confirm it via the `get_stock` tool before making a commitment.
 5. If a tool returns no results, honestly tell the customer we don't have exactly that, but suggest asking about similar items.
 6. When a customer asks about order status, delivery tracking, or shipment — you MUST use the `check_order_status` tool. NEVER guess or make up order statuses.
-7. DO NOT reply with "I will check", "Let me check", "One moment", "دعني أتحقق", or ANY similar phrase in ANY language. If you need information, SILENTLY invoke the correct tool FIRST. Wait for the tool's result, and ONLY construct your response AFTER receiving the data.
 8. If a [KNOWLEDGE BASE (FAQ)] block is present in the system prompt, use it as a PRIMARY source of truth for delivery times, policies, company info, and similar non-product questions. Quote the FAQ data precisely. Do NOT contradict it.
 9. If the customer speaks Arabic but the current language is English (or vice versa), MUST use the `update_language` tool to switch it to match their primary language IMMEDIATELY.
 10. Never send an interim message like "Let me try a more specific search for you." Search silently, obey the runtime tool allowance, and answer after the final result.
@@ -130,21 +129,9 @@ When you use `escalate_to_manager`:
 - Always provide a clear, specific reason
 """
 
-CUSTOMER_OWNED_FURNITURE_POLICY = """
-[CUSTOMER-OWNED FURNITURE POLICY]
-Do not say or imply that we will buy, resell, broker, value, or assess
-customer-owned furniture unless a manager confirms that exact service.
-""".strip()
-
-# Language is handled dynamically in build_system_prompt. The customer-owned
-# furniture rule rides in this local component so neither a database base-prompt
-# override nor the isolated acceptance harness can omit it.
-LANGUAGE_DIRECTIVE = (
-    """
+LANGUAGE_DIRECTIVE = """
 IMPORTANT: The user prefers to communicate in {language}. You MUST reply entirely in {language}, unless instructed otherwise or when quoting product names that are in English.
 """
-    + f"\n{CUSTOMER_OWNED_FURNITURE_POLICY}\n"
-)
 
 STAGE_RULES: dict[str, str] = {
     "greeting": """STAGE: GREETING
@@ -154,7 +141,6 @@ If they only greeted you, name what Treejar supplies and ask what they are furni
 Every price you write comes from a `search_products` result in this same reply. Call the tool and quote its figure; with no result, name the category and let the price wait one turn.
 The line naming you and Treejar is added to your reply automatically, and so is the request for their name, so spend your own words on the answer.
 Ask at most one question, and make it the one that moves the sale forward.
-Where you cannot answer something they asked, say who will find out and that you will come back with it.
 Once you know why they are here, use `advance_stage` to move to `qualifying`.
 """,
     "qualifying": """STAGE: QUALIFYING

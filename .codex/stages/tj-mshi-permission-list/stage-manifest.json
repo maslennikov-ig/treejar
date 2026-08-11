@@ -93,6 +93,11 @@
       "task_id": "tj-mshi.3",
       "stream_owner": "tj-mshi.3-root-implementation",
       "artifact_path": ".codex/stages/tj-mshi-permission-list/artifacts/tj-mshi.3.md"
+    },
+    {
+      "task_id": "tj-mshi.4",
+      "stream_owner": "tj-mshi.4-root-implementation",
+      "artifact_path": ".codex/stages/tj-mshi-permission-list/artifacts/tj-mshi.4.md"
     }
   ]
 }
