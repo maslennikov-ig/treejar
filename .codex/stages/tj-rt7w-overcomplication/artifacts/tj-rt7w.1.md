@@ -2,7 +2,7 @@
 schema_version: orchestration-artifact/v3
 artifact_type: delegated-stream
 stage_manifest: .codex/stages/tj-rt7w-overcomplication/stage-manifest.json
-stream_owner: root-orchestrator
+stream_owner: tj-rt7w.1-root-implementation
 orchestration_level: slice_acceptance
 scope_kind: product_slice
 immediate_consumer: response-policy-stage

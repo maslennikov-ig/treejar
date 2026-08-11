@@ -126,6 +126,7 @@ from src.llm.order_quote_routes import QuotationItem, _order_quote_route_for_tur
 from src.llm.order_status import format_order_status
 from src.llm.pii import EMAIL_PATTERN, PHONE_PATTERN, mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
+from src.llm.response_policy import apply_guard_with_reply_bound
 from src.llm.safety import (
     PATH_CORE_CHAT,
     OpenRouterTelemetryChatModel,
@@ -15768,24 +15769,44 @@ async def process_message(
         final_text = unmask_pii(result.output, pii_map)
         if route_suffix:
             model_name = f"{model_name}|{route_suffix}"
-        final_text = _repair_closed_questions(final_text)
-        final_text = _guard_premature_quote_detail_collection(
+        final_text = apply_guard_with_reply_bound(
             final_text,
-            conversation=response_deps.conversation,
-            customer_text=combined_text,
+            guard_name="closed_question",
+            guard=_repair_closed_questions,
         )
-        final_text = _apply_first_turn_opening_guard(final_text)
+        final_text = apply_guard_with_reply_bound(
+            final_text,
+            guard_name="premature_quote_details",
+            guard=lambda current: _guard_premature_quote_detail_collection(
+                current,
+                conversation=response_deps.conversation,
+                customer_text=combined_text,
+            ),
+        )
+        final_text = apply_guard_with_reply_bound(
+            final_text,
+            guard_name="first_turn_opening",
+            guard=_apply_first_turn_opening_guard,
+        )
         # Only the model-written path. The deterministic routes compose their
         # own replies and were given their facts directly in `tj-ja1v`; running
         # question surgery over them would edit text that is already exactly
         # what it should be.
-        final_text = _apply_selling_turn_guard(final_text, response_deps)
+        final_text = apply_guard_with_reply_bound(
+            final_text,
+            guard_name="selling_turn",
+            guard=lambda current: _apply_selling_turn_guard(current, response_deps),
+        )
         # Every turn, including the first: `tj-vz7o.10.1` measured this failure
         # on an opening, which `_apply_selling_turn_guard` deliberately skips.
         # Runs before grounding so grounding still has the last word on it.
-        final_text = commit_to_what_you_deferred(
+        final_text = apply_guard_with_reply_bound(
             final_text,
-            language=str(response_deps.conversation.language),
+            guard_name="deferred_commitment",
+            guard=lambda current: commit_to_what_you_deferred(
+                current,
+                language=str(response_deps.conversation.language),
+            ),
         )
         grounding_result = enforce_grounding_output(
             final_text,
@@ -15796,8 +15817,18 @@ async def process_message(
                 customer_text=combined_text,
             ),
         )
-        final_text = grounding_result.text
-        final_text = _append_required_tool_disclosures(final_text, response_deps)
+        final_text = apply_guard_with_reply_bound(
+            final_text,
+            guard_name="grounding_output",
+            guard=lambda _current: grounding_result.text,
+        )
+        final_text = apply_guard_with_reply_bound(
+            final_text,
+            guard_name="tool_disclosures",
+            guard=lambda current: _append_required_tool_disclosures(
+                current, response_deps
+            ),
+        )
         if quotation_claimed_without_call(
             final_text, quotation_created=response_deps.quotation_created
         ):
@@ -15929,13 +15960,25 @@ async def process_message(
     ) -> LLMResponse:
         response_deps = response_deps or deps
         final_text = unmask_pii(text, pii_map)
-        final_text = _repair_closed_questions(final_text)
-        final_text = _guard_premature_quote_detail_collection(
+        final_text = apply_guard_with_reply_bound(
             final_text,
-            conversation=response_deps.conversation,
-            customer_text=combined_text,
+            guard_name="closed_question",
+            guard=_repair_closed_questions,
         )
-        final_text = _apply_first_turn_opening_guard(final_text)
+        final_text = apply_guard_with_reply_bound(
+            final_text,
+            guard_name="premature_quote_details",
+            guard=lambda current: _guard_premature_quote_detail_collection(
+                current,
+                conversation=response_deps.conversation,
+                customer_text=combined_text,
+            ),
+        )
+        final_text = apply_guard_with_reply_bound(
+            final_text,
+            guard_name="first_turn_opening",
+            guard=_apply_first_turn_opening_guard,
+        )
         if conv is not None and not model_name.startswith("dialogue-kernel|"):
             record_legacy_route(
                 conv,
@@ -15971,7 +16014,11 @@ async def process_message(
             if decision_text
             else build_service_handoff_response(policy_decision, decision_language)
         )
-        final_text = _apply_first_turn_opening_guard(final_text)
+        final_text = apply_guard_with_reply_bound(
+            final_text,
+            guard_name="first_turn_opening",
+            guard=_apply_first_turn_opening_guard,
+        )
         if conv is not None:
             record_legacy_route(
                 conv,
@@ -16871,8 +16918,16 @@ async def process_message(
             allow_product_media: bool = True,
         ) -> LLMResponse:
             final_text = unmask_pii(recovery_text, pii_map)
-            final_text = _repair_closed_questions(final_text)
-            final_text = _apply_first_turn_opening_guard(final_text)
+            final_text = apply_guard_with_reply_bound(
+                final_text,
+                guard_name="closed_question",
+                guard=_repair_closed_questions,
+            )
+            final_text = apply_guard_with_reply_bound(
+                final_text,
+                guard_name="first_turn_opening",
+                guard=_apply_first_turn_opening_guard,
+            )
             record_legacy_route(
                 conv,
                 dialogue_kernel_result,

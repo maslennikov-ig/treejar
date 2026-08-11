@@ -146,10 +146,12 @@ applies one chain. Provenance and cost may differ per path; the text policy may
 not.
 
 **R2. A guard may delete a sentence, never a reply.** Enforced as an invariant in
-the chain itself, not as a convention: if post-processing leaves less than half
-the characters it was given, or leaves no sentence at all, the guard is wrong and
-the pipeline keeps the previous text and records a defect. This one rule would
-have caught F5 the day it shipped.
+the chain itself, not as a convention: if post-processing turns a meaningful
+reply into one with no meaningful sentence, the guard is wrong and the pipeline
+keeps the previous text and records a defect. Character count is not a validity
+signal: a safe repair may legitimately be much shorter. What the reply says is
+owned by the guard-specific semantic validator. This one rule would have caught
+F5 the day it shipped.
 
 **R3. Guards are modules with pure functions.** `(text, explicit state) -> text`.
 No closure over `process_message`, no database, no Redis. Unit-testable, and the

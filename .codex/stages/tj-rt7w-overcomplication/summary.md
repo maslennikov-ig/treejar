@@ -26,7 +26,22 @@ Deliver `tj-rt7w.1` through `tj-rt7w.6` in dependency order. Keep
   source files; Pytest passed with 3515 tests and 19 skips; process verification
   is recorded in the child artifact.
 
-### tj-rt7w.2 — pending
+### tj-rt7w.2 — accepted
+
+- Change: every existing text guard now runs through one shared reply bound. A
+  guard that turns meaningful text into whitespace or punctuation cannot erase
+  the reply; the previous text is kept and a text-free defect is logged.
+- Owner clarification: character count is not a correctness signal. The bound
+  does not reject short meaningful repairs; semantic validity remains with the
+  existing guard-specific checks.
+- Regression evidence: eleven new tests cover all seven current guard stages,
+  accept short safe repairs, accept sentence deletion, and catch the historical
+  typographic-apostrophe blanking behavior against the pre-fix guard.
+- Behaviour evidence: no existing test was edited. Re-rendering all twenty
+  stored raw outputs with and without the new bound changed 0 outputs.
+- Gate: Ruff and format passed over `src/` and `tests/`; Mypy passed over 169
+  source files; Pytest passed with 3526 tests and 19 skips; process verification
+  passed.
 
 ### tj-rt7w.3 — pending
 
