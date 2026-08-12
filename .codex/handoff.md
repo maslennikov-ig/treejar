@@ -86,9 +86,9 @@ local reply-policy contract, Python implementation, tests and protected replay.
   55 intended records differ across the three stored runs. One current reply is
   grounding-flagged, `tj-vz7o-luna-glm-20260810-rerun/789`, which is the
   baseline's own behaviour restored and is what the repair path exists for.
-- Dialogs 28, 436, 789, 875 and 1291 were read individually. The differences
-  are bounded to duplicate identity/name asks or question folding described in
-  the stage artifact.
+  Dialogs 28, 436, 789, 875 and 1291 were read individually; the differences
+  are bounded to duplicate identity/name asks or question folding, as the stage
+  artifact describes.
 - The repair judge, measured four times on stored dialogs 819 and 789, 60 calls
   and $0.0051 in total, every notification suppressed. D6 (8 calls): the judge
   contributed nothing, 8 of 8 deliveries came from the deterministic fallback.
@@ -103,16 +103,11 @@ local reply-policy contract, Python implementation, tests and protected replay.
   them almost verbatim. `tj-uhbq`, closed: an approval means the judge read the
   reply and found it supported, so the original text is what we send.
 - `tj-7gpw`: every number this project has measured, the 18.94 baseline
-  included, was scored on a prompt missing two blocks production always sends.
-  On a greeting opening that is the substantive-reply directive, which fires on
-  every turn that has text, the consultative opening and project directives
-  where the opening earns them, and the whole ask permission list. Directive
+  included, was scored on a prompt missing two blocks production always sends:
+  the runtime directives the turn earns, and the ask permission list. Directive
   work read as unmeasured because the paid round did not send it either. The
-  consequence is recorded rather than hidden: after this fix a round is not
-  comparable to the 18.94 baseline, and the fixed harness needs its own
-  baseline before any build change is measured on it. The recorded
-  `generation_prompt_set_digest` will differ from every earlier round, so the
-  break is visible in the evidence itself.
+  consequence is recorded rather than hidden: no round after this fix is
+  comparable to the 18.94 baseline.
 - The measured round of 2026-08-12, `tj-7gpw-parity-baseline-c-20260812`:
   twenty Luna generations plus one repair-judge call, $0.0054, judged by the
   root orchestrator reading blind. Weighted mean 14.6/30, 95% interval
@@ -165,7 +160,7 @@ local reply-policy contract, Python implementation, tests and protected replay.
 
 - `docs-reviewed: updated` — the stage summary, artifact and this handoff record
   the durable policy and privacy-safe proof.
-- `project-index: reviewed-no-change` — no module was added, removed or moved.
+- `project-index: reviewed-no-change` — no module was added or moved.
 - `graph-reviewed: no-change-needed` — Graphify is not initialized.
 
 ## Next recommended
@@ -185,6 +180,11 @@ current repository truth.
 - `tj-fcv8`: the directive fix is delivered and unverified. Its acceptance asks
   for a paired round on the same twenty openings, and no paid call is
   authorized for it.
+- `tj-ge07`: the frozen two-turn set exists, `tj-ge07-two-turn-20260812`, seed
+  `20260812`, twenty scenarios over five managers, stored human mean raw total
+  5.2 with a manager-cluster interval of [1.43, 6.05]. The manifest is tracked
+  and text-free. The harness still generates one turn, so the baseline round on
+  it is not taken and the selling-turn guards are still unobserved.
 - Rule 3, the name ask, is missing from 19 of 20 openings while permitted every
   time. Read in today's round, not yet opened as work, and not fixed.
 

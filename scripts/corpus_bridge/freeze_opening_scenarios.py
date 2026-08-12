@@ -38,6 +38,36 @@ def _attachment_only(message: dict[str, Any], opening: str) -> bool:
     return suffix in _ATTACHMENT_EXTENSIONS
 
 
+def _customer_follow_up(messages: list[dict[str, Any]], opening_index: int) -> str:
+    """What this customer said next, after the seller answered their opening.
+
+    Every measured round in this project is twenty first turns, so the guards
+    that only run on a selling turn have never appeared in one, and rules 14
+    and 15 -- confirm the next step, agree the next contact -- were reported as
+    unobservable rather than as zero. The corpus already holds the answer: the
+    customer's own second message.
+
+    A follow-up only counts once a seller has replied. A customer sending two
+    messages in a row is still their opening turn, split.
+    """
+
+    seen_seller = False
+    for message in messages[opening_index + 1 :]:
+        role = message.get("role")
+        if role == "seller":
+            seen_seller = True
+            continue
+        if role != "client" or not seen_seller:
+            continue
+        if message.get("type") != "text":
+            return ""
+        text = _normalized(message.get("text"))
+        if text and not _attachment_only(message, text):
+            return text
+        return ""
+    return ""
+
+
 def _percentile(values: list[float], quantile: float) -> float:
     ordered = sorted(values)
     return ordered[round((len(ordered) - 1) * quantile)]
@@ -80,6 +110,15 @@ def main() -> int:
     parser.add_argument("--count", type=int, default=20)
     parser.add_argument("--strata", type=int, default=4)
     parser.add_argument("--bootstrap-samples", type=int, default=10_000)
+    parser.add_argument(
+        "--with-follow-up",
+        action="store_true",
+        help=(
+            "keep only dialogs where the customer answered the seller, and "
+            "record what they said. This is the set a selling turn can be "
+            "measured on at all."
+        ),
+    )
     args = parser.parse_args()
 
     try:
@@ -94,21 +133,24 @@ def main() -> int:
         openings: list[dict[str, Any]] = []
         prefixes: Counter[str] = Counter()
         for dialog in dialogs:
-            first_client = next(
+            messages = list(dialog.get("messages") or [])
+            opening_index = next(
                 (
-                    message
-                    for message in dialog.get("messages") or []
+                    index
+                    for index, message in enumerate(messages)
                     if message.get("role") == "client"
                 ),
                 None,
             )
-            if first_client is None:
+            if opening_index is None:
                 continue
+            first_client = messages[opening_index]
             opening = _normalized(first_client.get("text"))
             item = {
                 "dialog_id": int(dialog["dialog_id"]),
                 "manager": str(dialog.get("manager") or "unattributed"),
                 "opening": opening,
+                "follow_up": _customer_follow_up(messages, opening_index),
                 "message": first_client,
                 "evaluation": dialog.get("evaluation"),
             }
@@ -136,6 +178,9 @@ def main() -> int:
                 natural.append(item)
 
         evaluated = [item for item in natural if isinstance(item["evaluation"], dict)]
+        without_follow_up = sum(1 for item in evaluated if not item["follow_up"])
+        if args.with_follow_up:
+            evaluated = [item for item in evaluated if item["follow_up"]]
         ranked = sorted(
             evaluated, key=lambda item: (len(item["opening"]), item["dialog_id"])
         )
@@ -167,7 +212,11 @@ def main() -> int:
         run_dir.mkdir(mode=0o700)
         protected_path = run_dir / "scenarios.json"
         protected_document = {
-            "schema_version": "treejar-real-openings/v1",
+            "schema_version": (
+                "treejar-real-turns/v1"
+                if args.with_follow_up
+                else "treejar-real-openings/v1"
+            ),
             "selection_seed": args.seed,
             "scenarios": [
                 {
@@ -177,6 +226,7 @@ def main() -> int:
                     "length_stratum": item["length_stratum"],
                     "stored_human_raw_total": int(item["evaluation"]["total_score"]),
                     "manager": item["manager"],
+                    **({"follow_up": item["follow_up"]} if args.with_follow_up else {}),
                 }
                 for item in selected
             ],
@@ -206,6 +256,9 @@ def main() -> int:
                 "attachment_only": attachment_count,
                 "natural_text": len(natural),
                 "evaluated_natural_text": len(evaluated),
+                # Reported either way, so the cost of requiring a second turn
+                # is visible before anybody pays for a round on it.
+                "evaluated_without_follow_up": without_follow_up,
                 "natural_text_median_chars": statistics.median(
                     len(item["opening"]) for item in natural
                 ),

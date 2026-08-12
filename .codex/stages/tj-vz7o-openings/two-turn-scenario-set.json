@@ -1,0 +1,147 @@
+{
+  "baseline": {
+    "bootstrap_samples": 10000,
+    "bootstrap_seed": 20260812,
+    "dialogues": 20,
+    "kind": "stored_client_judge_human_dialogue_raw_total",
+    "manager_cluster_ci95": [
+      1.43,
+      6.05
+    ],
+    "managers": 5,
+    "mean_raw_total": 5.2
+  },
+  "population": {
+    "attachment_only": 146,
+    "evaluated_natural_text": 427,
+    "evaluated_without_follow_up": 202,
+    "natural_text": 687,
+    "natural_text_median_chars": 21,
+    "template": 525,
+    "with_customer_opening": 1358
+  },
+  "schema_version": "treejar-real-openings-public-manifest/v1",
+  "selection": [
+    {
+      "dialog_id": 50,
+      "length_stratum": 1,
+      "opener_chars": 5,
+      "stored_human_raw_total": 4
+    },
+    {
+      "dialog_id": 385,
+      "length_stratum": 1,
+      "opener_chars": 2,
+      "stored_human_raw_total": 5
+    },
+    {
+      "dialog_id": 574,
+      "length_stratum": 1,
+      "opener_chars": 2,
+      "stored_human_raw_total": 3
+    },
+    {
+      "dialog_id": 918,
+      "length_stratum": 1,
+      "opener_chars": 2,
+      "stored_human_raw_total": 2
+    },
+    {
+      "dialog_id": 1262,
+      "length_stratum": 1,
+      "opener_chars": 2,
+      "stored_human_raw_total": 7
+    },
+    {
+      "dialog_id": 355,
+      "length_stratum": 2,
+      "opener_chars": 18,
+      "stored_human_raw_total": 7
+    },
+    {
+      "dialog_id": 458,
+      "length_stratum": 2,
+      "opener_chars": 18,
+      "stored_human_raw_total": 7
+    },
+    {
+      "dialog_id": 484,
+      "length_stratum": 2,
+      "opener_chars": 16,
+      "stored_human_raw_total": 5
+    },
+    {
+      "dialog_id": 1011,
+      "length_stratum": 2,
+      "opener_chars": 12,
+      "stored_human_raw_total": 9
+    },
+    {
+      "dialog_id": 1118,
+      "length_stratum": 2,
+      "opener_chars": 14,
+      "stored_human_raw_total": 8
+    },
+    {
+      "dialog_id": 292,
+      "length_stratum": 3,
+      "opener_chars": 37,
+      "stored_human_raw_total": 6
+    },
+    {
+      "dialog_id": 312,
+      "length_stratum": 3,
+      "opener_chars": 20,
+      "stored_human_raw_total": 10
+    },
+    {
+      "dialog_id": 925,
+      "length_stratum": 3,
+      "opener_chars": 21,
+      "stored_human_raw_total": 3
+    },
+    {
+      "dialog_id": 1239,
+      "length_stratum": 3,
+      "opener_chars": 37,
+      "stored_human_raw_total": 5
+    },
+    {
+      "dialog_id": 1252,
+      "length_stratum": 3,
+      "opener_chars": 32,
+      "stored_human_raw_total": 6
+    },
+    {
+      "dialog_id": 665,
+      "length_stratum": 4,
+      "opener_chars": 402,
+      "stored_human_raw_total": 0
+    },
+    {
+      "dialog_id": 846,
+      "length_stratum": 4,
+      "opener_chars": 70,
+      "stored_human_raw_total": 11
+    },
+    {
+      "dialog_id": 967,
+      "length_stratum": 4,
+      "opener_chars": 110,
+      "stored_human_raw_total": 4
+    },
+    {
+      "dialog_id": 1067,
+      "length_stratum": 4,
+      "opener_chars": 69,
+      "stored_human_raw_total": 2
+    },
+    {
+      "dialog_id": 1072,
+      "length_stratum": 4,
+      "opener_chars": 57,
+      "stored_human_raw_total": 0
+    }
+  ],
+  "selection_seed": 20260812
+}
