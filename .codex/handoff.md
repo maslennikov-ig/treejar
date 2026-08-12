@@ -83,7 +83,17 @@ local reply-policy contract, Python implementation, tests and protected replay.
   was wrong; a flag arrived as the bare string `future_stock_check`. Each flag
   now carries `flagged_sentences`, the exact sentences the classifier matched,
   and `rules`, one plain statement of what each violation protects. Neither is
-  a rewrite. Not yet re-measured against live calls.
+  a rewrite.
+- `tj-3i8m` re-measured on twenty approved calls, $0.00165276, zero failures:
+  the judge's own repair reached the customer 20 of 20, against 2 of 20 before,
+  with zero manager handoffs and zero rejected corrections. Dialog 789 went
+  from eight handoffs in ten to none: the judge writes the supported answer the
+  deterministic repair cannot, because deleting the flagged sentences there
+  leaves no answer at all. Dialog 819 is the honest half: all ten corrections
+  are byte-identical to the deterministic candidate, so the paid call buys
+  nothing on that shape. Not verified: the wording of the 789 repairs. The
+  journal stores digests and lengths only, by design, and the delivered lengths
+  are 324-427 characters against a 169-character no-answer candidate.
 - No corpus text, request body or reply body is tracked. Durable evidence uses
   dialog ids, integers and digests only.
 
@@ -129,7 +139,7 @@ current repository truth.
 ## Explicit defers
 
 - `tj-2m5m.4`: separate out-of-scope discovery work remains tracked in Beads.
-- `tj-3i8m` is delivered but not re-measured: whether localised flags restore
-  judge delivery needs a bounded live replay and new paid-call authority.
+- `tj-b9mg`: nobody has read the judge repairs we now ship. The journal stores
+  digests by design, and on 789 the judge's text is the entire answer.
 - Deployment and live runtime verification are outside this local stage and
   were not authorized.

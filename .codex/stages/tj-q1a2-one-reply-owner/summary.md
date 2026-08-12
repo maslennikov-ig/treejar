@@ -47,7 +47,14 @@ page a manager.
   current code: 0/20 byte-identical to the deterministic candidate, 819
   delivered 0/10 judge corrections and 789 delivered 2/10, and eighteen of
   twenty deliveries came from the deterministic fallback. The judge approved a
-  guard-flagged 819 reply 2/10, which is `tj-uhbq`.
+  guard-flagged 819 reply 2/10; the owner kept that branch as designed
+  (`tj-uhbq`). `tj-3i8m` then found the cause and fixed it: unanchoring had
+  removed the only signal telling the judge what was wrong, so each flag now
+  carries the sentences the classifier matched and the rule behind them. Twenty
+  further calls, $0.00165276: judge repairs reached the customer 20/20 against
+  2/20, with no handoffs. On 789 that is the whole answer; on 819 all ten
+  corrections equal the deterministic candidate, so the paid call buys nothing
+  on that shape.
 - Corpus text stayed outside Git. The tracked artifact contains ids, counts,
   explanations and digests only.
 

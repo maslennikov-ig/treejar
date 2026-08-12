@@ -112,7 +112,7 @@ changed_files:
   - tests/test_sales_turn_guard.py
 explicit_defers:
   - tj-2m5m.4 remains separate out-of-scope discovery work.
-  - tj-uhbq the repair judge can approve a reply the grounding guard flagged.
+  - tj-b9mg nobody has read the judge repairs we now ship.
 ---
 
 # Summary
@@ -180,8 +180,21 @@ Delivery is thin: 819 delivered 0/10 judge corrections with 8/10 rejected as
 `correction_still_flagged`; 789 delivered 2/10. Eighteen of twenty deliveries
 came from the deterministic fallback. Twice on 819 the judge answered `approve`,
 which ships the guard-flagged reply unchanged and makes one input escalate or
-not depending on the run; that is `tj-uhbq` and is an owner decision, not a
-finding this stage acts on.
+not depending on the run. The owner kept that branch as designed: an approval
+means the judge read the reply and found it supported, so the original text is
+what we send (`tj-uhbq`).
+
+`tj-3i8m` then found why delivery was thin. Unanchoring removed the
+deterministic candidate, and that candidate had been the only thing implicitly
+telling the judge what was wrong; a flag arrived as the bare string
+`future_stock_check`, with no location and no rule. Each flag now carries the
+sentences the classifier matched and one plain statement of what the violation
+protects. Neither is a rewrite. Twenty further approved calls, $0.00165276,
+zero failures: judge repairs reached the customer 20 of 20 against 2 of 20,
+with zero handoffs and zero rejected corrections. Dialog 789 went from eight
+handoffs in ten to none. Dialog 819 is the honest half: all ten corrections are
+byte-identical to the deterministic candidate, so the paid call buys nothing on
+that shape. The wording of those repairs is unread, which is `tj-b9mg`.
 
 # Delivery / Cleanup
 
