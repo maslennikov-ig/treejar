@@ -46,6 +46,11 @@ local reply-policy contract, Python implementation, tests and protected replay.
   is still worth hearing about. The protected journal is in the Git common
   directory and never stores dialog text in the working tree.
 - Guard modes in `src/llm/response_policy.py` did not change.
+- `solution_consultation_directive` carries rules 9 and 10 into the
+  presentation turn, which the opening directive never reached. One stage only,
+  so the two never share a turn or double their one-question bound, and the
+  same transactional-narrowing stand-down applies. It is generation-side, so
+  the protected replay cannot see it and does not.
 
 ## Protected evidence
 
@@ -148,6 +153,8 @@ current repository truth.
 ## Explicit defers
 
 - `tj-2m5m.4`: separate out-of-scope discovery work remains tracked in Beads.
-- `tj-2m5m.4`: the discovery slot, in progress.
+- `tj-2m5m.4`: the prompt half is delivered and unmeasured. The owner decided
+  on 2026-08-12 that the structural gate waits for the numbers rather than
+  preceding them, so the required job slot is not built.
 - Deployment and live runtime verification are outside this local stage and
   were not authorized.
