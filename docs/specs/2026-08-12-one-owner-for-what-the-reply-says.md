@@ -36,6 +36,14 @@ and what is not:
   industrial equivalent. Detecting an unkept promise is shipped by nobody:
   not one of Guardrails AI's 65 validators, no NeMo rail, no Bedrock or Azure
   policy. We are not reinventing a framework.
+- **The best published precedent for our shape is Google's Meena**
+  (arXiv:2001.09977), verified in the full text: "We wrote a rule that detects
+  if any two turns contain long common sub-sequences. We automatically remove
+  candidates that are detected as repetition." About a third of interactive
+  conversations carried cross-turn repetition before it; interactive SSA went
+  72% (base) → 74% (tuned decoding) → 79% (full, with the filter). Google's own
+  answer to a generative chatbot repeating itself was a deterministic rule
+  filtering candidates — not a prompt, and not a model judging a model.
 
 ## What is actually broken
 
@@ -232,8 +240,19 @@ round and a structural gate, not a line in a prompt. Tracked separately.
 
 Everything numeric here was measured on the twenty stored replies of the
 `tj-vhto` round and the two flagged replies we hold. That is the entire
-evidence base. The research streams delivered three of four reports; the
-GitHub-archaeology stream never returned, so the claim "open source mostly does
-not fix this" rests on my own searching, which found open, undiagnosed issues
-and one merged fix in a small project whose mechanism — remove one of two
-owners rather than deduplicate — is the pattern this spec follows.
+evidence base.
+
+Three of four research streams delivered. The GitHub-archaeology stream was
+lost to a reboot and did not return after a restart either, so the claim "open
+source mostly does not fix this" rests on my own searching. What that searching
+found: the symptom appears mostly as open, undiagnosed issues in small
+projects, and the two merged fixes both apply the same mechanism — remove one
+of two components that emit the greeting, rather than detect a duplicate.
+`aeroventmarketing-ctrl/automated-quotation#282` ("the message owns the
+greeting", merged 2026-08-09) and `bcgov/klamm#246` ("Fix salutation
+duplication in email notifications", merged 2025-06-11, five notification
+classes). Two instances is not a survey, but it is the same pattern twice and
+it is the pattern this spec follows.
+
+The Meena quotation and its SSA figures were verified by reading the paper, not
+taken from a summary.
