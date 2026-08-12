@@ -904,6 +904,68 @@ def consultative_opening_directive() -> str:
     )
 
 
+_SOLUTION_STAGES = frozenset({"solution"})
+
+
+def earns_solution_consultation(customer_text: str, *, sales_stage: str) -> bool:
+    """Is this the turn where the products are presented?
+
+    Same shape and the same stand-down as `earns_consultative_opening`, one
+    stage later. The opening directive stops at `needs_analysis`, and the
+    presentation is where the six judge readings in `tj-2m5m.4` all land: "the
+    conversation is entirely product-centric", "only restates the product
+    details. No delivery, installation, complementary products", and a customer
+    who asked for workstations and chairs being answered about chairs.
+
+    A customer who has narrowed to one exact item is still left alone, exactly
+    as they are at the opening. Widening a request that was deliberately
+    narrowed is friction, not expertise, wherever in the conversation it
+    happens.
+    """
+
+    text = str(customer_text)
+    if not text.strip():
+        return False
+    if sales_stage.strip().casefold() not in _SOLUTION_STAGES:
+        return False
+    return not _TRANSACTIONAL_NARROWING_RE.search(text)
+
+
+def solution_consultation_directive() -> str:
+    """Present a solution to the job, not a list of what was named.
+
+    Rules 9 and 10 cost 5.10 points between them and are the largest genuinely
+    open loss in the acceptance set. The opening directive already carries them
+    for the early stages; nothing carried them here, which is why S08 could run
+    four assistant turns that were each a bulleted echo of the requirement just
+    stated.
+
+    Two bounds keep it from becoming an interrogation or a sales pitch. It adds
+    no second question, because the reply that already asks one is doing its
+    job. And a complementary item is named only where a tool confirmed it this
+    turn: the loss this repairs is silence, and inventing a service to fill it
+    would be a worse answer than the silence was.
+
+    It lives here rather than in the product system prompt, which the stage
+    contract freezes.
+    """
+
+    return (
+        "You are presenting a solution, which is more than listing back what "
+        "they named. Cover everything they asked for, not only the first item. "
+        "If you still do not know what the space is for -- the work done "
+        "there, who uses it, what would make the result right -- ask that, in "
+        "one short question, and recommend against that job rather than "
+        "against the words of the request. If you do know it, name one "
+        "complementary item or service that belongs with this job and say why "
+        "it belongs. Look it up with search_products first and give its "
+        "confirmed price and stock; if nothing this turn has confirmed it, "
+        "leave it out rather than describing it. Never invent a service, a "
+        "term or a figure, and never offer a discount. If this reply already "
+        "asks a question, do not add a second one."
+    )
+
+
 _PROJECT_SCALE_RE = re.compile(
     r"(?:\bnew\s+office\b|\bnew\s+floor\b|\bfit[\s-]?out\b|\brelocat\w*\b"
     r"|\bmoving\s+(?:to|into)\b|\bmove[\s-]?in\b|\bwhole\s+office\b"

@@ -35,6 +35,7 @@ from src.dialogue.claim_contract import (
     consultative_opening_directive,
     defers_the_purchase,
     earns_consultative_opening,
+    earns_solution_consultation,
     next_contact_directive,
     project_consultation_directive,
     requests_product_comparison,
@@ -42,6 +43,7 @@ from src.dialogue.claim_contract import (
     row_from_catalog_product,
     signals_a_project,
     sizing_assumption_directive,
+    solution_consultation_directive,
     substantive_reply_directive,
 )
 from src.dialogue.order_guards import (
@@ -580,6 +582,13 @@ def _turn_runtime_directives(*texts: str, sales_stage: str = "") -> tuple[str, .
         # customer who has narrowed is still left alone.
         if any(signals_a_project(text) for text in candidates):
             directives.append(project_consultation_directive())
+    if candidates and all(
+        earns_solution_consultation(text, sales_stage=sales_stage)
+        for text in candidates
+    ):
+        # The presentation stage the opening directive never reached. Same
+        # stand-down, so a narrowed request is still answered as asked.
+        directives.append(solution_consultation_directive())
     return tuple(directives)
 
 
