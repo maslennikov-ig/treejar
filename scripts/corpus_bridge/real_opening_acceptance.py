@@ -1084,10 +1084,60 @@ async def _request_once(
     return body, latency_ms
 
 
+def _provider_error(body: dict[str, Any]) -> str:
+    """What the provider said when it returned 200 and no completion.
+
+    OpenRouter answers an upstream failure with a normal status and an `error`
+    object, so the round used to die on "no choice" and say nothing about why.
+    A round costs money and a dead slot cannot be re-run, so the reason has to
+    survive the failure.
+    """
+
+    error = body.get("error")
+    if isinstance(error, dict):
+        parts = [str(error[key]) for key in ("code", "message") if error.get(key)]
+        if parts:
+            return ": ".join(parts)
+    return "no error detail in the response"
+
+
+GENERATION_RETRY_DELAYS_SECONDS = (5.0, 20.0, 60.0)
+
+
+async def _generate_with_backoff(
+    client: httpx.AsyncClient, payload: dict[str, Any]
+) -> tuple[dict[str, Any], int, str, str | None, tuple[str, ...]]:
+    """One slot's generation, retried only when nothing was generated at all.
+
+    A 200 carrying an `error` object and no choices -- an upstream rate limit
+    is the common one -- produced no completion. There is nothing to bill and,
+    more to the point, nothing to re-roll: retrying cannot select a nicer
+    answer because no answer exists. Refusing it protects nothing and forfeits
+    the slot, and a spent slot cannot be re-run, so it forfeits the round.
+
+    The refusal that does matter is the one in the round loop above: a request
+    whose outcome we do not know is never repeated.
+    """
+
+    errors: list[str] = []
+    for delay in (*GENERATION_RETRY_DELAYS_SECONDS, None):
+        body, latency_ms = await _request_once(client, payload)
+        try:
+            raw_content, finish_reason = _message_content(body)
+        except ValueError as exc:
+            if body.get("choices") or delay is None:
+                raise
+            errors.append(str(exc))
+            await asyncio.sleep(delay)
+            continue
+        return body, latency_ms, raw_content, finish_reason, tuple(errors)
+    raise RuntimeError("generation retry loop must return or raise")
+
+
 def _message_content(body: dict[str, Any]) -> tuple[str, str | None]:
     choices = body.get("choices")
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-        raise ValueError("provider response has no choice")
+        raise ValueError(f"provider response has no choice: {_provider_error(body)}")
     choice = choices[0]
     message = choice.get("message")
     if not isinstance(message, dict):
@@ -1801,8 +1851,22 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                         provider_order=order,
                         provider_quantizations=quantizations,
                     )
-                    body, latency_ms = await _request_once(client, payload)
-                    raw_content, finish_reason = _message_content(body)
+                    try:
+                        (
+                            body,
+                            latency_ms,
+                            raw_content,
+                            finish_reason,
+                            provider_errors,
+                        ) = await _generate_with_backoff(client, payload)
+                    except ValueError as exc:
+                        # The slot is spent either way. Record why, so the next
+                        # round is planned from a reason and not from a guess.
+                        record["generation_failure"] = str(exc)
+                        _write_protected_json(state_path, state)
+                        raise
+                    if provider_errors:
+                        record["generation_provider_errors"] = list(provider_errors)
                     if finish_reason == "length":
                         raise RuntimeError(
                             f"dialog {dialog_id}: Luna response truncated"

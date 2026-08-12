@@ -11,12 +11,14 @@ from unittest.mock import patch
 
 import pytest
 from scripts.corpus_bridge.real_opening_acceptance import (
+    GENERATION_RETRY_DELAYS_SECONDS,
     GENERATOR_MODEL,
     PINNED_PARAMETER_REQUIREMENTS,
     REPAIR_JUDGE_CALL_CAP,
     REPAIR_JUDGE_MODEL,
     ROOT_JUDGE,
     SECOND_READER_MODEL,
+    _generate_with_backoff,
     _journaled_repair_runner,
     _load_frozen_scenarios,
     _parse_args,
@@ -353,6 +355,74 @@ def test_every_model_the_round_pays_can_be_pinned(second_reader: bool) -> None:
     """The repair judge changed vendor and preflight died on a missing key."""
     for model in paid_models(second_reader=second_reader):
         assert model in PINNED_PARAMETER_REQUIREMENTS
+
+
+async def test_a_slot_survives_an_upstream_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 200 with no completion produced nothing, so retrying re-rolls nothing."""
+    bodies = [
+        {
+            "error": {
+                "code": 429,
+                "message": "temporarily rate-limited upstream",
+            }
+        },
+        {
+            "choices": [
+                {"message": {"content": "A reply."}, "finish_reason": "stop"},
+            ]
+        },
+    ]
+    slept: list[float] = []
+
+    async def request_once(
+        _client: object, _payload: dict[str, object]
+    ) -> tuple[dict[str, object], int]:
+        return bodies.pop(0), 5
+
+    monkeypatch.setattr(
+        "scripts.corpus_bridge.real_opening_acceptance._request_once",
+        request_once,
+    )
+
+    async def sleep(delay: float) -> None:
+        slept.append(delay)
+
+    monkeypatch.setattr(
+        "scripts.corpus_bridge.real_opening_acceptance.asyncio.sleep",
+        sleep,
+    )
+
+    _body, _latency, content, _finish, errors = await _generate_with_backoff(
+        SimpleNamespace(),  # type: ignore[arg-type]
+        {},
+    )
+
+    assert content == "A reply."
+    assert slept == [GENERATION_RETRY_DELAYS_SECONDS[0]]
+    assert errors == (
+        "provider response has no choice: 429: temporarily rate-limited upstream",
+    )
+
+
+async def test_an_empty_completion_is_not_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A choice that came back blank is an answer we must not re-roll."""
+
+    async def request_once(
+        _client: object, _payload: dict[str, object]
+    ) -> tuple[dict[str, object], int]:
+        return {"choices": [{"message": {"content": "  "}}]}, 5
+
+    monkeypatch.setattr(
+        "scripts.corpus_bridge.real_opening_acceptance._request_once",
+        request_once,
+    )
+
+    with pytest.raises(ValueError, match="empty response"):
+        await _generate_with_backoff(SimpleNamespace(), {})  # type: ignore[arg-type]
 
 
 def test_the_round_never_pages_a_manager_about_its_own_repair_calls() -> None:
