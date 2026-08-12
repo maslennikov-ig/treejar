@@ -140,7 +140,7 @@ from a current-message name; `Q` drops surplus asks under
 - `tj-vz7o-luna-glm-20260810-rerun`: 28 I+N; 116 I+Q; 293 I+Q; 366 Q; 420 Q;
   421 I+Q; 436 I+Q; 442 Q; 692 I+Q; 789 I; 807 Q; 819 Q; 867 I+Q; 875 N;
   1000 I+Q; 1022 Q; 1067 Q; 1217 I+Q; 1291 Q.
-- `tj-rt7w-luna-glm-20260811`: 28 I+N; 116 I+Q; 293 I+Q; 366 Q; 421 I+Q;
+- `tj-rt7w-round-20260811`: 28 I+N; 116 I+Q; 293 I+Q; 366 Q; 421 I+Q;
   436 Q; 442 I+Q; 692 Q; 789 I+Q; 807 I+Q; 819 Q; 867 I+Q; 875 I+N; 1000 Q;
   1022 I+Q; 1067 Q; 1217 I+Q; 1291 I+Q.
 
