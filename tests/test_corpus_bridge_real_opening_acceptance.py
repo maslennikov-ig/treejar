@@ -12,9 +12,12 @@ from unittest.mock import patch
 import pytest
 from scripts.corpus_bridge.real_opening_acceptance import (
     GENERATOR_MODEL,
+    PINNED_PARAMETER_REQUIREMENTS,
     REPAIR_JUDGE_CALL_CAP,
     REPAIR_JUDGE_MODEL,
     ROOT_JUDGE,
+    SECOND_READER_MODEL,
+    _journaled_repair_runner,
     _load_frozen_scenarios,
     _parse_args,
     apply_shipped_output_guards,
@@ -26,6 +29,7 @@ from scripts.corpus_bridge.real_opening_acceptance import (
     estimate_cost_usd,
     expected_language,
     find_ungrounded_numbers,
+    paid_models,
     preflight,
     run_paid_round,
     validate_complete_results,
@@ -342,6 +346,25 @@ def test_the_round_sends_the_ask_permissions_production_derives() -> None:
         )
         in system
     )
+
+
+@pytest.mark.parametrize("second_reader", [False, True])
+def test_every_model_the_round_pays_can_be_pinned(second_reader: bool) -> None:
+    """The repair judge changed vendor and preflight died on a missing key."""
+    for model in paid_models(second_reader=second_reader):
+        assert model in PINNED_PARAMETER_REQUIREMENTS
+
+
+def test_the_round_never_pages_a_manager_about_its_own_repair_calls() -> None:
+    """An offline measurement must not wake somebody when a vendor goes dark."""
+    source = inspect.getsource(_journaled_repair_runner)
+    assert "notify_on_failure=False" in source
+
+
+def test_the_second_reader_is_pinned_only_when_it_was_authorized() -> None:
+    """The scoring arm reads its provider route out of the pinned catalog."""
+    assert SECOND_READER_MODEL not in paid_models(second_reader=False)
+    assert SECOND_READER_MODEL in paid_models(second_reader=True)
 
 
 def test_catalog_matches_use_customer_terms_not_catalog_order() -> None:
@@ -679,9 +702,14 @@ async def test_round_journals_only_triggered_repair_calls(
             5,
         )
 
-    async def repair(request: RepairJudgeRequest) -> RepairJudgeProviderResult:
+    async def repair(
+        request: RepairJudgeRequest,
+        *,
+        notify_on_failure: bool = True,
+    ) -> RepairJudgeProviderResult:
         nonlocal repair_calls
         repair_calls += 1
+        assert notify_on_failure is False
         return RepairJudgeProviderResult(
             decision=RepairJudgeDecision(
                 answer="correct",

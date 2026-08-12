@@ -92,6 +92,16 @@ SECOND_READER_MODEL = "z-ai/glm-5.2"
 # root judge is the default here and `--second-reader` is the thing you have to
 # ask for: a deterministic guarantee beats a directive.
 ROOT_JUDGE = "root-orchestrator"
+# What each paid model needs from an endpoint before the round pins a provider
+# chain to it. The repair judge used to be the same string as the second reader
+# and rode on its entry without having one; moving it to another vendor turned
+# the lookup into a KeyError before the first paid call. A model the round pays
+# and does not name here cannot be pinned, so every one of them is named.
+PINNED_PARAMETER_REQUIREMENTS: dict[str, set[str]] = {
+    GENERATOR_MODEL: {"max_tokens", "reasoning"},
+    SECOND_READER_MODEL: {"max_tokens", "response_format"},
+    REPAIR_JUDGE_MODEL: {"max_tokens", "response_format"},
+}
 GENERATOR_MAX_TOKENS = 1400
 JUDGE_MAX_TOKENS = 4000
 EXPECTED_OPENINGS = 20
@@ -818,6 +828,20 @@ def _provider_headers(title: str) -> dict[str, str]:
     }
 
 
+def paid_models(*, second_reader: bool) -> tuple[str, ...]:
+    """Every model this round may pay, which is every model it must pin.
+
+    The second reader is here only when it was authorized, because pinning a
+    provider chain for it costs a preflight request. Leaving it out when it is
+    authorized costs more: the scoring arm reads its provider route out of the
+    pinned catalog and fails on a model that was never pinned.
+    """
+
+    return (GENERATOR_MODEL, REPAIR_JUDGE_MODEL) + (
+        (SECOND_READER_MODEL,) if second_reader else ()
+    )
+
+
 async def _pinned_model_catalog(
     models: tuple[str, ...],
 ) -> dict[str, dict[str, Any]]:
@@ -827,10 +851,6 @@ async def _pinned_model_catalog(
     ) as client:
         catalog = await _fetch_catalog(client, models)
         pinned: dict[str, dict[str, Any]] = {}
-        requirements = {
-            GENERATOR_MODEL: {"max_tokens", "reasoning"},
-            SECOND_READER_MODEL: {"max_tokens", "response_format"},
-        }
         for model in models:
             response = await client.get(f"/models/{model}/endpoints", timeout=30.0)
             response.raise_for_status()
@@ -838,7 +858,7 @@ async def _pinned_model_catalog(
                 model,
                 catalog[model],
                 response.json(),
-                required_parameters=requirements[model],
+                required_parameters=PINNED_PARAMETER_REQUIREMENTS[model],
             )
     return pinned
 
@@ -916,7 +936,7 @@ async def preflight(
         raise ValueError(f"preflight already exists: {output_dir}")
     scenarios = _load_frozen_scenarios(scenarios_path)
     judge_model = SECOND_READER_MODEL if second_reader else ROOT_JUDGE
-    models = (GENERATOR_MODEL, REPAIR_JUDGE_MODEL)
+    models = paid_models(second_reader=second_reader)
     catalog, products = await asyncio.gather(
         _pinned_model_catalog(models), _fetch_catalog_summaries()
     )
@@ -1425,7 +1445,10 @@ def _journaled_repair_runner(
         record["repair_judge_request_digest"] = request_digest
         _write_protected_json(state_path, state)
         started = time.perf_counter()
-        result = await run_repair_judge(request)
+        # An offline round must never page a manager by Telegram. Production
+        # keeps that alert; this is a measurement, and a vendor failing here is
+        # something to read in the journal, not to wake somebody for.
+        result = await run_repair_judge(request, notify_on_failure=False)
         record["repair_judge"] = {
             "request_digest": request_digest,
             "answer": result.decision.answer,
