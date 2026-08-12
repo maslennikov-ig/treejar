@@ -109,15 +109,37 @@ path allowed 800. At 800 the call cannot succeed. At 1200 it succeeded twice in
 four. At 2000 it succeeded eight times in eight, worst case 15.3s of the 20s
 allowed.
 
-Two things follow that are worth more than the fix. Asking this vendor to stop
-thinking does not work — `enabled: false`, `effort: low` and `max_tokens: 256`
-all left completion around 1430 tokens — so on this path thinking has to be
-afforded rather than declined. And a repair call costs about $0.005, against
-$0.000084 to generate the reply it is repairing: repairing a turn costs sixty
-times what writing it does. That is a product decision, not a tuning one.
+Asking this vendor to stop thinking does not work — `enabled: false`,
+`effort: low` and `max_tokens: 256` all left completion around 1430 tokens — so
+on that path thinking had to be afforded rather than declined.
 
-The fallback is right. Reaching for it after one failed call is not, and
-blaming the vendor for our own budget is worse.
+**And then the same question asked of the judge's answers — `tj-0h5d`.** Once
+the calls stopped failing, we measured what actually reached the customer, and
+it was one reply in four. `review_flagged_reply` re-renders every correction
+and discards it whole if a flag survives, and the prompt never said so: GLM
+reworded the flagged promise instead of removing it and lost the reply twice in
+four. The prompt also called the deterministic candidate untrustworthy while
+offering `cannot_fix` as the careful answer, and a cheaper second vendor took
+that exit two times in three, quoting the line back at us.
+
+Both failures were ours. With the rule stated and `cannot_fix` priced, both
+vendors deliver four in four. The path now runs `deepseek/deepseek-v4-flash`,
+chosen by replay rather than reputation: same delivery, about a fortieth of the
+price, no more waiting. Measured on both flagged replies we hold: **7 of 8
+delivered, $0.000596 for eight calls, 5.6–10.2 seconds.**
+
+What we are not claiming is the more useful half. All seven delivered replies
+were byte-identical to the repair the deterministic guard produces for free. On
+these two cases the paid judge adds nothing — it has stopped throwing the free
+answer away, which is the whole gain. And the sentence that produces the
+delivery rate is the sentence that turns the judge into a copier: under the old
+prompt GLM independently noticed the reply had invented a delivery city the
+customer never named, and that catch is gone. Delivery was bought with
+independence, knowingly. Two flagged replies is the entire evidence base.
+
+The fallback is right. Reaching for it after one failed call is not, blaming
+the vendor for our own budget is worse, and grading a judge on a rule we never
+gave it is worst of the three.
 
 **The root judge drifts between sittings — `tj-4q79`.** Dialog 28 lost 12.2
 points with no code path to explain it. This reading penalised asking for a

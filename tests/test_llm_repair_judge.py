@@ -14,6 +14,7 @@ from src.llm.message_processor import _finalize_turn_response
 from src.llm.repair_judge import (
     REPAIR_JUDGE_ATTEMPTS,
     REPAIR_JUDGE_MODEL,
+    REPAIR_JUDGE_PROMPT,
     RepairJudgeDecision,
     RepairJudgeEvidence,
     RepairJudgeProviderResult,
@@ -401,7 +402,7 @@ async def test_unflagged_turn_records_once_without_calling_the_judge() -> None:
 def test_repair_judge_uses_one_bounded_second_vendor_call() -> None:
     policy = policy_for_path(PATH_RESPONSE_REPAIR_JUDGE)
 
-    assert REPAIR_JUDGE_MODEL == "z-ai/glm-5.2"
+    assert REPAIR_JUDGE_MODEL == "deepseek/deepseek-v4-flash"
     assert policy.scope == "non_core"
     assert policy.request_limit == 1
     assert policy.max_attempts == 1
@@ -707,8 +708,11 @@ def test_the_repair_judge_can_afford_the_answer_it_asks_for() -> None:
     `reasoning_enabled` stays declared because the intent is right and the
     vendor may honour it later, but it did not fix this and must not be
     mistaken for the fix: `enabled: false`, `effort: low` and
-    `max_tokens: 256` all left completion around 1430 tokens. Thinking that
-    cannot be declined has to be afforded.
+    `max_tokens: 256` all left completion around 1430 tokens on GLM. Thinking
+    that cannot be declined has to be afforded. The path now runs DeepSeek
+    Flash at roughly 270 tokens, and the ceiling stays where a reasoning model
+    would still fit, because starving this call is a failure we already paid
+    for once.
     """
 
     policy = policy_for_path(PATH_RESPONSE_REPAIR_JUDGE)
@@ -724,6 +728,40 @@ def test_the_repair_judge_can_afford_the_answer_it_asks_for() -> None:
     # The observed worst case must still fit under the per-call timeout, and
     # 1494 tokens took 15.3s of the 20s allowed.
     assert policy.timeout_seconds >= 20.0
+
+
+def test_the_repair_prompt_states_the_rule_we_actually_enforce() -> None:
+    """The judge was graded on a criterion the prompt never gave it.
+
+    `review_flagged_reply` re-renders every correction and discards it whole if
+    a flag survives. The old prompt asked for "every flag resolved" and stopped
+    there, so a judge that reworded the flagged promise lost the customer the
+    entire reply and was never told why -- and `cannot_fix` read like the
+    cautious choice when it is the one that sends nothing. Replaying dialog 819
+    on 2026-08-12, one reply in four reached the customer on either vendor.
+    With the re-check stated and `cannot_fix` priced, four in four on both.
+
+    Asserting on prose is brittle by nature. It is pinned anyway because these
+    two sentences are worth three quarters of the deliveries, and losing them
+    to a tidy-up would look exactly like nothing.
+    """
+
+    prompt = REPAIR_JUDGE_PROMPT.lower()
+
+    assert "reads your answer again" in prompt
+    assert "discarded" in prompt
+    assert "last resort" in prompt
+
+
+def test_the_repair_judge_is_not_the_model_that_wrote_the_reply() -> None:
+    """A judge sharing a model with the writer is grading itself.
+
+    The path moved to the fast model on 2026-08-12, which is also what polishes
+    manager drafts from Telegram -- a different flow this path never sees. The
+    thing that must stay true is that it is not the customer-facing model.
+    """
+
+    assert settings.openrouter_model_main != REPAIR_JUDGE_MODEL
 
 
 def test_a_path_that_says_nothing_about_reasoning_leaves_the_provider_alone() -> None:

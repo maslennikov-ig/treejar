@@ -312,12 +312,14 @@ _POLICIES: dict[str, LLMPathPolicy] = {
         path=PATH_RESPONSE_REPAIR_JUDGE,
         scope="non_core",
         # Measured, not estimated. Replaying the exact request that failed on
-        # 2026-08-11 twelve times shows a complete answer costs 720-1494
-        # completion tokens: about 300 are the JSON the schema wants and the
-        # rest is reasoning this vendor bills for and never returns. 800 could
-        # not hold it at all, and 1200 held it twice in four. Every failure was
-        # the output schema rejecting a truncated answer, never the provider.
-        # A ceiling is only spent when it is used.
+        # 2026-08-11 twelve times against GLM 5.2 showed a complete answer cost
+        # 720-1494 completion tokens: about 300 were the JSON the schema wants
+        # and the rest was reasoning that vendor billed for and never returned.
+        # 800 could not hold it at all. Every failure was the output schema
+        # rejecting a truncated answer, never the provider. The path now runs
+        # DeepSeek Flash, which spends about 270, but the ceiling stays where a
+        # reasoning model would still fit: it is only spent when it is used, and
+        # starving this call is the one failure mode we have already paid for.
         max_tokens=2000,
         # Halved on 2026-08-11 when the repair path gained a second attempt.
         # The customer waits for this on their own turn, so the budget is the

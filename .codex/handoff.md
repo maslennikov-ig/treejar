@@ -2,12 +2,13 @@
 
 Updated: 2026-08-12
 Current branch: `main`
-Current stage id: `tj-lj09-glm-proof`
+Current stage id: `tj-0h5d-deepseek-repair-judge`
 Status: the build scores 15.3/30 weighted on the frozen twenty. The repair path
-retries once, records what failed, and can now afford the answer it asks for.
+retries once, records what failed, affords its own answer, and now reaches the
+customer 7 times in 8 instead of 1 in 4.
 
-Documentation: no external/versioned boundary — the vendor's token behaviour
-was measured against the live endpoint rather than read from a document.
+Documentation: no external/versioned boundary — both vendors were measured
+against the live endpoint on the repository's own stored requests.
 
 ## Current truth
 
@@ -71,38 +72,31 @@ was measured against the live endpoint rather than read from a document.
 
 ## Delivered commits
 
-- `d64cec5` — `tj-mshi.2`, fill the ratified 25-entry registry.
-- `1b3f34c` — `tj-mshi.3`, turn every entry into a positive permission.
-- `6649d2c` — `tj-mshi.4`, remove registry-subsumed prohibitions.
-- `5c26f57` — `tj-mshi.5`, run and report the blind paired measurement.
-- `7248844` — `tj-n7p4.1`, split grounding classification from repair.
-- `d81a744` — `tj-n7p4.2`, declare replacing and removing guard contracts.
-- `f12cc5c` — `tj-n7p4.3`, add the second-vendor repair judge.
-- `a1d9532` — `tj-n7p4.6`, hand unresolved repairs to a manager.
-- `0764ce2` — `tj-n7p4.4`, align the harness with production repair.
-- `5c7a099` — `tj-n7p4.5`, measure the judged-repair architecture.
-- `tj-t6ug` — declare the three selling-turn guards apart, and add the third
-  guard mode with an executable reduction proof.
+`tj-mshi` (`d64cec5`, `1b3f34c`, `6649d2c`, `5c26f57`) built the positive
+permission registry and measured it. `tj-n7p4` (`7248844`, `d81a744`, `f12cc5c`,
+`a1d9532`, `0764ce2`, `5c7a099`) split classification from repair, declared the
+guard contracts, added the second-vendor judge and the manager handoff, and
+measured the result. Then `tj-t6ug` (guard modes), `tj-vhto` (round), `tj-0s42`
+(`28a150d`), `tj-lj09` (`7b2b659`) and `tj-0h5d`.
 
 Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
 
 ## Verification
 
-- Current gates at `tj-lj09`: Ruff and format clean over `src/ tests/ scripts/`;
-  Mypy clean over 174 source files; Pytest `3619 passed, 19 skipped`; process
+- Current gates at `tj-0h5d`: Ruff and format clean over `src/ tests/ scripts/`;
+  Mypy clean over 174 source files; Pytest `3621 passed, 19 skipped`; process
   verification and stage closeout passed.
 - Protected replay, run from `scripts/corpus_bridge/replay_policy_chain.py`:
   all 60 stored raw outputs re-render unchanged, digest `1fc87c04…`. The one
   `grounding_output` flag on dialog 789 is `tj-n7p4.3`'s recorded change.
-- `test_llm_grounding_output.py` has stayed byte-identical through every stage
-  since `tj-mshi.4` and passes all 107 tests.
-- Stage closeouts across `tj-mshi`, `tj-n7p4`, `tj-t6ug`, `tj-vhto`, `tj-0s42`
-  and `tj-lj09` passed the affected-package, security, integration and
+- `test_llm_grounding_output.py` is byte-identical since `tj-mshi.4`, 107 tests.
+- Stage closeouts across `tj-mshi`, `tj-n7p4`, `tj-t6ug`, `tj-vhto`, `tj-0s42`,
+  `tj-lj09` and `tj-0h5d` passed the affected-package, security, integration and
   database/migration groups, plus documentation, project-index,
   blocking-review, cleanup and debt checks.
 - Paid calls to date: `tj-mshi.5` $0.005458, `tj-n7p4` $0.006709, `tj-vhto`
-  $0.005386, `tj-lj09` $0.058492 over 12 replayed calls. `tj-t6ug` and
-  `tj-0s42` made none.
+  $0.005386, `tj-lj09` $0.058492 over 12 replayed calls, `tj-0h5d` $0.001960
+  over 16. `tj-t6ug` and `tj-0s42` made none.
 
 ## The measured round, `tj-vhto`
 
@@ -119,17 +113,24 @@ repair-judge call, zero scoring calls, $0.005386**. Report:
   affect a first turn. That is the instrument's floor, measured, and it retires
   the earlier round's +0.50 raw as a result.
 - Five openings carry all the movement: 819 at -22.5 is a failed repair call,
-  28 at -12.2 is reader drift, 366 at +5.6 is generation variance. `tj-0s42`
-  fixed the first and `tj-lj09` proved the cause by replaying the identical
-  request twelve times: the provider was never down, every failure was our
-  output schema rejecting a truncated answer, a complete answer costs 720-1494
-  completion tokens, and the path allowed 800. Budget now 2000, 4/4 live.
-  Asking GLM 5.2 not to think does nothing — `enabled: false`, `effort: low`
-  and `max_tokens: 256` all leave completion near 1430 — so a reasoning switch
-  is a request and a path that sets one must budget as if ignored.
-- Open for the owner: a repair call costs ~$0.005 against $0.000084 to generate
-  the reply it repairs. Repair is 60x writing, so this path's firing rate is a
-  product question.
+  28 at -12.2 is reader drift, 366 at +5.6 is generation variance. `tj-lj09`
+  replayed 819 twelve times: the provider was never down, every failure was our
+  output schema rejecting a truncated answer, an answer costs 720-1494 tokens
+  and the path allowed 800. Budget now 2000. Asking GLM 5.2 not to think does
+  nothing, so a reasoning switch is a request and a path that sets one must
+  budget as if ignored.
+- `tj-0h5d`: the judge reached the customer 1 time in 4, because
+  `review_flagged_reply` discards a correction that still trips the guard and
+  the prompt never said so. Rule stated, `cannot_fix` priced: 4/4 on both
+  vendors. Path moved to `deepseek/deepseek-v4-flash` by replay -- same
+  delivery, ~1/40 the price. Shipped config on both flagged replies: 7/8,
+  $0.000596, 5.6-10.2s.
+- Not claimed: all 7 delivered replies were byte-identical to the free
+  deterministic repair, so on these two cases the paid judge adds nothing. The
+  sentence that buys delivery is the one that makes it a copier -- GLM's
+  independent catch of an invented delivery city is gone. Two flagged replies
+  is the whole evidence base; the four grounding violations that have never
+  fired are where a judge would earn its call.
 - Criticals 1 to 1 against both baselines, the one being `tj-2p4c`. Rules 14
   and 15 applicable on 0/20 again; `tj-ge07`.
 
@@ -179,7 +180,7 @@ passed. The **repair** judge is a different thing, paid, and fires on a flag.
 ## Next recommended
 
 Next stage id: not opened; first candidate `tj-2m5m`. `tj-t6ug`, `tj-vhto`,
-`tj-0s42` and `tj-lj09` are accepted.
+`tj-0s42`, `tj-lj09` and `tj-0h5d` are accepted.
 Recommended action: start a new task from current Beads truth for `tj-2m5m`,
 then `tj-swgu`, `tj-vz7o.12`, `tj-wvo4`, and `tj-odeq`.
 

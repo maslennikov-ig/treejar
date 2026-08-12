@@ -1,0 +1,24 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-0h5d",
+  "source_kind": "beads",
+  "source_id": "tj-0h5d",
+  "source_digest": "a23a570966eda0fd10b74fd6089dd2a882d81fea8bfd12e4f2bdc395a89f177f",
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "text": "The repair judge runs on a model chosen by replaying real flagged replies, and the choice preserves the rule that the judge is not the model that wrote the reply.",
+      "text_digest": "37eefecfd095ee365b561617665846f999c6e16962c6af17325602533b9023c5"
+    },
+    {
+      "criterion_id": "AC-02",
+      "text": "The judge prompt states the criterion the code mechanically enforces, so a correction is no longer discarded for a rule the judge was never given.",
+      "text_digest": "9ba24ab61609cfc78dff459d896e6e9064a8c45979e52e1d8fe16a6738556c00"
+    },
+    {
+      "criterion_id": "AC-03",
+      "text": "The shipped configuration is measured end to end on every flagged reply we hold, and what it adds beyond the free deterministic repair is reported rather than assumed.",
+      "text_digest": "7ef8c6df3caa69b9ad583ea2a024be1c9a61950f227c5e110da41cff76d50487"
+    }
+  ]
+}

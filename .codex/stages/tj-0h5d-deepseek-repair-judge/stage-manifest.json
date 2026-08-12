@@ -1,0 +1,73 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-0h5d-deepseek-repair-judge",
+  "goal_id": "tj-0h5d",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "accepted",
+  "sequence": 7,
+  "acceptance_boundary_id": "repair-judge-failure-handling",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "repair-judge-runtime",
+      "llm-path-policy"
+    ],
+    "risk_models": [
+      "customer-loses-the-reply",
+      "judge-shares-a-model-with-the-writer",
+      "customer-turn-latency",
+      "paid-call-spend"
+    ],
+    "test_environments": [
+      "focused-unit-tests",
+      "live-replay-of-both-flagged-replies"
+    ],
+    "rollback_boundary": "one-local-main-commit",
+    "acceptance_proofs": [
+      "shipped-config-measured-live",
+      "second-vendor-preserved",
+      "prompt-contract-pinned"
+    ]
+  },
+  "work_areas": [
+    "contract",
+    "implementation",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-0h5d",
+    "criteria": [
+      {
+        "criterion_id": "AC-01",
+        "text": "The repair judge runs on a model chosen by replaying real flagged replies, and the choice preserves the rule that the judge is not the model that wrote the reply.",
+        "text_digest": "37eefecfd095ee365b561617665846f999c6e16962c6af17325602533b9023c5"
+      },
+      {
+        "criterion_id": "AC-02",
+        "text": "The judge prompt states the criterion the code mechanically enforces, so a correction is no longer discarded for a rule the judge was never given.",
+        "text_digest": "9ba24ab61609cfc78dff459d896e6e9064a8c45979e52e1d8fe16a6738556c00"
+      },
+      {
+        "criterion_id": "AC-03",
+        "text": "The shipped configuration is measured end to end on every flagged reply we hold, and what it adds beyond the free deterministic repair is reported rather than assumed.",
+        "text_digest": "7ef8c6df3caa69b9ad583ea2a024be1c9a61950f227c5e110da41cff76d50487"
+      }
+    ],
+    "source_digest": "a23a570966eda0fd10b74fd6089dd2a882d81fea8bfd12e4f2bdc395a89f177f"
+  },
+  "scope_anchor": ".codex/goals/tj-0h5d/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "a23a570966eda0fd10b74fd6089dd2a882d81fea8bfd12e4f2bdc395a89f177f",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-0h5d",
+      "stream_owner": "tj-0h5d-root-implementation",
+      "artifact_path": ".codex/stages/tj-0h5d-deepseek-repair-judge/artifacts/tj-0h5d.md"
+    }
+  ]
+}
