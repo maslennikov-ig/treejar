@@ -81,7 +81,8 @@ verification:
   - uv run ruff format --check src/ tests/ scripts/: passed (451 files)
   - uv run mypy src/: passed (174 files)
   - scripts/orchestration/run_process_verification.sh: passed
-  - uv run pytest tests/ -v --tb=short: passed (3641 passed, 19 skipped)
+  - uv run pytest tests/ -v --tb=short: passed (3642 passed, 19 skipped)
+  - tj-3h0w bounded live replay: passed with 20 calls, 0 failures, 0 stubs, $0.001573056
 changed_files:
   - .codex/goals/tj-q1a2/scope-criterion-snapshot.json
   - .codex/handoff.md
@@ -111,8 +112,7 @@ changed_files:
   - tests/test_sales_turn_guard.py
 explicit_defers:
   - tj-2m5m.4 remains separate out-of-scope discovery work.
-  - tj-9e15 the name re-elicitation slot has no production caller.
-  - tj-3h0w whether the unanchored paid repair judge still earns its place.
+  - tj-uhbq the repair judge can approve a reply the grounding guard flagged.
 ---
 
 # Summary
@@ -171,8 +171,17 @@ handed off four times. There were no failures or unusable stubs. The stated
 acceptance -- no judge answer byte-identical to the deterministic candidate --
 holds, but only because no judge answer was used at all: 819 was rejected 4/4
 as `correction_still_flagged`, 789 4/4 as `correction_has_no_answer`, and all
-eight deliveries came from the deterministic fallback. That result is tracked
-in `tj-3h0w` rather than presented as a success.
+eight deliveries came from the deterministic fallback.
+
+`tj-3h0w` re-measured that on twenty approved calls under current code, zero
+failures, zero unusable stubs, $0.001573056. No judge answer was byte-identical
+to the deterministic candidate, 0 of 20, so the unanchoring itself works.
+Delivery is thin: 819 delivered 0/10 judge corrections with 8/10 rejected as
+`correction_still_flagged`; 789 delivered 2/10. Eighteen of twenty deliveries
+came from the deterministic fallback. Twice on 819 the judge answered `approve`,
+which ships the guard-flagged reply unchanged and makes one input escalate or
+not depending on the run; that is `tj-uhbq` and is an owner decision, not a
+finding this stage acts on.
 
 # Delivery / Cleanup
 

@@ -43,7 +43,11 @@ page a manager.
   reply. The judge itself delivered nothing in 8 of 8: 819 was rejected four
   times as `correction_still_flagged`, 789 four times as
   `correction_has_no_answer`, and every delivery came from the deterministic
-  fallback. Tracked as `tj-3h0w`.
+  fallback. `tj-3h0w` then re-measured this with twenty approved calls under
+  current code: 0/20 byte-identical to the deterministic candidate, 819
+  delivered 0/10 judge corrections and 789 delivered 2/10, and eighteen of
+  twenty deliveries came from the deterministic fallback. The judge approved a
+  guard-flagged 819 reply 2/10, which is `tj-uhbq`.
 - Corpus text stayed outside Git. The tracked artifact contains ids, counts,
   explanations and digests only.
 
@@ -66,6 +70,7 @@ graph-reviewed: no-change-needed — Graphify is not initialized.
 ## Risks / Follow-ups / Explicit defers
 
 No in-scope product defect is deferred. `tj-2m5m.4` remains separate discovery
-work; `tj-9e15` and `tj-3h0w` carry the two bounded questions this stage
-surfaced but did not answer. No push, deploy, runtime mutation or
-model-configuration change occurred.
+work. `tj-9e15` and `tj-3h0w` are closed. `tj-uhbq` carries one owner decision:
+whether a paid judge may override a deterministic grounding flag. The push to
+`origin/main` was authorized; no deploy, runtime mutation or model-configuration
+change occurred.

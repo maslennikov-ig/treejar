@@ -19027,6 +19027,32 @@ async def test_name_gate_pending_request_stores_typed_resume_context() -> None:
 
 
 @pytest.mark.asyncio
+async def test_parking_a_request_on_the_name_reopens_the_ask() -> None:
+    """The gate is the one trigger that clears the already-asked slot.
+
+    We ask for a name once and then stop, so the guard removes a later name
+    question. The gate is the case where asking again is the whole point: a
+    customer request is parked behind it. Leaving the slot set removed the
+    gate's own question and parked the request behind nothing.
+    """
+
+    conversation = SimpleNamespace(
+        id=uuid.uuid4(),
+        language="en",
+        metadata_={"customer_name_asked": True},
+    )
+
+    await engine_module._store_name_gate_pending_request(
+        db=AsyncMock(),
+        conversation=conversation,
+        text="I need six ergonomic chairs and two standing desks for a new office.",
+    )
+
+    assert "name_gate_pending_request" in conversation.metadata_
+    assert engine_module._customer_name_was_asked(conversation) is False
+
+
+@pytest.mark.asyncio
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,

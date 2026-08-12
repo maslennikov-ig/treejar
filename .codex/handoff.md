@@ -4,8 +4,9 @@ Updated: 2026-08-12
 Current branch: `main`
 Current stage id: `tj-q1a2-one-reply-owner`
 Status: D1-D6 are delivered locally with all requested gates green, and the
-post-acceptance audit fix `tj-w224` is delivered on top of them. No remote or
-runtime action is part of this stage.
+post-acceptance audit fix `tj-w224` is delivered on top of them. `main` is
+pushed to `origin/main` with CI green. `tj-9e15` and `tj-3h0w` are closed. No
+deploy or runtime mutation was authorized or performed.
 
 Documentation: no external/versioned boundary — the behavior is owned by the
 local reply-policy contract, Python implementation, tests and protected replay.
@@ -18,8 +19,9 @@ local reply-policy contract, Python implementation, tests and protected replay.
 - The name ask is state-owned. `customer_name_asked` is recorded only when an
   ask actually reaches the customer, and never reconstructed from previous
   assistant text. `name_chase` reads that slot itself, not the permission
-  derived from it. `_clear_customer_name_asked` is the re-elicitation
-  mechanism and no production path calls it yet (`tj-9e15`).
+  derived from it. The name gate is the one re-elicitation trigger:
+  `_store_name_gate_pending_request` clears the slot when it parks a customer
+  request behind the name, so the guard cannot remove the gate's own question.
 - A name present in the current inbound message participates in the same
   current-message facts used by rendering and later persistence. A first-turn
   signature therefore cannot receive another name question.
@@ -66,7 +68,15 @@ local reply-policy contract, Python implementation, tests and protected replay.
   every correction was rejected, 819 four times as `correction_still_flagged`
   and 789 four times as `correction_has_no_answer`, and all eight deliveries
   came from the deterministic fallback. Whether the paid judge earns its place
-  on this path is open in `tj-3h0w`.
+  on this path was then measured in `tj-3h0w`.
+- `tj-3h0w`, twenty approved calls under current code, $0.001573056, zero
+  failures and zero unusable stubs: no judge answer was byte-identical to the
+  deterministic candidate (0/20), so unanchoring works. Delivery is thin.
+  Dialog 819 delivered 0/10 judge corrections, 8/10 rejected as
+  `correction_still_flagged`; dialog 789 delivered 2/10. Eighteen of twenty
+  deliveries came from the deterministic fallback. The judge also approved a
+  guard-flagged 819 reply 2/10, which ships the flagged claim unchanged and
+  makes the same input escalate or not depending on the run: `tj-uhbq`.
 - No corpus text, request body or reply body is tracked. Durable evidence uses
   dialog ids, integers and digests only.
 
@@ -75,15 +85,18 @@ local reply-policy contract, Python implementation, tests and protected replay.
 - Focused D1-D5 set: 960 passed. Full `tests/test_llm_engine.py`: 823 passed.
   Focused D6/response-policy set: 102 passed.
 - Ruff check and format are clean over `src/ tests/ scripts/`; Mypy is clean over
-  174 source files; full Pytest is `3641 passed, 19 skipped`; process
-  verification passed. Re-run after `tj-w224`.
+  174 source files; full Pytest is `3642 passed, 19 skipped`; process
+  verification passed. Re-run after `tj-w224` and `tj-9e15`. GitHub CI on
+  `origin/main` is green for `e1e61ed`.
 
 ## Constraints
 
-- No push, PR, deploy, production/staging mutation, model-configuration change
-  or real-user message is authorized or performed.
-- No further paid calls are needed or permitted by this stage. Eight of the
-  maximum twenty approved calls were used, only for dialogs 819 and 789.
+- Push to `origin/main` was authorized by the owner on 2026-08-12 and performed.
+  No PR, deploy, production/staging mutation, model-configuration change or
+  real-user message is authorized or performed.
+- Paid calls: eight for D6 plus twenty authorized for `tj-3h0w`, all on stored
+  dialogs 819 and 789, all with the failure page suppressed. No further paid
+  call is permitted without new authority.
 - The canonical runtime target remains `https://noor.starec.ai`; it was not
   contacted or changed.
 
@@ -109,7 +122,7 @@ current repository truth.
 ## Explicit defers
 
 - `tj-2m5m.4`: separate out-of-scope discovery work remains tracked in Beads.
-- `tj-9e15`: the name re-elicitation slot has no production caller.
-- `tj-3h0w`: whether the unanchored paid repair judge still earns its place.
+- `tj-uhbq`: the repair judge can approve a reply the grounding guard flagged.
+  Owner decision pending; no further paid measurement until it is taken.
 - Deployment and live runtime verification are outside this local stage and
   were not authorized.

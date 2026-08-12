@@ -5609,6 +5609,11 @@ async def _store_name_gate_pending_request(
         "identity": identity,
     }
     conversation.metadata_ = metadata
+    # Parking a request on the name is the one place we decide to ask again, so
+    # it is the one place that clears the slot recording that we already asked.
+    # Without this the guard reads "asked once" and removes the gate's own
+    # question, leaving a parked request and nothing on screen to unpark it.
+    _clear_customer_name_asked(conversation)
     try:
         await db.flush()
     except Exception:
