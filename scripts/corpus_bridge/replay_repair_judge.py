@@ -3,6 +3,12 @@
 The transcript-bearing inputs stay under the git-common protected corpus store.
 The result journal contains dialog IDs, counts, outcomes, lengths, and digests;
 it never copies a customer message or reply into the working tree.
+
+`--record-text` additionally writes the judge's correction and the delivered
+reply into that same protected journal. It is off by default and it is still
+outside the repository, but it is the only way anyone can read what we now send:
+after `tj-3i8m` the judge's own text reaches the customer, and on dialog 789 it
+is the whole answer. A number in a journal is not a reading.
 """
 
 from __future__ import annotations
@@ -202,6 +208,7 @@ async def run_live_replay(
     *,
     output_path: Path,
     repeats: int,
+    record_text: bool = False,
 ) -> dict[str, Any]:
     if repeats < 4 or repeats * 2 > CALL_CAP:
         raise ValueError(
@@ -296,6 +303,14 @@ async def run_live_replay(
                             judged.text,
                             language=case.state.language,
                         ),
+                        **(
+                            {
+                                "corrected_text": corrected,
+                                "judged_text": judged.text,
+                            }
+                            if record_text
+                            else {}
+                        ),
                         "prompt_tokens": provider_result.prompt_tokens,
                         "completion_tokens": provider_result.completion_tokens,
                         "cost_usd": provider_result.cost_usd,
@@ -344,6 +359,12 @@ def main() -> int:
     parser.add_argument("--repeats", type=int, default=4)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--record-text",
+        action="store_true",
+        help="also store the correction and the delivered reply in the "
+        "protected journal, so a human can read what we send",
+    )
     args = parser.parse_args()
 
     root = protected_root()
@@ -352,7 +373,13 @@ def main() -> int:
         print(json.dumps(_new_journal(cases), indent=2, sort_keys=True))
         return 0
     output = args.output or root / "tj-q1a2-d6-live-20260812/results.json"
-    journal = asyncio.run(run_live_replay(output_path=output, repeats=args.repeats))
+    journal = asyncio.run(
+        run_live_replay(
+            output_path=output,
+            repeats=args.repeats,
+            record_text=args.record_text,
+        )
+    )
     print(json.dumps(_summary(journal), indent=2, sort_keys=True))
     return 0
 

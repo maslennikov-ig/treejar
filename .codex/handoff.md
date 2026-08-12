@@ -94,6 +94,15 @@ local reply-policy contract, Python implementation, tests and protected replay.
   nothing on that shape. Not verified: the wording of the 789 repairs. The
   journal stores digests and lengths only, by design, and the delivered lengths
   are 324-427 characters against a 169-character no-answer candidate.
+- `tj-b9mg` then read them: four rounds, 32 calls, $0.0028. The shipped wording
+  is correct on both dialogs, 8/8 in the confirming round. 789 says plainly
+  that we do not buy customer-owned furniture and pivots to what we sell; 819
+  is the safe minimal repair. Two attempted refinements were read and reverted.
+  Telling the judge to put a rule "in its own voice" produced "assembly is not
+  a service we offer", which is false and which no guard catches; warning it
+  off that made 789 stop answering the question. Rules are now written to be
+  safe if quoted, because the judge quotes them almost verbatim, and
+  `replay_repair_judge.py --record-text` keeps the next round readable.
 - No corpus text, request body or reply body is tracked. Durable evidence uses
   dialog ids, integers and digests only.
 
@@ -139,7 +148,6 @@ current repository truth.
 ## Explicit defers
 
 - `tj-2m5m.4`: separate out-of-scope discovery work remains tracked in Beads.
-- `tj-b9mg`: nobody has read the judge repairs we now ship. The journal stores
-  digests by design, and on 789 the judge's text is the entire answer.
+- `tj-2m5m.4`: the discovery slot, in progress.
 - Deployment and live runtime verification are outside this local stage and
   were not authorized.

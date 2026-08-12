@@ -4,10 +4,12 @@ import pytest
 
 from src.llm import grounding_output
 from src.llm.grounding_output import (
+    GROUNDING_VIOLATION_RULES,
     GroundingOutputAction,
     GroundingViolation,
     classify_grounding_output,
     enforce_grounding_output,
+    flagged_grounding_sentences,
 )
 
 MEDICAL_ATTEMPT_3 = (
@@ -549,3 +551,40 @@ def test_a_reply_that_is_only_an_invented_price_falls_back_in_both_languages() -
     assert arabic.action is GroundingOutputAction.REPLACED
     assert "الكتالوج" in arabic.text
     assert classify_grounding_output(arabic.text, grounded_amounts=[]) == ()
+
+
+def test_every_violation_rule_is_safe_to_read_out_loud() -> None:
+    """Read on 2026-08-12: the judge quoted a rule into the customer's reply.
+
+    It quoted the one rule that happened to read well. These sentences are
+    handed to a model that is writing to a customer, so any of them can end up
+    in front of one, and none may carry our internal vocabulary.
+    """
+
+    internal = (
+        "this turn",
+        "guard",
+        "flag",
+        "deterministic",
+        "catalog row",
+        "follow-up job",
+    )
+    for violation, rule in GROUNDING_VIOLATION_RULES.items():
+        assert rule.endswith("."), violation
+        lowered = rule.casefold()
+        for word in internal:
+            assert word not in lowered, f"{violation} leaks {word!r}"
+    assert set(GROUNDING_VIOLATION_RULES) == set(GroundingViolation)
+
+
+def test_the_flagged_sentences_are_the_ones_that_matched() -> None:
+    text = (
+        "For a 2-person workstation I can compare suitable options. "
+        "I'll also confirm whether assembly is available and get back to you. "
+        "Which Dubai area should we deliver to?"
+    )
+
+    flagged = flagged_grounding_sentences(text)
+
+    assert len(flagged) == 1
+    assert "assembly" in flagged[0]

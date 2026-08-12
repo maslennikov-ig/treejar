@@ -112,7 +112,7 @@ changed_files:
   - tests/test_sales_turn_guard.py
 explicit_defers:
   - tj-2m5m.4 remains separate out-of-scope discovery work.
-  - tj-b9mg nobody has read the judge repairs we now ship.
+  - none.
 ---
 
 # Summary
@@ -194,7 +194,15 @@ zero failures: judge repairs reached the customer 20 of 20 against 2 of 20,
 with zero handoffs and zero rejected corrections. Dialog 789 went from eight
 handoffs in ten to none. Dialog 819 is the honest half: all ten corrections are
 byte-identical to the deterministic candidate, so the paid call buys nothing on
-that shape. The wording of those repairs is unread, which is `tj-b9mg`.
+that shape.
+
+`tj-b9mg` read them: four rounds, 32 calls, $0.0028, and two of those rounds
+were spent proving a refinement wrong. The shipped wording is correct on both
+dialogs, 8 of 8 in the confirming round. Telling the judge to put a rule in its
+own voice produced "assembly is not a service we offer" -- false, we escalate
+assembly requests, and no deterministic guard sees an invented denial. Warning
+it off that instead made 789 pivot without answering. The rules are written to
+survive being quoted, because the judge quotes them nearly word for word.
 
 # Delivery / Cleanup
 

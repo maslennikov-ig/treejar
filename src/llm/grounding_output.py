@@ -544,16 +544,14 @@ GROUNDING_VIOLATION_RULES: dict[GroundingViolation, str] = {
         "We cannot promise a named product will be in the showroom to try."
     ),
     GroundingViolation.UNVERIFIED_STOCK_CONFIRMATION: (
-        "We cannot state that something is in stock unless stock was checked "
-        "on this turn."
+        "We cannot say something is in stock when stock was not checked."
     ),
     GroundingViolation.FUTURE_STOCK_CHECK: (
         "We cannot promise to check something and come back later, by "
-        "ourselves or through a colleague. There is no follow-up job behind "
-        "that promise."
+        "ourselves or through a colleague. Nothing happens after that promise."
     ),
     GroundingViolation.UNVERIFIED_PRICE: (
-        "We cannot state a figure that is not among this turn's verified amounts."
+        "We cannot give a figure that was not verified for this customer."
     ),
     GroundingViolation.UNVERIFIED_CUSTOMER_OWNED_FURNITURE_SERVICE: (
         "We do not buy, resell, value or take in furniture the customer "
@@ -565,6 +563,18 @@ GROUNDING_VIOLATION_RULES: dict[GroundingViolation, str] = {
 
 def grounding_violation_rule(value: str) -> str | None:
     """The rule behind a violation name, in words a reader can act on.
+
+    Three readings on 2026-08-12 (`tj-b9mg`) settled the wording, and two of
+    them settled it by being wrong. The judge quotes a rule into the customer's
+    reply almost word for word, so a rule carrying our internal vocabulary
+    would put it in front of a customer; that is why these say nothing about
+    turns, guards or candidates. Telling the judge to put a rule "in its own
+    voice" instead turned "we cannot promise to check whether assembly is
+    available" into "assembly is not a service we offer", which is false and
+    which no guard catches. Warning it off that turned the customer-owned rule
+    into silence, and dialog 789 stopped answering the question it was asked.
+    What works is a rule that states our position and, where the position is
+    the answer, says so.
 
     The judge used to be handed the deterministic rewrite, which anchored it
     onto our own answer. Removing that also removed the only thing telling it
