@@ -51,6 +51,13 @@ local reply-policy contract, Python implementation, tests and protected replay.
   so the two never share a turn or double their one-question bound, and the
   same transactional-narrowing stand-down applies. It is generation-side, so
   the protected replay cannot see it and does not.
+- The paid acceptance round now sends the prompt production sends.
+  `build_generation_messages` appends `[RUNTIME DIRECTIVES]`, taken from the
+  product's own `engine._turn_runtime_directives` over the opening at the
+  greeting stage, and `[PERMITTED ASKS THIS TURN]`, taken from
+  `permitted_asks_for_turn` with the frozen set's own properties. Both come
+  from the product functions rather than restated text, so a round follows them
+  when they change.
 
 ## Protected evidence
 
@@ -108,6 +115,17 @@ local reply-policy contract, Python implementation, tests and protected replay.
   off that made 789 stop answering the question. Rules are now written to be
   safe if quoted, because the judge quotes them almost verbatim, and
   `replay_repair_judge.py --record-text` keeps the next round readable.
+- `tj-7gpw`: every number this project has measured, the 18.94 baseline
+  included, was scored on a prompt missing two blocks production always sends.
+  On a greeting opening that is the substantive-reply directive, which fires on
+  every turn that has text, the consultative opening and project directives
+  where the opening earns them, and the whole ask permission list. Directive
+  work read as unmeasured because the paid round did not send it either. The
+  consequence is recorded rather than hidden: after this fix a round is not
+  comparable to the 18.94 baseline, and the fixed harness needs its own
+  baseline before any build change is measured on it. The recorded
+  `generation_prompt_set_digest` will differ from every earlier round, so the
+  break is visible in the evidence itself.
 - No corpus text, request body or reply body is tracked. Durable evidence uses
   dialog ids, integers and digests only.
 
@@ -116,9 +134,9 @@ local reply-policy contract, Python implementation, tests and protected replay.
 - Focused D1-D5 set: 960 passed. Full `tests/test_llm_engine.py`: 823 passed.
   Focused D6/response-policy set: 102 passed.
 - Ruff check and format are clean over `src/ tests/ scripts/`; Mypy is clean over
-  174 source files; full Pytest is `3642 passed, 19 skipped`; process
-  verification passed. Re-run after `tj-w224` and `tj-9e15`. GitHub CI on
-  `origin/main` is green for `e1e61ed`.
+  174 source files; full Pytest is `3668 passed, 19 skipped`; process
+  verification passed. Re-run after `tj-w224`, `tj-9e15` and `tj-7gpw`. GitHub
+  CI on `origin/main` is green through `783d223`.
 
 ## Constraints
 
@@ -155,6 +173,10 @@ current repository truth.
 - `tj-2m5m.4`: separate out-of-scope discovery work remains tracked in Beads.
 - `tj-2m5m.4`: the prompt half is delivered and unmeasured. The owner decided
   on 2026-08-12 that the structural gate waits for the numbers rather than
-  preceding them, so the required job slot is not built.
+  preceding them, so the required job slot is not built. The measured round it
+  waits for cannot be run yet: `tj-7gpw` is fixed, but the frozen set is
+  twenty first-turn greeting openings, and `solution_consultation_directive`
+  fires on the solution stage. `tj-ge07`, the frozen multi-turn set, is the
+  blocker and needs its own paid-call authority.
 - Deployment and live runtime verification are outside this local stage and
   were not authorized.

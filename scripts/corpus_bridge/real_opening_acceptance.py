@@ -61,7 +61,12 @@ from src.llm.repair_judge import (
     run_repair_judge,
     unavailable_repair_judge_trace,
 )
-from src.llm.response_policy import ReplyPolicyState, render_reply
+from src.llm.response_policy import (
+    ReplyPolicyState,
+    format_permitted_asks_prompt,
+    permitted_asks_for_turn,
+    render_reply,
+)
 from src.models.conversation import Conversation
 from src.models.message import Message
 from src.quality.evaluator import (
@@ -414,6 +419,24 @@ def expected_language(text: str) -> str:
 def build_generation_messages(
     *, opening: str, language: str, catalog_evidence: list[dict[str, object]]
 ) -> list[dict[str, str]]:
+    """The system prompt production would send for this opening, not a subset.
+
+    Two blocks used to be missing here. Production appends `[RUNTIME
+    DIRECTIVES]` and `[PERMITTED ASKS THIS TURN]` to every generated turn, and
+    a round without them scored a prompt no customer ever receives: on a
+    greeting opening that is the substantive-reply directive, which fires on
+    every turn that has text, the consultative opening where it is earned, and
+    the whole ask permission list. Both blocks are taken from the product's own
+    functions rather than restated, so the round follows them when they change.
+
+    The permission arguments are the frozen set's own properties, the same ones
+    `apply_shipped_output_guards` already declares: one customer opening, no
+    prior conversation, nothing asked yet.
+    """
+
+    # The engine builds a provider at import time, so it is imported here.
+    from src.llm.engine import _turn_runtime_directives
+
     language_name = "Arabic" if language == "ar" else "English"
     evidence = json.dumps(
         catalog_evidence,
@@ -430,17 +453,29 @@ def build_generation_messages(
         "and do not invent a product, price, stock, delivery, or commitment.\n\n"
         f"[READ-ONLY CATALOG EVIDENCE]\n{evidence}"
     )
-    system = finalize_evidence_grounding_prompt(
-        "\n\n".join(
-            (
-                BASE_SYSTEM_PROMPT.strip(),
-                COMMUNICATION_RULES_POLICY.strip(),
-                LANGUAGE_DIRECTIVE.format(language=language_name).strip(),
-                STAGE_RULES["greeting"].strip(),
-                harness_contract,
+    sections = [
+        BASE_SYSTEM_PROMPT.strip(),
+        COMMUNICATION_RULES_POLICY.strip(),
+        LANGUAGE_DIRECTIVE.format(language=language_name).strip(),
+        STAGE_RULES["greeting"].strip(),
+        harness_contract,
+    ]
+    directives = _turn_runtime_directives(opening, sales_stage="greeting")
+    if directives:
+        block = "\n".join(f"- {directive}" for directive in directives)
+        sections.append(f"[RUNTIME DIRECTIVES]\n{block}")
+    sections.append(
+        format_permitted_asks_prompt(
+            permitted_asks_for_turn(
+                is_first_turn=True,
+                customer_name=None,
+                customer_name_asked=False,
+                owes_company_question=False,
+                quote_consent_granted=False,
             )
         )
     )
+    system = finalize_evidence_grounding_prompt("\n\n".join(sections))
     return [
         {"role": "system", "content": system},
         {"role": "user", "content": opening},

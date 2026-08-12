@@ -37,7 +37,12 @@ from src.llm.repair_judge import (
     RepairJudgeProviderResult,
     RepairJudgeRequest,
 )
-from src.llm.response_policy import ReplyPolicyState, render_reply
+from src.llm.response_policy import (
+    ReplyPolicyState,
+    format_permitted_asks_prompt,
+    permitted_asks_for_turn,
+    render_reply,
+)
 from src.llm.response_runtime import LLMResponse
 
 
@@ -292,6 +297,51 @@ def test_generation_messages_bind_current_prompt_and_catalog_evidence() -> None:
     assert "[READ-ONLY CATALOG EVIDENCE]" in system
     assert "Axis Chair" in system
     assert "Do not call tools in this isolated acceptance run" in system
+
+
+def test_the_round_sends_the_directives_the_opening_earns() -> None:
+    """A round without them scores a prompt no customer ever receives."""
+    from src.llm.engine import _turn_runtime_directives
+
+    opening = "We are fitting out a new office for 12 people"
+    earned = _turn_runtime_directives(opening, sales_stage="greeting")
+    assert earned, "this opening is supposed to earn the consultative directives"
+
+    system = str(
+        build_generation_messages(
+            opening=opening,
+            language="en",
+            catalog_evidence=[],
+        )[0]["content"]
+    )
+
+    assert "[RUNTIME DIRECTIVES]" in system
+    for directive in earned:
+        assert directive in system
+
+
+def test_the_round_sends_the_ask_permissions_production_derives() -> None:
+    """The frozen set may ask for a name and for discovery, and nothing else."""
+    system = str(
+        build_generation_messages(
+            opening="I need an ergonomic chair",
+            language="en",
+            catalog_evidence=[],
+        )[0]["content"]
+    )
+
+    assert (
+        format_permitted_asks_prompt(
+            permitted_asks_for_turn(
+                is_first_turn=True,
+                customer_name=None,
+                customer_name_asked=False,
+                owes_company_question=False,
+                quote_consent_granted=False,
+            )
+        )
+        in system
+    )
 
 
 def test_catalog_matches_use_customer_terms_not_catalog_order() -> None:
