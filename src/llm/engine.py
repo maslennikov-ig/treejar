@@ -413,6 +413,18 @@ BARE_NAME_GATE_REJECT_TOKENS = frozenset(
         "تركيب",
     }
 )
+# "This is Binu from Bikram Interiors" is how a first message introduces a
+# person, and reading it is what stops us asking for a name we were just given.
+# Unbounded, the same phrasing read "this is a follow-up from our meeting" as a
+# customer called "a follow-up" and a company called "our meeting", and both
+# were stored. A person here is one or two words and never starts with a
+# determiner.
+_THIS_IS_INTRODUCTION = (
+    r"\bthis\s+is\s+"
+    r"(?!(?:an?|the|my|our|your|his|her|their|this|that|just)\s)"
+)
+_PERSON_NAME_WORDS = r"[^\W\d_]+(?:\s+[^\W\d_]+)?"
+
 NATURAL_NAME_PATTERNS = (
     re.compile(
         r"\bاسمي\s+(?P<value>.+?)(?=$|[\n\[]|[.!?;,،؛؟]\s)",
@@ -438,13 +450,13 @@ NATURAL_NAME_PATTERNS = (
         re.I | re.S,
     ),
     re.compile(
-        r"\bthis\s+is\s+(?P<value>.+?)(?=\s+from\b)",
+        _THIS_IS_INTRODUCTION + rf"(?P<value>{_PERSON_NAME_WORDS})\s+from\b",
         re.I | re.S,
     ),
 )
 NATURAL_COMPANY_PATTERNS = (
     re.compile(
-        r"\bthis\s+is\s+.+?\s+from\s+"
+        _THIS_IS_INTRODUCTION + _PERSON_NAME_WORDS + r"\s+from\s+"
         r"(?P<value>.+?)(?=$|[\n\[]|[.!?;,]\s?)",
         re.I | re.S,
     ),

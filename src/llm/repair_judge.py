@@ -566,8 +566,17 @@ def _repair_judge_agent() -> Agent[None, RepairJudgeDecision]:
 
 async def run_repair_judge(
     request: RepairJudgeRequest,
+    *,
+    notify_on_failure: bool = True,
 ) -> RepairJudgeProviderResult:
-    """Run one bounded paid second-vendor call for a flagged turn."""
+    """Run one bounded paid second-vendor call for a flagged turn.
+
+    A diagnostic replay passes `notify_on_failure=False`, because a failure on
+    this path pages a manager by Telegram and an offline experiment must never
+    do that. Production keeps the alert: the deterministic fallback means an
+    unavailable judge no longer costs the customer their reply, but it is still
+    a paid vendor going dark, and nobody would hear about it otherwise.
+    """
 
     result = await run_agent_with_safety(
         _repair_judge_agent(),
@@ -575,7 +584,7 @@ async def run_repair_judge(
         _request_payload(request),
         model_name=REPAIR_JUDGE_MODEL,
         max_attempts_override=1,
-        notify_on_failure_override=False,
+        notify_on_failure_override=notify_on_failure,
     )
     usage = result.usage()
     telemetry = get_llm_usage_telemetry(result)

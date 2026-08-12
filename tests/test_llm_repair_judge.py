@@ -453,7 +453,7 @@ def test_repair_judge_uses_one_bounded_second_vendor_call() -> None:
 
 
 @pytest.mark.asyncio
-async def test_repair_judge_diagnostic_call_never_pages_on_failure(
+async def test_only_the_diagnostic_repair_judge_call_suppresses_the_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -479,15 +479,19 @@ async def test_repair_judge_diagnostic_call_never_pages_on_failure(
         lambda _result: None,
     )
 
-    await run_repair_judge(
-        RepairJudgeRequest(
-            reply="A supported reply.",
-            flags=(_flag(),),
-            evidence=RepairJudgeEvidence(language="en"),
-        )
+    request = RepairJudgeRequest(
+        reply="A supported reply.",
+        flags=(_flag(),),
+        evidence=RepairJudgeEvidence(language="en"),
     )
 
+    await run_repair_judge(request, notify_on_failure=False)
     assert captured["notify_on_failure_override"] is False
+
+    # Production is the other half of the same rule: a paid vendor going dark
+    # is still worth an alert, even though the customer now keeps their reply.
+    await run_repair_judge(request)
+    assert captured["notify_on_failure_override"] is True
 
 
 def _flagged_response_for_fallback() -> LLMResponse:

@@ -232,7 +232,10 @@ async def run_live_replay(
                 evidence=case.evidence,
             )
             try:
-                provider_result = await run_repair_judge(request)
+                provider_result = await run_repair_judge(
+                    request,
+                    notify_on_failure=False,
+                )
             except Exception as error:
                 record.update(
                     {

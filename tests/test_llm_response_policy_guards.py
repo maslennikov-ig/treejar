@@ -16,7 +16,6 @@ def test_one_function_derives_the_permitted_asks_from_turn_state() -> None:
         is_first_turn=True,
         customer_name=None,
         customer_name_asked=False,
-        ask_before_filling=False,
         owes_company_question=False,
         quote_consent_granted=False,
     )
@@ -24,7 +23,6 @@ def test_one_function_derives_the_permitted_asks_from_turn_state() -> None:
         is_first_turn=False,
         customer_name=None,
         customer_name_asked=True,
-        ask_before_filling=True,
         owes_company_question=True,
         quote_consent_granted=True,
     )
@@ -33,7 +31,6 @@ def test_one_function_derives_the_permitted_asks_from_turn_state() -> None:
     assert already_asked == frozenset(
         {
             AskKind.SALES_DISCOVERY,
-            AskKind.SLOT_CONFIRMATION,
             AskKind.COMPANY_ACTIVITY,
             AskKind.QUOTE_DETAILS,
         }

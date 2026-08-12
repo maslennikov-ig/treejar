@@ -1827,7 +1827,6 @@ async def test_prompt_and_guard_consume_the_same_permitted_ask_set(
         is_first_turn=True,
         customer_name=None,
         customer_name_asked=True,
-        ask_before_filling=False,
         owes_company_question=False,
         quote_consent_granted=False,
     )
@@ -17061,7 +17060,7 @@ async def test_process_message_sales_order_request_creates_multi_item_quotation(
             source_message_id="provider-message-sales-order-1",
         )
 
-    assert response.text == "Your Treejar quotation: SO-123"
+    _assert_first_turn_opening(response.text, "Your Treejar quotation: SO-123")
     assert response.deferred_product_media == ()
     assert response.model == "mock-model|sales-order-quote"
     assert [trace.tool_name for trace in response.tool_traces] == ["create_quotation"]
@@ -17206,7 +17205,7 @@ async def test_process_message_sales_order_normalizes_cyrillic_sku_prefix(
             messaging_client=messaging,
         )
 
-    assert response.text == "Your Treejar quotation: SO-CH190"
+    _assert_first_turn_opening(response.text, "Your Treejar quotation: SO-CH190")
     mock_create_quotation.assert_awaited_once()
     _, quote_items = mock_create_quotation.await_args.args
     assert [(item.sku, item.quantity) for item in quote_items] == [

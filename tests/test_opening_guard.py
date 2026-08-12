@@ -274,31 +274,43 @@ def test_only_the_introducing_sentence_is_dropped() -> None:
     assert "How many do you need?" in guarded
 
 
-def test_the_company_name_alone_owns_the_introduction_wherever_it_appears() -> None:
-    """A company-only introduction must not be stacked under our own opening.
+def test_a_sentence_that_answers_is_kept_even_when_it_names_the_company() -> None:
+    """Naming Treejar is not an introduction, and the answer must survive.
 
-    This catches the D1 production break: changing `_has_identity` back to
-    requiring the persona would leave the middle sentence in place and name
-    Treejar twice.
+    A version that treated any company mention as an introduction deleted this
+    sentence, and with it the only answer the customer asked for: whether we
+    buy their old tables. The reply that came back offered them a new desk and
+    said nothing about the question.
     """
 
     guarded = apply_opening_guard(
-        "Thanks for asking. Treejar supplies office desks. "
-        "The CH 120 is AED 292. How many do you need?",
+        "Treejar supplies new office furniture, but we don't buy or resell "
+        "customer-owned office tables. I can help you choose a new desk.",
         language="en",
         is_first_turn=True,
         customer_name=None,
     )
 
-    assert guarded.count("Treejar") == 1
-    assert "Thanks for asking." in guarded
-    assert "The CH 120 is AED 292." in guarded
-    assert "How many do you need?" in guarded
+    assert "we don't buy or resell customer-owned office tables" in guarded
+    assert "I can help you choose a new desk." in guarded
+
+
+def test_a_commitment_that_names_the_company_is_not_removed() -> None:
+    guarded = apply_opening_guard(
+        "Yes, Treejar can deliver to Abu Dhabi within three working days. "
+        "Would you like me to check stock?",
+        language="en",
+        is_first_turn=True,
+        customer_name=None,
+    )
+
+    assert "within three working days" in guarded
+    assert "Would you like me to check stock?" in guarded
 
 
 def test_the_company_name_inside_a_url_is_not_an_identity_sentence() -> None:
     text = (
-        "Our showroom is in Dubai. Open the location: "
+        "Noor here. Our showroom is in Dubai. Open the location: "
         "https://example.com/Treejar+Trading/location"
     )
 
@@ -313,27 +325,28 @@ def test_the_company_name_inside_a_url_is_not_an_identity_sentence() -> None:
     assert "https://example.com/Treejar+Trading/location" in guarded
 
 
-def test_only_one_company_sentence_is_removed() -> None:
-    """A repeated company name is not permission to delete two sentences."""
+def test_only_one_introduction_sentence_is_removed() -> None:
+    """A second introduction is not permission to delete two sentences."""
 
     guarded = apply_opening_guard(
-        "This is the Treejar sales channel. "
-        "Please apply through Treejar's official recruitment route. "
+        "Thanks for asking. I'm Noor from Treejar. "
+        "Noor from Treejar can also arrange delivery. "
         "I wish you every success.",
         language="en",
         is_first_turn=True,
         customer_name=None,
     )
 
-    assert guarded.count("Treejar") == 2
-    assert "official recruitment route" in guarded
+    assert "can also arrange delivery" in guarded
     assert "I wish you every success." in guarded
 
 
-def test_a_company_only_reply_is_kept_instead_of_becoming_an_opening_stub() -> None:
+def test_an_introduction_only_reply_is_kept_instead_of_becoming_an_opening_stub() -> (
+    None
+):
     """If the one-sentence removal empties the answer, ship the model text."""
 
-    original = "Treejar."
+    original = "Noor from Treejar."
 
     guarded = apply_opening_guard(
         original,

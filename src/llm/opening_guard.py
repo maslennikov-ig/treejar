@@ -55,6 +55,9 @@ _AR_CAPABILITY = (
     "نورّد أثاث المكاتب في الإمارات، وأعمل من كتالوجنا وأؤكد كل سعر وتوفر قبل إرساله."
 )
 _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+# The Arabic replies write the persona in Arabic script, so a Latin-only match
+# read them as carrying no introduction at all.
+_PERSONA_NAMES = ("noor", "siyad", "siyyad", "نور")
 
 
 def _is_arabic_language(language: str) -> bool:
@@ -63,10 +66,19 @@ def _is_arabic_language(language: str) -> bool:
 
 
 def _has_identity(text: str) -> bool:
-    # The company owns the introduction. The persona by itself does not: a
-    # sentence may use "Noor" as a contact name without introducing Treejar.
-    visible_text = _URL_RE.sub("", text)
-    return "treejar" in visible_text.casefold()
+    """Whether this text introduces us: our persona *and* our company.
+
+    The company name alone is not an introduction. "Treejar supplies new office
+    furniture, but we don't buy customer-owned tables" is the answer to what the
+    customer asked, and a rule that recognised it as an introduction removed the
+    answer with it. Both tokens have to be there, which is what a real
+    self-introduction looks like in either language.
+    """
+
+    visible_text = _URL_RE.sub("", text).casefold()
+    if "treejar" not in visible_text:
+        return False
+    return any(persona in visible_text for persona in _PERSONA_NAMES)
 
 
 def _has_customer_name(customer_name: str | None) -> bool:

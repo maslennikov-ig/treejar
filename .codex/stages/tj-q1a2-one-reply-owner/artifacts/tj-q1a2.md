@@ -75,13 +75,13 @@ verification:
   - full tests/test_llm_engine.py: passed (823)
   - focused D6 and response-policy set: passed (102)
   - protected tj-t6ug baseline replay: passed as unchanged baseline aggregate 1fc87c04a645fa97
-  - current protected replay: passed with aggregate c842132fde97fa2f and 56 explained changes
+  - current protected replay: passed with aggregate 825f26ca85533b6d and 55 explained changes
   - bounded D6 live replay: passed with 8 calls, 0 failures, 0 stubs and notifications disabled
   - uv run ruff check src/ tests/ scripts/: passed
   - uv run ruff format --check src/ tests/ scripts/: passed (451 files)
   - uv run mypy src/: passed (174 files)
   - scripts/orchestration/run_process_verification.sh: passed
-  - uv run pytest tests/ -v --tb=short: passed (3640 passed, 19 skipped)
+  - uv run pytest tests/ -v --tb=short: passed (3641 passed, 19 skipped)
 changed_files:
   - .codex/goals/tj-q1a2/scope-criterion-snapshot.json
   - .codex/handoff.md
@@ -96,6 +96,7 @@ changed_files:
   - src/llm/engine.py
   - src/llm/message_processor.py
   - src/llm/opening_guard.py
+  - src/llm/prompts.py
   - src/llm/repair_judge.py
   - src/llm/response_policy.py
   - src/llm/response_runtime.py
@@ -110,6 +111,8 @@ changed_files:
   - tests/test_sales_turn_guard.py
 explicit_defers:
   - tj-2m5m.4 remains separate out-of-scope discovery work.
+  - tj-9e15 the name re-elicitation slot has no production caller.
+  - tj-3h0w whether the unanchored paid repair judge still earns its place.
 ---
 
 # Summary
@@ -120,6 +123,13 @@ are explicit state, and prompt plus guards share one permitted-ask set. The
 repair judge is unanchored and deterministic grounding repair is the safe
 fallback, with escalation only for an opening-plus-question stub.
 
+`tj-w224` narrowed two recognitions this stage had widened too far and moved one
+production setting back where it belongs. An introduction is our persona and our
+company together, not the company alone, because the company alone deleted
+answering sentences. A `this is X from Y` name is one or two words and never a
+determiner, because the unbounded version stored "a follow-up" as a customer.
+Only the diagnostic replay suppresses the repair-judge failure page.
+
 # Scope / Routing
 
 This was a root-owned sequential stream because D2-D6 consume state contracts
@@ -129,20 +139,25 @@ subagent was used. No corpus text entered the working tree.
 # Verification
 
 The frozen baseline remained `1fc87c04a645fa97`; current aggregate is
-`c842132fde97fa2f`. The 56 changes are individually accounted for below. Codes:
-`I` removes one duplicate company-identity sentence; `N` suppresses a name ask
-from a current-message name; `Q` drops surplus asks under
-`only_asks_were_dropped`.
+`825f26ca85533b6d` after `tj-w224`. The 55 changes are individually accounted
+for below. Codes: `I` removes one duplicate introduction sentence, our persona
+with our company; `N` suppresses a name ask from a current-message name; `Q`
+drops surplus asks under `only_asks_were_dropped`.
 
-- `tj-vz7o-luna-glm-20260810`: 28 I+N; 116 I+Q; 293 I+Q; 366 Q; 420 Q; 421
-  I+Q; 436 I+Q; 442 Q; 692 I+Q; 789 I; 807 I+Q; 819 Q; 867 I+Q; 875 N; 1000 Q;
-  1022 I+Q; 1067 Q; 1217 I+Q; 1291 I+Q.
-- `tj-vz7o-luna-glm-20260810-rerun`: 28 I+N; 116 I+Q; 293 I+Q; 366 Q; 420 Q;
-  421 I+Q; 436 I+Q; 442 Q; 692 I+Q; 789 I; 807 Q; 819 Q; 867 I+Q; 875 N;
-  1000 I+Q; 1022 Q; 1067 Q; 1217 I+Q; 1291 Q.
-- `tj-rt7w-round-20260811`: 28 I+N; 116 I+Q; 293 I+Q; 366 Q; 421 I+Q;
-  436 Q; 442 I+Q; 692 Q; 789 I+Q; 807 I+Q; 819 Q; 867 I+Q; 875 I+N; 1000 Q;
-  1022 I+Q; 1067 Q; 1217 I+Q; 1291 I+Q.
+- `tj-vz7o-luna-glm-20260810`: 28 N; 116 Q; 293 I+Q; 366 Q; 420 Q; 421 Q;
+  436 Q; 442 Q; 692 Q; 789 Q; 807 I+Q; 819 Q; 867 I+Q; 875 N; 1000 Q; 1022 Q;
+  1067 Q; 1217 Q; 1291 Q.
+- `tj-vz7o-luna-glm-20260810-rerun`: 28 N; 116 Q; 293 I+Q; 366 Q; 420 Q;
+  421 I+Q; 436 Q; 442 Q; 692 Q; 807 Q; 819 Q; 867 I+Q; 875 N; 1000 Q; 1022 Q;
+  1067 Q; 1217 I+Q; 1291 Q.
+- `tj-rt7w-round-20260811`: 28 I+N; 116 Q; 293 I+Q; 366 Q; 421 Q; 436 Q;
+  442 I+Q; 692 Q; 789 Q; 807 I+Q; 819 Q; 867 I+Q; 875 N; 1000 Q; 1022 I+Q;
+  1067 Q; 1217 I+Q; 1291 Q.
+
+`tj-vz7o-luna-glm-20260810-rerun/789` is no longer a changed record: it renders
+exactly as the frozen baseline did, grounding flag included, and that flag is
+the repair path's own input. The earlier version of D1 removed the flagged
+sentence and with it the answer to what the customer asked.
 
 For every `Q` change the unchanged `REDUCING` proof reported
 `only_asks_were_dropped=true`. Dialogs 28, 436, 789, 875 and 1291 were also
@@ -152,8 +167,12 @@ is reported outside Git.
 D6 used eight of the approved twenty calls, four per dialog. All calls had
 notifications disabled. Dialog 819 produced substantive fallback four times
 without handoff; dialog 789 produced the exact defined no-answer shape and
-handed off four times. There were no failures or unusable stubs, and no judge
-correction was byte-identical to its deterministic candidate.
+handed off four times. There were no failures or unusable stubs. The stated
+acceptance -- no judge answer byte-identical to the deterministic candidate --
+holds, but only because no judge answer was used at all: 819 was rejected 4/4
+as `correction_still_flagged`, 789 4/4 as `correction_has_no_answer`, and all
+eight deliveries came from the deterministic fallback. That result is tracked
+in `tj-3h0w` rather than presented as a success.
 
 # Delivery / Cleanup
 

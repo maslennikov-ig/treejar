@@ -44,7 +44,6 @@ class AskKind(StrEnum):
 
     SALES_DISCOVERY = "sales_discovery"
     CUSTOMER_NAME = "customer_name"
-    SLOT_CONFIRMATION = "slot_confirmation"
     COMPANY_ACTIVITY = "company_activity"
     QUOTE_DETAILS = "quote_details"
 
@@ -54,7 +53,6 @@ def permitted_asks_for_turn(
     is_first_turn: bool,
     customer_name: str | None,
     customer_name_asked: bool,
-    ask_before_filling: bool,
     owes_company_question: bool,
     quote_consent_granted: bool,
 ) -> frozenset[AskKind]:
@@ -67,8 +65,6 @@ def permitted_asks_for_turn(
         and not customer_name_asked
     ):
         permitted.add(AskKind.CUSTOMER_NAME)
-    if ask_before_filling:
-        permitted.add(AskKind.SLOT_CONFIRMATION)
     if owes_company_question:
         permitted.add(AskKind.COMPANY_ACTIVITY)
     if quote_consent_granted:
@@ -215,7 +211,6 @@ def _permitted_asks_for_policy_state(state: ReplyPolicyState) -> frozenset[AskKi
         is_first_turn=state.is_first_turn,
         customer_name=_customer_name_for_turn(state),
         customer_name_asked=state.customer_name_asked,
-        ask_before_filling=state.ask_before_filling,
         owes_company_question=state.owes_company_question,
         quote_consent_granted=state.quote_consent_granted,
     )
@@ -661,9 +656,13 @@ def render_reply(
                 guard_name="name_chase",
                 guard=partial(
                     refuse_to_chase_the_name,
-                    customer_name_asked=(AskKind.CUSTOMER_NAME not in permitted_asks),
+                    # The slot itself, not the permission derived from it: on a
+                    # later turn the name ask is never permitted anyway, so
+                    # reading the permission would have made this guard strip
+                    # every name question, including the first one we owe.
+                    customer_name_asked=state.customer_name_asked,
                     customer_name=_customer_name_for_turn(state),
-                    ask_before_filling=(AskKind.SLOT_CONFIRMATION in permitted_asks),
+                    ask_before_filling=state.ask_before_filling,
                 ),
                 flag_details=("deterministic_fold_would_lose_content",),
             )

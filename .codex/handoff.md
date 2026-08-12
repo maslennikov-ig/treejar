@@ -3,7 +3,8 @@
 Updated: 2026-08-12
 Current branch: `main`
 Current stage id: `tj-q1a2-one-reply-owner`
-Status: D1-D6 are accepted locally with all requested gates green. No remote or
+Status: D1-D6 are delivered locally with all requested gates green, and the
+post-acceptance audit fix `tj-w224` is delivered on top of them. No remote or
 runtime action is part of this stage.
 
 Documentation: no external/versioned boundary — the behavior is owned by the
@@ -15,14 +16,20 @@ local reply-policy contract, Python implementation, tests and protected replay.
   `permitted_asks_for_turn`; the prompt and deterministic guards consume the
   same immutable set.
 - The name ask is state-owned. `customer_name_asked` is recorded only when an
-  ask actually reaches the customer, cleared explicitly for re-elicitation,
-  and never reconstructed from previous assistant text.
+  ask actually reaches the customer, and never reconstructed from previous
+  assistant text. `name_chase` reads that slot itself, not the permission
+  derived from it. `_clear_customer_name_asked` is the re-elicitation
+  mechanism and no production path calls it yet (`tj-9e15`).
 - A name present in the current inbound message participates in the same
   current-message facts used by rendering and later persistence. A first-turn
   signature therefore cannot receive another name question.
-- The opening guard recognises a company-only identity mention after URLs are
-  excluded. It removes at most one sentence and preserves the whole model reply
-  when removal would leave no meaningful text.
+- The opening guard recognises an introduction as our persona *and* our company,
+  after URLs are excluded, in Latin or Arabic script. It removes at most one
+  sentence and preserves the whole model reply when removal would leave no
+  meaningful text. Recognising the company alone was shipped and reverted in
+  `tj-w224`: it deleted answering sentences such as "Treejar supplies new office
+  furniture, but we don't buy customer-owned tables", and it also stripped the
+  canonical opening off quotation replies.
 - `question_form` runs on first turns under its unchanged `REDUCING` contract
   and still proves `only_asks_were_dropped`. `name_chase` remains first-turn
   gated because the recorded evidence shows that lifting it changes nothing.
@@ -31,9 +38,11 @@ local reply-policy contract, Python implementation, tests and protected replay.
   outcomes fall back to the validated deterministic grounding repair.
 - A fallback containing only Noor's own opening plus a question creates the
   manager handoff. A substantive fallback is sent without a handoff.
-- Diagnostic repair replay always sets
-  `notify_on_failure_override=False`. Its protected journal is in the Git
-  common directory and never stores dialog text in the working tree.
+- `run_repair_judge` notifies on failure by default; only the diagnostic replay
+  passes `notify_on_failure=False`. Production keeps the page: an unavailable
+  judge no longer costs the customer their reply, but a paid vendor going dark
+  is still worth hearing about. The protected journal is in the Git common
+  directory and never stores dialog text in the working tree.
 - Guard modes in `src/llm/response_policy.py` did not change.
 
 ## Protected evidence
@@ -42,17 +51,22 @@ local reply-policy contract, Python implementation, tests and protected replay.
   `1fc87c04a645fa97e35978283584fb840f5ae7b7c2e4291740d4f5c0f1567b00`.
   It was not re-baselined.
 - Current policy replay aggregate is
-  `c842132fde97fa2fec40b7bbb5f6c7637a9a61fbc8bbeed7a2268d4f57dd7fc5`:
-  56 intended records differ across the three stored runs and no current reply
-  is grounding-flagged.
+  `825f26ca85533b6d6499b4606a2e0fcb87df1ee10ce7fba2dbd434381b965900`:
+  55 intended records differ across the three stored runs. One current reply is
+  grounding-flagged, `tj-vz7o-luna-glm-20260810-rerun/789`, which is the
+  baseline's own behaviour restored and is what the repair path exists for.
 - Dialogs 28, 436, 789, 875 and 1291 were read individually. The differences
   are bounded to duplicate identity/name asks or question folding described in
   the stage artifact.
 - D6 used exactly eight approved repair-judge calls: four each for dialogs 819
   and 789, $0.00066402 total, zero failed calls, zero unusable stubs and all
-  eight notifications disabled. Judge corrections were never byte-identical
-  to the deterministic candidate. Dialog 789 escalated 4/4 by the explicit
-  opening-plus-question rule; dialog 819 escalated 0/4.
+  eight notifications disabled. Dialog 789 escalated 4/4 by the explicit
+  opening-plus-question rule; dialog 819 escalated 0/4 and shipped a
+  substantive reply. Read honestly, the judge contributed nothing in 8 of 8:
+  every correction was rejected, 819 four times as `correction_still_flagged`
+  and 789 four times as `correction_has_no_answer`, and all eight deliveries
+  came from the deterministic fallback. Whether the paid judge earns its place
+  on this path is open in `tj-3h0w`.
 - No corpus text, request body or reply body is tracked. Durable evidence uses
   dialog ids, integers and digests only.
 
@@ -61,8 +75,8 @@ local reply-policy contract, Python implementation, tests and protected replay.
 - Focused D1-D5 set: 960 passed. Full `tests/test_llm_engine.py`: 823 passed.
   Focused D6/response-policy set: 102 passed.
 - Ruff check and format are clean over `src/ tests/ scripts/`; Mypy is clean over
-  174 source files; full Pytest is `3640 passed, 19 skipped`; process
-  verification passed.
+  174 source files; full Pytest is `3641 passed, 19 skipped`; process
+  verification passed. Re-run after `tj-w224`.
 
 ## Constraints
 
@@ -95,5 +109,7 @@ current repository truth.
 ## Explicit defers
 
 - `tj-2m5m.4`: separate out-of-scope discovery work remains tracked in Beads.
+- `tj-9e15`: the name re-elicitation slot has no production caller.
+- `tj-3h0w`: whether the unanchored paid repair judge still earns its place.
 - Deployment and live runtime verification are outside this local stage and
   were not authorized.

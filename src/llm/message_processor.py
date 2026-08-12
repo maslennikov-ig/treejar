@@ -418,7 +418,6 @@ class _Turn:
                 is_first_turn=self.is_first_turn,
                 customer_name=self.known_customer_name() or None,
                 customer_name_asked=engine._customer_name_was_asked(self.conv),
-                ask_before_filling=False,
                 owes_company_question=_turn_owes_the_company_question(self.deps),
                 quote_consent_granted=(quote_workflow.consent is QuoteConsent.GRANTED),
             )
