@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from types import SimpleNamespace
 
 import httpx
@@ -19,6 +21,7 @@ from src.llm.repair_judge import (
     RepairJudgeEvidence,
     RepairJudgeProviderResult,
     RepairJudgeRequest,
+    _request_payload,
     classify_repair_failure,
     review_flagged_reply,
     run_repair_judge,
@@ -939,3 +942,44 @@ def test_a_path_that_says_nothing_about_reasoning_leaves_the_provider_alone() ->
 
     assert policy_for_path(PATH_CORE_CHAT).reasoning_enabled is None
     assert "reasoning" not in dict(body.get("extra_body") or {})
+
+
+def test_the_flag_carries_the_sentence_that_raised_it_and_its_rule() -> None:
+    """What the judge lost when the deterministic candidate was taken away.
+
+    Unanchoring was right, but the candidate had been carrying the only signal
+    that said what was wrong. Measured on dialog 819, a judge told only
+    `future_stock_check` removed a different sentence and kept the promise
+    eight times in ten.
+    """
+
+    rendered = render_reply(
+        "Hello, I'm Noor from Treejar. We supply office furniture across the "
+        "UAE, and I quote from our own catalog with confirmed prices and "
+        "stock.\n\nFor a 2-person workstation I can compare suitable options. "
+        "I'll also confirm whether assembly is available and get back to you. "
+        "Which Dubai area should we deliver to?",
+        state=ReplyPolicyState(language="en", is_first_turn=True),
+        provenance="model",
+    )
+
+    flag = next(f for f in rendered.flags if f.guard_name == "grounding_output")
+    assert flag.details == ("future_stock_check",)
+    assert any("assembly" in sentence for sentence in flag.flagged_sentences)
+    assert all(
+        "2-person workstation" not in sentence for sentence in flag.flagged_sentences
+    )
+
+    payload = json.loads(
+        _request_payload(
+            RepairJudgeRequest(
+                reply=rendered.text,
+                flags=(replace(flag, candidate=None),),
+                evidence=RepairJudgeEvidence(language="en"),
+            )
+        )
+    )
+    sent = payload["flags"][0]
+    assert any("assembly" in sentence for sentence in sent["flagged_sentences"])
+    assert sent["rules"] and "come back later" in sent["rules"][0]
+    assert "deterministic_candidate" not in sent

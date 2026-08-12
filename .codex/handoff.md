@@ -75,8 +75,15 @@ local reply-policy contract, Python implementation, tests and protected replay.
   Dialog 819 delivered 0/10 judge corrections, 8/10 rejected as
   `correction_still_flagged`; dialog 789 delivered 2/10. Eighteen of twenty
   deliveries came from the deterministic fallback. The judge also approved a
-  guard-flagged 819 reply 2/10, which ships the flagged claim unchanged and
-  makes the same input escalate or not depending on the run: `tj-uhbq`.
+  guard-flagged 819 reply 2/10; the owner kept that branch as designed
+  (`tj-uhbq`, closed): an approval means the judge read the reply and found it
+  supported, so the original text is what we send.
+- `tj-3i8m` explains the thin delivery. Unanchoring removed the deterministic
+  candidate, which had been the only thing implicitly telling the judge what
+  was wrong; a flag arrived as the bare string `future_stock_check`. Each flag
+  now carries `flagged_sentences`, the exact sentences the classifier matched,
+  and `rules`, one plain statement of what each violation protects. Neither is
+  a rewrite. Not yet re-measured against live calls.
 - No corpus text, request body or reply body is tracked. Durable evidence uses
   dialog ids, integers and digests only.
 
@@ -122,7 +129,7 @@ current repository truth.
 ## Explicit defers
 
 - `tj-2m5m.4`: separate out-of-scope discovery work remains tracked in Beads.
-- `tj-uhbq`: the repair judge can approve a reply the grounding guard flagged.
-  Owner decision pending; no further paid measurement until it is taken.
+- `tj-3i8m` is delivered but not re-measured: whether localised flags restore
+  judge delivery needs a bounded live replay and new paid-call authority.
 - Deployment and live runtime verification are outside this local stage and
   were not authorized.

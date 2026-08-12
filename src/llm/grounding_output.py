@@ -539,6 +539,75 @@ def classify_grounding_output(
     )
 
 
+GROUNDING_VIOLATION_RULES: dict[GroundingViolation, str] = {
+    GroundingViolation.SPECIFIC_PRODUCT_SHOWROOM_TRIAL: (
+        "We cannot promise a named product will be in the showroom to try."
+    ),
+    GroundingViolation.UNVERIFIED_STOCK_CONFIRMATION: (
+        "We cannot state that something is in stock unless stock was checked "
+        "on this turn."
+    ),
+    GroundingViolation.FUTURE_STOCK_CHECK: (
+        "We cannot promise to check something and come back later, by "
+        "ourselves or through a colleague. There is no follow-up job behind "
+        "that promise."
+    ),
+    GroundingViolation.UNVERIFIED_PRICE: (
+        "We cannot state a figure that is not among this turn's verified amounts."
+    ),
+    GroundingViolation.UNVERIFIED_CUSTOMER_OWNED_FURNITURE_SERVICE: (
+        "We do not buy, resell, value or take in furniture the customer "
+        "already owns. Saying plainly that we do not, and offering what we do "
+        "sell, is supported and is usually the answer."
+    ),
+}
+
+
+def grounding_violation_rule(value: str) -> str | None:
+    """The rule behind a violation name, in words a reader can act on.
+
+    The judge used to be handed the deterministic rewrite, which anchored it
+    onto our own answer. Removing that also removed the only thing telling it
+    what was actually wrong: a flag arrived as the bare string
+    `future_stock_check`. This is the half worth sending -- the rule, not the
+    rewrite.
+    """
+
+    try:
+        return GROUNDING_VIOLATION_RULES[GroundingViolation(value)]
+    except ValueError:
+        return None
+
+
+def flagged_grounding_sentences(
+    text: str,
+    *,
+    inventory_confirmed: bool = False,
+    grounded_amounts: Iterable[object] | None = None,
+) -> tuple[str, ...]:
+    """The exact sentences the classifier matched, in the order they appear.
+
+    Knowing that a reply trips `future_stock_check` somewhere is not enough to
+    fix it: measured on dialog 819, the judge removed a different sentence and
+    kept the promise eight times in ten.
+    """
+
+    body = str(text or "")
+    grounded = _grounded_set(grounded_amounts)
+    flagged: list[str] = []
+    for sentence in _sentence_parts(body):
+        if _classify_sentence(
+            sentence,
+            full_text=body,
+            inventory_confirmed=inventory_confirmed,
+            grounded_amounts=grounded,
+        ):
+            stripped = sentence.strip()
+            if stripped and stripped not in flagged:
+                flagged.append(stripped)
+    return tuple(flagged)
+
+
 def _grounded_set(values: Iterable[object] | None) -> frozenset[str] | None:
     """`None` means nobody offered evidence, so the price check stays off.
 

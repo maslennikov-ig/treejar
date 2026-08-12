@@ -17,7 +17,11 @@ from pathlib import Path
 from typing import Any
 
 from src.core.config import settings
-from src.llm.grounding_output import GroundingViolation, repair_grounding_output
+from src.llm.grounding_output import (
+    GroundingViolation,
+    flagged_grounding_sentences,
+    repair_grounding_output,
+)
 from src.llm.opening_guard import is_own_opening_plus_question
 from src.llm.repair_judge import (
     REPAIR_JUDGE_MODEL,
@@ -140,6 +144,12 @@ def load_cases(root: Path) -> tuple[StoredRepairCase, StoredRepairCase]:
                     reason="removing_guard_triggered",
                     details=(violation.value,),
                     candidate=candidate,
+                    # Mirrors what render_reply attaches in production, so the
+                    # measurement is of the path the customer is on.
+                    flagged_sentences=flagged_grounding_sentences(
+                        reply,
+                        grounded_amounts=_grounded_amounts(record) or None,
+                    ),
                 ),
             )
         )

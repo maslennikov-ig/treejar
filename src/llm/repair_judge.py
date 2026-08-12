@@ -16,6 +16,7 @@ from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from src.core.config import settings
+from src.llm.grounding_output import grounding_violation_rule
 from src.llm.opening_guard import is_own_opening_plus_question
 from src.llm.pii import mask_pii, unmask_pii
 from src.llm.response_policy import (
@@ -71,7 +72,14 @@ guard reads your answer again, and an answer that still trips it is discarded
 whole, so the customer receives nothing.
 
 You are not shown a reference rewrite. Decide independently from the original
-reply, the flag reason, and the bounded evidence.
+reply, the flags, and the bounded evidence.
+
+Each flag carries `flagged_sentences`, the exact sentences the guard matched,
+and `rules`, what the guard is protecting. Those sentences are the whole
+problem: every other sentence is already fine and should survive. A rule often
+tells you what the true answer is -- if we do not offer something, saying
+plainly that we do not, and offering what we do, is supported and is usually
+the reply the customer needed.
 
 Choose cannot_fix only as a last resort. It does not send a cautious reply, it
 hands control back to the system's bounded fallback, so your call contributes
@@ -524,6 +532,14 @@ def _request_payload(request: RepairJudgeRequest) -> str:
                     "guard_name": flag.guard_name,
                     "reason": flag.reason,
                     "details": list(flag.details),
+                    "rules": [
+                        rule
+                        for rule in (
+                            grounding_violation_rule(detail) for detail in flag.details
+                        )
+                        if rule
+                    ],
+                    "flagged_sentences": list(flag.flagged_sentences),
                 }
                 for flag in request.flags
             ],

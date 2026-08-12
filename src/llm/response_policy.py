@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from functools import partial
 from typing import Literal
@@ -17,6 +17,7 @@ from src.llm.closed_question_guard import (
 from src.llm.grounding_output import (
     GroundingOutputResult,
     classify_grounding_output,
+    flagged_grounding_sentences,
     repair_grounding_output,
 )
 from src.llm.opening_guard import apply_opening_guard, opening_replacement_covers
@@ -166,6 +167,9 @@ class ReplyGuardFlag:
     reason: str
     details: tuple[str, ...] = ()
     candidate: str | None = None
+    # The exact sentences the guard matched. The candidate is a finished answer
+    # and anchors whoever reads it; these are the question itself.
+    flagged_sentences: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -683,6 +687,7 @@ def render_reply(
         guard=partial(commit_to_what_you_deferred, language=state.language),
     )
     raised_flags.extend(flags)
+    rendered_before_grounding = rendered
     violations = classify_grounding_output(
         rendered,
         inventory_confirmed=state.inventory_confirmed,
@@ -702,6 +707,13 @@ def render_reply(
         flagged=bool(violations),
         flag_details=tuple(violation.value for violation in violations),
     )
+    if violations:
+        matched = flagged_grounding_sentences(
+            rendered_before_grounding,
+            inventory_confirmed=state.inventory_confirmed,
+            grounded_amounts=state.grounded_amounts,
+        )
+        flags = tuple(replace(flag, flagged_sentences=matched) for flag in flags)
     raised_flags.extend(flags)
     rendered = apply_guard_with_reply_bound(
         rendered,
