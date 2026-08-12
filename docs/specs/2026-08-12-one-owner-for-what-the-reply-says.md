@@ -181,8 +181,10 @@ reason, not a blanket lifting of the condition.
 
 ### D6. Stop losing the reply, and stop anchoring the judge
 
-Two coupled changes to the repair path. **This reverses part of `tj-0h5d` and
-needs the owner's explicit nod before implementation.**
+Two coupled changes to the repair path. This reverses part of `tj-0h5d`.
+**Approved by the owner on 2026-08-12**, which narrows the standing rule that
+customer-facing text is never deleted automatically: a repair may now be sent
+without a human seeing it, but a repair that leaves no answer still escalates.
 
 - When the judge is unavailable, answers `cannot_fix`, or its correction is
   rejected, fall back to the **deterministic repair** rather than the manager
@@ -190,23 +192,32 @@ needs the owner's explicit nod before implementation.**
   that is what the guard guarantees — and it preserved 86% and 53% of the two
   flagged replies. The manager notice preserves nothing, and dialog 819 scored
   7.5 against a set mean of 15.3 because of it.
-- Escalate to a manager only when the deterministic repair leaves no meaningful
-  reply.
+- Escalate to a manager only when the deterministic repair leaves no answer.
+  The condition is deterministic, not a judgement: escalate when what survives
+  is only our own prepended opening plus a question. Dialog 819 keeps 86% and
+  still answers what the customer asked, so it ships; dialog 789 keeps 53% but
+  what survives is a greeting and a name request while the customer's real
+  question goes unanswered, so it escalates.
 - With that fallback in place, remove the deterministic candidate from what the
   judge sees. Give it the original reply and the reason for the flag. Delivery
   no longer has to be bought with anchoring, because a judge that declines now
   costs us the free repair rather than the whole answer.
 
-Acceptance: replaying dialogs 819 and 789, no outcome is a manager handoff, and
-the judge's answers are no longer byte-identical to the deterministic repair in
-every case. Measured live, both dialogs, at least four calls each.
+Acceptance: replaying dialogs 819 and 789 live, at least four repair-judge
+calls each, no outcome is a stub the customer cannot use, 789 escalates by the
+rule above rather than by accident, and the judge's answers are no longer
+byte-identical to the deterministic repair in every case.
+
+Paid-call budget for this task: at most 20 calls on the two stored dialogs and
+no other paid call. Every replayed call sets `notify_on_failure_override=False`
+— a failure on this path pages a manager by Telegram, and a diagnostic must
+never do that.
 
 ## Beads
 
 Epic `tj-q1a2`. Children `tj-q1a2.1` (D1) through `tj-q1a2.6` (D6). D3 depends
-on D2, D4 on D3, D5 on D1. **`tj-q1a2.6` must not be started until the owner
-has decided**, because it reverses part of `tj-0h5d` and touches the standing
-rule that customer-facing content is not deleted automatically.
+on D2, D4 on D3, D5 on D1. D6 was blocked on an owner decision and is now
+unblocked: approved in full on 2026-08-12.
 
 The discovery gap already had an issue: `tj-2m5m.4`, "Noor never asks why, and
 never widens past the literal request", carrying the original judge quotes from
@@ -227,7 +238,8 @@ round and a structural gate, not a line in a prompt. Tracked separately.
 
 ## Constraints
 
-- No paid call is required by D1–D5. D6 requires live replay to accept.
+- No paid call is required by D1–D5. D6 is capped at 20 repair-judge calls on
+  the two stored dialogs and no other paid call.
 - The protected 60-output replay must stay byte-identical for D1–D5 except
   where a stored reply is one of the five that carries a duplicate
   introduction; every intended change must be shown one dialog at a time.
