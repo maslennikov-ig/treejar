@@ -433,7 +433,10 @@ async def test_triggered_harness_reply_matches_the_production_finalizer() -> Non
         SimpleNamespace(
             masked_text="Can you buy my desks?",
             pii_map={},
-            deps=SimpleNamespace(executed_tool_names=()),
+            deps=SimpleNamespace(
+                executed_tool_names=(),
+                conversation=SimpleNamespace(metadata_={}),
+            ),
             _record_reply_on_conversation=lambda _model, _text: None,
         ),
         LLMResponse(

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from src.dialogue.order_state import QuoteConsent
 from src.llm.response_policy import (
+    AskKind,
     RenderedReply,
     ReplyGuardFlag,
     ReplyPolicyState,
@@ -39,6 +40,7 @@ class LLMResponse:
     repair_flags: tuple[ReplyGuardFlag, ...] = ()
     repair_policy_state: ReplyPolicyState | None = None
     repair_trace: RepairJudgeTrace | None = None
+    emitted_asks: frozenset[AskKind] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -106,6 +108,7 @@ def _response_from_rendered_reply(
         tool_traces=tool_traces,
         repair_flags=rendered.flags,
         repair_policy_state=rendered.policy_state,
+        emitted_asks=rendered.emitted_asks,
     )
 
 

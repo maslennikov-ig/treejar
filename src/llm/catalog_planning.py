@@ -36,7 +36,7 @@ from src.llm.money import (
     BUDGET_AED_CURRENCY_PATTERN,
     canonical_amount,
 )
-from src.llm.response_policy import append_required_tool_disclosure
+from src.llm.response_policy import AskKind, append_required_tool_disclosure
 from src.llm.response_runtime import LLMResponse, ProductMediaPayload
 from src.llm.verified_answers import VerifiedAnswerDecision
 from src.models.conversation import Conversation
@@ -2058,6 +2058,7 @@ class SalesDeps:
         "catalog_materialization",
     ] = "full"
     runtime_directives: tuple[str, ...] = ()
+    permitted_asks: frozenset[AskKind] | None = None
     customer_facts_context: str | None = None
     source_message_id: str | None = None
     catalog_planning: CatalogPlanningContext = field(

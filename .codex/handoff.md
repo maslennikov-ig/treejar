@@ -2,199 +2,98 @@
 
 Updated: 2026-08-12
 Current branch: `main`
-Current stage id: `tj-0h5d-deepseek-repair-judge`
-Status: the build scores 15.3/30 weighted on the frozen twenty. The repair path
-retries once, records what failed, affords its own answer, and now reaches the
-customer 7 times in 8 instead of 1 in 4.
+Current stage id: `tj-q1a2-one-reply-owner`
+Status: D1-D6 are accepted locally with all requested gates green. No remote or
+runtime action is part of this stage.
 
-Documentation: no external/versioned boundary — both vendors were measured
-against the live endpoint on the repository's own stored requests.
+Documentation: no external/versioned boundary — the behavior is owned by the
+local reply-policy contract, Python implementation, tests and protected replay.
 
 ## Current truth
 
-- Every customer-facing reply goes through `src.llm.response_policy.render_reply`.
-  Provenance is metadata and cannot select a shorter policy chain.
-- The six text guards now declare their effect. Closed-question, premature
-  quote details, first-turn opening, and the additive company question are
-  replacing; the question fold and the name-chase refusal are reducing and
-  prove they took only the reply's own asks; grounding-output is removing and
-  exposes a flag. `.3` removed the legacy application bridge: only a flagged
-  turn reaches the second vendor, and an unflagged turn makes no repair call.
-- Every text guard is bounded: letters or digits in, letters or digits out. It
-  catches F5. The second vendor now supplies the semantic half by approving or
-  rewriting the complete reply, while deterministic reclassification remains
-  the formal lower bound. One protected correction was read and accepted, so
-  `tj-rt7w.14` closes with the recorded evidence.
-- Every text guard is a pure module function with explicit state, not a closure.
-- `src/llm/money.py` owns every currency pattern in `src/llm/`, enforced by an
-  AST test.
-- The unsupported customer-owned-furniture service family remains blocked by
-  the unchanged grounding backstop. Its superseded prompt prohibition is gone.
-- **F1 and F3 are closed.** One turn is `_Turn` (the shared state and the
-  operations over it), `_TurnConfig` (the config reads, taken once) and
-  `_QuoteFacts` (the quote facts, read once then amended by the name gate),
-  with eleven phase functions over them. Longest function 259 lines;
-  `process_message_impl` 163; no closure anywhere in the file. Two tests hold
-  that: `test_llm_message_processor_structure.py` for the bound,
-  `test_llm_message_processor_patch_points.py` for the patch points.
-- `process_message` is still the 40-line public facade and `engine.py` is
-  11,849 lines. Both were already true; what is new is that the sequence behind
-  the facade is now what the facade claimed.
-- The impl is fully type-checked. It imports `src.llm.engine` as a module, so
-  the suite's `src.llm.engine.*` patches still land and Mypy still checks.
-  `get_system_config` is imported *inside* the two calls that use it for the
-  same reason, and a test now derives that rule from the suite.
-- Catalog planning/materialization is in `src/llm/catalog_planning.py`; response
-  transport is in `src/llm/response_runtime.py`; the turn sequence is in
-  `src/llm/message_processor.py`; order/quote routes are in
-  `src/llm/order_quote_routes.py`.
-- In `.3`, the owner authorized two stale assertion updates: they now require
-  original visible text plus a non-visible repair candidate instead of silent
-  deterministic deletion. A local repair-judge stand-in keeps ordinary tests
-  isolated from the network.
-- Judge unavailability, `cannot_fix`, or a rejected correction now persists a
-  counted manager handoff before replacing the unsafe draft with a localized
-  customer notice. An active handoff is reused; no old deletion path returns.
-- The canonical runtime target remains `https://noor.starec.ai`; nothing has
-  been pushed, deployed, or applied to production or staging.
-- Production data is Postgres in `noor-db-1` on `noor-server`, not Supabase.
-- Luna is the product's generation model; GLM is the alternate-vendor model for
-  a second opinion or alternate text. **The judge of a measured round is the
-  orchestrating agent itself, reading blind**, and a paid model may only be a
-  second reader beside it. That is now the harness default rather than a
-  directive: `real_opening_acceptance.py` stops after the generation arm and
-  writes `reading-pack.json`, and paying a second reader takes
-  `preflight --second-reader`.
-- The protected corpus remains outside Git under the git-common-dir
-  orchestration state. Tracked evidence may carry `dialog_id` and integers only.
-- Both scoring rulers and applicability/rubric logic remain frozen. Never treat
-  movement smaller than the measurement uncertainty as evidence.
+- Reply asks are derived once before generation by
+  `permitted_asks_for_turn`; the prompt and deterministic guards consume the
+  same immutable set.
+- The name ask is state-owned. `customer_name_asked` is recorded only when an
+  ask actually reaches the customer, cleared explicitly for re-elicitation,
+  and never reconstructed from previous assistant text.
+- A name present in the current inbound message participates in the same
+  current-message facts used by rendering and later persistence. A first-turn
+  signature therefore cannot receive another name question.
+- The opening guard recognises a company-only identity mention after URLs are
+  excluded. It removes at most one sentence and preserves the whole model reply
+  when removal would leave no meaningful text.
+- `question_form` runs on first turns under its unchanged `REDUCING` contract
+  and still proves `only_asks_were_dropped`. `name_chase` remains first-turn
+  gated because the recorded evidence shows that lifting it changes nothing.
+- The repair judge receives the original reply and flag reason, not the
+  deterministic candidate. Unavailable, rejected, empty and `cannot_fix`
+  outcomes fall back to the validated deterministic grounding repair.
+- A fallback containing only Noor's own opening plus a question creates the
+  manager handoff. A substantive fallback is sent without a handoff.
+- Diagnostic repair replay always sets
+  `notify_on_failure_override=False`. Its protected journal is in the Git
+  common directory and never stores dialog text in the working tree.
+- Guard modes in `src/llm/response_policy.py` did not change.
 
-## Delivered commits
+## Protected evidence
 
-`tj-mshi` (`d64cec5`, `1b3f34c`, `6649d2c`, `5c26f57`) built the positive
-permission registry and measured it. `tj-n7p4` (`7248844`, `d81a744`, `f12cc5c`,
-`a1d9532`, `0764ce2`, `5c7a099`) split classification from repair, declared the
-guard contracts, added the second-vendor judge and the manager handoff, and
-measured the result. Then `tj-t6ug` (guard modes), `tj-vhto` (round), `tj-0s42`
-(`28a150d`), `tj-lj09` (`7b2b659`) and `tj-0h5d`.
-
-Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
+- The frozen `tj-t6ug` replay baseline remains
+  `1fc87c04a645fa97e35978283584fb840f5ae7b7c2e4291740d4f5c0f1567b00`.
+  It was not re-baselined.
+- Current policy replay aggregate is
+  `c842132fde97fa2fec40b7bbb5f6c7637a9a61fbc8bbeed7a2268d4f57dd7fc5`:
+  56 intended records differ across the three stored runs and no current reply
+  is grounding-flagged.
+- Dialogs 28, 436, 789, 875 and 1291 were read individually. The differences
+  are bounded to duplicate identity/name asks or question folding described in
+  the stage artifact.
+- D6 used exactly eight approved repair-judge calls: four each for dialogs 819
+  and 789, $0.00066402 total, zero failed calls, zero unusable stubs and all
+  eight notifications disabled. Judge corrections were never byte-identical
+  to the deterministic candidate. Dialog 789 escalated 4/4 by the explicit
+  opening-plus-question rule; dialog 819 escalated 0/4.
+- No corpus text, request body or reply body is tracked. Durable evidence uses
+  dialog ids, integers and digests only.
 
 ## Verification
 
-- Current gates at `tj-0h5d`: Ruff and format clean over `src/ tests/ scripts/`;
-  Mypy clean over 174 source files; Pytest `3621 passed, 19 skipped`; process
-  verification and stage closeout passed.
-- Protected replay, run from `scripts/corpus_bridge/replay_policy_chain.py`:
-  all 60 stored raw outputs re-render unchanged, digest `1fc87c04…`. The one
-  `grounding_output` flag on dialog 789 is `tj-n7p4.3`'s recorded change.
-- `test_llm_grounding_output.py` is byte-identical since `tj-mshi.4`, 107 tests.
-- Stage closeouts across `tj-mshi`, `tj-n7p4`, `tj-t6ug`, `tj-vhto`, `tj-0s42`,
-  `tj-lj09` and `tj-0h5d` passed the affected-package, security, integration and
-  database/migration groups, plus documentation, project-index,
-  blocking-review, cleanup and debt checks.
-- Paid calls to date: `tj-mshi.5` $0.005458, `tj-n7p4` $0.006709, `tj-vhto`
-  $0.005386, `tj-lj09` $0.058492 over 12 replayed calls, `tj-0h5d` $0.001960
-  over 16. `tj-t6ug` and `tj-0s42` made none.
-
-## The measured round, `tj-vhto`
-
-Run at `3682203` on the frozen seed-`20260810` twenty: **20 Luna calls, one
-repair-judge call, zero scoring calls, $0.005386**. Report:
-`docs/reports/2026-08-11-where-the-bot-stands-on-the-shipped-build.md`.
-
-- Weighted **15.3/30** (12.6-17.9); raw **12.8/30** (12.0-13.5); 20/20 coverage,
-  language and blind criterion reads.
-- By attainable ceiling: greeting-only openings 9.5 of 9.6 (99%); openings with
-  a real request 22.4 of 30 (75%). The missing quarter is one behaviour - the
-  bot asks quantity, not what the customer is trying to do.
-- Paired raw delta -0.60, interval excluding zero, on a change that cannot
-  affect a first turn. That is the instrument's floor, measured, and it retires
-  the earlier round's +0.50 raw as a result.
-- Five openings carry all the movement: 819 at -22.5 is a failed repair call,
-  28 at -12.2 is reader drift, 366 at +5.6 is generation variance. `tj-lj09`
-  replayed 819 twelve times: the provider was never down, every failure was our
-  output schema rejecting a truncated answer, an answer costs 720-1494 tokens
-  and the path allowed 800. Budget now 2000. Asking GLM 5.2 not to think does
-  nothing, so a reasoning switch is a request and a path that sets one must
-  budget as if ignored.
-- `tj-0h5d`: the judge reached the customer 1 time in 4, because
-  `review_flagged_reply` discards a correction that still trips the guard and
-  the prompt never said so. Rule stated, `cannot_fix` priced: 4/4 on both
-  vendors. Path moved to `deepseek/deepseek-v4-flash` by replay -- same
-  delivery, ~1/40 the price. Shipped config on both flagged replies: 7/8,
-  $0.000596, 5.6-10.2s.
-- Not claimed: all 7 delivered replies were byte-identical to the free
-  deterministic repair, so on these two cases the paid judge adds nothing. The
-  sentence that buys delivery is the one that makes it a copier -- GLM's
-  independent catch of an invented delivery city is gone. Two flagged replies
-  is the whole evidence base; the four grounding violations that have never
-  fired are where a judge would earn its call.
-- Criticals 1 to 1 against both baselines, the one being `tj-2p4c`. Rules 14
-  and 15 applicable on 0/20 again; `tj-ge07`.
+- Focused D1-D5 set: 960 passed. Full `tests/test_llm_engine.py`: 823 passed.
+  Focused D6/response-policy set: 102 passed.
+- Ruff check and format are clean over `src/ tests/ scripts/`; Mypy is clean over
+  174 source files; full Pytest is `3640 passed, 19 skipped`; process
+  verification passed.
 
 ## Constraints
 
-- No push, PR, deploy, production/staging mutation, model-configuration change,
-  or real-user message occurred or is implied by these local commits.
-- Do not retire deterministic routes in this stream; that separate 8,259-line
-  scope remains intentionally deferred.
-- Preserve unrelated owner work and keep corpus text outside the repository.
-- After every handoff edit, run
-  `python3 scripts/orchestration/repin_traceability_sources.py`.
+- No push, PR, deploy, production/staging mutation, model-configuration change
+  or real-user message is authorized or performed.
+- No further paid calls are needed or permitted by this stage. Eight of the
+  maximum twenty approved calls were used, only for dialogs 819 and 789.
+- The canonical runtime target remains `https://noor.starec.ai`; it was not
+  contacted or changed.
 
 ## Documentation and graph review
 
-- `docs-reviewed: updated` — report, handoff, stage summary and artifact state
-  the paired result, protected evidence boundary, and instrument limitations.
-- `project-index: reviewed-no-change` — no module added, moved or renamed.
+- `docs-reviewed: updated` — the stage summary, artifact and this handoff record
+  the durable policy and privacy-safe proof.
+- `project-index: reviewed-no-change` — no module was added, removed or moved.
 - `graph-reviewed: no-change-needed` — Graphify is not initialized.
-
-## Two owner decisions of 2026-08-11, and what they queued
-
-**Say what Noor may promise, not what he may not.** Prohibitions hold badly on
-Luna, and the list of things Treejar does not do has no end. Epic `tj-mshi` is
-ratified; `.1`–`.4` are accepted and `.5` is measured. `COMMERCIAL_CAPABILITIES`
-holds all 25 ratified entries in five modes, phrased as permissions with their
-conditions.
-
-**No automatic deletions.** Where a check finds doubt, a judge reads it and
-either approves the text or writes the correction. Epic `tj-n7p4`. Audited on
-the 60 stored replies: a guard removes a sentence from **28 of 60**, all of them
-duplicate identity lines the anchor replaces, so that one is *replacing* and
-stays deterministic; `grounding_output` removes and replaces nothing, once in
-sixty, and that is where the judge belongs.
-
-Both were delivered. Specs, plan and the ratified list live under
-`docs/superpowers/specs/2026-08-11-*` and `docs/plans/2026-08-11-*`; the
-combined orchestrator prompt at `docs/plans/2026-08-11-orchestrator-prompt.md`
-is spent and kept only as the record of what was asked for.
-
-**Paid calls.** The advance authorisation for `tj-mshi` and `tj-n7p4` is spent
-and those stages are closed; `tj-vhto` was authorised separately in session.
-Any further round needs fresh authority. The **scoring** judge is the
-orchestrator reading blind and costs nothing -- `--second-reader` is never
-passed. The **repair** judge is a different thing, paid, and fires on a flag.
 
 ## Next recommended
 
-Next stage id: not opened; first candidate `tj-2m5m`. `tj-t6ug`, `tj-vhto`,
-`tj-0s42`, `tj-lj09` and `tj-0h5d` are accepted.
-Recommended action: start a new task from current Beads truth for `tj-2m5m`,
-then `tj-swgu`, `tj-vz7o.12`, `tj-wvo4`, and `tj-odeq`.
+Next stage id: not opened
+
+Recommended action: select the next open Beads goal from current repository
+truth. Do not push or deploy this stage without new authority.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for `tj-2m5m` after inspecting current Beads truth.
+Use $orchestrator-stage only after selecting the next open Beads goal from
+current repository truth.
 
 ## Explicit defers
 
-- `tj-2p4c`: supported SKU digits can falsely trip numeric grounding.
-- `tj-9dp2`: root-only public summaries carry a stale GLM judge label.
-- `tj-4q79`: the root judge drifts between sittings by more than the paired
-  deltas being reported; this bounds every single-round claim.
-- `tj-ge07`: no frozen set has a second turn, so the selling-turn guards and
-  rules 14/15 are unobservable.
-- Deterministic-route retirement: explicitly outside this stream.
-- Deployment and any live proof: not authorized or performed here.
+- `tj-2m5m.4`: separate out-of-scope discovery work remains tracked in Beads.
+- Deployment and live runtime verification are outside this local stage and
+  were not authorized.

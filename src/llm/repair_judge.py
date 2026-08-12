@@ -16,8 +16,10 @@ from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from src.core.config import settings
+from src.llm.opening_guard import is_own_opening_plus_question
 from src.llm.pii import mask_pii, unmask_pii
 from src.llm.response_policy import (
+    AskKind,
     ReplyGuardFlag,
     ReplyPolicyState,
     ReplyProvenance,
@@ -68,15 +70,12 @@ from your reply. Rewording them is not resolving them: the same deterministic
 guard reads your answer again, and an answer that still trips it is discarded
 whole, so the customer receives nothing.
 
-Each flag may carry a deterministic candidate. That candidate is this system's
-own guard applying these same rules, so it is already free of the flagged
-content. Following it, or improving on it, is a good answer. It is not evidence
-about the world: never take a product, price, stock, service, timing or policy
-fact from it that the turn evidence does not support.
+You are not shown a reference rewrite. Decide independently from the original
+reply, the flag reason, and the bounded evidence.
 
 Choose cannot_fix only as a last resort. It does not send a cautious reply, it
-sends none: the customer is told a manager will follow up and everything they
-asked goes unanswered. Removing the unsupported part and answering the rest is
+hands control back to the system's bounded fallback, so your call contributes
+no independent repair. Removing the unsupported part and answering the rest is
 almost always available and almost always better.
 
 For correct, preserve all supported help, facts, language, tone, and next steps.
@@ -169,6 +168,7 @@ class JudgedRepair:
     provenance: ReplyProvenance
     remaining_flags: tuple[ReplyGuardFlag, ...] = ()
     trace: RepairJudgeTrace | None = None
+    emitted_asks: frozenset[AskKind] | None = None
 
 
 RepairJudgeRunner = Callable[[RepairJudgeRequest], Awaitable[RepairJudgeProviderResult]]
@@ -176,6 +176,64 @@ RepairJudgeRunner = Callable[[RepairJudgeRequest], Awaitable[RepairJudgeProvider
 
 def _has_meaningful_reply(text: str) -> bool:
     return any(character.isalnum() for character in text)
+
+
+def _deterministic_fallback(
+    *,
+    state: ReplyPolicyState,
+    flags: tuple[ReplyGuardFlag, ...],
+) -> tuple[str, frozenset[AskKind], bool] | None:
+    """Return one validated grounding repair and whether it still answers."""
+
+    if not flags or any(
+        flag.guard_name != "grounding_output"
+        or flag.reason != "removing_guard_triggered"
+        for flag in flags
+    ):
+        return None
+    candidates = {str(flag.candidate or "").strip() for flag in flags}
+    candidates.discard("")
+    if len(candidates) != 1:
+        return None
+
+    rerendered = render_reply(
+        candidates.pop(),
+        state=state,
+        provenance="deterministic_replacement",
+    )
+    if rerendered.flags or not _has_meaningful_reply(rerendered.text):
+        return None
+    has_answer = not is_own_opening_plus_question(
+        rerendered.text,
+        language=state.language,
+    )
+    return rerendered.text, rerendered.emitted_asks, has_answer
+
+
+def _use_deterministic_fallback(
+    *,
+    text: str,
+    provenance: ReplyProvenance,
+    state: ReplyPolicyState,
+    flags: tuple[ReplyGuardFlag, ...],
+    trace: RepairJudgeTrace,
+) -> JudgedRepair:
+    fallback = _deterministic_fallback(state=state, flags=flags)
+    counted = replace(trace.counts, fallbacks=1)
+    if fallback is None:
+        return JudgedRepair(
+            text=text,
+            provenance=provenance,
+            remaining_flags=flags,
+            trace=replace(trace, counts=counted, requires_handoff=True),
+        )
+    fallback_text, emitted_asks, has_answer = fallback
+    return JudgedRepair(
+        text=fallback_text,
+        provenance="deterministic_replacement",
+        trace=replace(trace, counts=counted, requires_handoff=not has_answer),
+        emitted_asks=emitted_asks,
+    )
 
 
 def _trace(
@@ -288,7 +346,11 @@ async def review_flagged_reply(
     if not flags:
         return JudgedRepair(text=text, provenance=provenance)
 
-    request = RepairJudgeRequest(reply=text, flags=flags, evidence=evidence)
+    request = RepairJudgeRequest(
+        reply=text,
+        flags=tuple(replace(flag, candidate=None) for flag in flags),
+        evidence=evidence,
+    )
     call = runner or run_repair_judge
     attempts = 0
     last_error: BaseException | None = None
@@ -311,10 +373,11 @@ async def review_flagged_reply(
         # Every attempt is a paid call, so the caller's cap counts each one.
         # Returning the trace rather than raising is what keeps that true: the
         # harness journals per call, and a raise would hide the second.
-        return JudgedRepair(
+        return _use_deterministic_fallback(
             text=text,
             provenance=provenance,
-            remaining_flags=flags,
+            state=state,
+            flags=flags,
             trace=unavailable_repair_judge_trace(
                 flags,
                 error=last_error,
@@ -331,10 +394,11 @@ async def review_flagged_reply(
             trace=_trace(provider_result, flags=flags, calls=attempts),
         )
     if decision.answer == "cannot_fix":
-        return JudgedRepair(
+        return _use_deterministic_fallback(
             text=text,
             provenance=provenance,
-            remaining_flags=flags,
+            state=state,
+            flags=flags,
             trace=_trace(
                 provider_result,
                 flags=flags,
@@ -345,10 +409,11 @@ async def review_flagged_reply(
 
     corrected = str(decision.corrected_text or "")
     if not _has_meaningful_reply(corrected):
-        return JudgedRepair(
+        return _use_deterministic_fallback(
             text=text,
             provenance=provenance,
-            remaining_flags=flags,
+            state=state,
+            flags=flags,
             trace=_trace(
                 provider_result,
                 flags=flags,
@@ -361,10 +426,11 @@ async def review_flagged_reply(
 
     rerendered = render_reply(corrected, state=state, provenance="model_repaired")
     if rerendered.flags:
-        return JudgedRepair(
+        return _use_deterministic_fallback(
             text=text,
             provenance=provenance,
-            remaining_flags=rerendered.flags,
+            state=state,
+            flags=flags,
             trace=_trace(
                 provider_result,
                 flags=flags,
@@ -374,10 +440,29 @@ async def review_flagged_reply(
                 calls=attempts,
             ),
         )
+    if is_own_opening_plus_question(
+        rerendered.text,
+        language=state.language,
+    ):
+        return _use_deterministic_fallback(
+            text=text,
+            provenance=provenance,
+            state=state,
+            flags=flags,
+            trace=_trace(
+                provider_result,
+                flags=flags,
+                rejected_correction=True,
+                requires_handoff=True,
+                rejection_reason="correction_has_no_answer",
+                calls=attempts,
+            ),
+        )
     return JudgedRepair(
         text=rerendered.text,
         provenance="model_repaired",
         trace=_trace(provider_result, flags=flags, calls=attempts),
+        emitted_asks=rerendered.emitted_asks,
     )
 
 
@@ -439,7 +524,6 @@ def _request_payload(request: RepairJudgeRequest) -> str:
                     "guard_name": flag.guard_name,
                     "reason": flag.reason,
                     "details": list(flag.details),
-                    "deterministic_candidate": flag.candidate,
                 }
                 for flag in request.flags
             ],
@@ -491,6 +575,7 @@ async def run_repair_judge(
         _request_payload(request),
         model_name=REPAIR_JUDGE_MODEL,
         max_attempts_override=1,
+        notify_on_failure_override=False,
     )
     usage = result.usage()
     telemetry = get_llm_usage_telemetry(result)

@@ -16,7 +16,7 @@ from src.llm.response_policy import (
     render_reply,
     repair_closed_questions,
 )
-from src.llm.sales_turn_guard import commit_to_what_you_deferred
+from src.llm.sales_turn_guard import commit_to_what_you_deferred, only_asks_were_dropped
 
 EXPECTED_MODES = {
     "closed_question": GuardMode.REPLACING,
@@ -212,6 +212,50 @@ def test_render_reply_folds_the_selling_turn_without_asking_anyone() -> None:
     assert additive.text.startswith("We supply height-adjustable desks")
     assert additive.text.endswith("?")
     assert additive.flags == ()
+
+
+def test_first_turn_question_form_keeps_content_and_one_ask() -> None:
+    original = "We found suitable desks. What size works? Which finish do you prefer?"
+
+    rendered = render_reply(
+        original,
+        state=ReplyPolicyState(
+            language="en",
+            is_first_turn=True,
+            customer_name="Binu",
+        ),
+        provenance="model",
+    )
+
+    assert "We found suitable desks." in rendered.text
+    assert "What size works?" in rendered.text
+    assert "Which finish" not in rendered.text
+    assert rendered.flags == ()
+    assert RESPONSE_GUARD_DECLARATIONS["question_form"].mode is GuardMode.REDUCING
+    assert only_asks_were_dropped(
+        "Hello, I'm Noor from Treejar. We supply office furniture across the UAE, "
+        "and I quote from our own catalog with confirmed prices and stock.\n\n"
+        + original,
+        rendered.text,
+    )
+
+
+def test_first_turn_name_chase_and_company_question_stay_gated() -> None:
+    repeated_name_ask = "We found suitable desks. May I know your name?"
+
+    rendered = render_reply(
+        repeated_name_ask,
+        state=ReplyPolicyState(
+            language="en",
+            is_first_turn=True,
+            customer_name_asked=True,
+            owes_company_question=True,
+        ),
+        provenance="model",
+    )
+
+    assert "May I know your name?" in rendered.text
+    assert "company" not in rendered.text.casefold()
 
 
 def test_render_reply_keeps_removing_candidates_non_visible() -> None:

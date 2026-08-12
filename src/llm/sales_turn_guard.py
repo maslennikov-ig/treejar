@@ -242,8 +242,9 @@ def only_asks_were_dropped(text: str, candidate: str) -> bool:
 def refuse_to_chase_the_name(
     text: str,
     *,
-    previous_assistant_turns: Sequence[str],
+    customer_name_asked: bool,
     customer_name: str | None,
+    ask_before_filling: bool = False,
 ) -> str:
     """Ask for the name once. If it does not come, carry on without it.
 
@@ -254,18 +255,17 @@ def refuse_to_chase_the_name(
     on something they have already declined to give, in a median conversation
     two messages long.
 
-    The condition is on the world, not on what Noor thinks she did: it reads the
-    assistant's own previous turns and the stored name, both facts. The sibling
-    case -- asking for a name we already hold -- belongs to
-    `apply_closed_question_guard`, and both read the same signal list so they
-    cannot drift apart.
+    The condition is the explicit ask slot recorded when a reply is selected,
+    never a text match over assistant history. Clearing that slot is the only
+    re-elicitation mechanism. `ask_before_filling` is the named confirmation
+    exception: confirming a supplied value is not another attempt to fill it.
     """
 
     if str(customer_name or "").strip():
         return text
     if not response_asks_customer_name(text):
         return text
-    if not any(response_asks_customer_name(turn) for turn in previous_assistant_turns):
+    if ask_before_filling or not customer_name_asked:
         return text
 
     stripped = _drop_name_questions(text)

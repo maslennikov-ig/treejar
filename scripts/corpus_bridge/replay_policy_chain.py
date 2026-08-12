@@ -35,6 +35,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from src.llm.engine import _extract_quote_customer_details  # noqa: E402
 from src.llm.response_policy import ReplyPolicyState, render_reply  # noqa: E402
 
 SCHEMA_VERSION = "treejar-protected-policy-replay/v1"
@@ -82,10 +83,16 @@ def replay_run(run_dir: Path, *, convention: str) -> list[dict[str, Any]]:
     for record in records.values():
         generation = record.get("generation") or {}
         raw = _source_text(generation, convention)
+        current_details = _extract_quote_customer_details(
+            str(record.get("opening") or "")
+        )
         state = ReplyPolicyState(
             language=str(record.get("language") or "en"),
             is_first_turn=True,
             customer_name=None,
+            current_message_customer_name=(
+                str(current_details.get("name") or "").strip() or None
+            ),
             anchor_line=record.get("anchor_line"),
             grounded_amounts=_grounded_amounts(record.get("catalog_evidence")),
         )

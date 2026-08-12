@@ -1,0 +1,44 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-q1a2",
+  "source_kind": "beads",
+  "source_id": "tj-q1a2",
+  "source_digest": "7f8ee0369c6f1d1982053533ff22ac9c8388539b0e95646aa80a42cae2e38e8c",
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "text": "On the twenty stored tj-vhto replies, no shipped reply names Treejar more times than the model raw text did except where the prepended opening is the only mention, and dialogs 28, 436, 789, 875 and 1291 are shown individually.",
+      "text_digest": "d465bc05f21333ca4322f1df93b55e4b46f7fb7a0a4a6500a2f63598b7ac3c93"
+    },
+    {
+      "criterion_id": "AC-02",
+      "text": "A first turn whose inbound message carries a signature does not receive the name question; dialog 875 replayed does not ask for the name.",
+      "text_digest": "a40ad811a2514fdc34322e2a2dc98de3b8c256e112609c9d08ccf1f2ab68990c"
+    },
+    {
+      "criterion_id": "AC-03",
+      "text": "The decision to ask for the customer name comes from an explicit slot alone, set when the reply is sent and cleared to permit a re-ask; no production path decides it by matching prior assistant text, while a named confirmation exception remains possible.",
+      "text_digest": "9fc66035ff8b825637c2b12c5bf3c9fd06d70bdc2b9c1070473f48941c8f7d99"
+    },
+    {
+      "criterion_id": "AC-04",
+      "text": "One function owns the permitted-ask set computed before generation; prompt assembly and the deterministic guard both consume that same value and a test proves they cannot diverge.",
+      "text_digest": "fe6fab0dcfb10456e713bcd8dadf333b515fe7268ea3b601317ff4e3949763ff"
+    },
+    {
+      "criterion_id": "AC-05",
+      "text": "First-turn gating is declared per guard: question_form runs with its REDUCING only_asks_were_dropped proof, name_chase stays gated for the recorded evidence-based reason, and replays 1291 and 875 lose the surplus name question.",
+      "text_digest": "238f9e2debc2e2bef3f12beca954feffe711c35f50ebdf4b7406fbc76e70221b"
+    },
+    {
+      "criterion_id": "AC-06",
+      "text": "Live replay of dialogs 819 and 789 makes at least four repair-judge calls each and at most twenty calls total, always with notify_on_failure_override false; no result is an unusable stub, dialog 789 escalates only when deterministic repair leaves opening plus question without answer content, and judge answers are not byte-identical to deterministic repair in every case.",
+      "text_digest": "f199c681581b815dbccdb625b5b18f2257b018cf25509e4128657195c66cbe18"
+    },
+    {
+      "criterion_id": "AC-07",
+      "text": "The protected sixty-output replay is compared to the tj-t6ug baseline without re-baselining, every intended changed dialog is explained, ruff check and format over src tests scripts, mypy src, pytest tests, and process verification pass, and closeout uses check_stage_ready and run_stage_closeout.",
+      "text_digest": "fcf6bbc5d5054e1d26d301d1f7739b5254ae7047ca10c0bb7d3b6b91ea27e115"
+    }
+  ]
+}

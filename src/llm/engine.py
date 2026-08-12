@@ -159,6 +159,7 @@ from src.llm.response_policy import (
     RenderedReply,
     ReplyPolicyState,
     ReplyProvenance,
+    format_permitted_asks_prompt,
     guard_premature_quote_detail_collection,
     render_reply,
 )
@@ -321,6 +322,7 @@ CUSTOMER_FACTS_TRACE_FACT_LIMIT = 12
 ORDER_RUNTIME_METADATA_KEY = "order_runtime"
 ORDER_RUNTIME_TRACE_LIMIT = 10
 NAME_GATE_PENDING_REQUEST_KEY = "name_gate_pending_request"
+CUSTOMER_NAME_ASKED_KEY = "customer_name_asked"
 MAX_NAME_GATE_PENDING_REQUEST_CHARS = 600
 LAST_APPLIED_BOT_RULES_KEY = "last_applied_bot_rules"
 BOT_TEST_MARKER_RE = re.compile(
@@ -435,8 +437,17 @@ NATURAL_NAME_PATTERNS = (
         r"\bcall\s+me\s+(?P<value>.+?)(?=$|[\n\[]|[.!?;,]\s)",
         re.I | re.S,
     ),
+    re.compile(
+        r"\bthis\s+is\s+(?P<value>.+?)(?=\s+from\b)",
+        re.I | re.S,
+    ),
 )
 NATURAL_COMPANY_PATTERNS = (
+    re.compile(
+        r"\bthis\s+is\s+.+?\s+from\s+"
+        r"(?P<value>.+?)(?=$|[\n\[]|[.!?;,]\s?)",
+        re.I | re.S,
+    ),
     re.compile(
         r"\b(?:i\s+)?(?:buy|purchase|procure)\s+for\s+"
         r"(?P<value>.+?)(?=$|[\n\[]|[.!?;,]\s?)",
@@ -2006,11 +2017,11 @@ def _should_reject_order_confirmation_escalation(text: str) -> bool:
 def _showroom_location_response(language: str) -> str:
     if is_arabic_customer_language(language):
         return (
-            "يقع معرض Treejar في دبي. يمكنك فتح الموقع على خرائط Google هنا: "
+            "يقع معرضنا في دبي. يمكنك فتح الموقع على خرائط Google هنا: "
             f"{TREEJAR_MAPS_URL}"
         )
     return (
-        "Treejar showroom is in Dubai. Open the location on Google Maps: "
+        "Our showroom is in Dubai. Open the location on Google Maps: "
         f"{TREEJAR_MAPS_URL}"
     )
 
@@ -5207,6 +5218,25 @@ def _quote_customer_details_from_metadata(
         if isinstance(value, str) and value.strip():
             details[key] = value.strip()
     return details
+
+
+def _customer_name_was_asked(conversation: Conversation) -> bool:
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
+    )
+    return metadata.get(CUSTOMER_NAME_ASKED_KEY) is True
+
+
+def _record_customer_name_asked(conversation: Conversation) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    metadata[CUSTOMER_NAME_ASKED_KEY] = True
+    conversation.metadata_ = metadata
+
+
+def _clear_customer_name_asked(conversation: Conversation) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    metadata.pop(CUSTOMER_NAME_ASKED_KEY, None)
+    conversation.metadata_ = metadata
 
 
 _QUOTE_DETAIL_LABELS: dict[str, tuple[str, ...]] = {
@@ -9621,6 +9651,9 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
             f"- {directive}" for directive in ctx.deps.runtime_directives
         )
         base_prompt += f"\n\n[RUNTIME DIRECTIVES]\n{directives_block}\n"
+
+    if ctx.deps.permitted_asks is not None:
+        base_prompt += f"\n\n{format_permitted_asks_prompt(ctx.deps.permitted_asks)}\n"
 
     return finalize_evidence_grounding_prompt(base_prompt)
 

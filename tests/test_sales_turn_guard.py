@@ -167,9 +167,7 @@ def test_the_name_is_asked_once_and_then_let_go() -> None:
     assert (
         refuse_to_chase_the_name(
             text,
-            previous_assistant_turns=[
-                "Hello, I'm Noor from Treejar. And how should I address you?"
-            ],
+            customer_name_asked=True,
             customer_name=None,
         )
         == "The CH 616 is 295 AED and 36 are in stock."
@@ -182,7 +180,7 @@ def test_the_first_ask_survives() -> None:
     assert (
         refuse_to_chase_the_name(
             text,
-            previous_assistant_turns=["Hello, I'm Noor from Treejar."],
+            customer_name_asked=False,
             customer_name=None,
         )
         == text
@@ -198,7 +196,7 @@ def test_a_known_name_is_left_to_the_closed_question_guard() -> None:
     assert (
         refuse_to_chase_the_name(
             text,
-            previous_assistant_turns=["May I know your name?"],
+            customer_name_asked=True,
             customer_name="Ahmed",
         )
         == text
@@ -214,7 +212,7 @@ def test_a_reply_that_is_only_a_repeated_question_is_kept_rather_than_emptied() 
     assert (
         refuse_to_chase_the_name(
             text,
-            previous_assistant_turns=["May I know your name?"],
+            customer_name_asked=True,
             customer_name=None,
         )
         == text
@@ -230,7 +228,7 @@ def test_the_quote_route_list_form_counts_as_having_asked() -> None:
         refuse_to_chase_the_name(
             "CH 616 is 295 AED. Before I prepare the quotation, please share: "
             "customer name.",
-            previous_assistant_turns=["And how should I address you?"],
+            customer_name_asked=True,
             customer_name=None,
         )
         == "CH 616 is 295 AED."
@@ -243,10 +241,24 @@ def test_arabic_is_asked_once_too() -> None:
     assert (
         refuse_to_chase_the_name(
             text,
-            previous_assistant_turns=["وكيف أخاطبك؟"],
+            customer_name_asked=True,
             customer_name=None,
         )
         == "لدينا هذا الكرسي."
+    )
+
+
+def test_a_named_confirmation_exception_does_not_reelicit_the_slot() -> None:
+    confirmation = "Please confirm your name is Ahmed."
+
+    assert (
+        refuse_to_chase_the_name(
+            confirmation,
+            customer_name_asked=True,
+            customer_name=None,
+            ask_before_filling=True,
+        )
+        == confirmation
     )
 
 

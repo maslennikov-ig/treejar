@@ -91,7 +91,9 @@ from src.llm.repair_judge import (
     unavailable_repair_judge_trace,
 )
 from src.llm.response_policy import (
+    AskKind,
     ReplyPolicyState,
+    permitted_asks_for_turn,
     render_reply,
 )
 from src.llm.response_policy import (
@@ -378,6 +380,7 @@ class _Turn:
     history: list[ModelRequestT | ModelResponseT]
     is_first_turn: bool
     model_runtime: _LazyModelRuntime
+    current_message_quote_customer_details: dict[str, str]
 
     # Written as the turn runs.
     combined_text: str
@@ -389,6 +392,7 @@ class _Turn:
     opening_anchor_line: str | None = None
     name_gate_resume_customer_name: str | None = None
     failed_run_usage: RunUsageT | None = None
+    permitted_asks_cache: frozenset[AskKind] | None = None
 
     # The verified-answer repair counter lives in conversation metadata; these
     # three keep their zero-argument shape because several call sites hand the
@@ -405,10 +409,28 @@ class _Turn:
     async def run_prose_agent(self, directive: str, run_deps: SalesDepsT) -> Any:
         return await _run_prose_agent_on(self.model_runtime, directive, run_deps)
 
+    def permitted_asks(self) -> frozenset[AskKind]:
+        """Compute the turn's ask contract once, before prompt or guard uses it."""
+
+        if self.permitted_asks_cache is None:
+            quote_workflow = quote_workflow_from_metadata(self.conv.metadata_)
+            self.permitted_asks_cache = permitted_asks_for_turn(
+                is_first_turn=self.is_first_turn,
+                customer_name=self.known_customer_name() or None,
+                customer_name_asked=engine._customer_name_was_asked(self.conv),
+                ask_before_filling=False,
+                owes_company_question=_turn_owes_the_company_question(self.deps),
+                quote_consent_granted=(quote_workflow.consent is QuoteConsent.GRANTED),
+            )
+        return self.permitted_asks_cache
+
     def known_customer_name(self) -> str:
         quote_details = engine._quote_customer_details_from_metadata(self.conv)
         return (
             engine._string_value(self.name_gate_resume_customer_name)
+            or engine._string_value(
+                self.current_message_quote_customer_details.get("name")
+            )
             or engine._string_value(quote_details.get("name"))
             or engine._string_value(self.conv.customer_name)
         )
@@ -435,18 +457,16 @@ class _Turn:
             state=ReplyPolicyState(
                 language=str(response_deps.conversation.language),
                 is_first_turn=self.is_first_turn,
-                customer_name=self.known_customer_name() or None,
+                customer_name=(engine._string_value(self.conv.customer_name) or None),
+                current_message_customer_name=(self.known_customer_name() or None),
+                customer_name_asked=engine._customer_name_was_asked(self.conv),
+                permitted_asks=self.permitted_asks(),
                 anchor_line=self.opening_anchor_line,
                 company=engine._string_value(quote_details.get("company")) or None,
                 customer_type=(
                     engine._string_value(quote_details.get("customer_type")) or None
                 ),
                 delivery_address=delivery_address or None,
-                previous_assistant_turns=tuple(
-                    entry.removeprefix("assistant: ")
-                    for entry in (response_deps.recent_history or ())
-                    if entry.startswith("assistant: ")
-                ),
                 owes_company_question=_turn_owes_the_company_question(response_deps),
                 quote_consent_granted=(quote_workflow.consent is QuoteConsent.GRANTED),
                 inventory_confirmed=response_deps.inventory_confirmed,
@@ -636,6 +656,9 @@ class _Turn:
         )
 
     async def run_agent(self, run_deps: SalesDepsT) -> Any:
+        # Keep the exact dependency object that tools mutate. Copying it here
+        # lost inventory/product evidence before the reply was rendered.
+        run_deps.permitted_asks = self.permitted_asks()
         runtime_model_name, runtime_model = await self.model_runtime.get()
         agent_started = (
             self.latency_trace.start_phase() if self.latency_trace is not None else None
@@ -708,6 +731,8 @@ async def _finalize_turn_response(
             response.text_provenance = judged.provenance
             response.repair_flags = judged.remaining_flags
             response.repair_trace = judged.trace
+            if judged.emitted_asks is not None:
+                response.emitted_asks = judged.emitted_asks
 
         if response.repair_trace is not None and response.repair_trace.requires_handoff:
             await _apply_repair_manager_handoff(
@@ -743,6 +768,10 @@ async def _finalize_turn_response(
             )
 
     turn._record_reply_on_conversation(response.model, response.text)
+    if AskKind.CUSTOMER_NAME in response.emitted_asks:
+        # This is selected-output metadata from the policy chain. A permitted
+        # ask folded away before delivery must not close the persistent slot.
+        engine._record_customer_name_asked(turn.deps.conversation)
     return response
 
 
@@ -786,6 +815,7 @@ async def _apply_repair_manager_handoff(
     response.text = rendered.text
     response.text_provenance = rendered.provenance
     response.repair_flags = ()
+    response.emitted_asks = rendered.emitted_asks
     response.deferred_product_media = ()
 
 
@@ -916,9 +946,7 @@ async def _read_quote_facts(
     """
 
     customer_name_was_unknown = not str(turn.conv.customer_name or "").strip()
-    current_quote_customer_details = engine._extract_quote_customer_details(
-        turn.combined_text
-    )
+    current_quote_customer_details = dict(turn.current_message_quote_customer_details)
     current_quote_intent_frame: Mapping[str, Any] | None = (
         engine._quote_intent_frame_from_text(turn.combined_text)
     )
@@ -1715,6 +1743,13 @@ async def _load_turn(
         catalog_planning=catalog_planning,
     )
 
+    # One extraction is read by both the pre-persistence response policy and
+    # the later durable quote/customer-detail capture. They cannot disagree on
+    # what the current inbound message supplied.
+    current_message_quote_customer_details = engine._extract_quote_customer_details(
+        combined_text
+    )
+
     turn = _Turn(
         pending_reference_route=pending_reference_route,
         order_quote_route=order_quote_route,
@@ -1733,6 +1768,7 @@ async def _load_turn(
         pii_map=pii_map,
         history=history,
         is_first_turn=is_first_turn,
+        current_message_quote_customer_details=(current_message_quote_customer_details),
         # Memoised: the runtime used to be built inside the generation block,
         # out of reach of every route that runs before it, and
         # sales-opportunity needs the model to write its sentence (tj-swgu.3).

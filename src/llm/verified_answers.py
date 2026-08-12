@@ -1168,12 +1168,12 @@ def build_sales_fallback_response(intent: SalesFallbackIntent, language: str) ->
 
     if is_arabic:
         return (
-            "لا، Treejar تركز على أثاث المكاتب ومنتجات بيئة العمل، وليس على "
+            "لا، نحن نركز على أثاث المكاتب ومنتجات بيئة العمل، وليس على "
             "قطع غيار الطائرات أو أجهزة اللابتوب المخصصة للألعاب. يمكنني مساعدتك "
             "في المكاتب والكراسي المريحة والتخزين وأثاث غرف الاجتماعات."
         )
     return (
-        "No, Treejar focuses on office furniture and workplace products, not "
+        "No, we focus on office furniture and workplace products, not "
         "helicopter spare parts or gaming laptops. I can help with desks, "
         "ergonomic chairs, storage, or meeting-room furniture."
     )

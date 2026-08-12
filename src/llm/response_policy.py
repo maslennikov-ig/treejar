@@ -10,7 +10,10 @@ from enum import StrEnum
 from functools import partial
 from typing import Literal
 
-from src.llm.closed_question_guard import apply_closed_question_guard
+from src.llm.closed_question_guard import (
+    apply_closed_question_guard,
+    response_asks_customer_name,
+)
 from src.llm.grounding_output import (
     GroundingOutputResult,
     classify_grounding_output,
@@ -36,6 +39,57 @@ ReplyProvenance = Literal[
 ]
 
 
+class AskKind(StrEnum):
+    """A semantic customer ask chosen from state before generation."""
+
+    SALES_DISCOVERY = "sales_discovery"
+    CUSTOMER_NAME = "customer_name"
+    SLOT_CONFIRMATION = "slot_confirmation"
+    COMPANY_ACTIVITY = "company_activity"
+    QUOTE_DETAILS = "quote_details"
+
+
+def permitted_asks_for_turn(
+    *,
+    is_first_turn: bool,
+    customer_name: str | None,
+    customer_name_asked: bool,
+    ask_before_filling: bool,
+    owes_company_question: bool,
+    quote_consent_granted: bool,
+) -> frozenset[AskKind]:
+    """Derive the semantic asks allowed on this turn from explicit state."""
+
+    permitted = {AskKind.SALES_DISCOVERY}
+    if (
+        is_first_turn
+        and not str(customer_name or "").strip()
+        and not customer_name_asked
+    ):
+        permitted.add(AskKind.CUSTOMER_NAME)
+    if ask_before_filling:
+        permitted.add(AskKind.SLOT_CONFIRMATION)
+    if owes_company_question:
+        permitted.add(AskKind.COMPANY_ACTIVITY)
+    if quote_consent_granted:
+        permitted.add(AskKind.QUOTE_DETAILS)
+    return frozenset(permitted)
+
+
+def format_permitted_asks_prompt(permitted: frozenset[AskKind]) -> str:
+    """Render the pre-generation decision without re-deriving it."""
+
+    lines = ["[PERMITTED ASKS THIS TURN]"]
+    for ask in AskKind:
+        status = "allowed" if ask in permitted else "forbidden"
+        lines.append(f"- {ask.value}: {status}")
+    lines.append(
+        "Ask only types marked allowed. Phrase an allowed ask naturally; "
+        "do not add a forbidden ask."
+    )
+    return "\n".join(lines)
+
+
 @dataclass(frozen=True, slots=True)
 class ReplyPolicyState:
     """Explicit state consumed by the customer-facing text policy."""
@@ -43,11 +97,14 @@ class ReplyPolicyState:
     language: str
     is_first_turn: bool = False
     customer_name: str | None = None
+    current_message_customer_name: str | None = None
+    customer_name_asked: bool = False
+    ask_before_filling: bool = False
+    permitted_asks: frozenset[AskKind] | None = None
     anchor_line: str | None = None
     company: str | None = None
     customer_type: str | None = None
     delivery_address: str | None = None
-    previous_assistant_turns: tuple[str, ...] = ()
     owes_company_question: bool = False
     quote_consent_granted: bool = False
     inventory_confirmed: bool = False
@@ -64,6 +121,7 @@ class RenderedReply:
     grounding: GroundingOutputResult
     policy_state: ReplyPolicyState
     flags: tuple[ReplyGuardFlag, ...] = ()
+    emitted_asks: frozenset[AskKind] = frozenset()
 
 
 class GuardMode(StrEnum):
@@ -130,6 +188,7 @@ def apply_first_turn_opening_guard(
     is_first_turn: bool,
     customer_name: str | None,
     anchor_line: str | None,
+    ask_customer_name: bool = True,
 ) -> str:
     """Apply the existing opening guard from explicit turn state."""
 
@@ -139,6 +198,26 @@ def apply_first_turn_opening_guard(
         is_first_turn=is_first_turn,
         customer_name=customer_name,
         anchor_line=anchor_line,
+        ask_customer_name=ask_customer_name,
+    )
+
+
+def _customer_name_for_turn(state: ReplyPolicyState) -> str | None:
+    """Name already persisted or observed in the current inbound message."""
+
+    return state.customer_name or state.current_message_customer_name
+
+
+def _permitted_asks_for_policy_state(state: ReplyPolicyState) -> frozenset[AskKind]:
+    if state.permitted_asks is not None:
+        return state.permitted_asks
+    return permitted_asks_for_turn(
+        is_first_turn=state.is_first_turn,
+        customer_name=_customer_name_for_turn(state),
+        customer_name_asked=state.customer_name_asked,
+        ask_before_filling=state.ask_before_filling,
+        owes_company_question=state.owes_company_question,
+        quote_consent_granted=state.quote_consent_granted,
     )
 
 
@@ -524,13 +603,14 @@ def render_reply(
     """Apply the one customer-facing text policy, independent of provenance."""
 
     raised_flags: list[ReplyGuardFlag] = []
+    permitted_asks = _permitted_asks_for_policy_state(state)
     rendered, flags = _render_declared_guard(
         text,
         guard_name="closed_question",
         guard=partial(
             repair_closed_questions,
             language=state.language,
-            customer_name=state.customer_name,
+            customer_name=_customer_name_for_turn(state),
             company=state.company,
             customer_type=state.customer_type,
             delivery_address=state.delivery_address,
@@ -543,7 +623,7 @@ def render_reply(
         guard=partial(
             guard_premature_quote_detail_collection,
             language=state.language,
-            quote_consent_granted=state.quote_consent_granted,
+            quote_consent_granted=AskKind.QUOTE_DETAILS in permitted_asks,
         ),
     )
     raised_flags.extend(flags)
@@ -554,16 +634,16 @@ def render_reply(
             apply_first_turn_opening_guard,
             language=state.language,
             is_first_turn=state.is_first_turn,
-            customer_name=state.customer_name,
+            customer_name=_customer_name_for_turn(state),
             anchor_line=state.anchor_line,
+            ask_customer_name=AskKind.CUSTOMER_NAME in permitted_asks,
         ),
     )
     raised_flags.extend(flags)
-    if not state.is_first_turn and rendered.strip():
-        # Three guards in their established order, declared one at a time. They
-        # used to share a declaration, and the bundle had to take the strictest
-        # member's mode, which suppressed a fold the customer wants and an
-        # addition that removes nothing at all.
+    if rendered.strip():
+        # Safe on first turns: this REDUCING guard applies only when its
+        # executable proof shows that every answer word survived and only
+        # surplus asks were dropped.
         rendered, flags = _render_declared_guard(
             rendered,
             guard_name="question_form",
@@ -571,18 +651,27 @@ def render_reply(
             flag_details=("deterministic_fold_would_lose_content",),
         )
         raised_flags.extend(flags)
-        rendered, flags = _render_declared_guard(
-            rendered,
-            guard_name="name_chase",
-            guard=partial(
-                refuse_to_chase_the_name,
-                previous_assistant_turns=state.previous_assistant_turns,
-                customer_name=state.customer_name,
-            ),
-            flag_details=("deterministic_fold_would_lose_content",),
-        )
-        raised_flags.extend(flags)
-        if state.owes_company_question:
+
+        if not state.is_first_turn:
+            # Deliberately still gated on first turns: the measured bad replies
+            # were unchanged by this guard even with a known name, so there is
+            # no evidence for widening its blast radius.
+            rendered, flags = _render_declared_guard(
+                rendered,
+                guard_name="name_chase",
+                guard=partial(
+                    refuse_to_chase_the_name,
+                    customer_name_asked=(AskKind.CUSTOMER_NAME not in permitted_asks),
+                    customer_name=_customer_name_for_turn(state),
+                    ask_before_filling=(AskKind.SLOT_CONFIRMATION in permitted_asks),
+                ),
+                flag_details=("deterministic_fold_would_lose_content",),
+            )
+            raised_flags.extend(flags)
+
+        if not state.is_first_turn and AskKind.COMPANY_ACTIVITY in permitted_asks:
+            # This additive discovery ask was designed and measured for later
+            # selling turns; the first-turn set supplies no reason to move it.
             rendered, flags = _render_declared_guard(
                 rendered,
                 guard_name="company_question",
@@ -623,10 +712,20 @@ def render_reply(
             disclosure=state.required_tool_disclosure,
         ),
     )
+    # Permission is decided from state before generation. This observation is
+    # narrower: it records whether the selected customer text still carries
+    # the permitted name ask after every reducing guard has run.
+    emitted_asks = frozenset(
+        {AskKind.CUSTOMER_NAME}
+        if AskKind.CUSTOMER_NAME in permitted_asks
+        and response_asks_customer_name(rendered)
+        else ()
+    )
     return RenderedReply(
         text=rendered,
         provenance=provenance,
         grounding=grounding,
         policy_state=state,
         flags=tuple(raised_flags),
+        emitted_asks=emitted_asks,
     )

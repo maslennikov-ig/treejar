@@ -54,6 +54,7 @@ _EN_CAPABILITY = (
 _AR_CAPABILITY = (
     "نورّد أثاث المكاتب في الإمارات، وأعمل من كتالوجنا وأؤكد كل سعر وتوفر قبل إرساله."
 )
+_URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 
 
 def _is_arabic_language(language: str) -> bool:
@@ -62,8 +63,10 @@ def _is_arabic_language(language: str) -> bool:
 
 
 def _has_identity(text: str) -> bool:
-    normalized = text.casefold()
-    return "noor" in normalized and "treejar" in normalized
+    # The company owns the introduction. The persona by itself does not: a
+    # sentence may use "Noor" as a contact name without introducing Treejar.
+    visible_text = _URL_RE.sub("", text)
+    return "treejar" in visible_text.casefold()
 
 
 def _has_customer_name(customer_name: str | None) -> bool:
@@ -138,11 +141,13 @@ def _drop_identity_sentences(text: str) -> str:
 
     if not _has_identity(text):
         return text
-    kept = [
-        part
-        for part in _SENTENCE_RE.findall(text)
-        if not _has_identity(part) or not part.strip()
-    ]
+    kept: list[str] = []
+    dropped = False
+    for part in _SENTENCE_RE.findall(text):
+        if not dropped and part.strip() and _has_identity(part):
+            dropped = True
+            continue
+        kept.append(part)
     return re.sub(r"\n{3,}", "\n\n", "".join(kept)).strip()
 
 
@@ -153,6 +158,7 @@ def apply_opening_guard(
     is_first_turn: bool,
     customer_name: str | None,
     anchor_line: str | None = None,
+    ask_customer_name: bool = True,
 ) -> str:
     """Ensure the first customer-facing reply carries value before it asks.
 
@@ -177,7 +183,15 @@ def apply_opening_guard(
     if not is_arabic:
         body = _strip_generic_english_opening(body) or body
     body = _strip_own_capability(body, capability).strip()
+    before_identity_drop = body
     body = _drop_identity_sentences(body)
+    if _has_identity(before_identity_drop) and not any(
+        character.isalnum() for character in body
+    ):
+        # A prior implementation let an identity match blank the entire model
+        # reply. If the one permitted sentence removal leaves no answer, keep
+        # the model reply and add no canonical opening around it.
+        return text
 
     parts = [f"{identity} {capability}"]
     if anchor_line and not contains_customer_output_currency(body):
@@ -185,7 +199,11 @@ def apply_opening_guard(
     if body:
         parts.append(body)
 
-    if not _has_customer_name(customer_name) and not response_asks_customer_name(body):
+    if (
+        ask_customer_name
+        and not _has_customer_name(customer_name)
+        and not response_asks_customer_name(body)
+    ):
         parts[-1] = f"{parts[-1].rstrip()} {name_question}"
 
     return "\n\n".join(parts)
@@ -205,8 +223,30 @@ def opening_replacement_covers(text: str, replacement: str) -> bool:
     if not is_arabic:
         body = _strip_generic_english_opening(body) or body
     body = _strip_own_capability(body, capability).strip()
+    before_identity_drop = body
     body = _drop_identity_sentences(body)
+    if _has_identity(before_identity_drop) and not any(
+        character.isalnum() for character in body
+    ):
+        return replacement == text
 
     required = iter(re.findall(r"\w+", body.casefold(), flags=re.UNICODE))
     available = iter(re.findall(r"\w+", replacement.casefold(), flags=re.UNICODE))
     return all(any(word == candidate for candidate in available) for word in required)
+
+
+def is_own_opening_plus_question(text: str, *, language: str) -> bool:
+    """Whether no answer remains after Treejar's exact prepended opening."""
+
+    is_arabic = _is_arabic_language(language)
+    identity = _AR_IDENTITY if is_arabic else _EN_IDENTITY
+    capability = _AR_CAPABILITY if is_arabic else _EN_CAPABILITY
+    opening = f"{identity} {capability}"
+    stripped = str(text or "").strip()
+    if not stripped.startswith(opening):
+        return False
+    remainder = stripped[len(opening) :].strip()
+    questions = [
+        part.strip() for part in _SENTENCE_RE.findall(remainder) if part.strip()
+    ]
+    return len(questions) == 1 and questions[0].endswith(("?", "؟"))

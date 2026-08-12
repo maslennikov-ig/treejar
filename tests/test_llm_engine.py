@@ -48,6 +48,12 @@ from src.llm.engine import (
     process_message,
     sales_agent,
 )
+from src.llm.response_policy import (
+    AskKind,
+    ReplyPolicyState,
+    permitted_asks_for_turn,
+    render_reply,
+)
 from src.models.conversation import Conversation
 from src.schemas.common import SalesStage
 from src.schemas.product import ProductRead
@@ -1803,6 +1809,62 @@ async def test_inject_system_prompt_appends_runtime_directives(
     assert "[RUNTIME DIRECTIVES]" in prompt
     assert "likely concrete order handoff" in prompt
     assert "do not ask qualifying questions" in prompt
+
+
+@pytest.mark.asyncio
+@patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
+async def test_prompt_and_guard_consume_the_same_permitted_ask_set(
+    mock_prompt: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    mock_prompt.return_value = "BASE PROMPT"
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    permitted = permitted_asks_for_turn(
+        is_first_turn=True,
+        customer_name=None,
+        customer_name_asked=True,
+        ask_before_filling=False,
+        owes_company_question=False,
+        quote_consent_granted=False,
+    )
+    deps = SalesDeps(
+        db=db,
+        redis=redis,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        permitted_asks=permitted,
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    prompt = await inject_system_prompt(ctx)
+    rendered = render_reply(
+        "I can help with your office project.",
+        state=ReplyPolicyState(
+            language="en",
+            is_first_turn=True,
+            permitted_asks=permitted,
+        ),
+        provenance="model",
+    )
+
+    assert AskKind.CUSTOMER_NAME not in permitted
+    assert "customer_name: forbidden" in prompt
+    assert "how should I address" not in rendered.text
 
 
 @pytest.mark.asyncio
@@ -4272,6 +4334,25 @@ def test_extract_quote_customer_details_accepts_inline_im_name() -> None:
     assert details["name"] == "Lilia"
 
 
+def test_extract_quote_customer_details_accepts_a_first_message_signature() -> None:
+    details = _extract_quote_customer_details(
+        "this is Binu from Bikram Interiors Sharjah."
+    )
+
+    assert details["name"] == "Binu"
+    assert details["company"] == "Bikram Interiors Sharjah"
+
+
+def test_clearing_the_name_ask_slot_is_the_only_reask_reset() -> None:
+    conversation = SimpleNamespace(metadata_={"customer_name_asked": True})
+
+    assert engine_module._customer_name_was_asked(conversation) is True
+
+    engine_module._clear_customer_name_asked(conversation)
+
+    assert engine_module._customer_name_was_asked(conversation) is False
+
+
 def test_extract_quote_customer_details_does_not_treat_individual_as_name() -> None:
     details = _extract_quote_customer_details(
         "I am an individual. Email: alex@example.com. Delivery address is "
@@ -4291,7 +4372,33 @@ def test_extract_quote_customer_details_does_not_treat_individual_as_name() -> N
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_first_turn_inline_name_continues_substantive_request(
+@pytest.mark.parametrize(
+    (
+        "text",
+        "expected_name",
+        "expected_company",
+        "expected_model",
+        "expected_model_calls",
+    ),
+    [
+        (
+            "Hi, my name is Lilia and I purchase for Northstar QA LLC. I need "
+            "workstation options with individual privacy panels for a small office.",
+            "Lilia",
+            "Northstar QA LLC",
+            "mock-model",
+            1,
+        ),
+        (
+            "this is Binu from Bikram Interiors Sharjah.",
+            "Binu",
+            "Bikram Interiors Sharjah",
+            "detail-capture",
+            0,
+        ),
+    ],
+)
+async def test_process_message_first_turn_observed_name_continues_substantive_request(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -4300,19 +4407,20 @@ async def test_process_message_first_turn_inline_name_continues_substantive_requ
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
+    text: str,
+    expected_name: str,
+    expected_company: str,
+    expected_model: str,
+    expected_model_calls: int,
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
     conv.customer_name = None
     conv.metadata_ = {}
-    text = (
-        "Hi, my name is Lilia and I purchase for Northstar QA LLC. I need "
-        "workstation options with individual privacy panels for a small office."
-    )
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
     mock_run.return_value = _FakeAgentResult(
-        "Thank you, Lilia. I can help with ergonomic chair options."
+        f"Thank you, {expected_name}. I can help with ergonomic chair options."
     )
 
     response = await process_message(
@@ -4325,14 +4433,14 @@ async def test_process_message_first_turn_inline_name_continues_substantive_requ
         messaging_client=messaging,
     )
 
-    assert conv.customer_name == "Lilia"
+    assert conv.customer_name == expected_name
     assert "name_gate_pending_request" not in (conv.metadata_ or {})
-    assert conv.metadata_["quote_customer_details"]["company"] == "Northstar QA LLC"
+    assert conv.metadata_["quote_customer_details"]["company"] == expected_company
     assert "customer_type" not in conv.metadata_["quote_customer_details"]
-    assert response.model == "mock-model"
+    assert response.model == expected_model
     assert "may i know your name" not in response.text.casefold()
-    assert "ergonomic chair" in response.text
-    assert mock_run.await_count == 1
+    assert "how should i address" not in response.text.casefold()
+    assert mock_run.await_count == expected_model_calls
     mock_notify.assert_not_awaited()
     messaging.send_media.assert_not_called()
 
@@ -5371,7 +5479,7 @@ async def test_process_message_assist_opener_returns_clarification_without_hando
     # Nothing is parked any more: the request is served on the turn it arrives,
     # so there is no pending state for a second message to resume.
     assert "name_gate_pending_request" not in (conv.metadata_ or {})
-    assert "how should I address you" in response.text
+    assert "how should I address you" not in response.text
     assert conv.escalation_status == "none"
 
 
@@ -5410,7 +5518,7 @@ async def test_process_message_first_turn_static_clarification_gets_opening(
     )
 
     assert mock_notify.await_count == 0
-    assert "how should I address you" in response.text
+    assert "how should I address you" not in response.text
     assert "name_gate_pending_request" not in (conv.metadata_ or {})
 
 
@@ -16953,7 +17061,7 @@ async def test_process_message_sales_order_request_creates_multi_item_quotation(
             source_message_id="provider-message-sales-order-1",
         )
 
-    _assert_first_turn_opening(response.text, "Your Treejar quotation: SO-123")
+    assert response.text == "Your Treejar quotation: SO-123"
     assert response.deferred_product_media == ()
     assert response.model == "mock-model|sales-order-quote"
     assert [trace.tool_name for trace in response.tool_traces] == ["create_quotation"]
@@ -17098,7 +17206,7 @@ async def test_process_message_sales_order_normalizes_cyrillic_sku_prefix(
             messaging_client=messaging,
         )
 
-    _assert_first_turn_opening(response.text, "Your Treejar quotation: SO-CH190")
+    assert response.text == "Your Treejar quotation: SO-CH190"
     mock_create_quotation.assert_awaited_once()
     _, quote_items = mock_create_quotation.await_args.args
     assert [(item.sku, item.quantity) for item in quote_items] == [
@@ -23422,7 +23530,7 @@ async def test_a_model_written_turn_is_capped_at_one_question(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_the_first_turn_keeps_its_own_folded_pair(
+async def test_the_first_turn_keeps_its_answer_and_drops_the_surplus_name_ask(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -23432,11 +23540,11 @@ async def test_the_first_turn_keeps_its_own_folded_pair(
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
 ) -> None:
-    """The opening guard folds the name onto the model's reply, and the
-    one-question cap must not then throw it away.
+    """The first-turn reducing guard keeps the answer and its useful ask.
 
     The value proposition it carries is what moved rule 7 from 0.08 to 1.66.
-    Since 2026-08-10 the model writes the turn and the guard only adds to it.
+    The appended name ask is the surplus second question and is removed only
+    after `only_asks_were_dropped` proves the answer survived.
     """
 
     db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
@@ -23460,7 +23568,7 @@ async def test_the_first_turn_keeps_its_own_folded_pair(
     assert response.text.startswith("Hello, I'm Noor from Treejar.")
     assert "quote from our own catalog" in response.text
     assert "What are you furnishing?" in response.text
-    assert "how should I address you" in response.text
+    assert "how should I address you" not in response.text
     mock_notify.assert_not_awaited()
 
 

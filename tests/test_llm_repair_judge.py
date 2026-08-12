@@ -21,8 +21,14 @@ from src.llm.repair_judge import (
     RepairJudgeRequest,
     classify_repair_failure,
     review_flagged_reply,
+    run_repair_judge,
 )
-from src.llm.response_policy import ReplyGuardFlag, ReplyPolicyState, render_reply
+from src.llm.response_policy import (
+    AskKind,
+    ReplyGuardFlag,
+    ReplyPolicyState,
+    render_reply,
+)
 from src.llm.response_runtime import LLMResponse, ProductMediaPayload
 from src.llm.safety import (
     PATH_CORE_CHAT,
@@ -91,7 +97,7 @@ async def test_an_approval_sends_the_flagged_reply_unchanged_and_counts_it() -> 
     assert result.trace.counts.cannot_fix == 0
     assert result.trace.cost_usd == 0.0012
     assert requests[0].reply == original
-    assert requests[0].flags[0].candidate is not None
+    assert requests[0].flags[0].candidate is None
 
 
 @pytest.mark.asyncio
@@ -145,6 +151,42 @@ async def test_a_valid_correction_is_reclassified_and_sent_as_model_written() ->
 
 
 @pytest.mark.asyncio
+async def test_a_correction_with_only_our_opening_and_a_question_escalates() -> None:
+    state = ReplyPolicyState(language="en", is_first_turn=True)
+    stub = render_reply(
+        "And how should I address you?",
+        state=state,
+        provenance="model",
+    ).text
+    flag = ReplyGuardFlag(
+        guard_name="grounding_output",
+        reason="removing_guard_triggered",
+        details=("unverified_customer_owned_furniture_service",),
+        candidate=stub,
+    )
+
+    result = await review_flagged_reply(
+        "We can assess your used desks.",
+        state=state,
+        flags=(flag,),
+        evidence=RepairJudgeEvidence(language="en"),
+        runner=_runner(
+            RepairJudgeDecision(
+                answer="correct",
+                corrected_text=stub,
+                rationale="Remove the unsupported service.",
+            ),
+            [],
+        ),
+    )
+
+    assert result.text == stub
+    assert result.trace is not None
+    assert result.trace.rejection_reason == "correction_has_no_answer"
+    assert result.trace.requires_handoff is True
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("corrected_text", "rejection"),
     [
@@ -174,18 +216,19 @@ async def test_an_invalid_correction_is_rejected_before_send(
         ),
     )
 
-    assert result.text == "We can assess your used desks."
-    assert result.provenance == "model"
+    assert result.text == _flag().candidate
+    assert result.provenance == "deterministic_replacement"
     assert result.trace is not None
     assert result.trace.counts.corrections == 1
     assert result.trace.counts.rejected_corrections == 1
     assert result.trace.rejection_reason == rejection
-    assert result.trace.requires_handoff is True
-    assert result.remaining_flags
+    assert result.trace.requires_handoff is False
+    assert result.trace.counts.fallbacks == 1
+    assert result.remaining_flags == ()
 
 
 @pytest.mark.asyncio
-async def test_cannot_fix_is_counted_and_requests_the_next_handoff_stage() -> None:
+async def test_cannot_fix_is_counted_and_uses_the_deterministic_repair() -> None:
     result = await review_flagged_reply(
         "We can assess your used desks.",
         state=ReplyPolicyState(language="en"),
@@ -200,11 +243,12 @@ async def test_cannot_fix_is_counted_and_requests_the_next_handoff_stage() -> No
         ),
     )
 
-    assert result.text == "We can assess your used desks."
+    assert result.text == _flag().candidate
     assert result.trace is not None
     assert result.trace.counts.cannot_fix == 1
-    assert result.trace.requires_handoff is True
-    assert result.remaining_flags == (_flag(),)
+    assert result.trace.requires_handoff is False
+    assert result.trace.counts.fallbacks == 1
+    assert result.remaining_flags == ()
 
 
 @pytest.mark.asyncio
@@ -311,8 +355,7 @@ async def test_turn_finalizer_masks_reply_and_candidate_pii_from_the_judge(
     async def correct_masked(request: RepairJudgeRequest) -> RepairJudgeProviderResult:
         requests.append(request)
         assert email not in request.reply
-        assert request.flags[0].candidate is not None
-        assert email not in request.flags[0].candidate
+        assert request.flags[0].candidate is None
         corrected = request.reply.replace(
             "We can assess your used desks.",
             "I can help you choose replacement desks.",
@@ -409,6 +452,44 @@ def test_repair_judge_uses_one_bounded_second_vendor_call() -> None:
     assert policy.temperature == 0.0
 
 
+@pytest.mark.asyncio
+async def test_repair_judge_diagnostic_call_never_pages_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class Result:
+        output = RepairJudgeDecision(
+            answer="approve",
+            rationale="The reply is supported.",
+        )
+
+        @staticmethod
+        def usage() -> SimpleNamespace:
+            return SimpleNamespace(input_tokens=10, output_tokens=5)
+
+    async def run_safely(*_args: object, **kwargs: object) -> Result:
+        captured.update(kwargs)
+        return Result()
+
+    monkeypatch.setattr("src.llm.repair_judge._repair_judge_agent", object)
+    monkeypatch.setattr("src.llm.repair_judge.run_agent_with_safety", run_safely)
+    monkeypatch.setattr(
+        "src.llm.repair_judge.get_llm_usage_telemetry",
+        lambda _result: None,
+    )
+
+    await run_repair_judge(
+        RepairJudgeRequest(
+            reply="A supported reply.",
+            flags=(_flag(),),
+            evidence=RepairJudgeEvidence(language="en"),
+        )
+    )
+
+    assert captured["notify_on_failure_override"] is False
+
+
 def _flagged_response_for_fallback() -> LLMResponse:
     return LLMResponse(
         text="We can assess your used desks.",
@@ -435,15 +516,17 @@ def _turn_for_fallback(
     language: str = "en",
     escalation_status: str = "none",
 ) -> SimpleNamespace:
+    conversation = SimpleNamespace(
+        language=language,
+        escalation_status=escalation_status,
+        metadata_={},
+    )
     return SimpleNamespace(
         masked_text="Can you buy my used desks?",
         pii_map={},
         db=object(),
         deps=SimpleNamespace(
-            conversation=SimpleNamespace(
-                language=language,
-                escalation_status=escalation_status,
-            ),
+            conversation=conversation,
             executed_tool_names=(),
             recent_history=[],
         ),
@@ -454,11 +537,58 @@ def _turn_for_fallback(
 
 
 @pytest.mark.asyncio
+async def test_sending_the_selected_name_ask_records_the_slot() -> None:
+    recorded: list[tuple[str, str]] = []
+    turn = _turn_for_fallback(recorded)
+    response = LLMResponse(
+        text="Hello. And how should I address you?",
+        tokens_in=0,
+        tokens_out=0,
+        cost=0.0,
+        model="deterministic-opening",
+        repair_policy_state=ReplyPolicyState(
+            language="en",
+            is_first_turn=True,
+            customer_name_asked=False,
+            permitted_asks=frozenset({AskKind.SALES_DISCOVERY, AskKind.CUSTOMER_NAME}),
+        ),
+        emitted_asks=frozenset({AskKind.CUSTOMER_NAME}),
+    )
+
+    await _finalize_turn_response(turn, response)
+
+    assert turn.deps.conversation.metadata_["customer_name_asked"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_folded_away_name_ask_does_not_record_the_slot() -> None:
+    recorded: list[tuple[str, str]] = []
+    turn = _turn_for_fallback(recorded)
+    response = LLMResponse(
+        text="Hello. What are you furnishing?",
+        tokens_in=0,
+        tokens_out=0,
+        cost=0.0,
+        model="deterministic-opening",
+        repair_policy_state=ReplyPolicyState(
+            language="en",
+            is_first_turn=True,
+            permitted_asks=frozenset({AskKind.SALES_DISCOVERY, AskKind.CUSTOMER_NAME}),
+        ),
+        emitted_asks=frozenset({AskKind.SALES_DISCOVERY}),
+    )
+
+    await _finalize_turn_response(turn, response)
+
+    assert "customer_name_asked" not in turn.deps.conversation.metadata_
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "outcome",
     ["cannot_fix", "rejected_correction", "provider_unavailable"],
 )
-async def test_repair_fallback_notifies_manager_replaces_unsafe_text_and_counts(
+async def test_repair_fallback_sends_the_substantive_candidate_and_counts(
     outcome: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -507,17 +637,14 @@ async def test_repair_fallback_notifies_manager_replaces_unsafe_text_and_counts(
         runner=runner,
     )
 
-    assert len(notifications) == 1
-    assert "Repair judge fallback" in str(notifications[0]["reason"])
-    assert "manager" in finalized.text.lower()
-    assert "We can assess your used desks." not in finalized.text
-    assert candidate not in finalized.text
-    assert finalized.text_provenance == "deterministic_static"
+    assert notifications == []
+    assert finalized.text == candidate
+    assert finalized.text_provenance == "deterministic_replacement"
     assert finalized.repair_flags == ()
     assert finalized.deferred_product_media == ()
     assert finalized.repair_trace is not None
     assert finalized.repair_trace.counts.fallbacks == 1
-    assert finalized.repair_trace.requires_handoff is True
+    assert finalized.repair_trace.requires_handoff is False
     assert recorded == [("openai/gpt-5.6-luna", finalized.text)]
     if outcome == "provider_unavailable":
         # A failing call is retried once before the customer loses the reply,
@@ -535,7 +662,7 @@ async def test_repair_fallback_notifies_manager_replaces_unsafe_text_and_counts(
 
 
 @pytest.mark.asyncio
-async def test_repair_fallback_tells_an_arabic_customer_in_arabic(
+async def test_an_opening_and_question_only_repair_escalates_in_arabic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def notify_manager(**_kwargs: object) -> None:
@@ -545,8 +672,28 @@ async def test_repair_fallback_tells_an_arabic_customer_in_arabic(
         "src.integrations.notifications.escalation.notify_manager_escalation",
         notify_manager,
     )
-    response = _flagged_response_for_fallback()
-    response.repair_policy_state = ReplyPolicyState(language="ar")
+    state = ReplyPolicyState(language="ar", is_first_turn=True)
+    stub = render_reply(
+        "وكيف أخاطبك؟",
+        state=state,
+        provenance="model",
+    ).text
+    response = LLMResponse(
+        text="يمكننا شراء أثاثك المستعمل وتقييمه.",
+        tokens_in=10,
+        tokens_out=10,
+        cost=0.001,
+        model="openai/gpt-5.6-luna",
+        repair_flags=(
+            ReplyGuardFlag(
+                guard_name="grounding_output",
+                reason="removing_guard_triggered",
+                details=("unverified_customer_owned_furniture_service",),
+                candidate=stub,
+            ),
+        ),
+        repair_policy_state=state,
+    )
 
     finalized = await _finalize_turn_response(
         _turn_for_fallback([], language="ar"),
@@ -576,9 +723,26 @@ async def test_repair_fallback_reuses_an_active_manager_handoff(
         fail_if_notified,
     )
 
+    state = ReplyPolicyState(language="en", is_first_turn=True)
+    rendered = render_reply(
+        "We can assess your used desks.",
+        state=state,
+        provenance="model",
+    )
+    response = LLMResponse(
+        text=rendered.text,
+        tokens_in=10,
+        tokens_out=10,
+        cost=0.001,
+        model="openai/gpt-5.6-luna",
+        repair_flags=rendered.flags,
+        repair_policy_state=state,
+        emitted_asks=rendered.emitted_asks,
+    )
+
     finalized = await _finalize_turn_response(
         _turn_for_fallback([], escalation_status="pending"),
-        _flagged_response_for_fallback(),
+        response,
         runner=_runner(
             RepairJudgeDecision(
                 answer="cannot_fix",
@@ -677,7 +841,8 @@ async def test_the_retry_is_bounded_so_a_dead_provider_cannot_hold_the_turn() ->
     assert judged.trace.counts.provider_failures == 2
     assert judged.trace.rejection_reason == "provider_unavailable"
     assert judged.trace.error_type == "ConnectError"
-    assert judged.trace.requires_handoff is True
+    assert judged.trace.requires_handoff is False
+    assert judged.text == _flag().candidate
 
 
 def test_the_repair_budget_belongs_to_the_whole_repair_not_one_call() -> None:
@@ -751,6 +916,7 @@ def test_the_repair_prompt_states_the_rule_we_actually_enforce() -> None:
     assert "reads your answer again" in prompt
     assert "discarded" in prompt
     assert "last resort" in prompt
+    assert "deterministic candidate" not in prompt
 
 
 def test_the_repair_judge_is_not_the_model_that_wrote_the_reply() -> None:
