@@ -9,6 +9,7 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import httpx
 import pytest
 from scripts.corpus_bridge.real_opening_acceptance import (
     GENERATION_RETRY_DELAYS_SECONDS,
@@ -410,6 +411,70 @@ async def test_a_slot_survives_an_upstream_rate_limit(
     assert errors == (
         "provider response has no choice: 429: temporarily rate-limited upstream",
     )
+
+
+async def test_a_busy_provider_status_is_retried_and_a_bad_request_is_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 503 never reached a model; a 400 is a fault in what we sent."""
+    calls: list[int] = []
+
+    def _raise(status: int) -> None:
+        request = httpx.Request("POST", "https://example.invalid/chat/completions")
+        raise httpx.HTTPStatusError(
+            f"status {status}",
+            request=request,
+            response=httpx.Response(status, request=request),
+        )
+
+    async def sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(
+        "scripts.corpus_bridge.real_opening_acceptance.asyncio.sleep", sleep
+    )
+
+    async def busy_then_answer(
+        _client: object, _payload: dict[str, object]
+    ) -> tuple[dict[str, object], int]:
+        calls.append(1)
+        if len(calls) == 1:
+            _raise(503)
+        return (
+            {
+                "choices": [
+                    {"message": {"content": "A reply."}, "finish_reason": "stop"}
+                ]
+            },
+            5,
+        )
+
+    monkeypatch.setattr(
+        "scripts.corpus_bridge.real_opening_acceptance._request_once",
+        busy_then_answer,
+    )
+    _body, _latency, content, _finish, errors = await _generate_with_backoff(
+        SimpleNamespace(),  # type: ignore[arg-type]
+        {},
+    )
+    assert content == "A reply."
+    assert errors == ("provider returned 503",)
+
+    async def bad_request(
+        _client: object, _payload: dict[str, object]
+    ) -> tuple[dict[str, object], int]:
+        calls.append(1)
+        _raise(400)
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr(
+        "scripts.corpus_bridge.real_opening_acceptance._request_once",
+        bad_request,
+    )
+    before = len(calls)
+    with pytest.raises(httpx.HTTPStatusError):
+        await _generate_with_backoff(SimpleNamespace(), {})  # type: ignore[arg-type]
+    assert len(calls) - before == 1
 
 
 async def test_an_empty_completion_is_not_retried(

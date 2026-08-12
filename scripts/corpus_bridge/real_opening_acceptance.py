@@ -1109,6 +1109,11 @@ def _provider_error(body: dict[str, Any]) -> str:
 
 
 GENERATION_RETRY_DELAYS_SECONDS = (5.0, 20.0, 60.0)
+# The provider is busy, not wrong. A request that never reached a model has no
+# completion to bill and none to re-roll, whether it was refused with a status
+# or answered with a 200 and an error object. Everything else -- a bad payload,
+# a rejected key -- is a fault in what we sent and repeating it is pointless.
+RETRYABLE_STATUS_CODES = frozenset({408, 409, 425, 429, 500, 502, 503, 504, 529})
 
 
 async def _generate_with_backoff(
@@ -1116,11 +1121,13 @@ async def _generate_with_backoff(
 ) -> tuple[dict[str, Any], int, str, str | None, tuple[str, ...]]:
     """One slot's generation, retried only when nothing was generated at all.
 
-    A 200 carrying an `error` object and no choices -- an upstream rate limit
-    is the common one -- produced no completion. There is nothing to bill and,
+    Two shapes reach here. A 200 carrying an `error` object and no choices --
+    an upstream rate limit is the common one -- and a refusal with a busy
+    status. Neither produced a completion, so there is nothing to bill and,
     more to the point, nothing to re-roll: retrying cannot select a nicer
-    answer because no answer exists. Refusing it protects nothing and forfeits
-    the slot, and a spent slot cannot be re-run, so it forfeits the round.
+    answer because no answer exists. Refusing them protects nothing and
+    forfeits the slot, and a spent slot cannot be re-run, so it forfeits the
+    round. Three of them cost four rounds in one afternoon.
 
     The refusal that does matter is the one in the round loop above: a request
     whose outcome we do not know is never repeated.
@@ -1128,7 +1135,14 @@ async def _generate_with_backoff(
 
     errors: list[str] = []
     for delay in (*GENERATION_RETRY_DELAYS_SECONDS, None):
-        body, latency_ms = await _request_once(client, payload)
+        try:
+            body, latency_ms = await _request_once(client, payload)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code not in RETRYABLE_STATUS_CODES or delay is None:
+                raise
+            errors.append(f"provider returned {exc.response.status_code}")
+            await asyncio.sleep(delay)
+            continue
         try:
             raw_content, finish_reason = _message_content(body)
         except ValueError as exc:
@@ -1892,7 +1906,7 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                             finish_reason,
                             provider_errors,
                         ) = await _generate_with_backoff(client, payload)
-                    except ValueError as exc:
+                    except (ValueError, httpx.HTTPError) as exc:
                         # The slot is spent either way. Record why, so the next
                         # round is planned from a reason and not from a guess.
                         record["generation_failure"] = str(exc)

@@ -15,18 +15,17 @@ local reply-policy contract, Python implementation, tests and protected replay.
 
 ## Current truth
 
-- Reply asks are derived once before generation by
-  `permitted_asks_for_turn`; the prompt and deterministic guards consume the
-  same immutable set.
+- Reply asks are derived once before generation by `permitted_asks_for_turn`;
+  the prompt and deterministic guards consume the same immutable set.
 - The name ask is state-owned. `customer_name_asked` is recorded only when an
   ask actually reaches the customer, and never reconstructed from previous
   assistant text. `name_chase` reads that slot itself, not the permission
   derived from it. The name gate is the one re-elicitation trigger:
   `_store_name_gate_pending_request` clears the slot when it parks a customer
   request behind the name, so the guard cannot remove the gate's own question.
-- A name present in the current inbound message participates in the same
-  current-message facts used by rendering and later persistence. A first-turn
-  signature therefore cannot receive another name question.
+  A name in the current inbound message participates in the same
+  current-message facts used by rendering and persistence, so a first-turn
+  signature cannot receive another name question.
 - The opening guard recognises an introduction as our persona *and* our company,
   after URLs are excluded, in Latin or Arabic script. It removes at most one
   sentence and preserves the whole model reply when removal would leave no
@@ -41,12 +40,12 @@ local reply-policy contract, Python implementation, tests and protected replay.
   outcomes fall back to the validated deterministic grounding repair.
 - A fallback containing only Noor's own opening plus a question creates the
   manager handoff. A substantive fallback is sent without a handoff.
-- `run_repair_judge` notifies on failure by default; only the diagnostic replay
+- `run_repair_judge` notifies on failure by default; only an offline diagnostic
   passes `notify_on_failure=False`. Production keeps the page: an unavailable
   judge no longer costs the customer their reply, but a paid vendor going dark
   is still worth hearing about. The protected journal is in the Git common
-  directory and never stores dialog text in the working tree.
-- Guard modes in `src/llm/response_policy.py` did not change.
+  directory and never stores dialog text in the working tree. Guard modes in
+  `src/llm/response_policy.py` did not change.
 - `solution_consultation_directive` carries rules 9 and 10 into the
   presentation turn, which the opening directive never reached. One stage only,
   so the two never share a turn or double their one-question bound, and the
@@ -65,10 +64,11 @@ local reply-policy contract, Python implementation, tests and protected replay.
   be repeated. This is not the self-cancelling condition removed on
   2026-08-08: that one asked the model what it had already said, this one is
   code stating what the reply will begin with.
-- A round survives an upstream rate limit. A 200 carrying an `error` object and
-  no choices produced no completion, so it is retried with backoff and each
-  provider error is recorded; an empty or truncated completion is an answer and
-  is never re-rolled, and a request whose outcome is unknown is never repeated.
+- A round survives a busy provider. A 200 carrying an `error` object and no
+  choices, or a refusal with a busy status, produced no completion, so both are
+  retried with backoff and every provider error is recorded; an empty or
+  truncated completion is an answer and is never re-rolled, a bad request is
+  never repeated, and a request whose outcome is unknown is never repeated.
 - Catalog-supported skus are removed from a reply before the acceptance
   grounding check reads it. The asserted-number pattern reads inside an
   identifier, so `1.2T` in a quoted sku yielded a bare `2` that no price
@@ -92,15 +92,14 @@ local reply-policy contract, Python implementation, tests and protected replay.
 - The repair judge, measured four times on stored dialogs 819 and 789, 60 calls
   and $0.0051 in total, every notification suppressed. D6 (8 calls): the judge
   contributed nothing, 8 of 8 deliveries came from the deterministic fallback.
-  `tj-3h0w` (20): unanchoring works, no answer was byte-identical to the
-  candidate, but delivery was 2 of 20. `tj-3i8m` found why -- a flag arrived as
-  the bare string `future_stock_check` -- and after each flag gained
-  `flagged_sentences` and `rules`, delivery was 20 of 20 with zero handoffs.
-  `tj-b9mg` (32) then read the wording: correct on both dialogs, 8/8 in the
-  confirming round. Two refinements were read and reverted; one produced
-  "assembly is not a service we offer", which is false and which no guard
-  catches. Rules are now written to be safe if quoted, because the judge quotes
-  them almost verbatim. `tj-uhbq`, closed: an approval means the judge read the
+  `tj-3h0w` (20): unanchoring works, but delivery was 2 of 20. `tj-3i8m` found
+  why -- a flag arrived as the bare string `future_stock_check` -- and after
+  each flag gained `flagged_sentences` and `rules`, delivery was 20 of 20 with
+  zero handoffs. `tj-b9mg` (32) then read the wording: correct on both dialogs,
+  8/8 in the confirming round. Two refinements were read and reverted; one
+  produced "assembly is not a service we offer", which is false and which no
+  guard catches. Rules are now written to be safe if quoted, because the judge
+  quotes them almost verbatim. `tj-uhbq`, closed: an approval means the judge read the
   reply and found it supported, so the original text is what we send.
 - `tj-7gpw`: every number this project has measured, the 18.94 baseline
   included, was scored on a prompt missing two blocks production always sends:
@@ -114,20 +113,25 @@ local reply-policy contract, Python implementation, tests and protected replay.
   [12.0, 17.1]; raw mean 10.6; 11 openings against a 9.6 ceiling reach 7.2
   (75% of it) and 9 openings against a 30.0 ceiling reach 23.5 (78%). Zero
   critical failures, 20/20 in the customer's language, accepted.
-  `generation_prompt_set_digest` is
-  `61b6c9229ab295a41b71ad2b8097e8e111949c142916a8449855dbc362be8e15`, which
-  differs from every earlier round because those rounds sent a prompt
-  production does not send. This round is the new baseline; the 18.94 figure is
-  not comparable to it, and neither is any paired delta taken against it.
-  Three earlier attempts at this round died on upstream rate limits and cost
-  thirteen further generations, journalled in the `-` and `-b-` directories.
-- What the reading found: 18 of 20 replies say Treejar's line of business
-  twice, three of them as a lower-case fragment copied out of the directive's
-  own example clause, because the directive still claimed the opening does not
-  say what Treejar does. That is `tj-fcv8`, fixed but not yet re-measured. And
-  19 of 20 never ask how to address the customer although the ask was permitted
-  every time, which is rule 3 at nearly zero across the set and is not yet
-  opened as work.
+  `generation_prompt_set_digest` is `61b6c9229ab295a4…`, which differs from
+  every earlier round because those rounds sent a prompt production does not
+  send. This round is the new baseline; 18.94 is not comparable to it. Three
+  earlier attempts died on upstream rate limits, journalled beside it.
+- What that reading found: 18 of 20 replies said Treejar's line of business
+  twice, three as a lower-case fragment copied out of the directive's own
+  example clause. That is `tj-fcv8`.
+- The paired round, `tj-fcv8-paired-b-20260812`: same twenty openings, same
+  reader, same prompt, only the directive changed. Twenty generations, no
+  repair call, $0.0036. Rule 7 moves +0.45 (1.50 to 1.95), rule 2 +0.15, rule 4
+  +0.15; the fragments are gone, 0 against 3, and one reply of twenty still
+  doubles. Weighted mean 14.6 to 15.0, and the low-ceiling band from 75% of its
+  ceiling to 82%. Rule 5 moves the other way, -0.15: three replies traded "what
+  are you furnishing" for a product menu or a width choice. That is one reader
+  on twenty openings and it is not chased, but it is recorded rather than
+  rounded away. Rules 3, 8 and 9 did not move at all.
+- Rule 3 is 0.20 of 2 in both rounds: 19 of 20 replies never ask how to address
+  the customer although the ask was permitted every time. Not yet opened as
+  work.
 - No corpus text, request body or reply body is tracked. Durable evidence uses
   dialog ids, integers and digests only.
 
@@ -149,10 +153,11 @@ local reply-policy contract, Python implementation, tests and protected replay.
 - Paid calls: eight for D6 plus twenty authorized for `tj-3h0w`, all on stored
   dialogs 819 and 789, all with the failure page suppressed. The owner then
   authorized a re-baseline round on the frozen twenty on 2026-08-12, followed
-  by `tj-ge07`; the re-baseline is spent, at $0.0054 plus $0.0012 lost to the
-  three rate-limited attempts. No paid call outside `tj-ge07` is permitted
-  without new authority, and the paired round that would confirm `tj-fcv8` is
-  not among them.
+  by `tj-ge07`, and on the same day authorized the paired `tj-fcv8` round and
+  the `tj-ge07` baseline as one block. Spent so far: $0.0054 for the
+  re-baseline, $0.0036 for the paired round, and $0.0020 lost to four attempts
+  killed by upstream 429s and a 503. The `tj-ge07` baseline is authorized and
+  not yet taken. Nothing else is.
 - The canonical runtime target remains `https://noor.starec.ai`; it was not
   contacted or changed.
 
@@ -165,10 +170,8 @@ local reply-policy contract, Python implementation, tests and protected replay.
 
 ## Next recommended
 
-Next stage id: not opened
-
-Recommended action: select the next open Beads goal from current repository
-truth. Do not push or deploy this stage without new authority.
+Next stage id: not opened. Recommended action: `tj-ge07` part two, the second
+turn in the harness. Do not deploy without new authority.
 
 ## Starter prompt for next orchestrator
 
@@ -177,9 +180,6 @@ current repository truth.
 
 ## Explicit defers
 
-- `tj-fcv8`: the directive fix is delivered and unverified. Its acceptance asks
-  for a paired round on the same twenty openings, and no paid call is
-  authorized for it.
 - `tj-ge07`: the frozen two-turn set exists, `tj-ge07-two-turn-20260812`, seed
   `20260812`, twenty scenarios over five managers, stored human mean raw total
   5.2 with a manager-cluster interval of [1.43, 6.05]. The manifest is tracked
