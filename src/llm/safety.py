@@ -205,6 +205,12 @@ class LLMPathPolicy:
     # schema requires and the call fails with nothing to show for the spend.
     # This belongs to the path rather than the model id -- the same vendor can
     # be worth thinking on one job and not another.
+    #
+    # It is a request, not a guarantee. Asking `z-ai/glm-5.2` to stop thinking
+    # was measured on 2026-08-12 and it does not: `enabled: false`,
+    # `effort: low` and `max_tokens: 256` all left completion at ~1430 tokens.
+    # Where thinking cannot be declined it has to be afforded, so a path that
+    # sets this must still budget as though it were ignored.
     reasoning_enabled: bool | None = None
 
 
@@ -305,16 +311,21 @@ _POLICIES: dict[str, LLMPathPolicy] = {
     PATH_RESPONSE_REPAIR_JUDGE: LLMPathPolicy(
         path=PATH_RESPONSE_REPAIR_JUDGE,
         scope="non_core",
-        # The judge returns a whole rewritten reply plus a rationale, so 800
-        # was tight before anything else was drawn from it.
-        max_tokens=1200,
+        # Measured, not estimated. Replaying the exact request that failed on
+        # 2026-08-11 twelve times shows a complete answer costs 720-1494
+        # completion tokens: about 300 are the JSON the schema wants and the
+        # rest is reasoning this vendor bills for and never returns. 800 could
+        # not hold it at all, and 1200 held it twice in four. Every failure was
+        # the output schema rejecting a truncated answer, never the provider.
+        # A ceiling is only spent when it is used.
+        max_tokens=2000,
         # Halved on 2026-08-11 when the repair path gained a second attempt.
         # The customer waits for this on their own turn, so the budget is the
         # whole repair, not one call: 2 x 20s is under the 45s one attempt was
         # already allowed. `max_attempts` stays 1 because the retry lives in
         # `review_flagged_reply`, where the paid-call cap can count each try.
         timeout_seconds=20.0,
-        output_tokens_limit=1200,
+        output_tokens_limit=2000,
         total_tokens_limit=6000,
         request_limit=1,
         max_attempts=1,

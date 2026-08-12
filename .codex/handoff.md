@@ -1,13 +1,13 @@
 # Orchestrator Handoff
 
-Updated: 2026-08-11
+Updated: 2026-08-12
 Current branch: `main`
-Current stage id: `tj-0s42-repair-retry`
-Status: the build scores 15.3/30 weighted on the frozen twenty. The repair
-path now retries once and records what actually failed.
+Current stage id: `tj-lj09-glm-proof`
+Status: the build scores 15.3/30 weighted on the frozen twenty. The repair path
+retries once, records what failed, and can now afford the answer it asks for.
 
-Documentation: no external/versioned boundary — this stage changes first-party
-Python prompt and policy text and uses an existing provider client.
+Documentation: no external/versioned boundary — the vendor's token behaviour
+was measured against the live endpoint rather than read from a document.
 
 ## Current truth
 
@@ -88,7 +88,7 @@ Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
 
 ## Verification
 
-- Current gates at `tj-0s42`: Ruff and format clean over `src/ tests/ scripts/`;
+- Current gates at `tj-lj09`: Ruff and format clean over `src/ tests/ scripts/`;
   Mypy clean over 174 source files; Pytest `3619 passed, 19 skipped`; process
   verification and stage closeout passed.
 - Protected replay, run from `scripts/corpus_bridge/replay_policy_chain.py`:
@@ -96,12 +96,13 @@ Each closed child has a validated artifact under `.codex/stages/*/artifacts/`.
   `grounding_output` flag on dialog 789 is `tj-n7p4.3`'s recorded change.
 - `test_llm_grounding_output.py` has stayed byte-identical through every stage
   since `tj-mshi.4` and passes all 107 tests.
-- Stage closeouts across `tj-mshi`, `tj-n7p4`, `tj-t6ug`, `tj-vhto` and
-  `tj-0s42` passed the affected-package, security, integration and
+- Stage closeouts across `tj-mshi`, `tj-n7p4`, `tj-t6ug`, `tj-vhto`, `tj-0s42`
+  and `tj-lj09` passed the affected-package, security, integration and
   database/migration groups, plus documentation, project-index,
   blocking-review, cleanup and debt checks.
 - Paid calls to date: `tj-mshi.5` $0.005458, `tj-n7p4` $0.006709, `tj-vhto`
-  $0.005386. `tj-t6ug` and `tj-0s42` made none.
+  $0.005386, `tj-lj09` $0.058492 over 12 replayed calls. `tj-t6ug` and
+  `tj-0s42` made none.
 
 ## The measured round, `tj-vhto`
 
@@ -119,9 +120,16 @@ repair-judge call, zero scoring calls, $0.005386**. Report:
   the earlier round's +0.50 raw as a result.
 - Five openings carry all the movement: 819 at -22.5 is a failed repair call,
   28 at -12.2 is reader drift, 366 at +5.6 is generation variance. `tj-0s42`
-  fixed the first: one bounded counted retry, the failure class recorded
-  instead of blamed on the provider, reasoning off for that path and its
-  budget at 1200 tokens. The cause remains unproved until it fires again.
+  fixed the first and `tj-lj09` proved the cause by replaying the identical
+  request twelve times: the provider was never down, every failure was our
+  output schema rejecting a truncated answer, a complete answer costs 720-1494
+  completion tokens, and the path allowed 800. Budget now 2000, 4/4 live.
+  Asking GLM 5.2 not to think does nothing — `enabled: false`, `effort: low`
+  and `max_tokens: 256` all leave completion near 1430 — so a reasoning switch
+  is a request and a path that sets one must budget as if ignored.
+- Open for the owner: a repair call costs ~$0.005 against $0.000084 to generate
+  the reply it repairs. Repair is 60x writing, so this path's firing rate is a
+  product question.
 - Criticals 1 to 1 against both baselines, the one being `tj-2p4c`. Rules 14
   and 15 applicable on 0/20 again; `tj-ge07`.
 
@@ -170,8 +178,8 @@ passed. The **repair** judge is a different thing, paid, and fires on a flag.
 
 ## Next recommended
 
-Next stage id: not opened; first candidate `tj-2m5m`. `tj-t6ug`, `tj-vhto` and
-`tj-0s42` are accepted.
+Next stage id: not opened; first candidate `tj-2m5m`. `tj-t6ug`, `tj-vhto`,
+`tj-0s42` and `tj-lj09` are accepted.
 Recommended action: start a new task from current Beads truth for `tj-2m5m`,
 then `tj-swgu`, `tj-vz7o.12`, `tj-wvo4`, and `tj-odeq`.
 

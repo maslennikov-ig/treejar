@@ -1,0 +1,24 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-lj09",
+  "source_kind": "beads",
+  "source_id": "tj-lj09",
+  "source_digest": "87625a235c0b68d7f687e91787328f99230cb49ea319e3ca5a79a22b2a6c27c6",
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "text": "The failure recorded as provider_unavailable on 2026-08-11 is replayed from the identical stored request and named by evidence rather than by assumption.",
+      "text_digest": "534d24b0f88dd92360164c185fca1faf3ad6d6d8ee85b93144724a26da13860d"
+    },
+    {
+      "criterion_id": "AC-02",
+      "text": "The repair path's token budget is set from the measured cost of a complete answer, not from an estimate, and the shipped setting is confirmed over repeated live calls.",
+      "text_digest": "235251fee5727c9cad19c87d76bfdf4c45bafdb915682c2426224e76ed5c933f"
+    },
+    {
+      "criterion_id": "AC-03",
+      "text": "Whatever the replay refutes is corrected in the code comments, tests and report that carry the old story, including the earlier claim that disabling reasoning was the fix.",
+      "text_digest": "c70ae73503a3dfe263d18b6a45a5331a192fbfd0136d9588d4c4cf4d4cf3b36d"
+    }
+  ]
+}

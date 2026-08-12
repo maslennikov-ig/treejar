@@ -694,14 +694,21 @@ def test_the_repair_budget_belongs_to_the_whole_repair_not_one_call() -> None:
     assert policy.timeout_seconds * REPAIR_JUDGE_ATTEMPTS <= 45.0
 
 
-def test_the_repair_judge_does_not_pay_for_thinking_it_cannot_afford() -> None:
-    """GLM 5.2 advertises `reasoning` and draws it from the same `max_tokens`.
+def test_the_repair_judge_can_afford_the_answer_it_asks_for() -> None:
+    """The budget is measured against the request that actually failed.
 
-    A reasoning budget and a structured answer competing for 800 tokens is a
-    call that can fail with nothing to show for the spend, and until this
-    round every such failure was recorded as the provider being down. The
-    switch is on the path, not the model id: the same vendor scores rounds
-    elsewhere, where thinking is worth paying for.
+    Dialog 819's repair call was replayed twelve times on 2026-08-12. A
+    complete answer costs 720-1494 completion tokens: roughly 300 are the JSON
+    the schema wants, and the rest is reasoning GLM 5.2 bills for and never
+    returns. 800 could not hold it once, 1200 held it twice in four, and every
+    failure was the output schema rejecting a truncated answer -- the provider
+    was up the whole time.
+
+    `reasoning_enabled` stays declared because the intent is right and the
+    vendor may honour it later, but it did not fix this and must not be
+    mistaken for the fix: `enabled: false`, `effort: low` and
+    `max_tokens: 256` all left completion around 1430 tokens. Thinking that
+    cannot be declined has to be afforded.
     """
 
     policy = policy_for_path(PATH_RESPONSE_REPAIR_JUDGE)
@@ -711,7 +718,12 @@ def test_the_repair_judge_does_not_pay_for_thinking_it_cannot_afford() -> None:
 
     assert policy.reasoning_enabled is False
     assert body["reasoning"] == {"enabled": False}
-    assert policy.max_tokens >= 1200
+    assert policy.max_tokens >= 2000
+    assert policy.output_tokens_limit is not None
+    assert policy.output_tokens_limit >= 2000
+    # The observed worst case must still fit under the per-call timeout, and
+    # 1494 tokens took 15.3s of the 20s allowed.
+    assert policy.timeout_seconds >= 20.0
 
 
 def test_a_path_that_says_nothing_about_reasoning_leaves_the_provider_alone() -> None:

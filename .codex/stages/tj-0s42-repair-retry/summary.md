@@ -60,6 +60,10 @@ The reasoning diagnosis is a hypothesis. The stored evidence cannot separate
 the causes — that was the defect being fixed. The next occurrence will name
 itself.
 
+**Settled on 2026-08-12 by `tj-lj09`, and it was wrong.** The provider was
+never down and disabling reasoning fixed nothing; the token budget was the
+whole cause. See `.codex/stages/tj-lj09-glm-proof/summary.md`.
+
 ## Verification
 
 - Focused red: the fallback test failed on `calls == 1` when the retry landed.

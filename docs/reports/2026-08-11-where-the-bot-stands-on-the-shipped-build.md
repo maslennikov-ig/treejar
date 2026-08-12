@@ -87,17 +87,37 @@ was not.
 
 ## The two findings
 
-**The repair judge has no retry — `tj-0s42`.** Dialog 819 asked a good, detailed
-question: a two-person workstation, mobile drawers, delivery in two to three
-days, and whether assembly is included. The reply raised one grounding flag,
-the single second-vendor call failed with `provider_unavailable`, and D4 did
-exactly what it was built to do — replaced the draft with a manager-handoff
-notice and escalated. The customer received a sentence acknowledging none of
-what they asked, and it scored 7.5 against a set mean of 15.3.
+**The repair judge could not afford the answer it asked for — `tj-0s42`,
+`tj-lj09`.** Dialog 819 asked a good, detailed question: a two-person
+workstation, mobile drawers, delivery in two to three days, and whether
+assembly is included. The reply raised one grounding flag, the single
+second-vendor call failed, and D4 did exactly what it was built to do —
+replaced the draft with a manager-handoff notice and escalated. The customer
+received a sentence acknowledging none of what they asked, and it scored 7.5
+against a set mean of 15.3.
 
-The fallback is right. Reaching for it after one failed call is not. This was
-the first time the repair path fired in any measured round, and it failed
-open on the first attempt.
+The round recorded that failure as `provider_unavailable`. That was wrong, and
+nothing in the record had ever established it: two call sites caught every
+exception and stamped it with that one label.
+
+Replaying the identical request twelve times on 2026-08-12 — same digest,
+`a39e8bd0…` — settles it. The provider was up throughout. Every failure was our
+own output schema rejecting a truncated answer. A complete answer from this
+model costs 720–1494 completion tokens, of which about 300 are the JSON we
+asked for and the rest is reasoning GLM 5.2 bills for and never returns; the
+path allowed 800. At 800 the call cannot succeed. At 1200 it succeeded twice in
+four. At 2000 it succeeded eight times in eight, worst case 15.3s of the 20s
+allowed.
+
+Two things follow that are worth more than the fix. Asking this vendor to stop
+thinking does not work — `enabled: false`, `effort: low` and `max_tokens: 256`
+all left completion around 1430 tokens — so on this path thinking has to be
+afforded rather than declined. And a repair call costs about $0.005, against
+$0.000084 to generate the reply it is repairing: repairing a turn costs sixty
+times what writing it does. That is a product decision, not a tuning one.
+
+The fallback is right. Reaching for it after one failed call is not, and
+blaming the vendor for our own budget is worse.
 
 **The root judge drifts between sittings — `tj-4q79`.** Dialog 28 lost 12.2
 points with no code path to explain it. This reading penalised asking for a
