@@ -6,7 +6,9 @@ Current stage id: `tj-q1a2-one-reply-owner`
 Status: D1-D6 are delivered locally with all requested gates green, and the
 post-acceptance audit fix `tj-w224` is delivered on top of them. `main` is
 pushed to `origin/main` with CI green. `tj-9e15` and `tj-3h0w` are closed. No
-deploy or runtime mutation was authorized or performed.
+deploy or runtime mutation was authorized or performed. A measured round was
+taken on 2026-08-12 with the owner's authority, read blind by the root judge,
+and it found a customer-visible defect that no earlier round could have seen.
 
 Documentation: no external/versioned boundary — the behavior is owned by the
 local reply-policy contract, Python implementation, tests and protected replay.
@@ -29,9 +31,8 @@ local reply-policy contract, Python implementation, tests and protected replay.
   after URLs are excluded, in Latin or Arabic script. It removes at most one
   sentence and preserves the whole model reply when removal would leave no
   meaningful text. Recognising the company alone was shipped and reverted in
-  `tj-w224`: it deleted answering sentences such as "Treejar supplies new office
-  furniture, but we don't buy customer-owned tables", and it also stripped the
-  canonical opening off quotation replies.
+  `tj-w224`: it deleted answering sentences and stripped the canonical opening
+  off quotation replies.
 - `question_form` runs on first turns under its unchanged `REDUCING` contract
   and still proves `only_asks_were_dropped`. `name_chase` remains first-turn
   gated because the recorded evidence shows that lifting it changes nothing.
@@ -58,6 +59,22 @@ local reply-policy contract, Python implementation, tests and protected replay.
   `permitted_asks_for_turn` with the frozen set's own properties. Both come
   from the product functions rather than restated text, so a round follows them
   when they change.
+- `consultative_opening_directive` takes `opening_states_the_offer`. The caller
+  knows whether the deterministic opening will be prepended to this reply, so
+  on a first turn the directive says the offer is already stated and must not
+  be repeated. This is not the self-cancelling condition removed on
+  2026-08-08: that one asked the model what it had already said, this one is
+  code stating what the reply will begin with.
+- A round survives an upstream rate limit. A 200 carrying an `error` object and
+  no choices produced no completion, so it is retried with backoff and each
+  provider error is recorded; an empty or truncated completion is an answer and
+  is never re-rolled, and a request whose outcome is unknown is never repeated.
+- Catalog-supported skus are removed from a reply before the acceptance
+  grounding check reads it. The asserted-number pattern reads inside an
+  identifier, so `1.2T` in a quoted sku yielded a bare `2` that no price
+  supported. An invented identifier still carries whatever it asserts.
+- The public acceptance summary names the judge that read the round, taken from
+  the results rather than asserted.
 
 ## Protected evidence
 
@@ -72,49 +89,19 @@ local reply-policy contract, Python implementation, tests and protected replay.
 - Dialogs 28, 436, 789, 875 and 1291 were read individually. The differences
   are bounded to duplicate identity/name asks or question folding described in
   the stage artifact.
-- D6 used exactly eight approved repair-judge calls: four each for dialogs 819
-  and 789, $0.00066402 total, zero failed calls, zero unusable stubs and all
-  eight notifications disabled. Dialog 789 escalated 4/4 by the explicit
-  opening-plus-question rule; dialog 819 escalated 0/4 and shipped a
-  substantive reply. Read honestly, the judge contributed nothing in 8 of 8:
-  every correction was rejected, 819 four times as `correction_still_flagged`
-  and 789 four times as `correction_has_no_answer`, and all eight deliveries
-  came from the deterministic fallback. Whether the paid judge earns its place
-  on this path was then measured in `tj-3h0w`.
-- `tj-3h0w`, twenty approved calls under current code, $0.001573056, zero
-  failures and zero unusable stubs: no judge answer was byte-identical to the
-  deterministic candidate (0/20), so unanchoring works. Delivery is thin.
-  Dialog 819 delivered 0/10 judge corrections, 8/10 rejected as
-  `correction_still_flagged`; dialog 789 delivered 2/10. Eighteen of twenty
-  deliveries came from the deterministic fallback. The judge also approved a
-  guard-flagged 819 reply 2/10; the owner kept that branch as designed
-  (`tj-uhbq`, closed): an approval means the judge read the reply and found it
-  supported, so the original text is what we send.
-- `tj-3i8m` explains the thin delivery. Unanchoring removed the deterministic
-  candidate, which had been the only thing implicitly telling the judge what
-  was wrong; a flag arrived as the bare string `future_stock_check`. Each flag
-  now carries `flagged_sentences`, the exact sentences the classifier matched,
-  and `rules`, one plain statement of what each violation protects. Neither is
-  a rewrite.
-- `tj-3i8m` re-measured on twenty approved calls, $0.00165276, zero failures:
-  the judge's own repair reached the customer 20 of 20, against 2 of 20 before,
-  with zero manager handoffs and zero rejected corrections. Dialog 789 went
-  from eight handoffs in ten to none: the judge writes the supported answer the
-  deterministic repair cannot, because deleting the flagged sentences there
-  leaves no answer at all. Dialog 819 is the honest half: all ten corrections
-  are byte-identical to the deterministic candidate, so the paid call buys
-  nothing on that shape. Not verified: the wording of the 789 repairs. The
-  journal stores digests and lengths only, by design, and the delivered lengths
-  are 324-427 characters against a 169-character no-answer candidate.
-- `tj-b9mg` then read them: four rounds, 32 calls, $0.0028. The shipped wording
-  is correct on both dialogs, 8/8 in the confirming round. 789 says plainly
-  that we do not buy customer-owned furniture and pivots to what we sell; 819
-  is the safe minimal repair. Two attempted refinements were read and reverted.
-  Telling the judge to put a rule "in its own voice" produced "assembly is not
-  a service we offer", which is false and which no guard catches; warning it
-  off that made 789 stop answering the question. Rules are now written to be
-  safe if quoted, because the judge quotes them almost verbatim, and
-  `replay_repair_judge.py --record-text` keeps the next round readable.
+- The repair judge, measured four times on stored dialogs 819 and 789, 60 calls
+  and $0.0051 in total, every notification suppressed. D6 (8 calls): the judge
+  contributed nothing, 8 of 8 deliveries came from the deterministic fallback.
+  `tj-3h0w` (20): unanchoring works, no answer was byte-identical to the
+  candidate, but delivery was 2 of 20. `tj-3i8m` found why -- a flag arrived as
+  the bare string `future_stock_check` -- and after each flag gained
+  `flagged_sentences` and `rules`, delivery was 20 of 20 with zero handoffs.
+  `tj-b9mg` (32) then read the wording: correct on both dialogs, 8/8 in the
+  confirming round. Two refinements were read and reverted; one produced
+  "assembly is not a service we offer", which is false and which no guard
+  catches. Rules are now written to be safe if quoted, because the judge quotes
+  them almost verbatim. `tj-uhbq`, closed: an approval means the judge read the
+  reply and found it supported, so the original text is what we send.
 - `tj-7gpw`: every number this project has measured, the 18.94 baseline
   included, was scored on a prompt missing two blocks production always sends.
   On a greeting opening that is the substantive-reply directive, which fires on
@@ -126,17 +113,38 @@ local reply-policy contract, Python implementation, tests and protected replay.
   baseline before any build change is measured on it. The recorded
   `generation_prompt_set_digest` will differ from every earlier round, so the
   break is visible in the evidence itself.
+- The measured round of 2026-08-12, `tj-7gpw-parity-baseline-c-20260812`:
+  twenty Luna generations plus one repair-judge call, $0.0054, judged by the
+  root orchestrator reading blind. Weighted mean 14.6/30, 95% interval
+  [12.0, 17.1]; raw mean 10.6; 11 openings against a 9.6 ceiling reach 7.2
+  (75% of it) and 9 openings against a 30.0 ceiling reach 23.5 (78%). Zero
+  critical failures, 20/20 in the customer's language, accepted.
+  `generation_prompt_set_digest` is
+  `61b6c9229ab295a41b71ad2b8097e8e111949c142916a8449855dbc362be8e15`, which
+  differs from every earlier round because those rounds sent a prompt
+  production does not send. This round is the new baseline; the 18.94 figure is
+  not comparable to it, and neither is any paired delta taken against it.
+  Three earlier attempts at this round died on upstream rate limits and cost
+  thirteen further generations, journalled in the `-` and `-b-` directories.
+- What the reading found: 18 of 20 replies say Treejar's line of business
+  twice, three of them as a lower-case fragment copied out of the directive's
+  own example clause, because the directive still claimed the opening does not
+  say what Treejar does. That is `tj-fcv8`, fixed but not yet re-measured. And
+  19 of 20 never ask how to address the customer although the ask was permitted
+  every time, which is rule 3 at nearly zero across the set and is not yet
+  opened as work.
 - No corpus text, request body or reply body is tracked. Durable evidence uses
   dialog ids, integers and digests only.
 
 ## Verification
 
-- Focused D1-D5 set: 960 passed. Full `tests/test_llm_engine.py`: 823 passed.
-  Focused D6/response-policy set: 102 passed.
 - Ruff check and format are clean over `src/ tests/ scripts/`; Mypy is clean over
-  174 source files; full Pytest is `3668 passed, 19 skipped`; process
-  verification passed. Re-run after `tj-w224`, `tj-9e15` and `tj-7gpw`. GitHub
-  CI on `origin/main` is green through `783d223`.
+  174 source files; full Pytest is `3678 passed, 19 skipped`; process
+  verification passed. Re-run after `tj-w224`, `tj-9e15`, `tj-7gpw`, `tj-1fad`,
+  `tj-2p4c`, `tj-9dp2` and `tj-fcv8`. The protected policy replay aggregate is
+  unchanged at `825f26ca85533b6d…` against the frozen `1fc87c04…` baseline:
+  today's work is generation-side and harness-side, and the deterministic reply
+  chain did not move.
 
 ## Constraints
 
@@ -144,8 +152,12 @@ local reply-policy contract, Python implementation, tests and protected replay.
   No PR, deploy, production/staging mutation, model-configuration change or
   real-user message is authorized or performed.
 - Paid calls: eight for D6 plus twenty authorized for `tj-3h0w`, all on stored
-  dialogs 819 and 789, all with the failure page suppressed. No further paid
-  call is permitted without new authority.
+  dialogs 819 and 789, all with the failure page suppressed. The owner then
+  authorized a re-baseline round on the frozen twenty on 2026-08-12, followed
+  by `tj-ge07`; the re-baseline is spent, at $0.0054 plus $0.0012 lost to the
+  three rate-limited attempts. No paid call outside `tj-ge07` is permitted
+  without new authority, and the paired round that would confirm `tj-fcv8` is
+  not among them.
 - The canonical runtime target remains `https://noor.starec.ai`; it was not
   contacted or changed.
 
@@ -169,6 +181,12 @@ Use $orchestrator-stage only after selecting the next open Beads goal from
 current repository truth.
 
 ## Explicit defers
+
+- `tj-fcv8`: the directive fix is delivered and unverified. Its acceptance asks
+  for a paired round on the same twenty openings, and no paid call is
+  authorized for it.
+- Rule 3, the name ask, is missing from 19 of 20 openings while permitted every
+  time. Read in today's round, not yet opened as work, and not fixed.
 
 - `tj-2m5m.4`: separate out-of-scope discovery work remains tracked in Beads.
 - `tj-2m5m.4`: the prompt half is delivered and unmeasured. The owner decided

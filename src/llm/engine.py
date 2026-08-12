@@ -543,7 +543,11 @@ CROSS_SELL_VERIFICATION_DIRECTIVES = (
 )
 
 
-def _turn_runtime_directives(*texts: str, sales_stage: str = "") -> tuple[str, ...]:
+def _turn_runtime_directives(
+    *texts: str,
+    sales_stage: str = "",
+    opening_states_the_offer: bool = False,
+) -> tuple[str, ...]:
     """Directives this customer turn earns, in one place.
 
     All of them are demand-side: they read the customer request and the typed
@@ -576,7 +580,14 @@ def _turn_runtime_directives(*texts: str, sales_stage: str = "") -> tuple[str, .
     if candidates and all(
         earns_consultative_opening(text, sales_stage=sales_stage) for text in candidates
     ):
-        directives.append(consultative_opening_directive())
+        directives.append(
+            consultative_opening_directive(
+                # The first-turn opening is prepended after generation and
+                # already states the offer. Asking for it again is what made
+                # nearly every opening say it twice.
+                opening_states_the_offer=opening_states_the_offer,
+            )
+        )
         # The fork. Widening a seven-chair order is friction; widening a
         # fit-out is the job. Same stand-down as the directive above, so a
         # customer who has narrowed is still left alone.

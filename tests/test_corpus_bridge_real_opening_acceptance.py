@@ -136,7 +136,7 @@ def test_public_summary_contains_no_opening_or_response_text() -> None:
     assert public["coverage"] == {
         "frozen_openings": 20,
         "luna_responses": 20,
-        "glm_evaluations": 20,
+        "judge_readings": 20,
         "critical_failures": 0,
     }
     assert public["weighted_score_tenths"] == {
@@ -310,7 +310,13 @@ def test_the_round_sends_the_directives_the_opening_earns() -> None:
     from src.llm.engine import _turn_runtime_directives
 
     opening = "We are fitting out a new office for 12 people"
-    earned = _turn_runtime_directives(opening, sales_stage="greeting")
+    earned = _turn_runtime_directives(
+        opening,
+        sales_stage="greeting",
+        # The frozen set is one first-turn opening, and the canonical opening
+        # is prepended to every reply in it.
+        opening_states_the_offer=True,
+    )
     assert earned, "this opening is supposed to earn the consultative directives"
 
     system = str(
@@ -423,6 +429,38 @@ async def test_an_empty_completion_is_not_retried(
 
     with pytest.raises(ValueError, match="empty response"):
         await _generate_with_backoff(SimpleNamespace(), {})  # type: ignore[arg-type]
+
+
+def test_the_summary_names_the_judge_that_actually_read_the_round() -> None:
+    """A root-judged round used to report GLM as its judge."""
+    results = [_result(dialog_id) for dialog_id in range(1, 21)]
+    for row in results:
+        row["judge_model"] = ROOT_JUDGE
+
+    public = build_public_summary(results, bootstrap_samples=200, seed=17)
+
+    assert public["judge_model"] == ROOT_JUDGE
+
+
+def test_a_copied_sku_is_not_a_hallucinated_number() -> None:
+    """One quoted identifier failed a whole round for hallucination."""
+    case = {
+        "opening": "can you share details of full height storage",
+        "anchor_line": None,
+        "catalog_evidence": [
+            {
+                "name": "Height Cabinet glass Skyland NOVO",
+                "price_aed": 1274.0,
+                "sku": "OF-YED-NOVO-Cabinet-63LW-1.2T-16-white",
+            }
+        ],
+    }
+
+    quoted = "Height Cabinet glass Skyland NOVO — AED 1,274\nSKU: `OF-YED-NOVO-Cabinet-63LW-1.2T-16-white`"
+    assert find_ungrounded_numbers(quoted, case) == []
+
+    invented = "SKU: `ZZ-9999-4.7T-11-black`"
+    assert find_ungrounded_numbers(invented, case) == ["7"]
 
 
 def test_the_round_never_pages_a_manager_about_its_own_repair_calls() -> None:

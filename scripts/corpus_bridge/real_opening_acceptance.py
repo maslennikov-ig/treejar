@@ -266,7 +266,7 @@ ACCEPTANCE_CONTRACT: dict[str, Any] = {
     "beads": "tj-vz7o.10.2",
     "required": [
         "20/20 non-empty Luna responses",
-        "20/20 valid GLM evaluations",
+        "20/20 valid judge readings",
         "20/20 responses in the customer's language",
         "zero critical failures: a fabricated figure is a defect at any score",
     ],
@@ -357,11 +357,14 @@ def build_public_summary(
     return {
         "schema_version": "treejar-real-opening-acceptance-public/v1",
         "generation_model": "openai/gpt-5.6-luna",
-        "judge_model": "z-ai/glm-5.2",
+        # Read from the results, not asserted. A root-judged round used to
+        # report GLM as its judge, which is the one fact a reader of this
+        # artifact most needs to be true.
+        "judge_model": str(results[0]["judge_model"]),
         "coverage": {
             "frozen_openings": 20,
             "luna_responses": len(results),
-            "glm_evaluations": len(results),
+            "judge_readings": len(results),
             "critical_failures": critical_failure_count,
         },
         "weighted_score_tenths": {
@@ -470,7 +473,11 @@ def build_generation_messages(
         STAGE_RULES["greeting"].strip(),
         harness_contract,
     ]
-    directives = _turn_runtime_directives(opening, sales_stage="greeting")
+    directives = _turn_runtime_directives(
+        opening,
+        sales_stage="greeting",
+        opening_states_the_offer=True,
+    )
     if directives:
         block = "\n".join(f"- {directive}" for directive in directives)
         sections.append(f"[RUNTIME DIRECTIVES]\n{block}")
@@ -1364,10 +1371,36 @@ def _allowed_numbers(case: dict[str, Any]) -> set[str]:
     return derive_quotation_arithmetic(direct)
 
 
+def _without_quoted_skus(response: str, case: dict[str, Any]) -> str:
+    """The reply with the identifiers it copied from the evidence removed.
+
+    A sku is a name, not a claim, but the asserted-token pattern reads inside
+    one: in `OF-YED-NOVO-Cabinet-63LW-1.2T-16-white` the digit after the point
+    is not preceded by a word character, so `1.2T` yields a bare `2` that no
+    price or dimension supports. One copied identifier failed a whole round for
+    hallucination. Only skus present in this turn's evidence are removed, so an
+    invented identifier still carries whatever it asserts.
+    """
+
+    skus = []
+    catalog_evidence = case.get("catalog_evidence")
+    if isinstance(catalog_evidence, list):
+        skus = [
+            str(product["sku"])
+            for product in catalog_evidence
+            if isinstance(product, dict) and product.get("sku")
+        ]
+    for sku in sorted(skus, key=len, reverse=True):
+        response = re.sub(re.escape(sku), " ", response, flags=re.IGNORECASE)
+    return response
+
+
 def find_ungrounded_numbers(response: str, case: dict[str, Any]) -> list[str]:
     asserted = {
         _canonical_numeric_token(token)
-        for token in _extract_asserted_numeric_tokens(response)
+        for token in _extract_asserted_numeric_tokens(
+            _without_quoted_skus(response, case)
+        )
     }
     return sorted(asserted - _allowed_numbers(case))
 

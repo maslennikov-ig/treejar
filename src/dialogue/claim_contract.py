@@ -833,7 +833,7 @@ def earns_consultative_opening(customer_text: str, *, sales_stage: str) -> bool:
     return not _TRANSACTIONAL_NARROWING_RE.search(text)
 
 
-def consultative_opening_directive() -> str:
+def consultative_opening_directive(*, opening_states_the_offer: bool = False) -> str:
     """The three sentences Noor never says.
 
     Measured on 2026-08-07 over all ten stored acceptance transcripts, scored
@@ -878,17 +878,39 @@ def consultative_opening_directive() -> str:
     The bound itself stays: the transcripts are not interrogations, and that is
     the bound working.
 
+    **`opening_states_the_offer`, added 2026-08-12 after `tj-fcv8`.** The
+    escape clause above was removed because the anchor was
+    "Hello, I'm Noor from Treejar." and nothing more, so naming the company and
+    saying what it does really were different acts. `_EN_CAPABILITY` was later
+    added to that anchor and this sentence was never told. The measured round
+    of 2026-08-12 shows the cost: 18 of 20 replies say the line of business
+    twice, and three of them say it as a lower-case fragment copied from the
+    example clause below.
+
+    The caller decides, because the caller knows whether the deterministic
+    opening will be prepended to this reply. That is the difference from the
+    self-cancelling condition of 2026-08-08: this is not the model judging what
+    it has already said, it is code stating what the reply will begin with.
+
     It lives here rather than in the product system prompt, which the stage
     contract freezes.
     """
 
+    offer_clause = (
+        "This reply already opens with a sentence saying that Treejar supplies "
+        "office furniture in the UAE and quotes from its own catalog with "
+        "confirmed prices and stock. That discharges what Treejar offers. Do "
+        "not say it again in any words, and do not begin with a fragment of "
+        "it: spend the reply on what the opening does not cover."
+        if opening_states_the_offer
+        else "In this reply, in one short clause, say what Treejar offers: an "
+        "office furniture supplier in the UAE quoting from its own catalog "
+        "with confirmed prices and stock. The greeting names Treejar but does "
+        "not say what Treejar does, so it does not discharge this."
+    )
     return (
         "You are still building this sale, so do the things a salesperson does "
-        "besides answering. In this reply, in one short clause, say what "
-        "Treejar offers: an office furniture supplier in the UAE quoting from "
-        "its own catalog with confirmed prices and stock. The greeting names "
-        "Treejar but does not say what Treejar does, so it does not discharge "
-        "this. If they have described a team or a "
+        f"besides answering. {offer_clause} If they have described a team or a "
         "workplace, ask what their company does -- in the same sentence as "
         "whatever else you need to know. Knowing the company's name is not "
         "knowing its line of work, so a name they gave you does not answer "

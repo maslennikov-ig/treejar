@@ -469,3 +469,33 @@ def test_a_sku_typed_without_a_space_still_finds_the_product() -> None:
     assert "CH 616" in variants
     assert "CH-616" in variants
     assert "CH616" in variants
+
+
+def test_the_directive_stops_asking_for_what_the_opening_already_said() -> None:
+    """`tj-fcv8`. 18 of 20 openings said Treejar's line of business twice."""
+    when_prepended = consultative_opening_directive(opening_states_the_offer=True)
+    when_absent = consultative_opening_directive(opening_states_the_offer=False)
+
+    assert "Do not say it again in any words" in when_prepended
+    assert "does not discharge this" not in when_prepended
+    # The 2026-08-08 lesson is not undone: where nothing states the offer, the
+    # directive still asks for it in the wording that made it appear at all.
+    assert "does not discharge this" in when_absent
+
+    for directive in (when_prepended, when_absent):
+        assert "at most one question" in directive
+        assert "never offer a discount" not in directive
+
+
+def test_a_first_turn_is_told_its_opening_already_states_the_offer() -> None:
+    """The caller knows what the reply will begin with; the model does not."""
+    from src.llm.engine import _turn_runtime_directives
+
+    opening = "We are fitting out a new office for 12 people"
+    first = _turn_runtime_directives(
+        opening, sales_stage="greeting", opening_states_the_offer=True
+    )
+    later = _turn_runtime_directives(opening, sales_stage="greeting")
+
+    assert any("Do not say it again in any words" in item for item in first)
+    assert any("does not discharge this" in item for item in later)
