@@ -420,6 +420,77 @@ def test_a_folded_ask_list_has_terminal_punctuation(
     assert only_asks_were_dropped(original, folded)
 
 
+@pytest.mark.parametrize(
+    ("item", "terminal"),
+    [
+        # `tj-bzr0`, false positives. A leading interrogative list reads a name
+        # and a month as auxiliaries. An auxiliary only opens a question when a
+        # subject follows it.
+        ("Will Smith's contact", "."),
+        ("May delivery works for you", "."),
+        ("Can Holdings' account number", "."),
+        # ... and the auxiliaries that really are auxiliaries still are.
+        ("Will you need assembly on delivery", "?"),
+        ("May we deliver on a Saturday", "?"),
+        ("Do you have these in black", "?"),
+        ("Is the meeting table included", "?"),
+        # `tj-bzr0`, false negatives. The interrogative is there; it is just
+        # not the first word, or it is an elliptical determiner.
+        ("Approximately how many seats you need", "?"),
+        ("Roughly what budget you are working to", "?"),
+        ("Any preference on the finish", "?"),
+        # Unchanged: a plain noun phrase is a request, not a question.
+        ("the delivery address", "."),
+        ("your approximate budget", "."),
+    ],
+)
+def test_the_folded_item_is_punctuated_the_way_it_reads(
+    item: str,
+    terminal: str,
+) -> None:
+    original = f"To narrow this down, could you share:\n1. {item}\n2. your timeline"
+
+    folded = collapse_question_form(original)
+
+    assert folded.endswith(terminal)
+    # The whole point of `tj-bzr0` being cosmetic: nothing about what survives
+    # the fold may move.
+    assert only_asks_were_dropped(original, folded)
+    assert f"could you share: {item}{terminal}" in folded
+
+
+def test_an_arabic_price_question_is_punctuated_as_one() -> None:
+    """`tj-bzr0`. `بكم` was missing, so a genuine price question read flat."""
+
+    original = "لتحديد الخيارات، يرجى مشاركة:\n1. بكم سعر الكرسي\n2. موعد التسليم"
+
+    folded = collapse_question_form(original, language="ar")
+
+    assert folded.endswith("؟")
+    assert only_asks_were_dropped(original, folded)
+
+
+@pytest.mark.parametrize("source", [S01_TURN_2, R04_TURN_2])
+def test_the_recorded_packet_shapes_fold_exactly_as_they_did(source: str) -> None:
+    """`tj-bzr0` is punctuation only, and these two are the measured shapes.
+
+    S01's surviving item already ends in a question mark, so nothing is added
+    at all. R04's is a noun phrase under "please share:", which was and stays a
+    full stop. Whatever else the rewrite moves, it does not move these.
+    """
+
+    folded = collapse_question_form(source)
+
+    if source is S01_TURN_2:
+        assert "could you share: How many people or workstations do you need" in folded
+        assert folded.count("?") == 1
+    else:
+        assert (
+            "please share: Your preferred desk style - individual desks or benching."
+        ) in folded
+        assert folded.count("?") == 0
+
+
 def test_a_question_above_the_form_does_not_cost_the_fold_its_proof() -> None:
     """The regression `tj-f6yp` shipped: punctuate last, or lose the lead-in.
 

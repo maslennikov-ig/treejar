@@ -58,10 +58,28 @@ _ASK_LIST_LEAD_IN_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
-_QUESTION_ITEM_RE = re.compile(
-    r"^(?:(?:who|what|when|where|why|how|which|whose|can|could|would|should|"
-    r"do|does|did|is|are|was|were|will|may)\b|"
-    r"(?:هل|ما|ماذا|من|متى|أين|كيف|كم|أي|لماذا)\b)",
+# `tj-bzr0`. Three shapes, because one leading-keyword list got both
+# directions wrong: "Will Smith's contact" and "May delivery works for you"
+# were folded with a question mark, while "Approximately how many seats" and
+# "بكم سعر الكرسي" were folded with a full stop.
+#
+# A wh-word opens a question wherever it stands in the item's first clause, so
+# a hedge in front of it does not hide it. `أي` stays out of the leading set
+# because it is also the ordinary "any"; it is reached through the wh-word
+# search below like the rest.
+_QUESTION_LEAD_IN_HEDGE = r"(?:approximately|roughly|about|around|ideally|maybe)\s+"
+_WH_QUESTION_ITEM_RE = re.compile(
+    r"^(?:" + _QUESTION_LEAD_IN_HEDGE + r")?"
+    r"(?:(?:who|what|when|where|why|how|which|whose|any)\b|"
+    r"(?:هل|ما|ماذا|من|متى|أين|كيف|كم|بكم|أي|لماذا)\b)",
+    re.IGNORECASE,
+)
+# An auxiliary is only an auxiliary when a subject follows it. Without this a
+# surname and a month open questions, which is the whole false-positive half.
+_AUXILIARY_QUESTION_ITEM_RE = re.compile(
+    r"^(?:can|could|would|should|do|does|did|is|are|was|were|will|may|shall)\s+"
+    r"(?:i|we|you|he|she|it|they|there|the|this|that|these|those|"
+    r"my|our|your|his|her|its|their|any|some|both|either)\b",
     re.IGNORECASE,
 )
 # A list item is written to be read under a lead-in, so it can end on the
@@ -123,6 +141,24 @@ def collapse_question_form(text: str, *, language: str = "en") -> str:
     return _terminate_folded_ask(reduced, ask, language=language)
 
 
+def _item_reads_as_a_question(item: str) -> bool:
+    """Whether the item, folded onto its lead-in, ends on a question mark.
+
+    Deliberately about the item and not about the lead-in: "could you share:
+    the delivery address." is a request with the requested thing named, and the
+    shipped contract has said so since the fold was written. What `tj-bzr0`
+    changes is only how accurately the item itself is read.
+    """
+
+    stripped = item.strip()
+    if not stripped:
+        return False
+    return bool(
+        _WH_QUESTION_ITEM_RE.match(stripped)
+        or _AUXILIARY_QUESTION_ITEM_RE.match(stripped)
+    )
+
+
 def _terminate_folded_ask(text: str, ask: _FoldedAsk, *, language: str) -> str:
     """Finish the folded line as a sentence, if it survived the inline pass.
 
@@ -133,7 +169,7 @@ def _terminate_folded_ask(text: str, ask: _FoldedAsk, *, language: str) -> str:
 
     if ask.item and ask.item[-1] in _TERMINAL_CHARS:
         return text
-    if _QUESTION_ITEM_RE.match(ask.item):
+    if _item_reads_as_a_question(ask.item):
         terminal = "؟" if is_arabic_customer_language(language) else "?"
     else:
         terminal = "."
