@@ -1,0 +1,105 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-rcg5-semantic-catalog-evidence",
+  "goal_id": "tj-rcg5",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "accepted",
+  "sequence": 1,
+  "acceptance_boundary_id": "semantic-catalog-evidence-parity",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "semantic-retrieval-producer",
+      "protected-evidence-contract",
+      "real-opening-acceptance-consumer",
+      "client-evidence-boundary"
+    ],
+    "risk_models": [
+      "keyword-production-parity-gap",
+      "stale-or-floating-retrieval-evidence",
+      "irrelevant-row-quotation",
+      "protected-catalog-leak",
+      "paid-call-before-preflight"
+    ],
+    "test_environments": [
+      "focused-unit-tests",
+      "temporary-real-pgvector",
+      "protected-frozen-openings"
+    ],
+    "rollback_boundary": "one-local-commit-with-no-production-mutation",
+    "acceptance_proofs": [
+      "fail-closed-artifact-validation",
+      "production-search-function-spy",
+      "exact-pgvector-integration",
+      "qrels-separated-from-row-presence",
+      "historical-client-claim-boundary"
+    ]
+  },
+  "work_areas": [
+    "contract",
+    "implementation",
+    "consumer_adoption",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-rcg5",
+    "source_digest": "3e98605c82594b9538759a24bd72b65032bdc36bd6ecc2c5f1980a4fe3a1d57f",
+    "criteria": [
+      {
+        "criterion_id": "AC-01",
+        "text": "Measured preflight refuses missing, stale, duplicate, floating-revision, approximate-index, or mismatched semantic evidence before any provider or paid call, with no keyword fallback.",
+        "text_digest": "cfd677559ba04875a92158085cb9404ee7e18324cd7b48a610afe67fa4a43721"
+      },
+      {
+        "criterion_id": "AC-02",
+        "text": "The producer uses src.rag.pipeline.search_products against temporary real PostgreSQL/pgvector, BAAI/bge-m3 at a full pinned revision, normalized 1024-dimensional embeddings, cosine distance, and no HNSW or IVFFlat index.",
+        "text_digest": "99f1dc50d5002fe164358d55e3d5b9a323f5c256109748fac3c00da0e30ce708"
+      },
+      {
+        "criterion_id": "AC-03",
+        "text": "The protected artifact binds catalog, query-set, model revision, retrieval contract code, pgvector version, exact search mode, top-k, ordered products, and per-query digests, and is published atomically with mode 0600.",
+        "text_digest": "ad6943be85e2841eea952a5080e3de277cb23bbc6ffda939fa6120023da19b71"
+      },
+      {
+        "criterion_id": "AC-04",
+        "text": "Retrieved rows and judged relevance are separate facts; relevance comes from protected qrels, and replies are never required to quote rows merely because retrieval returned them.",
+        "text_digest": "9b46243ad9fe1a77b75f67632a46e31e03b406a920a4327ea946d0eb4f51a276"
+      },
+      {
+        "criterion_id": "AC-05",
+        "text": "Protected retrieval evaluation reports per-query and aggregate Precision@3, Recall@3, nDCG@3, and forbidden-product violations, and hard per-query failures prevent evidence publication.",
+        "text_digest": "610fd9839263a523007c242f63c4a8e3a7eab4dcec6a87d8f5cc5125a0502459"
+      },
+      {
+        "criterion_id": "AC-06",
+        "text": "The client acceptance pack explicitly bounds every historical keyword-backed round for rules 8 and 9, product selection, and catalog grounding without re-baselining or changing historical scores.",
+        "text_digest": "ef30cc3598f63eba142f9d3ef6214b4541757a01226628e032b086e0e5dd5d42"
+      },
+      {
+        "criterion_id": "AC-07",
+        "text": "Focused unit and real-pgvector integration tests cover normal, failure, and edge cases; full repository gates, process verification, and root slice acceptance pass.",
+        "text_digest": "e9d4a3f88d0880e58266c22577f053809677c0d623b77eff509c4142d8d3b264"
+      },
+      {
+        "criterion_id": "AC-08",
+        "text": "Protected run evidence records artifact and report digests, catalog and query digests, model revision, exact mode, commands, file permissions, and the remaining query_source=frozen_opening limitation without tracking corpus or catalog bodies.",
+        "text_digest": "14035eca26c9d8df0bc71a6e9456e3fd452c717fd7c3b1878d0d11967d61362d"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-rcg5/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "3e98605c82594b9538759a24bd72b65032bdc36bd6ecc2c5f1980a4fe3a1d57f",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-rcg5",
+      "stream_owner": "tj-rcg5-root-implementation",
+      "artifact_path": ".codex/stages/tj-rcg5-semantic-catalog-evidence/artifacts/tj-rcg5.md"
+    }
+  ]
+}

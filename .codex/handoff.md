@@ -1,17 +1,13 @@
 # Orchestrator Handoff
 
 Updated: 2026-08-13
-Current branch: `main`
-Current stage id: `tj-q1a2-one-reply-owner`
-Status: delivered locally with all gates green and pushed to `origin/main`
-with CI green, which deploys. Nine rounds were read blind with the owner's
-authority: six on the frozen twenty, weighted mean 14.6 to 18.7 of 30, and
-three over the whole Arabic population, 9.6 to 10.6. `tj-fcv8`, `tj-l0e3`,
-`tj-fcfn`, `tj-jfmv`, `tj-40gc` and `tj-z1fn` are found, fixed and closed. On
-the twenty, every rule the set can charge reads 2.00 except rule 5 at 1.95.
+Current branch: `codex/tj-rcg5`
+Current stage id: `tj-rcg5-semantic-catalog-evidence`
+Status: `tj-9scy` and `tj-f6yp` are closed in local commits `4985db9` and
+`ecd9c33`, two commits ahead of `origin/main`. `tj-rcg5` implementation and
+protected evidence, gates and acceptance are complete; commit and push remain.
 
-Documentation: no external/versioned boundary — the behavior is owned by the
-local reply-policy contract, Python implementation, tests and protected replay.
+Documentation: `docs-resolve` covered pgvector and pinned model revisions; local code owns Treejar behavior.
 
 ## Current truth
 
@@ -34,9 +30,11 @@ local reply-policy contract, Python implementation, tests and protected replay.
   ever run.
 - The paid round sends the prompt production sends, built from the product's
   own functions so a round follows them when they change: runtime directives,
-  the ask permission list, and the name read out of the opening. It does *not*
-  search the catalog the way production does -- see `tj-rcg5`. `FROZEN_SETS`
-  registers which sets may be measured and `preflight --set` names one.
+  the ask permission list, and the name read out of the opening. Its measured
+  catalog evidence now comes from exact local pgvector through
+  `src.rag.pipeline.search_products`; a protected artifact pins that path before
+  provider work. `FROZEN_SETS` registers measurable sets and `preflight --set`
+  names one.
 - `consultative_opening_directive` takes `opening_states_the_offer` and the
   opening's own text, so a first turn is told what it will begin with rather
   than asked what it already said -- the self-cancelling shape removed on
@@ -114,8 +112,8 @@ local reply-policy contract, Python implementation, tests and protected replay.
 
 ## Next recommended
 
-Next stage id: not opened. Recommended action: re-read one stored round under
-`docs/root-reading-convention.md` and report the drift. No deploy authority.
+Next stage id: not opened
+Recommended action: select the next open Bead after this delivery.
 
 ## Starter prompt for next orchestrator
 
@@ -153,28 +151,31 @@ Use $orchestrator-stage after selecting the next open Beads goal.
   does what the rubric asks but not that Noor sells. The four-criteria figure
   is reframed on the owner's point that people not doing a thing is no evidence
   against it. The evaluator prompt is withdrawn.
-- Deploy and live verification are authorized. Production is current, not
-  stale: CI deploys on any push to `main` touching `src/` and the job succeeded
-  on `d19bfdb`, the last such commit, carrying every fix of 12-13 August.
-  `/api/v1/health` reads ok. `tj-9scy`: no endpoint reports the deployed SHA,
-  which is why a stale assumption about the live build went unchecked.
+- Deploy and live verification are authorized. Production was current at the
+  last read, not stale: CI deploys on any push to `main` touching `src/` and
+  the job succeeded on `d19bfdb`, the last such commit, carrying every fix of
+  12-13 August.
+  `/api/v1/health` reads ok. Local commit `4985db9` adds the release SHA to the
+  health response and closes `tj-9scy`; it has not been pushed yet.
 
-## Handed to another agent
+## Active handoff
 
-- `.codex/handoff-chatgpt5-2026-08-13.md` is the prompt for ChatGPT-5 to close
-  `tj-9scy`, `tj-f6yp` and `tj-rcg5`. `prompt-check --kind handoff --profile
-  gpt-5.6` passes with a size warning only. Each bead's `DESIGN` carries the
-  spec; the prompt defers to it.
-- `tj-vz7o.12` was nearly handed over with the wrong diagnosis and is closed
-  instead. It read as "the reply has catalog rows and quotes none". The rows
-  for dialog 436, "I looking Office table", are two executive chairs and a
-  portable skincare fridge, identically in all six rounds; declining them was
-  right. The cause is `tj-rcg5`: `catalog_matches` scores keyword overlap where
-  production searches semantically, so "office" carries "Executive Office
-  Chair". A directive to quote what you are handed would have put a skincare
-  fridge in front of a desk buyer. This bounds the rounds as `tj-7gpw` did: any
-  judgement of how a reply used the catalog was made against evidence
-  production would not supply. Rules 8 and 9 are exposed.
+- `tj-rcg5` implements the two-stage route: exact local pgvector retrieval
+  through `src.rag.pipeline.search_products`, then a fail-closed measured
+  consumer. The normative spec is
+  `docs/superpowers/specs/2026-08-13-semantic-catalog-evidence-boundary-spec.md`;
+  the executable plan is
+  `docs/superpowers/plans/2026-08-13-semantic-catalog-evidence-boundary.md`.
+- Final protected evidence uses 332 catalog rows, BGE-M3 revision
+  `5617a9f61b028005a4858fdac845db406aefb181`, exact pgvector extension `0.8.5`
+  and retrieval code `05f6c8e765c6fdc0d473968ba6e42aee26bea40e5bb3a9aa6819e896fffd97e4`.
+  Golden P@3/R@3/nDCG@3 is `0.7222/0.8333/0.8333`, zero hard failures; the
+  frozen twenty also has zero hard failures. Presence of rows never creates a
+  duty to quote them; only qrels-confirmed SKUs reach generation.
+- Real discovery corrected one planning assumption: exact SKU is owned by the
+  direct `get_stock`/catalog lookup route, not semantic search. BGE-M3 input has
+  name/category/description but no SKU, and a real SKU query missed its product;
+  semantic qrels therefore exclude it rather than masking the route boundary.
 
 ## Explicit defers
 

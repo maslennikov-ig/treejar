@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
 import pathlib
@@ -28,7 +29,6 @@ from scripts.corpus_bridge.real_opening_acceptance import (
     apply_shipped_output_guards,
     build_generation_messages,
     build_public_summary,
-    catalog_matches,
     critical_failure_codes,
     ensure_protected_output,
     estimate_cost_usd,
@@ -39,6 +39,7 @@ from scripts.corpus_bridge.real_opening_acceptance import (
     run_paid_round,
     validate_complete_results,
 )
+from scripts.corpus_bridge.semantic_catalog_evidence import retrieval_contract_sha
 
 from src.llm.message_processor import _finalize_turn_response
 from src.llm.repair_judge import (
@@ -181,6 +182,62 @@ def _criteria(scores: dict[int, int], applicable: set[int]) -> list[dict[str, ob
         }
         for rule in range(1, 16)
     ]
+
+
+def _write_test_semantic_evidence(
+    path: pathlib.Path, scenarios: list[dict[str, object]]
+) -> pathlib.Path:
+    query_digest = hashlib.sha256(
+        json.dumps(
+            scenarios,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "treejar-semantic-catalog-evidence/v1",
+                "catalog": {"sha256": "a" * 64, "rows": 1},
+                "embedding": {
+                    "model": "BAAI/bge-m3",
+                    "revision": "b" * 40,
+                    "dimensions": 1024,
+                    "normalized": True,
+                },
+                "retrieval": {
+                    "entrypoint": "src.rag.pipeline.search_products",
+                    "code_sha": retrieval_contract_sha(),
+                    "pgvector_python": "0.4.2",
+                    "pgvector_extension": "0.8.1",
+                    "distance": "cosine",
+                    "search_mode": "exact",
+                    "ann_indexes": [],
+                    "limit": 3,
+                    "query_source": "frozen_opening",
+                },
+                "qrels": {"sha256": "d" * 64},
+                "query_set": {"sha256": query_digest, "count": len(scenarios)},
+                "results": [
+                    {
+                        "dialog_id": int(scenario["dialog_id"]),
+                        "query_sha256": hashlib.sha256(
+                            str(scenario["opening"]).encode("utf-8")
+                        ).hexdigest(),
+                        "rows_present": False,
+                        "catalog_relevant": False,
+                        "relevant_skus": [],
+                        "products": [],
+                    }
+                    for scenario in scenarios
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    path.chmod(0o600)
+    return path
 
 
 def test_two_readers_are_compared_only_where_both_charged_the_rule() -> None:
@@ -716,14 +773,195 @@ def test_the_second_reader_is_pinned_only_when_it_was_authorized() -> None:
     assert SECOND_READER_MODEL in paid_models(second_reader=True)
 
 
-def test_catalog_matches_use_customer_terms_not_catalog_order() -> None:
-    """Catch irrelevant first-page products being injected as evidence."""
-    products = [
-        {"name": "Executive Desk", "sku": "D-1", "price": 2000},
-        {"name": "Axis Ergonomic Chair", "sku": "C-1", "price": 1000},
-    ]
+@pytest.mark.asyncio
+async def test_preflight_refuses_missing_semantic_evidence_before_provider_lookup(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catch a keyword/fetch fallback or late validation re-entering the round."""
+    scenarios_path = tmp_path / "scenarios.json"
+    scenarios_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "treejar-real-openings/v1",
+                "selection_seed": 20260810,
+                "scenarios": [
+                    {
+                        "dialog_id": dialog_id,
+                        "length_stratum": (dialog_id - 1) // 5 + 1,
+                        "opening": f"Opening {dialog_id}",
+                    }
+                    for dialog_id in range(1, 21)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
 
-    assert catalog_matches("ergonomic chair", products, limit=1) == [products[1]]
+    async def provider_lookup_must_not_run(
+        _models: tuple[str, ...],
+    ) -> dict[str, dict[str, object]]:
+        pytest.fail("provider lookup ran before semantic evidence validation")
+
+    monkeypatch.setattr(
+        "scripts.corpus_bridge.real_opening_acceptance._pinned_model_catalog",
+        provider_lookup_must_not_run,
+    )
+
+    with pytest.raises(ValueError, match="semantic retrieval evidence"):
+        await preflight(
+            scenarios_path=scenarios_path,
+            retrieval_evidence_path=tmp_path / "missing-evidence.json",
+            expected_catalog_sha256="a" * 64,
+            expected_embedding_revision="b" * 40,
+            expected_qrels_sha256="d" * 64,
+            expected_pgvector_extension="0.8.1",
+            output_dir=tmp_path / "protected",
+            per_model_cap_usd=1.0,
+        )
+
+
+@pytest.mark.asyncio
+async def test_preflight_withholds_rows_that_qrels_mark_irrelevant(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catch nearest-but-irrelevant rows being handed to the reply generator."""
+    scenarios = [
+        {
+            "dialog_id": dialog_id,
+            "length_stratum": (dialog_id - 1) // 5 + 1,
+            "opening": f"Opening {dialog_id}",
+        }
+        for dialog_id in range(1, 21)
+    ]
+    scenarios_path = tmp_path / "scenarios.json"
+    scenarios_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "treejar-real-openings/v1",
+                "selection_seed": 20260810,
+                "scenarios": scenarios,
+            }
+        ),
+        encoding="utf-8",
+    )
+    evidence_path = tmp_path / "retrieval-evidence.json"
+    results: list[dict[str, object]] = []
+    for scenario in scenarios:
+        dialog_id = int(scenario["dialog_id"])
+        products = (
+            [
+                {
+                    "id": "00000000-0000-0000-0000-000000000001",
+                    "sku": "ROW-1",
+                    "name": "Nearest but unjudged row",
+                    "category": "synthetic",
+                    "price_aed": 500.0,
+                    "stock": 3,
+                }
+            ]
+            if dialog_id == 1
+            else []
+        )
+        results.append(
+            {
+                "dialog_id": dialog_id,
+                "query_sha256": hashlib.sha256(
+                    str(scenario["opening"]).encode("utf-8")
+                ).hexdigest(),
+                "rows_present": bool(products),
+                "catalog_relevant": False,
+                "relevant_skus": [],
+                "products": products,
+            }
+        )
+    query_digest = hashlib.sha256(
+        json.dumps(
+            scenarios,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "treejar-semantic-catalog-evidence/v1",
+                "catalog": {"sha256": "a" * 64, "rows": 332},
+                "embedding": {
+                    "model": "BAAI/bge-m3",
+                    "revision": "b" * 40,
+                    "dimensions": 1024,
+                    "normalized": True,
+                },
+                "retrieval": {
+                    "entrypoint": "src.rag.pipeline.search_products",
+                    "code_sha": retrieval_contract_sha(),
+                    "pgvector_python": "0.4.2",
+                    "pgvector_extension": "0.8.1",
+                    "distance": "cosine",
+                    "search_mode": "exact",
+                    "ann_indexes": [],
+                    "limit": 3,
+                    "query_source": "frozen_opening",
+                },
+                "qrels": {"sha256": "d" * 64},
+                "query_set": {"sha256": query_digest, "count": 20},
+                "results": results,
+            }
+        ),
+        encoding="utf-8",
+    )
+    evidence_path.chmod(0o600)
+
+    async def model_catalog(models: tuple[str, ...]) -> dict[str, dict[str, object]]:
+        return {
+            model: {
+                "id": model,
+                "pricing": {"prompt": "0.000001", "completion": "0.000002"},
+                "provider_order": ["test"],
+                "provider_quantizations": ["fp8"],
+            }
+            for model in models
+        }
+
+    monkeypatch.setattr(
+        "scripts.corpus_bridge.real_opening_acceptance._pinned_model_catalog",
+        model_catalog,
+    )
+
+    document = await preflight(
+        scenarios_path=scenarios_path,
+        retrieval_evidence_path=evidence_path,
+        expected_catalog_sha256="a" * 64,
+        expected_embedding_revision="b" * 40,
+        expected_qrels_sha256="d" * 64,
+        expected_pgvector_extension="0.8.1",
+        output_dir=tmp_path / "protected",
+        per_model_cap_usd=1.0,
+    )
+
+    prepared = json.loads(
+        (tmp_path / "protected" / "prepared-cases.json").read_text(encoding="utf-8")
+    )
+    assert prepared[0]["catalog_rows_present"] is True
+    assert prepared[0]["catalog_relevant"] is False
+    assert prepared[0]["catalog_evidence"] == []
+    assert "Nearest but unjudged row" not in str(prepared[0]["generation_messages"])
+    assert document["catalog_products"] == 332
+    assert document["semantic_retrieval"] == {
+        "catalog_sha256": "a" * 64,
+        "embedding_model": "BAAI/bge-m3",
+        "embedding_revision": "b" * 40,
+        "retrieval_code_sha": retrieval_contract_sha(),
+        "qrels_sha256": "d" * 64,
+        "query_set_sha256": query_digest,
+        "pgvector_python": "0.4.2",
+        "pgvector_extension": "0.8.1",
+        "search_mode": "exact",
+        "query_source": "frozen_opening",
+    }
 
 
 def test_critical_failure_codes_combine_judge_and_deterministic_gates() -> None:
@@ -929,6 +1167,10 @@ async def test_a_second_reader_is_authorized_beside_the_root_never_instead(
         ),
         encoding="utf-8",
     )
+    scenarios = json.loads(scenarios_path.read_text(encoding="utf-8"))["scenarios"]
+    evidence_path = _write_test_semantic_evidence(
+        tmp_path / "retrieval-evidence.json", scenarios
+    )
 
     async def model_catalog(models: tuple[str, ...]) -> dict[str, dict[str, object]]:
         return {
@@ -941,20 +1183,18 @@ async def test_a_second_reader_is_authorized_beside_the_root_never_instead(
             for model in models
         }
 
-    async def catalog_products() -> list[dict[str, object]]:
-        return [{"name": "Desk", "sku": "D-1", "price": 1000, "stock": 9}]
-
     monkeypatch.setattr(
         "scripts.corpus_bridge.real_opening_acceptance._pinned_model_catalog",
         model_catalog,
     )
-    monkeypatch.setattr(
-        "scripts.corpus_bridge.real_opening_acceptance._fetch_catalog_summaries",
-        catalog_products,
-    )
 
     document = await preflight(
         scenarios_path=scenarios_path,
+        retrieval_evidence_path=evidence_path,
+        expected_catalog_sha256="a" * 64,
+        expected_embedding_revision="b" * 40,
+        expected_qrels_sha256="d" * 64,
+        expected_pgvector_extension="0.8.1",
         output_dir=tmp_path / "protected",
         per_model_cap_usd=1.0,
         second_reader=True,
@@ -991,6 +1231,10 @@ async def test_preflight_authorizes_the_repair_model_and_round_call_cap(
         ),
         encoding="utf-8",
     )
+    scenarios = json.loads(scenarios_path.read_text(encoding="utf-8"))["scenarios"]
+    evidence_path = _write_test_semantic_evidence(
+        tmp_path / "retrieval-evidence.json", scenarios
+    )
     requested_models: list[tuple[str, ...]] = []
 
     async def model_catalog(models: tuple[str, ...]) -> dict[str, dict[str, object]]:
@@ -1005,20 +1249,18 @@ async def test_preflight_authorizes_the_repair_model_and_round_call_cap(
             for model in models
         }
 
-    async def catalog_products() -> list[dict[str, object]]:
-        return [{"name": "Desk", "sku": "D-1", "price": 1000, "stock": 9}]
-
     monkeypatch.setattr(
         "scripts.corpus_bridge.real_opening_acceptance._pinned_model_catalog",
         model_catalog,
     )
-    monkeypatch.setattr(
-        "scripts.corpus_bridge.real_opening_acceptance._fetch_catalog_summaries",
-        catalog_products,
-    )
 
     document = await preflight(
         scenarios_path=scenarios_path,
+        retrieval_evidence_path=evidence_path,
+        expected_catalog_sha256="a" * 64,
+        expected_embedding_revision="b" * 40,
+        expected_qrels_sha256="d" * 64,
+        expected_pgvector_extension="0.8.1",
         output_dir=tmp_path / "protected",
         per_model_cap_usd=1.0,
     )
@@ -1065,6 +1307,7 @@ def _prepared_round_files(output_dir: pathlib.Path) -> None:
             "opening": f"Opening {dialog_id}",
             "language": "en",
             "catalog_evidence": [],
+            "catalog_rows_present": False,
             "catalog_relevant": False,
             "anchor_line": None,
             "generation_messages": [
@@ -1191,9 +1434,31 @@ def test_the_round_judges_itself_unless_a_second_reader_is_asked_for() -> None:
     signature = inspect.signature(preflight)
     assert signature.parameters["second_reader"].default is False
 
-    argv = ["preflight", "--scenarios", "s.json", "--output-dir", "out"]
+    argv = [
+        "preflight",
+        "--scenarios",
+        "s.json",
+        "--retrieval-evidence",
+        "evidence.json",
+        "--catalog-sha256",
+        "a" * 64,
+        "--embedding-revision",
+        "b" * 40,
+        "--qrels-sha256",
+        "d" * 64,
+        "--pgvector-extension",
+        "0.8.1",
+        "--output-dir",
+        "out",
+    ]
     with patch.object(sys, "argv", ["prog", *argv]):
-        assert _parse_args().second_reader is False
+        parsed = _parse_args()
+        assert parsed.second_reader is False
+        assert parsed.retrieval_evidence == pathlib.Path("evidence.json")
+        assert parsed.catalog_sha256 == "a" * 64
+        assert parsed.embedding_revision == "b" * 40
+        assert parsed.qrels_sha256 == "d" * 64
+        assert parsed.pgvector_extension == "0.8.1"
     with patch.object(sys, "argv", ["prog", *argv, "--second-reader"]):
         assert _parse_args().second_reader is True
 

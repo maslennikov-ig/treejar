@@ -9,7 +9,7 @@ artifact_path_template = ".codex/stages/{stage_id}/artifacts/{task_id}.md"
 [workspace]
 multi_repo = false
 launch_mode = "direct_or_orchestrated"
-current_stage_id = "tj-q1a2-one-reply-owner"
+current_stage_id = "tj-rcg5-semantic-catalog-evidence"
 
 [baseline]
 profile = "balanced-v2.19"
@@ -48,7 +48,7 @@ hard_limit_lines = 200
 tracked_in_git = true
 format = "frontmatter_plus_short_note"
 sensitivity = "internal_no_secrets"
-current_stage_summary = ".codex/stages/tj-q1a2-one-reply-owner/summary.md"
+current_stage_summary = ".codex/stages/tj-rcg5-semantic-catalog-evidence/summary.md"
 
 [completion_inbox]
 scope = "git_common_dir"
@@ -151,6 +151,9 @@ targeted_commands = [
 ]
 affected_package_commands = [
   "uv run pytest tests/test_api_health.py tests/test_services_chat.py tests/test_services_chat_batch.py tests/test_runtime_monitoring.py tests/test_scripts_escalation_guard.py tests/test_scripts_docker_maintenance.py tests/test_zoho_client.py tests/test_zoho_crm.py -q --tb=short",
+]
+corpus_bridge_commands = [
+  "uv run pytest tests/test_corpus_bridge_semantic_catalog_evidence.py tests/test_corpus_bridge_real_opening_acceptance.py -q --tb=short",
 ]
 integration_commands = [
   "uv run pytest tests/test_api_health.py tests/test_api_inventory.py tests/test_api_quality.py tests/test_webhook.py tests/test_services_chat.py tests/test_services_chat_batch.py tests/test_runtime_monitoring.py tests/test_scripts_escalation_guard.py tests/test_scripts_docker_maintenance.py tests/test_worker.py tests/test_zoho_client.py tests/test_zoho_crm.py -q --tb=short",

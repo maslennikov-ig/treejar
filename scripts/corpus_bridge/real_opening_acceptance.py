@@ -3,7 +3,11 @@
 The judge is the orchestrator itself, reading blind: `run` stops after the
 twenty generation calls and writes `reading-pack.json`, and `ingest-judgment`
 takes the reading back. `preflight --second-reader` adds a paid model beside
-that reading, never in place of it.
+that reading, never in place of it. Catalog evidence must come from the
+protected semantic-retrieval artifact: preflight validates its pinned catalog,
+model, qrels, query set and exact production search path before provider work.
+Nearest rows that qrels did not confirm are retained in the retrieval artifact
+but withheld from the reply generator.
 """
 
 from __future__ import annotations
@@ -28,6 +32,10 @@ from typing import Any
 
 import httpx
 from pydantic import BaseModel, ConfigDict
+from scripts.corpus_bridge.semantic_catalog_evidence import (
+    SemanticCatalogEvidence,
+    load_and_validate_evidence,
+)
 from scripts.model_battle import (
     _extract_asserted_numeric_tokens,
     _fetch_catalog,
@@ -41,7 +49,6 @@ from scripts.model_battle import (
 
 from src.core.config import settings
 from src.dialogue.state import DialogueState
-from src.integrations.catalog.treejar_catalog import TreejarCatalogClient
 from src.llm.communication_policy import (
     COMMUNICATION_RULES_POLICY,
     finalize_evidence_grounding_prompt,
@@ -653,47 +660,6 @@ async def apply_shipped_output_guards(
     )
 
 
-def catalog_matches(
-    query: str, products: list[dict[str, object]], *, limit: int
-) -> list[dict[str, object]]:
-    if limit <= 0:
-        return []
-    stopwords = {
-        "and",
-        "for",
-        "from",
-        "have",
-        "hello",
-        "need",
-        "please",
-        "the",
-        "want",
-        "with",
-        "you",
-    }
-    terms = {
-        token
-        for token in re.findall(r"[\w-]+", query.casefold())
-        if len(token) >= 3 and token not in stopwords
-    }
-    if not terms:
-        return []
-    phrase = " ".join(query.casefold().split())
-    ranked: list[tuple[int, str, dict[str, object]]] = []
-    for product in products:
-        haystack = " ".join(
-            str(product.get(key) or "")
-            for key in ("name", "name_en", "sku", "slug", "category", "description")
-        ).casefold()
-        score = sum(1 for term in terms if term in haystack)
-        if phrase and phrase in haystack:
-            score += len(terms)
-        if score:
-            ranked.append((score, str(product.get("sku") or ""), product))
-    ranked.sort(key=lambda item: (-item[0], item[1]))
-    return [item[2] for item in ranked[:limit]]
-
-
 def critical_failure_codes(
     *,
     red_flag_codes: list[str],
@@ -805,46 +771,6 @@ def _load_frozen_scenarios(
     return rows
 
 
-def _flatten_categories(categories: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    flattened: list[dict[str, Any]] = []
-    for category in categories:
-        flattened.append(category)
-        children = category.get("children")
-        if isinstance(children, list):
-            flattened.extend(
-                _flatten_categories(
-                    [item for item in children if isinstance(item, dict)]
-                )
-            )
-    return flattened
-
-
-async def _fetch_catalog_summaries() -> list[dict[str, Any]]:
-    products: dict[str, dict[str, Any]] = {}
-    async with TreejarCatalogClient() as client:
-        categories = _flatten_categories(await client.get_categories())
-        for category in categories:
-            slug = category.get("slug")
-            if not isinstance(slug, str) or not slug.strip():
-                continue
-            offset = 0
-            while True:
-                page = await client.get_category_products(
-                    slug, limit=settings.catalog_api_page_size, offset=offset
-                )
-                rows = page["products"]
-                for raw in rows:
-                    row = dict(raw)
-                    row.setdefault("category", str(category.get("name") or slug))
-                    key = str(row.get("sku") or row.get("slug") or "").strip()
-                    if key:
-                        products[key.casefold()] = row
-                if not page["hasMore"] or not rows:
-                    break
-                offset += len(rows)
-    return [products[key] for key in sorted(products)]
-
-
 def _number(value: object) -> float | None:
     if isinstance(value, bool):
         return None
@@ -857,65 +783,6 @@ def _number(value: object) -> float | None:
             return None
         return parsed if math.isfinite(parsed) else None
     return None
-
-
-def _catalog_projection(product: dict[str, object]) -> dict[str, object]:
-    projected: dict[str, object] = {}
-    aliases = {
-        "name": ("name", "name_en", "title"),
-        "sku": ("sku",),
-        "slug": ("slug",),
-        "category": ("category", "category_name"),
-        "price_aed": ("price", "sale_price", "regular_price"),
-        "stock": ("stock", "stock_quantity", "quantity"),
-    }
-    for target, sources in aliases.items():
-        value = next(
-            (
-                product.get(source)
-                for source in sources
-                if product.get(source) is not None
-            ),
-            None,
-        )
-        if target in {"price_aed", "stock"}:
-            numeric = _number(value)
-            if numeric is not None:
-                projected[target] = round(numeric, 2)
-        elif isinstance(value, str) and value.strip():
-            projected[target] = " ".join(value.split())[:240]
-    return projected
-
-
-def _anchor_line(products: list[dict[str, object]], language: str) -> str | None:
-    families = (
-        (("chair",), "Chairs", "الكراسي"),
-        (("desk", "workstation"), "desks and workstations", "المكاتب ومحطات العمل"),
-    )
-    parts: list[str] = []
-    for terms, english, arabic in families:
-        prices: list[float] = []
-        for product in products:
-            name = str(product.get("name") or product.get("name_en") or "").casefold()
-            price = _number(product.get("price"))
-            stock = _number(product.get("stock"))
-            if (
-                any(term in name for term in terms)
-                and price is not None
-                and price > 0
-                and stock is not None
-                and stock >= 5
-            ):
-                prices.append(price)
-        if not prices:
-            continue
-        amount = f"{min(prices):,.0f}"
-        parts.append(
-            f"{arabic} من {amount} درهم"
-            if language == "ar"
-            else f"{english} from AED {amount}"
-        )
-    return (", ".join(parts) + ".") if parts else None
 
 
 def _provider_headers(title: str) -> dict[str, str]:
@@ -993,16 +860,23 @@ def _judge_system_prompt() -> str:
 
 
 def _prepare_cases(
-    scenarios: list[dict[str, Any]], products: list[dict[str, Any]]
+    scenarios: list[dict[str, Any]], semantic_evidence: SemanticCatalogEvidence
 ) -> list[dict[str, Any]]:
     cases: list[dict[str, Any]] = []
-    for scenario in scenarios:
+    for scenario, retrieval_result in zip(
+        scenarios, semantic_evidence.results, strict=True
+    ):
         opening = str(scenario["opening"])
         language = expected_language(opening)
-        matches = catalog_matches(opening, products, limit=3)
-        evidence = [
-            projection for item in matches if (projection := _catalog_projection(item))
-        ]
+        evidence = (
+            [
+                product.model_dump(mode="json")
+                for product in retrieval_result.products
+                if product.sku in retrieval_result.relevant_skus
+            ]
+            if retrieval_result.catalog_relevant
+            else []
+        )
         messages = build_generation_messages(
             opening=opening,
             language=language,
@@ -1015,8 +889,9 @@ def _prepare_cases(
                 "opening": opening,
                 "language": language,
                 "catalog_evidence": evidence,
-                "catalog_relevant": bool(evidence),
-                "anchor_line": _anchor_line(products, language),
+                "catalog_rows_present": retrieval_result.rows_present,
+                "catalog_relevant": retrieval_result.catalog_relevant,
+                "anchor_line": None,
                 "generation_messages": messages,
                 "generation_prompt_digest": _sha256_json(messages),
             }
@@ -1027,6 +902,11 @@ def _prepare_cases(
 async def preflight(
     *,
     scenarios_path: pathlib.Path,
+    retrieval_evidence_path: pathlib.Path,
+    expected_catalog_sha256: str,
+    expected_embedding_revision: str,
+    expected_qrels_sha256: str,
+    expected_pgvector_extension: str,
     output_dir: pathlib.Path,
     per_model_cap_usd: float,
     second_reader: bool = False,
@@ -1041,18 +921,22 @@ async def preflight(
     expected_openings = shape.openings
     repair_call_cap = expected_openings
     scenarios = _load_frozen_scenarios(scenarios_path, shape)
+    semantic_evidence = load_and_validate_evidence(
+        retrieval_evidence_path,
+        scenarios=scenarios,
+        expected_catalog_sha256=expected_catalog_sha256,
+        expected_embedding_revision=expected_embedding_revision,
+        expected_qrels_sha256=expected_qrels_sha256,
+        expected_pgvector_extension=expected_pgvector_extension,
+    )
     # The root judge is the judge, always. `tj-4q79.1`: this used to become the
     # paid model, which excluded the root reading the standing owner decision
     # requires and the flag's own help text promises.
     judge_model = ROOT_JUDGE
     second_reader_model = SECOND_READER_MODEL if second_reader else None
     models = paid_models(second_reader=second_reader)
-    catalog, products = await asyncio.gather(
-        _pinned_model_catalog(models), _fetch_catalog_summaries()
-    )
-    if not products:
-        raise ValueError("read-only catalog preflight returned no products")
-    cases = _prepare_cases(scenarios, products)
+    catalog = await _pinned_model_catalog(models)
+    cases = _prepare_cases(scenarios, semantic_evidence)
 
     generator_input_bound = max(
         conservative_input_token_bound({"messages": case["generation_messages"]})
@@ -1178,11 +1062,22 @@ async def preflight(
         },
         "input_token_upper_bounds": input_token_upper_bounds,
         "model_catalog": public_catalog,
-        "catalog_products": len(products),
+        "catalog_products": semantic_evidence.catalog.rows,
+        "semantic_retrieval": {
+            "catalog_sha256": semantic_evidence.catalog.sha256,
+            "embedding_model": semantic_evidence.embedding.model,
+            "embedding_revision": semantic_evidence.embedding.revision,
+            "retrieval_code_sha": semantic_evidence.retrieval.code_sha,
+            "qrels_sha256": semantic_evidence.qrels.sha256,
+            "query_set_sha256": semantic_evidence.query_set.sha256,
+            "pgvector_python": semantic_evidence.retrieval.pgvector_python,
+            "pgvector_extension": semantic_evidence.retrieval.pgvector_extension,
+            "search_mode": semantic_evidence.retrieval.search_mode,
+            "query_source": semantic_evidence.retrieval.query_source,
+        },
         "paid_calls_made": 0,
     }
     _write_protected_json(output_dir / "prepared-cases.json", cases)
-    _write_protected_json(output_dir / "catalog-cache.json", products)
     _write_protected_json(output_dir / "preflight.json", document)
     return document
 
@@ -2302,6 +2197,7 @@ def _public_preflight(document: dict[str, Any]) -> dict[str, Any]:
         "estimated_cost_usd": document["estimated_cost_usd"],
         "per_model_cap_usd": document["per_model_cap_usd"],
         "catalog_products": document["catalog_products"],
+        "semantic_retrieval": document["semantic_retrieval"],
         "paid_calls_made": document["paid_calls_made"],
     }
 
@@ -2311,6 +2207,13 @@ def _parse_args() -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
     preflight_parser = subparsers.add_parser("preflight")
     preflight_parser.add_argument("--scenarios", type=pathlib.Path, required=True)
+    preflight_parser.add_argument(
+        "--retrieval-evidence", type=pathlib.Path, required=True
+    )
+    preflight_parser.add_argument("--catalog-sha256", required=True)
+    preflight_parser.add_argument("--embedding-revision", required=True)
+    preflight_parser.add_argument("--qrels-sha256", required=True)
+    preflight_parser.add_argument("--pgvector-extension", required=True)
     preflight_parser.add_argument("--output-dir", type=pathlib.Path, required=True)
     preflight_parser.add_argument(
         "--per-model-cap-usd", type=float, default=DEFAULT_MODEL_CAP_USD
@@ -2353,6 +2256,11 @@ def main() -> int:
             document = asyncio.run(
                 preflight(
                     scenarios_path=args.scenarios,
+                    retrieval_evidence_path=args.retrieval_evidence,
+                    expected_catalog_sha256=args.catalog_sha256,
+                    expected_embedding_revision=args.embedding_revision,
+                    expected_qrels_sha256=args.qrels_sha256,
+                    expected_pgvector_extension=args.pgvector_extension,
                     output_dir=args.output_dir,
                     per_model_cap_usd=args.per_model_cap_usd,
                     second_reader=args.second_reader,
