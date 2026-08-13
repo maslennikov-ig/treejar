@@ -42,6 +42,22 @@ and the company in Latin script; that is still a 2.
   inside otherwise fluent Arabic.
 - **1** where the reply contradicts itself inside three sentences — sending a
   request elsewhere and then pursuing it anyway.
+- **1** where a catalog row is quoted under a family label it does not belong
+  to. Added 2026-08-13 from `tj-68au`: a row described in the catalog as a
+  coffee table for reception and lounge areas led the answer to a customer who
+  asked for an office table. True of the row, false to the customer. This is
+  the same shape as `tj-jlx4`.
+- **1** where the price anchor is prepended to a message that carries no
+  furniture need. Added 2026-08-13 from `tj-68au`: a job application received
+  chair and desk prices and then a redirect to the careers channel. It is the
+  self-contradiction case above, in the order the guard produces it.
+- **Not charged**: an anchor whose price floor no row in the family it names
+  can honour. The reply is polite, professional and every figure in it is a
+  real catalog row, and the customer cannot see the gap from this message. It
+  is a catalog-family defect, tracked as `tj-3jo0`, not a defect of the
+  introduction. Recording this because the alternative — charging it — would
+  silently re-price most of the frozen twenty on something the model did not
+  author and cannot fix.
 - Otherwise **2**. Length is not a fault; a bulleted set of priced rows is good
   selling.
 
@@ -81,7 +97,12 @@ question offers, which is the part the model writes.
   The rule is charged on those by the frozen rubric and cannot be earned on
   them. That is a property of the set, not a defect, and the rubric is not
   changed for it. It puts rule 5's ceiling on the frozen twenty at 1.95.
-- A mixed list is scored by what it leads with.
+- A mixed list is scored by what it leads with. Added 2026-08-13 from
+  `tj-68au`: a list that leads plausibly and then turns to catalogue
+  categories — "office desks, ergonomic chairs, workstations, meeting-room
+  furniture" — is **1**. Chairs are not a kind of space, and one product term
+  after the lead settles what the list is. A list that closes on "or another
+  product" is **1** whatever it led with.
 
 ## Rule 7 — the value of Treejar's offering was explained briefly
 
@@ -121,6 +142,22 @@ These recur on the frozen sets and have a fixed reading.
 | A cold marketing or investment pitch | Declining it and naming our line of business is not a rule 7 restatement. A furniture question offered afterwards can earn rule 5. |
 | The customer signs the opening | Rule 3 is 2 for standing down, 1 for asking anyway. |
 | "How much" with no item named | Asking which item is what answering requires. Rule 5 is 2 only if the options are space-led. |
+
+## Cases considered on 2026-08-13 and deliberately not adopted
+
+`tj-68au` found two shapes that read as defects and were left at **2**, because
+the round before it carried the same two shapes and scored them 2. Charging
+them now would have produced a paired delta out of the reader's own drift
+rather than out of the build, which is the one thing this document exists to
+prevent. They are recorded so a later sitting can adopt them deliberately, and
+if it does it must re-read the earlier round to the same standard, since
+adopting either costs both rounds equally and moves no delta.
+
+- Answering "Yes" to a demonstrative the channel never carried — "do you have
+  this type of chair" — and then listing rows, without saying the type was
+  never received.
+- Promising "the same item in other colours" for a referent that was never in
+  the channel, without asking which item.
 
 ## What this convention cannot fix
 
