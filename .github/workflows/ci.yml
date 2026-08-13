@@ -27,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       deploy: ${{ steps.classify.outputs.deploy }}
+      semantic: ${{ steps.classify.outputs.semantic }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -35,8 +36,13 @@ jobs:
         run: |
           set -euo pipefail
 
+          emit() {
+            echo "deploy=$1" >> "$GITHUB_OUTPUT"
+            echo "semantic=$2" >> "$GITHUB_OUTPUT"
+          }
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            emit true true
             exit 0
           fi
 
@@ -47,18 +53,28 @@ jobs:
           fi
 
           if [ -z "$base_sha" ] || [ "$base_sha" = "0000000000000000000000000000000000000000" ]; then
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            emit true true
             exit 0
           fi
 
           changed_files="$(git diff --name-only "$base_sha" "$GITHUB_SHA")"
           printf '%s\n' "$changed_files"
 
+          deploy=false
+          semantic=false
+
           if printf '%s\n' "$changed_files" | grep -Eq '^(src/|frontend/|migrations/|alembic\.ini$|pyproject\.toml$|uv\.lock$|Dockerfile$|docker-compose(\..+)?\.ya?ml$|scripts/vps-deploy\.sh$)'; then
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            deploy=true
           fi
+
+          # tj-qfsy. The producer and the production search path it must keep
+          # using, plus the two files that decide what "the pinned model" and
+          # "the job" mean.
+          if printf '%s\n' "$changed_files" | grep -Eq '^(scripts/corpus_bridge/|src/rag/|tests/test_corpus_bridge_semantic_catalog_evidence\.py$|uv\.lock$|\.github/workflows/ci\.yml$)'; then
+            semantic=true
+          fi
+
+          emit "$deploy" "$semantic"
 
   lint:
     runs-on: ubuntu-latest
@@ -125,6 +141,67 @@ jobs:
         run: npm ci --prefix frontend/admin
       - name: Run tests
         run: uv run pytest tests/ -v --tb=short
+
+  # tj-qfsy. `test_producer_runs_pinned_bge_through_real_exact_pgvector_search`
+  # is the only test that exercises the central tj-rcg5 claim: the producer
+  # goes through `src.rag.pipeline.search_products` on real exact pgvector, with
+  # no ANN index and no database residue. It skips itself whenever
+  # SEMANTIC_EVIDENCE_DATABASE_URL is unset, so until now it never ran anywhere
+  # except by hand. Kept out of `deploy`'s needs on purpose: this guards the
+  # measured-round harness, not the runtime, and a model download must not sit
+  # between a runtime fix and production.
+  semantic-evidence:
+    needs: [changes]
+    if: needs.changes.outputs.semantic == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      pgvector:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: treejar_semantic_evidence_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      APP_ENV: test
+      SEMANTIC_EVIDENCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/treejar_semantic_evidence_ci
+      HF_HOME: ${{ github.workspace }}/.hf-cache
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
+        with:
+          version: "0.11.6"
+          enable-cache: true
+          save-cache: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+      # The BGE-M3 download dominates the runtime and the revision is pinned,
+      # so the cache key is the revision itself: a new pin is a new download.
+      - name: Cache the pinned embedding model
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ github.workspace }}/.hf-cache
+          key: bge-m3-5617a9f61b028005a4858fdac845db406aefb181
+      - name: Install dependencies
+        run: uv sync --locked --all-extras --dev
+      - name: Run the pgvector retrieval integration test
+        run: |
+          set -euo pipefail
+          uv run pytest \
+            "tests/test_corpus_bridge_semantic_catalog_evidence.py::test_producer_runs_pinned_bge_through_real_exact_pgvector_search" \
+            -v --tb=short | tee /tmp/semantic-evidence.log
+          # The test skips itself when the database URL is missing, and a skip
+          # exits zero. Read the outcome, not the exit code, or this job goes
+          # green on exactly the state it exists to catch.
+          grep -q "1 passed" /tmp/semantic-evidence.log
 
   deploy:
     needs: [changes, lint, type-check, test]
