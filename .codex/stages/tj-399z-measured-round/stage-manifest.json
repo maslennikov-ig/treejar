@@ -1,0 +1,60 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-399z-measured-round",
+  "goal_id": "tj-399z",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "accepted",
+  "sequence": 1,
+  "acceptance_boundary_id": "paired-openings-20-measured-round",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "acceptance-measurement"
+    ],
+    "risk_models": [
+      "paid-generation-calls",
+      "protected-corpus-handling",
+      "reader-variance"
+    ],
+    "test_environments": [
+      "frozen-openings-20",
+      "repository-verification"
+    ],
+    "rollback_boundary": "protected-round-artifact-plus-one-local-main-commit",
+    "acceptance_proofs": [
+      "blind-root-reading-20-of-20",
+      "paired-per-rule-delta",
+      "unchanged-protected-replay",
+      "green-repository-gates"
+    ]
+  },
+  "work_areas": [
+    "proof",
+    "tests",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-399z",
+    "source_digest": "b31cde7cedfc32f56d7294cf1a8f697ff3b2724971ccf10f8adb43ce2b21cc52",
+    "criteria": [
+      {
+        "criterion_id": "AC-01",
+        "text": "20/20 generated and read blind; 20/20 customer language; zero critical failures; every applicable rule reported with ceiling; rules 2 and 5 paired against tj-68au with 2.0 reader gap; replay baseline unchanged; all verification deltas from 3798 passed, 20 skipped, 0 failed accounted; actual calls/cost and protected path recorded in Beads and .codex/handoff.md.",
+        "text_digest": "a2dcea9d5df9d36ab036f6d5ddf309a7a75c7f5e8921b9672dd1d074be9e1534"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-399z/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "b31cde7cedfc32f56d7294cf1a8f697ff3b2724971ccf10f8adb43ce2b21cc52",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-399z",
+      "stream_owner": "tj-399z-root-measurement",
+      "artifact_path": ".codex/stages/tj-399z-measured-round/artifacts/tj-399z.md"
+    }
+  ]
+}

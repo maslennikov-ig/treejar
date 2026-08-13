@@ -2,15 +2,12 @@
 
 Updated: 2026-08-13
 Current branch: `main`
-Current stage id: `tj-rcg5-semantic-catalog-evidence`
-Status: `tj-9scy`, `tj-f6yp` and `tj-rcg5` are closed and deployed. The seven
-defects the 2026-08-13 audit left -- `tj-eedk`, `tj-d651`, `tj-rdqc`, `tj-qfsy`,
-`tj-izkn`, `tj-hls5`, `tj-bzr0` -- are closed in one tested commit each,
-`c058d08`..`869ee2a`, pushed and deployed on owner authorization. Production
-ran `2876774` and now runs `b5ab693`. `tj-68au` measured the first round
-comparable to the six before `4a0883a` on rules 2 and 7 and opened four defects;
-`tj-3jo0`, `tj-7vhq`, `tj-b8il` and `tj-zewi` are closed in one tested commit,
-delivered and deployed, and are **unmeasured** -- no round has read them.
+Current stage id: `tj-399z-measured-round`
+Status: `tj-399z` measured the four shipped fixes on `openings-20`: 20/20
+generated and read blind, 20/20 in language, zero critical failures. Rule 2
+moved +0.05 because dialog 28's contradiction is gone; rule 5 moved -0.05 on a
+new product-led draw. The paired raw delta is -0.15 per opening, inside the 2.0
+reader gap. Production still runs `b5ab693`; this task made no live mutation.
 
 Documentation: `docs-resolve` covered pgvector and pinned model revisions; local
 code owns Treejar behavior.
@@ -88,24 +85,23 @@ code owns Treejar behavior.
   gap, so it stands on those shapes and not on any total. Weighted 15.5 against
   18.7 is **not** a regression: the map follows the reply, so three openings
   moved to the 9.6 band, 14/6 against 11/9.
-- What the four fixes changed, unread by any judge: the English anchor is
-  `Chairs from AED 250, desks and workstations from AED 491` against 250/154,
-  and 19 of the twenty carry it where 20 did -- dialog 28 is the one withheld.
-  The same rule withholds it on 2 of `arabic-12`, 665 and 686, and on none of
-  the other 290 stored openings.
+- `tj-399z-round-20260814` measures the four fixes. Raw 12.8 of a 13.2 mean
+  ceiling, [12.2, 13.4]; 13/20 at their own ceiling; weighted 15.2; zero
+  critical failures. Per rule: 1 2.00/2.00, 2 1.95/2.00, 3 2.00/2.00,
+  4 1.95/2.00, 5 1.80/1.95, 7 1.95/2.00, 8 1.83/2.00 (n=6), 9 2.00/2.00
+  (n=6). Against `tj-68au`, raw -0.15 and weighted -0.28, both inside the 2.0
+  reader gap. Dialog 28 moved only rule 2, 1 to 2. AED 491 is credible beside
+  the priced workstation rows. Rule 13 remains inapplicable on all twenty.
 - No corpus text, request body or reply body is tracked. Durable evidence uses
   dialog ids, integers and digests only.
 
 ## Verification
 
-- Ruff, format and Mypy clean over `src/ tests/ scripts/`; process verification
-  passed. Pytest in a linked worktree: 3818 collected, 3797 passed, 20 skipped,
-  1 failed -- `test_the_protected_root_is_outside_the_working_tree`, which fails
-  for the worktree alone. The 20 added tests cover the pedestal row, a
-  workstation chair, an accessory named after a family, both anchor languages,
-  the three withheld shapes, the pinned contract digest and `stale-evidence`.
-  Format was **not** clean at `167936b` and is now: the repo gate covers
-  `src/ tests/` only, so `scripts/` drifted unseen.
+- Ruff, format, Mypy and process verification pass. The first full pytest after
+  moving the current-stage pointer found only four stale traceability pins:
+  3794 passed, 20 skipped, 4 failed. The sanctioned re-pin updated three digest
+  fields; the four focused tests passed, then the final full suite matched the
+  baseline exactly: 3798 passed, 20 skipped, 0 failed.
 - The protected replay, re-run after the four fixes, has not moved: aggregate
   `1b425bd1…` against the frozen `1fc87c04…`, the same 7 records differing on
   dialogs 28, 875 and 1291. It replays a stored `anchor_line` rather than
@@ -116,12 +112,9 @@ code owns Treejar behavior.
 
 - No PR, deploy, production/staging mutation, model-configuration change or
   real-user message is authorized beyond what is recorded here.
-- `tj-68au` was owner-authorized on 2026-08-13 and cost $0.006432: 20 Luna
-  calls, no repair-judge, no `--second-reader`; the root read it blind, free.
-  Running total $0.1972. The four fixes called no provider and cost nothing.
-- Paid calls before it total $0.1908 across ten authorized rounds, $0.1627 of it
-  the single paid second reader. Per-round authorization is in Beads. `tj-ge07`
-  is authorized and deliberately not taken.
+- `tj-399z` was owner-authorized in the current session and cost $0.006473: 20
+  Luna calls, zero repair-judge and scoring-judge calls, no second reader; root
+  read it blind for free. Recorded paid-round total is now about $0.2037.
 - `https://noor.starec.ai/api/v1/health` was read once on 2026-08-13; nothing
   else on the runtime was contacted.
 
@@ -133,8 +126,8 @@ code owns Treejar behavior.
 ## Next recommended
 
 Next stage id: not opened
-Recommended action: buy one paired round on `openings-20` against `tj-68au`.
-Four fixes shipped unread; rules 2 and 5 are where they land.
+Recommended action: select among the four bounded defects found by `tj-399z`;
+no further measured round is needed for the four 2026-08-13 fixes.
 
 ## Starter prompt for next orchestrator
 
@@ -198,3 +191,5 @@ Use $orchestrator-stage after selecting the next open Beads goal.
   `docs/root-reading-convention.md`: the round before scored both 2, so adopting
   either moves no delta but needs a re-read. Rule 5's ceiling on the twenty
   stays 1.95: dialog 28 is charged whether or not it now carries a price.
+- `tj-j62b`, `tj-593w`, `tj-1orh` and `tj-b8px` track the new rule 5, 7, 4 and
+  8 defect shapes from `tj-399z`; fixes are outside the measured-round scope.

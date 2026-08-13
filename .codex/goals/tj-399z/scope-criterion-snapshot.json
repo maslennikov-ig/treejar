@@ -1,0 +1,14 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-399z",
+  "source_kind": "beads",
+  "source_id": "tj-399z",
+  "source_digest": "b31cde7cedfc32f56d7294cf1a8f697ff3b2724971ccf10f8adb43ce2b21cc52",
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "text": "20/20 generated and read blind; 20/20 customer language; zero critical failures; every applicable rule reported with ceiling; rules 2 and 5 paired against tj-68au with 2.0 reader gap; replay baseline unchanged; all verification deltas from 3798 passed, 20 skipped, 0 failed accounted; actual calls/cost and protected path recorded in Beads and .codex/handoff.md.",
+      "text_digest": "a2dcea9d5df9d36ab036f6d5ddf309a7a75c7f5e8921b9672dd1d074be9e1534"
+    }
+  ]
+}
