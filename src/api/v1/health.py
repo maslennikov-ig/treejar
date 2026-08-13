@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from contextlib import suppress
 from importlib.metadata import PackageNotFoundError
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.deps import get_db, get_redis
 from src.schemas import DependencyHealth, HealthCheckResponse
+from src.schemas.health import RELEASE_SHA_PATTERN
 
 router = APIRouter()
 
@@ -20,6 +22,9 @@ _PACKAGE_NAME = "treejar-ai-bot"
 _FALLBACK_VERSION = "0.0.0+unknown"
 _FALLBACK_RELEASE_SHA = "unknown"
 _RELEASE_SHA_PATH = Path(__file__).resolve().parents[3] / ".release-sha"
+# The same shape the response schema enforces, so the resolver and the model
+# can never disagree about what a release SHA is.
+_RELEASE_SHA_RE = re.compile(RELEASE_SHA_PATTERN)
 
 
 def resolve_app_version() -> str:
@@ -38,14 +43,20 @@ def resolve_release_sha() -> str:
     `ValueError` and not an `OSError`. Uncaught it returned 500, and the deploy
     health loop retries twenty times before failing the release -- a metadata
     file must never be able to do that.
+
+    `tj-izkn`: whatever comes back is a commit SHA or it is "unknown". The
+    endpoint is public and unauthenticated, and `.strip()` alone let a
+    200,000-byte file through whole and left a second line inside the value.
+    Anything the shape does not admit reads "unknown", which is the honest
+    answer for a file that does not hold a release SHA.
     """
     try:
-        return (
-            _RELEASE_SHA_PATH.read_text(encoding="utf-8").strip()
-            or _FALLBACK_RELEASE_SHA
-        )
+        candidate = _RELEASE_SHA_PATH.read_text(encoding="utf-8").strip()
     except (OSError, ValueError):
         return _FALLBACK_RELEASE_SHA
+    if not _RELEASE_SHA_RE.fullmatch(candidate):
+        return _FALLBACK_RELEASE_SHA
+    return candidate
 
 
 @router.get("/health", response_model=HealthCheckResponse)

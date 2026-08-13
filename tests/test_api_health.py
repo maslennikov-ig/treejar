@@ -5,11 +5,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.deps import get_db, get_redis
 from src.api.v1 import health
 from src.main import app
+from src.schemas import HealthCheckResponse
 
 
 @pytest.fixture
@@ -136,6 +138,86 @@ async def test_health_reports_unknown_when_release_sha_is_unavailable(
 
     assert response.status_code == 200
     assert response.json()["release_sha"] == "unknown"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "content",
+    [
+        # `tj-izkn`, both probed on 2026-08-13. The file is returned whole on a
+        # public unauthenticated endpoint, and `.strip()` only takes the outer
+        # whitespace, so a second line travels inside the value.
+        pytest.param(b"a" * 200_000, id="over-long"),
+        pytest.param(b"abc123\nSECOND-LINE\n", id="multi-line"),
+        pytest.param(b"not a sha at all\n", id="prose"),
+        pytest.param(b"278C46C8\n", id="upper-case"),
+        pytest.param(b"278c46\n", id="too-short"),
+    ],
+)
+async def test_health_reports_unknown_for_anything_that_is_not_a_release_sha(
+    health_dependencies: tuple[AsyncMock, AsyncMock],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    content: bytes,
+) -> None:
+    release_sha_path = tmp_path / ".release-sha"
+    release_sha_path.write_bytes(content)
+    monkeypatch.setattr(health, "_RELEASE_SHA_PATH", release_sha_path, raising=False)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/v1/health")
+
+    assert response.status_code == 200
+    assert response.json()["release_sha"] == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_health_reports_the_full_sha_ci_writes(
+    health_dependencies: tuple[AsyncMock, AsyncMock],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The deploy job writes `$GITHUB_SHA`, which is forty characters."""
+
+    full_sha = "0123456789abcdef0123456789abcdef01234567"
+    release_sha_path = tmp_path / ".release-sha"
+    release_sha_path.write_text(f"{full_sha}\n", encoding="utf-8")
+    monkeypatch.setattr(health, "_RELEASE_SHA_PATH", release_sha_path, raising=False)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/v1/health")
+
+    assert response.json()["release_sha"] == full_sha
+
+
+def test_the_response_schema_bounds_the_release_sha() -> None:
+    """The endpoint is public. Nothing reaches it that the schema would refuse.
+
+    Belt and braces on purpose: the resolver is the gate, and the schema is
+    what stops a future caller routing around it.
+    """
+
+    ok = HealthCheckResponse(
+        status="ok",
+        version="1.0.0",
+        release_sha="278c46c8",
+        dependencies={},
+    )
+
+    assert ok.release_sha == "278c46c8"
+
+    for rejected in ("a" * 41, "abc123\nSECOND-LINE", "not a sha", ""):
+        with pytest.raises(ValidationError):
+            HealthCheckResponse(
+                status="ok",
+                version="1.0.0",
+                release_sha=rejected,
+                dependencies={},
+            )
 
 
 # --- the shipped location, not a patched one ------------------------------
