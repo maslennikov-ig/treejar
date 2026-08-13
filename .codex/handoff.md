@@ -6,10 +6,11 @@ Current stage id: `tj-q1a2-one-reply-owner`
 Status: D1-D6 and the audit fix `tj-w224` are delivered locally with all gates
 green; `main` is pushed to `origin/main` with CI green. No deploy or runtime
 mutation was authorized or performed. Five measured rounds were read blind
-with the owner's authority: four on the frozen twenty, taking the weighted mean
-14.6 to 17.5 of 30, and one over the whole Arabic population. They found and
-closed `tj-fcv8`, `tj-l0e3`, `tj-fcfn`, `tj-jfmv` and `tj-40gc`, and opened
-`tj-z1fn`.
+with the owner's authority: six on the frozen twenty, taking the weighted mean
+14.6 to 18.7 of 30, and three over the whole Arabic population, 9.6 to 10.6.
+`tj-fcv8`, `tj-l0e3`, `tj-fcfn`, `tj-jfmv`, `tj-40gc` and `tj-z1fn` are all
+found, fixed and closed. On the twenty, every rule the set can charge now
+reads 2.00 except rule 5 at 1.95.
 
 Documentation: no external/versioned boundary — the behavior is owned by the
 local reply-policy contract, Python implementation, tests and protected replay.
@@ -98,37 +99,40 @@ local reply-policy contract, Python implementation, tests and protected replay.
   baseline is `tj-7gpw-parity-baseline-c-20260812`, $0.0054, digest
   `61b6c9229ab295a4…`, whose reading found `tj-fcv8`: 18 of 20 replies said
   Treejar's line of business twice, three as a lower-case fragment.
-- Three paired rounds followed, each on the same twenty with the same reader,
-  each changing exactly one thing, each 20/20 and 20/20 with zero critical
-  failures and accepted. `tj-fcv8-paired-b-20260812`, $0.0036, directive: rule 7
-  +0.45, rules 2 and 4 +0.15, fragments 0 against 3, rule 5 -0.15 as the first
-  sighting of `tj-fcfn`. `tj-l0e3-name-fold-b-20260813`, $0.0025, guard order,
-  digest `23122559c37a9dd5…`: rule 3 0.20 to 2.00, and the cost recorded not
-  rounded away, rule 5 -0.25 and rule 8 -0.33.
-  `tj-fcfn-job-options-20260813`, $0.0026, directive: rule 5 recovers to 1.80
-  and rules 9 (+0.33), 8 (+0.11) and 7 (+0.05) rise with it while nothing falls
-  -- an option naming a kind of space *is* the job to be done, so one sentence
-  charges both rules.
-- Weighted mean over the four rounds 14.6, 15.0, 16.1, 17.5 of 30, the last
-  interval [14.4, 20.6]; raw 10.6 to 13.2; the 11 low-ceiling openings 75% to
-  97% of their 9.6 and the 9 others 78% to 92% of 30.0. A first `tj-l0e3` round,
-  $0.0025, is discarded as unfaithful under `tj-l0e3.2`: it asked dialogs 28 and
-  875 for names their own openings had given.
-- The Arabic round, `tj-jfmv-arabic-round-20260813` over `arabic-12`: every
-  Arabic opening the corpus has, 12 of 1358, a population and not a sample.
-  $0.0015, 12/12, zero critical failures, accepted. Its weighted mean is *not*
-  comparable to the twenty's -- 11 of 12 sit in the 9.6 band against 11 of 20 --
-  so what compares is that band, n=11 both sides: English 97%, Arabic 93%. The
-  hypothesis that an English directive fails to reach Arabic is disproved: five
-  of twelve ask a space-based question in fluent Arabic, and rule 4 is 2.00
-  against English 1.95. What Arabic costs is `tj-40gc` and `tj-z1fn`.
+- Five paired rounds followed on the same twenty, same reader, each changing
+  exactly one thing, all accepted with full coverage. `tj-fcv8`, $0.0036: rule
+  7 +0.45, fragments 0 against 3, rule 5 -0.15 as the first sighting of
+  `tj-fcfn`. `tj-l0e3`, $0.0025: rule 3 0.20 to 2.00, cost recorded not rounded
+  away, rule 5 -0.25 and rule 8 -0.33. `tj-fcfn`, $0.0026: rule 5 recovers to
+  1.80 and rules 9, 8 and 7 rise with it while nothing falls -- an option naming
+  a kind of space *is* the job to be done, so one sentence charges both rules.
+  `tj-z1fn` in two, $0.0052, above.
+- Weighted mean over the six rounds on the twenty: 14.6, 15.0, 16.1, 17.5,
+  17.7, 18.7 of 30, the last interval [15.6, 21.7]; raw 10.6 to 13.8; the 11
+  low-ceiling openings 75% to 100% of their 9.6 and the 9 others 78% to 99% of
+  30.0. A first `tj-l0e3` round, $0.0025, is discarded as unfaithful under
+  `tj-l0e3.2`: it asked dialogs 28 and 875 for names their own openings gave.
+- The Arabic rounds over `arabic-12`, every Arabic opening the corpus has, 12
+  of 1358 -- a population, not a sample. Weighted 9.6 to 10.6, low band 93% to
+  99%, all accepted with full coverage. That mean is *not* comparable to the
+  twenty's: 11 of 12 sit in the 9.6 band against 11 of 20, so only the band
+  compares. The hypothesis that an English directive fails to reach Arabic is
+  disproved -- five of twelve asked a space-based question in fluent Arabic
+  before any Arabic-specific fix, and rule 4 led English throughout. What
+  Arabic actually cost was `tj-40gc` and `tj-z1fn`, both now closed.
+- `tj-z1fn` took two steps and the first one is the lesson. Quoting the
+  canonical opening helped Arabic and cost English rule 7 2.00 to 1.80: four
+  replies answered the quotation with a capability list, reading the catalogue
+  as the thing "the opening does not cover". Naming what it leaves uncovered --
+  the customer -- removed them, and rule 7 is 2.00 on both sets. English
+  weighted 17.5 to 18.7, rules 8 and 9 to 2.00.
 - No corpus text, request body or reply body is tracked. Durable evidence uses
   dialog ids, integers and digests only.
 
 ## Verification
 
 - Ruff and format clean over `src/ tests/ scripts/`; Mypy clean over 174 source
-  files; full Pytest `3691 passed, 19 skipped`; process verification passed. The
+  files; full Pytest `3692 passed, 19 skipped`; process verification passed. The
   protected replay moved once and on purpose, toward the frozen `1fc87c04…`
   baseline: 55 differing records to 7, the 7 a strict subset of the 55, so 48
   were removed and none introduced. It has not moved since; `tj-fcfn` is
@@ -142,12 +146,10 @@ local reply-policy contract, Python implementation, tests and protected replay.
 - Paid calls: 60 on the repair judge, all on stored dialogs 819 and 789 with the
   failure page suppressed. The owner then authorized, on 2026-08-12, a
   re-baseline round, the paired `tj-fcv8` round and the `tj-ge07` baseline as
-  one block, then on 2026-08-13 the `tj-l0e3`, `tj-fcfn` and Arabic rounds.
-  Spent:
-  $0.0054, $0.0036, $0.0020 lost to four attempts killed by upstream 429s and a
-  503, $0.0025 twice for `tj-l0e3` with the first of that pair discarded under
-  `tj-l0e3.2`, $0.0026 for `tj-fcfn` and $0.0015 for the Arabic population.
-  Total $0.0181. The `tj-ge07` baseline
+  one block, then on 2026-08-13 the `tj-l0e3`, `tj-fcfn`, Arabic and `tj-z1fn`
+  rounds. Total spent $0.0263 across nine rounds, of which $0.0045 bought
+  nothing: $0.0020 to four attempts killed by upstream 429s and a 503, and
+  $0.0025 to the `tj-l0e3` round discarded as unfaithful under `tj-l0e3.2`. The `tj-ge07` baseline
   is authorized and deliberately not taken. The canonical runtime target
   remains `https://noor.starec.ai`; it was not contacted.
 
@@ -159,8 +161,9 @@ local reply-policy contract, Python implementation, tests and protected replay.
 
 ## Next recommended
 
-Next stage id: not opened. Recommended action: `tj-z1fn`, the Arabic offer
-restated. Do not deploy without new authority.
+Next stage id: not opened. Recommended action: `tj-4q79`, reader stability --
+the numbers are now at the ceiling and only a second reader can tell a real
+gain from drift. Do not deploy without new authority.
 
 ## Starter prompt for next orchestrator
 
@@ -185,16 +188,13 @@ current repository truth.
   having, not what the task was opened for, waiting on a decision. The frozen
   set exists, `tj-ge07-two-turn-20260812`, human mean raw total 5.2, tracked
   and text-free.
-- `tj-z1fn`: the Arabic reply restates the offer in 2 of 12 against 0 of 20 in
-  English. Opened, not fixed. `tj-40gc` is closed and was proved free: the
-  extractor fires once over the frozen twelve, on the dialog that needed it,
-  and the ask is then forbidden before generation.
-- Rule 5's achievable ceiling on the frozen twenty is 1.90, not 2.00: dialogs
-  28 and 1000 score 1 in all four rounds, one a job application with no
-  furniture need and the other a price asked with no item named, and rule 5 is
-  charged on both. The measured 1.80 sits one dialog below it, and that dialog
-  scores 2, 1, 2, 1 across the rounds. The rubric is not changed for it.
-- `tj-2m5m.4`: the prompt half is delivered and unmeasured, waiting for
-  something no round can give -- the solution stage needs slots, slots need
-  tools, the harness forbids tools. Deployment and live runtime verification
-  were not authorized.
+- `tj-4q79` is the live caveat on every figure here: the root judge is one
+  reader and drift between sessions is unmeasured. The twenty now read 100% and
+  99% of their two ceilings, which is the weakest kind of high score -- one
+  reader at the top of a scale, over an interval of [15.6, 21.7].
+- Rule 5's ceiling on the frozen twenty is 1.95, not 2.00: dialog 28 is a job
+  application with no furniture need and rule 5 is charged on it anyway. The
+  measured 1.95 is that ceiling. The rubric is not changed for it.
+- `tj-2m5m.4`: the prompt half is delivered and unmeasured, waiting for what no
+  round can give -- the solution stage needs slots, slots need tools, the
+  harness forbids tools. Deploy and live verification were not authorized.

@@ -929,6 +929,15 @@ def consultative_opening_directive(
     English and is load-bearing there -- and what is added beside it is a fact
     the model no longer has to reconstruct.
 
+    Quoting alone was not enough, and the first paired pair says so. Arabic
+    rule 7 went 1.83 to 1.92 and rule 5 1.50 to 1.75, but English rule 7 fell
+    2.00 to 1.80: four replies of twenty answered the quotation by elaborating
+    the catalogue -- "we can help with ergonomic chairs, desks, workstations,
+    acoustic pods" -- which is what Treejar offers, said a second time. The
+    model was reading the catalogue as the thing "the opening does not cover".
+    So that phrase is no longer left open: what the opening leaves uncovered is
+    named, and it is the customer.
+
     It lives here rather than in the product system prompt, which the stage
     contract freezes.
     """
@@ -943,8 +952,9 @@ def consultative_opening_directive(
         "office furniture in the UAE and quotes from its own catalog with "
         f"confirmed prices and stock.{quoted_opening} That discharges what "
         "Treejar offers. Do not say it again in any words, and do not begin "
-        "with a fragment of it: spend the reply on what the opening does not "
-        "cover."
+        "with a fragment of it. What the opening leaves uncovered is the "
+        "customer, so spend the reply on them: their space, their work, what "
+        "they came here to solve."
         if opening_states_the_offer
         else "In this reply, in one short clause, say what Treejar offers: an "
         "office furniture supplier in the UAE quoting from its own catalog "
