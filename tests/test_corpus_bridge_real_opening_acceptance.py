@@ -357,6 +357,44 @@ def test_the_round_sends_the_ask_permissions_production_derives() -> None:
     )
 
 
+def test_a_customer_who_signs_the_opening_is_not_asked_their_name() -> None:
+    """`tj-l0e3`. The round asked people it had just addressed by name.
+
+    Production reads the name off this very message, so the ask is forbidden
+    before generation. The harness derived the permission from a hardcoded
+    `None` and told the model the opposite.
+    """
+
+    signed = build_generation_messages(
+        opening="this is binu from bikram interiors sharjah.",
+        language="en",
+        catalog_evidence=[],
+    )[0]["content"]
+    anonymous = build_generation_messages(
+        opening="I need an ergonomic chair",
+        language="en",
+        catalog_evidence=[],
+    )[0]["content"]
+
+    assert "- customer_name: forbidden" in str(signed)
+    assert "- customer_name: allowed" in str(anonymous)
+
+
+@pytest.mark.asyncio
+async def test_the_guards_do_not_re_ask_a_name_the_opening_supplied() -> None:
+    """The same parity gap, on the shipped-output side rather than the prompt."""
+
+    result = await apply_shipped_output_guards(
+        "Nice to meet you, Binu. What are you furnishing?",
+        language="en",
+        anchor_line=None,
+        catalog_evidence=[],
+        customer_message="this is binu from bikram interiors sharjah.",
+    )
+
+    assert "how should I address you" not in result.content
+
+
 @pytest.mark.parametrize("second_reader", [False, True])
 def test_every_model_the_round_pays_can_be_pinned(second_reader: bool) -> None:
     """The repair judge changed vendor and preflight died on a missing key."""

@@ -429,6 +429,21 @@ def expected_language(text: str) -> str:
     )
 
 
+def _inbound_customer_name(opening: str) -> str | None:
+    """The name the customer put in this very message, read as production reads it.
+
+    `_Turn.known_customer_name` feeds `current_message_customer_name` from the
+    same extraction, and that is what suppresses the name ask on a turn where
+    the customer already introduced themselves. The frozen set stores no prior
+    conversation, so this is the only place a name can come from.
+    """
+
+    from src.llm.engine import _extract_quote_customer_details
+
+    name = str(_extract_quote_customer_details(opening).get("name") or "").strip()
+    return name or None
+
+
 def build_generation_messages(
     *, opening: str, language: str, catalog_evidence: list[dict[str, object]]
 ) -> list[dict[str, str]]:
@@ -485,7 +500,11 @@ def build_generation_messages(
         format_permitted_asks_prompt(
             permitted_asks_for_turn(
                 is_first_turn=True,
-                customer_name=None,
+                # A customer who signs the opening has answered the name ask
+                # before it was made, and production reads that name off this
+                # very message. Deriving the permission without it told the
+                # model to ask people it had just addressed by name.
+                customer_name=_inbound_customer_name(opening),
                 customer_name_asked=False,
                 owes_company_question=False,
                 quote_consent_granted=False,
@@ -526,8 +545,15 @@ async def apply_shipped_output_guards(
     defect production would have filtered is a round that sends us to fix
     nothing, and it cannot be told apart from a real one after the fact.
 
-    `is_first_turn=True` and `customer_name=None` are properties of the frozen
-    set: every case is one customer opening with no prior conversation.
+    `is_first_turn=True` and a stored `customer_name` of `None` are properties
+    of the frozen set: every case is one customer opening with no prior
+    conversation. A name the customer puts *in* that opening is not, and
+    production reads it -- `_Turn.known_customer_name` feeds
+    `current_message_customer_name`, which suppresses the name ask on the same
+    turn. The round that first restored the fold showed what omitting it costs:
+    dialogs 28 and 875 both introduce their sender, both replies used the name,
+    and both then asked how to address them. Production would not have sent
+    either. The extraction is the product's own, so the round follows it.
     """
 
     grounded: list[object] = []
@@ -540,6 +566,7 @@ async def apply_shipped_output_guards(
         language=language,
         is_first_turn=True,
         customer_name=None,
+        current_message_customer_name=_inbound_customer_name(customer_message),
         anchor_line=anchor_line,
         grounded_amounts=grounded_amounts,
     )
