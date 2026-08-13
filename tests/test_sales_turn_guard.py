@@ -393,6 +393,76 @@ def test_a_folded_ask_list_has_terminal_punctuation(
     assert only_asks_were_dropped(original, folded)
 
 
+def test_a_question_above_the_form_does_not_cost_the_fold_its_proof() -> None:
+    """The regression `tj-f6yp` shipped: punctuate last, or lose the lead-in.
+
+    Terminal punctuation added inside the fold made the merged line a second
+    question for the inline pass, which dropped it whole -- lead-in included --
+    because a question already stood above it. The lead-in is content, so the
+    proof refused the reduction and the customer received the entire numbered
+    form plus a paid repair call.
+    """
+
+    original = (
+        "Hi Maya. Which finish would you like?\n\n"
+        "To recommend the right setup, could you share:\n\n"
+        "1. How many people or workstations you are furnishing\n"
+        "2. which items are required\n"
+        "3. your approximate budget"
+    )
+
+    folded = collapse_question_form(original)
+
+    assert only_asks_were_dropped(original, folded)
+    assert "Which finish would you like?" in folded
+    assert "could you share: How many people or workstations you are furnishing?" in (
+        folded
+    )
+    assert "2. which items are required" not in folded
+
+
+@pytest.mark.parametrize(
+    "item",
+    ["How many people, and which rooms,", "How many people:"],
+)
+def test_a_folded_item_does_not_keep_the_separator_that_joined_the_list(
+    item: str,
+) -> None:
+    """An item ends on a comma because the next item followed it. Merged onto
+    the lead-in it is a sentence, and ",?" is not how a sentence ends."""
+
+    original = f"To narrow this down, could you share:\n1. {item}\n2. your timeline"
+
+    folded = collapse_question_form(original)
+
+    assert folded.endswith("?")
+    assert not any(f"{separator}?" in folded for separator in ",;:")
+    assert only_asks_were_dropped(original, folded)
+
+
+@pytest.mark.parametrize(
+    ("language", "item", "terminal"),
+    [
+        ("ar", "كم عدد الأشخاص", "؟"),
+        ("ar", "ميزانيتك التقريبية", "."),
+        # The reply's language decides the mark, not one Arabic word inside an
+        # otherwise English item.
+        ("en", "How many كرسي you need", "?"),
+    ],
+)
+def test_the_terminal_mark_follows_the_reply_language(
+    language: str,
+    item: str,
+    terminal: str,
+) -> None:
+    original = f"To narrow this down, could you share:\n1. {item}\n2. your timeline"
+
+    folded = collapse_question_form(original, language=language)
+
+    assert folded.endswith(terminal)
+    assert only_asks_were_dropped(original, folded)
+
+
 def test_the_fold_proof_refuses_a_lost_answer_and_an_invented_sentence() -> None:
     """The two ways a reduction stops being one, and both raise a flag.
 

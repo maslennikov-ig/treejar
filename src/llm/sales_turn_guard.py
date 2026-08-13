@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from typing import NamedTuple
 
 from src.llm.closed_question_guard import response_asks_customer_name
 from src.services.customer_language import is_arabic_customer_language
@@ -63,6 +64,28 @@ _QUESTION_ITEM_RE = re.compile(
     r"(?:هل|ما|ماذا|من|متى|أين|كيف|كم|أي|لماذا)\b)",
     re.IGNORECASE,
 )
+# A list item is written to be read under a lead-in, so it can end on the
+# separator that joined it to the next item. Folded onto the lead-in it is a
+# sentence, and a sentence does not end on a comma.
+_ITEM_SEPARATOR_CHARS = ",;:،؛"
+_TERMINAL_CHARS = ".!?؟"
+
+
+class _FoldedAsk(NamedTuple):
+    """The line `_collapse_ask_list` merged, and the item it merged in.
+
+    Carried out of the fold so the terminal punctuation can be added *after*
+    the inline pass rather than inside the fold. `tj-f6yp` added it inside, and
+    the punctuation then made the merged line a second question for
+    `_collapse_inline_questions`, which dropped the whole line -- lead-in
+    included -- whenever a question stood above the form. The lead-in is
+    content, so `only_asks_were_dropped` refused the reduction and the customer
+    received the entire numbered form. Punctuating last keeps the two passes
+    reading the same text they were measured on.
+    """
+
+    line: str
+    item: str
 
 
 def _is_question(text: str) -> bool:
@@ -73,7 +96,7 @@ def _question_lines(lines: list[str]) -> list[int]:
     return [index for index, line in enumerate(lines) if _is_question(line)]
 
 
-def collapse_question_form(text: str) -> str:
+def collapse_question_form(text: str, *, language: str = "en") -> str:
     """One question per reply, whether or not it was punctuated as one.
 
     Measured 2026-08-09: S01 turn 2 asked five things in a numbered list, R04
@@ -86,12 +109,44 @@ def collapse_question_form(text: str) -> str:
     found by its lead-in. S01's are punctuated questions and are found by
     counting. The first item survives either way -- it is the one the model
     thought most important -- and nothing but questions is ever dropped.
+
+    Three steps, not two: the surviving item is finished with terminal
+    punctuation only after both passes have run, because the punctuation is
+    what makes it a sentence and a pass that counts questions must not see it
+    as one.
     """
 
-    return _collapse_inline_questions(_collapse_ask_list(text))
+    folded, ask = _collapse_ask_list(text)
+    reduced = _collapse_inline_questions(folded)
+    if ask is None:
+        return reduced
+    return _terminate_folded_ask(reduced, ask, language=language)
 
 
-def _collapse_ask_list(text: str) -> str:
+def _terminate_folded_ask(text: str, ask: _FoldedAsk, *, language: str) -> str:
+    """Finish the folded line as a sentence, if it survived the inline pass.
+
+    A question mark where the item reads as a question, a full stop otherwise,
+    and the Arabic mark decided by the reply's language rather than by whether
+    a single Arabic word happens to sit in an English item.
+    """
+
+    if ask.item and ask.item[-1] in _TERMINAL_CHARS:
+        return text
+    if _QUESTION_ITEM_RE.match(ask.item):
+        terminal = "؟" if is_arabic_customer_language(language) else "?"
+    else:
+        terminal = "."
+    lines = text.split("\n")
+    for index, line in enumerate(lines):
+        if line.strip() != ask.line.strip():
+            continue
+        lines[index] = f"{line.rstrip()}{terminal}"
+        return "\n".join(lines)
+    return text
+
+
+def _collapse_ask_list(text: str) -> tuple[str, _FoldedAsk | None]:
     """A request for information followed by a list keeps one item.
 
     The surviving item is folded back onto the lead-in, because "please share:"
@@ -118,21 +173,18 @@ def _collapse_ask_list(text: str) -> str:
             continue
         kept = _LIST_ITEM_RE.sub("", lines[item_indices[0]]).strip()
         lead = line.rstrip()
+        ask: _FoldedAsk | None = None
         if lead.endswith(":"):
-            if kept and kept[-1] not in ".!?\u061f":
-                if _QUESTION_ITEM_RE.match(kept):
-                    terminal = "\u061f" if re.search(r"[\u0600-\u06ff]", kept) else "?"
-                else:
-                    terminal = "."
-                kept = f"{kept}{terminal}"
+            kept = kept.rstrip(_ITEM_SEPARATOR_CHARS).rstrip()
             merged = f"{lead} {kept}"
+            ask = _FoldedAsk(line=merged, item=kept)
         else:
             merged = f"{lead}\n{lines[item_indices[0]]}"
         # Resume at the line after the last item, not after the blank lines the
         # scan ran through, so the paragraph break below the form survives.
         rebuilt = lines[:index] + [merged] + lines[item_indices[-1] + 1 :]
-        return re.sub(r"\n{3,}", "\n\n", "\n".join(rebuilt)).strip()
-    return text
+        return re.sub(r"\n{3,}", "\n\n", "\n".join(rebuilt)).strip(), ask
+    return text, None
 
 
 def _collapse_inline_questions(text: str) -> str:

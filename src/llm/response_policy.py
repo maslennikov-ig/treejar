@@ -650,7 +650,7 @@ def render_reply(
         rendered, flags = _render_declared_guard(
             rendered,
             guard_name="question_form",
-            guard=collapse_question_form,
+            guard=partial(collapse_question_form, language=state.language),
             flag_details=("deterministic_fold_would_lose_content",),
         )
         raised_flags.extend(flags)
