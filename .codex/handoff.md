@@ -5,9 +5,9 @@ Current branch: `main`
 Current stage id: `tj-q1a2-one-reply-owner`
 Status: D1-D6 and the audit fix `tj-w224` are delivered locally with all gates
 green; `main` is pushed to `origin/main` with CI green. No deploy or runtime
-mutation was authorized or performed. Three measured rounds were read blind
-with the owner's authority. They found `tj-fcv8` and `tj-l0e3`, both fixed and
-re-measured, and `tj-fcfn`, opened. Weighted mean 14.6 to 16.1 of 30.
+mutation was authorized or performed. Four measured rounds were read blind with
+the owner's authority. They found `tj-fcv8`, `tj-l0e3` and `tj-fcfn`, each
+fixed and re-measured, and `tj-jfmv`, opened. Weighted mean 14.6 to 17.5 of 30.
 
 Documentation: no external/versioned boundary — the behavior is owned by the
 local reply-policy contract, Python implementation, tests and protected replay.
@@ -108,39 +108,37 @@ local reply-policy contract, Python implementation, tests and protected replay.
   permission list, which production always sends. Nothing after that fix is
   comparable to 18.94.
 - The baseline round of 2026-08-12, `tj-7gpw-parity-baseline-c-20260812`:
-  twenty Luna generations plus one repair-judge call, $0.0054, read blind.
-  Weighted mean 14.6/30, interval [12.0, 17.1], raw 10.6, zero critical
-  failures, 20/20 in the customer's language, accepted, digest
-  `61b6c9229ab295a4…`. That reading found `tj-fcv8`: 18 of 20 replies said
-  Treejar's line of business twice, three as a lower-case fragment copied out
-  of the directive's own example clause.
-- The paired round, `tj-fcv8-paired-b-20260812`: same twenty openings, same
-  reader, same prompt, only the directive changed. Twenty generations, no
-  repair call, $0.0036. Rule 7 +0.45 (1.50 to 1.95), rules 2 and 4 +0.15 each;
-  the fragments are gone, 0 against 3, and one reply of twenty still doubles.
-  Weighted mean 14.6 to 15.0, low-ceiling band 75% to 82%. Rule 5 -0.15, the
-  first sighting of `tj-fcfn`. Rules 3, 8 and 9 did not move.
-- The `tj-l0e3` round, `tj-l0e3-name-fold-b-20260813`: same twenty, same reader,
-  same prompt build, only the guard order changed. Twenty generations, no repair
-  call, $0.0025, digest `23122559c37a9dd5…`, 20/20 and 20/20, zero critical
-  failures, accepted. Rule 3 moves 0.20 to 2.00, perfect: 18 of 20 ask and the
-  two who signed their own openings correctly stand down. Weighted mean 15.0 to
-  16.1, interval [13.4, 18.6]; raw 11.2 to 12.6; bands 82% to 92% of 9.6 and
-  79% to 84% of 30.0. The cost, recorded not rounded away: rule 5 -0.25, rule 8
-  -0.33, rules 2 and 4 -0.05. A first round that day, $0.0025, is discarded as
-  unfaithful under `tj-l0e3.2`: it asked dialogs 28 and 875 for names their own
-  openings had given.
+  twenty Luna generations plus one repair-judge call, $0.0054, read blind,
+  digest `61b6c9229ab295a4…`. That reading found `tj-fcv8`: 18 of 20 replies
+  said Treejar's line of business twice, three as a lower-case fragment copied
+  out of the directive's own example clause.
+- Three paired rounds followed, each on the same twenty with the same reader,
+  each changing exactly one thing, each 20/20 and 20/20 with zero critical
+  failures and accepted. `tj-fcv8-paired-b-20260812`, $0.0036, directive: rule 7
+  +0.45, rules 2 and 4 +0.15, fragments 0 against 3, rule 5 -0.15 as the first
+  sighting of `tj-fcfn`. `tj-l0e3-name-fold-b-20260813`, $0.0025, guard order,
+  digest `23122559c37a9dd5…`: rule 3 0.20 to 2.00, and the cost recorded not
+  rounded away, rule 5 -0.25 and rule 8 -0.33.
+  `tj-fcfn-job-options-20260813`, $0.0026, directive: rule 5 recovers to 1.80
+  and rules 9 (+0.33), 8 (+0.11) and 7 (+0.05) rise with it while nothing falls
+  -- an option naming a kind of space *is* the job to be done, so one sentence
+  charges both rules.
+- Weighted mean over the four rounds 14.6, 15.0, 16.1, 17.5 of 30, the last
+  interval [14.4, 20.6]; raw 10.6 to 13.2; the 11 low-ceiling openings 75% to
+  97% of their 9.6 and the 9 others 78% to 92% of 30.0. A first `tj-l0e3` round,
+  $0.0025, is discarded as unfaithful under `tj-l0e3.2`: it asked dialogs 28 and
+  875 for names their own openings had given.
 - No corpus text, request body or reply body is tracked. Durable evidence uses
   dialog ids, integers and digests only.
 
 ## Verification
 
 - Ruff and format clean over `src/ tests/ scripts/`; Mypy clean over 174 source
-  files; full Pytest `3685 passed, 19 skipped`; process verification passed. The
-  protected replay moved on purpose and toward the frozen `1fc87c04…` baseline,
-  55 differing records to 7, the 7 a strict subset of the 55, so 48 were removed
-  and none introduced. `tj-l0e3` is a deterministic fix, so the replay proves it
-  landed; the paid round then scored what the customer reads.
+  files; full Pytest `3686 passed, 19 skipped`; process verification passed. The
+  protected replay moved once and on purpose, toward the frozen `1fc87c04…`
+  baseline: 55 differing records to 7, the 7 a strict subset of the 55, so 48
+  were removed and none introduced. It has not moved since; `tj-fcfn` is
+  generation-side and the aggregate stands at `1b425bd1…`.
 
 ## Constraints
 
@@ -150,11 +148,12 @@ local reply-policy contract, Python implementation, tests and protected replay.
 - Paid calls: 60 on the repair judge, all on stored dialogs 819 and 789 with the
   failure page suppressed. The owner then authorized, on 2026-08-12, a
   re-baseline round, the paired `tj-fcv8` round and the `tj-ge07` baseline as
-  one block, then on 2026-08-13 the `tj-l0e3` round. Spent: $0.0054, $0.0036,
-  $0.0020 lost to four attempts killed by upstream 429s and a 503, and $0.0025
-  twice for `tj-l0e3`, the first of that pair discarded under `tj-l0e3.2`. The
-  `tj-ge07` baseline is authorized and deliberately not taken. The canonical
-  runtime target remains `https://noor.starec.ai`; it was not contacted.
+  one block, then on 2026-08-13 the `tj-l0e3` and `tj-fcfn` rounds. Spent:
+  $0.0054, $0.0036, $0.0020 lost to four attempts killed by upstream 429s and a
+  503, $0.0025 twice for `tj-l0e3` with the first of that pair discarded under
+  `tj-l0e3.2`, and $0.0026 for `tj-fcfn`. Total $0.0166. The `tj-ge07` baseline
+  is authorized and deliberately not taken. The canonical runtime target
+  remains `https://noor.starec.ai`; it was not contacted.
 
 ## Documentation and graph review
 
@@ -164,8 +163,8 @@ local reply-policy contract, Python implementation, tests and protected replay.
 
 ## Next recommended
 
-Next stage id: not opened. Recommended action: `tj-fcfn`, the product menu,
-now the largest reachable gap. Do not deploy without new authority.
+Next stage id: not opened. Recommended action: `tj-jfmv`, the three replies
+that still menu, one of them in Arabic. Do not deploy without new authority.
 
 ## Starter prompt for next orchestrator
 
@@ -190,10 +189,11 @@ current repository truth.
   having, not what the task was opened for, waiting on a decision. The frozen
   set exists, `tj-ge07-two-turn-20260812`, human mean raw total 5.2, tracked
   and text-free.
-- `tj-fcfn`: rule 5 has fallen three readings running, 1.85 to 1.70 to 1.45 of
-  2 on n=20, and is now the largest reachable gap on the frozen set. Nine of
-  twenty replies spend their one question on a menu of what we sell instead of
-  asking what the space has to do. Opened, not fixed.
+- `tj-jfmv`: after `tj-fcfn`, rule 5 is 1.80 against the 1.85 it held before
+  the fall, and three replies of twenty still offer a product menu -- dialogs
+  1217, 1000 and 1291. The Arabic one is the interesting case: the directive is
+  English and the model carries it across languages with the reply, so an
+  instruction that lands in English may not land in Arabic. Opened, not fixed.
 - `tj-2m5m.4`: the prompt half is delivered and unmeasured, waiting for
   something no round can give -- the solution stage needs slots, slots need
   tools, the harness forbids tools. Deployment and live runtime verification
