@@ -4,6 +4,7 @@ import time
 from contextlib import suppress
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Response, status
 from redis.asyncio import Redis
@@ -17,6 +18,8 @@ router = APIRouter()
 
 _PACKAGE_NAME = "treejar-ai-bot"
 _FALLBACK_VERSION = "0.0.0+unknown"
+_FALLBACK_RELEASE_SHA = "unknown"
+_RELEASE_SHA_PATH = Path(__file__).resolve().parents[3] / ".release-sha"
 
 
 def resolve_app_version() -> str:
@@ -25,6 +28,17 @@ def resolve_app_version() -> str:
         return package_version(_PACKAGE_NAME)
     except PackageNotFoundError:
         return _FALLBACK_VERSION
+
+
+def resolve_release_sha() -> str:
+    """Return the deployed release SHA without making health depend on metadata."""
+    try:
+        return (
+            _RELEASE_SHA_PATH.read_text(encoding="utf-8").strip()
+            or _FALLBACK_RELEASE_SHA
+        )
+    except OSError:
+        return _FALLBACK_RELEASE_SHA
 
 
 @router.get("/health", response_model=HealthCheckResponse)
@@ -80,5 +94,6 @@ async def health_check(
     return HealthCheckResponse(
         status=overall,
         version=resolve_app_version(),
+        release_sha=resolve_release_sha(),
         dependencies=dependencies,
     )

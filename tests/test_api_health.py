@@ -1,5 +1,6 @@
 from collections.abc import AsyncGenerator
 from importlib.metadata import version as package_version
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -7,6 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.deps import get_db, get_redis
+from src.api.v1 import health
 from src.main import app
 
 
@@ -82,3 +84,44 @@ async def test_health_status_reflects_required_dependencies(
         assert data["dependencies"]["redis"]["message"] == "unavailable"
     if db_fails:
         assert data["dependencies"]["database"]["message"] == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_health_reports_deployed_release_sha(
+    health_dependencies: tuple[AsyncMock, AsyncMock],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    release_sha_path = tmp_path / ".release-sha"
+    release_sha_path.write_text("278c46c8\n", encoding="utf-8")
+    monkeypatch.setattr(health, "_RELEASE_SHA_PATH", release_sha_path, raising=False)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/v1/health")
+
+    assert response.status_code == 200
+    assert response.json()["release_sha"] == "278c46c8"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path_kind", ["missing", "unreadable"])
+async def test_health_reports_unknown_when_release_sha_is_unavailable(
+    health_dependencies: tuple[AsyncMock, AsyncMock],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    path_kind: str,
+) -> None:
+    release_sha_path = tmp_path / ".release-sha"
+    if path_kind == "unreadable":
+        release_sha_path.mkdir()
+    monkeypatch.setattr(health, "_RELEASE_SHA_PATH", release_sha_path, raising=False)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/v1/health")
+
+    assert response.status_code == 200
+    assert response.json()["release_sha"] == "unknown"

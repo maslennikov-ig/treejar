@@ -15,4 +15,5 @@ class DependencyHealth(BaseModel):
 class HealthCheckResponse(BaseModel):
     status: Literal["ok", "degraded"]
     version: str
+    release_sha: str
     dependencies: dict[str, DependencyHealth]
