@@ -1530,13 +1530,24 @@ def find_ungrounded_numbers(response: str, case: dict[str, Any]) -> list[str]:
 
 
 def _actual_cost_by_model(
-    state: dict[str, Any], judge_model: str = SECOND_READER_MODEL
+    state: dict[str, Any],
+    judge_model: str = SECOND_READER_MODEL,
+    second_reader_model: str | None = None,
 ) -> dict[str, float]:
+    """What the round actually spent, by model.
+
+    `tj-4q79.1`: the paid second reader now records beside the root reading
+    rather than into it, so its spend has its own line. Without this the round
+    reported the root judge's zero and the money went unaccounted.
+    """
+
     totals = {
         GENERATOR_MODEL: 0.0,
         REPAIR_JUDGE_MODEL: 0.0,
         judge_model: 0.0,
     }
+    if second_reader_model:
+        totals.setdefault(second_reader_model, 0.0)
     records = state.get("records")
     if not isinstance(records, dict):
         return totals
@@ -1558,6 +1569,11 @@ def _actual_cost_by_model(
             )
         if isinstance(judge, dict):
             totals[judge_model] += int(judge.get("cost_micro_usd") or 0) / 1_000_000
+        second = record.get("second_reader")
+        if second_reader_model and isinstance(second, dict):
+            totals[second_reader_model] += (
+                int(second.get("cost_micro_usd") or 0) / 1_000_000
+            )
     return totals
 
 
@@ -1914,7 +1930,9 @@ def _analyze_completed_state(
         seed=BOOTSTRAP_SEED,
         expected_openings=expected_openings,
     )
-    actual_costs = _actual_cost_by_model(state, judge_model)
+    actual_costs = _actual_cost_by_model(
+        state, judge_model, second_reader_model=second_reader_model
+    )
     disagreement = _reader_disagreement(records, cases_doc)
     if disagreement is not None:
         public["reader_disagreement"] = disagreement

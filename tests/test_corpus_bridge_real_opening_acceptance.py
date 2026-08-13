@@ -19,10 +19,12 @@ from scripts.corpus_bridge.real_opening_acceptance import (
     REPAIR_JUDGE_MODEL,
     ROOT_JUDGE,
     SECOND_READER_MODEL,
+    _actual_cost_by_model,
     _generate_with_backoff,
     _journaled_repair_runner,
     _load_frozen_scenarios,
     _parse_args,
+    _reader_disagreement,
     apply_shipped_output_guards,
     build_generation_messages,
     build_public_summary,
@@ -168,6 +170,78 @@ def test_the_arabic_set_is_rejected_against_the_twenty_opening_shape(
 
     rows = _load_frozen_scenarios(path, FROZEN_SETS["arabic-12"])
     assert len(rows) == 12
+
+
+def _criteria(scores: dict[int, int], applicable: set[int]) -> list[dict[str, object]]:
+    return [
+        {
+            "rule_number": rule,
+            "score": scores.get(rule, 0),
+            "applicable": rule in applicable,
+        }
+        for rule in range(1, 16)
+    ]
+
+
+def test_two_readers_are_compared_only_where_both_charged_the_rule() -> None:
+    """`tj-4q79`. A paired delta under the reader gap is not evidence.
+
+    Nothing measured that gap until a round could carry both readings. Rules
+    only one reader marked applicable are excluded: that is a disagreement
+    about the rubric, not about the reply, and averaging them together would
+    hide both.
+    """
+
+    records = {
+        "1": {
+            "judge": {
+                "model": ROOT_JUDGE,
+                "evaluation": {"criteria": _criteria({1: 2, 4: 2, 9: 2}, {1, 4, 9})},
+            },
+            "second_reader": {
+                "model": SECOND_READER_MODEL,
+                "cost_micro_usd": 5000,
+                # Rule 9 is stood down here, so it is not compared at all.
+                "evaluation": {"criteria": _criteria({1: 2, 4: 1}, {1, 4})},
+            },
+        },
+        "2": {
+            "judge": {
+                "model": ROOT_JUDGE,
+                "evaluation": {"criteria": _criteria({1: 2, 4: 2}, {1, 4})},
+            },
+            "second_reader": {
+                "model": SECOND_READER_MODEL,
+                "cost_micro_usd": 5000,
+                "evaluation": {"criteria": _criteria({1: 2, 4: 0}, {1, 4})},
+            },
+        },
+    }
+    cases = [{"dialog_id": 1}, {"dialog_id": 2}]
+
+    gap = _reader_disagreement(records, cases)
+
+    assert gap is not None
+    assert gap["second_reader"] == SECOND_READER_MODEL
+    assert gap["openings_compared"] == 2
+    # Rule 1 agrees; rule 4 is one step apart then two. Rule 9 never counts.
+    assert gap["mean_signed_delta_by_rule_tenths"] == {"1": 0, "4": -15}
+    assert "9" not in gap["mean_signed_delta_by_rule_tenths"]
+    assert gap["mean_absolute_gap_per_opening_tenths"] == 15
+    assert gap["worst_opening_gap_tenths"] == 20
+
+    # And the money it cost is accounted against its own model, not the root's.
+    costs = _actual_cost_by_model(
+        {"records": records}, ROOT_JUDGE, second_reader_model=SECOND_READER_MODEL
+    )
+    assert costs[SECOND_READER_MODEL] == pytest.approx(0.01)
+    assert costs[ROOT_JUDGE] == 0.0
+
+
+def test_a_round_without_a_second_reader_reports_no_disagreement() -> None:
+    records = {"1": {"judge": {"model": ROOT_JUDGE, "evaluation": {"criteria": []}}}}
+
+    assert _reader_disagreement(records, [{"dialog_id": 1}]) is None
 
 
 def test_complete_results_require_each_frozen_dialog_once() -> None:
