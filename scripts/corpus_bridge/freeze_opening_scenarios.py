@@ -31,6 +31,12 @@ def _normalized(text: object) -> str:
     return " ".join(str(text or "").split())
 
 
+def _has_arabic(text: str) -> bool:
+    """Whether the customer wrote to us in Arabic script."""
+
+    return any("؀" <= character <= "ۿ" for character in text)
+
+
 def _attachment_only(message: dict[str, Any], opening: str) -> bool:
     if message.get("type") != "text":
         return True
@@ -111,6 +117,16 @@ def main() -> int:
     parser.add_argument("--strata", type=int, default=4)
     parser.add_argument("--bootstrap-samples", type=int, default=10_000)
     parser.add_argument(
+        "--script",
+        choices=("any", "arabic"),
+        default="any",
+        help=(
+            "restrict the set to openings written in this script. Arabic is "
+            "1.1% of the corpus, so an Arabic set is the whole population "
+            "rather than a sample of it."
+        ),
+    )
+    parser.add_argument(
         "--with-follow-up",
         action="store_true",
         help=(
@@ -160,7 +176,12 @@ def main() -> int:
                 and len(opening) >= _TEMPLATE_PREFIX_CHARS
             ):
                 prefixes[opening[:_TEMPLATE_PREFIX_CHARS].casefold()] += 1
+        # Found over the whole corpus before any filter, because the mass
+        # template is a property of the corpus. Detecting it inside a
+        # fifteen-dialog slice would pick an arbitrary one-off prefix.
         template_prefix = prefixes.most_common(1)[0][0] if prefixes else ""
+        if args.script == "arabic":
+            openings = [item for item in openings if _has_arabic(item["opening"])]
 
         template_count = 0
         attachment_count = 0
@@ -250,6 +271,9 @@ def main() -> int:
         result = {
             "schema_version": "treejar-real-openings-public-manifest/v1",
             "selection_seed": args.seed,
+            # Every count below is after this filter, so a set is never read as
+            # a sample of the whole corpus when it is a slice of one script.
+            "script": args.script,
             "population": {
                 "with_customer_opening": len(openings),
                 "template": template_count,

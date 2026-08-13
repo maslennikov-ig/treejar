@@ -102,6 +102,68 @@ def test_freeze_selects_length_strata_and_keeps_text_only_under_protected_root(
     assert protected_file.stat().st_mode & 0o777 == 0o600
 
 
+def test_an_arabic_set_is_the_arabic_population_and_says_so(
+    tmp_path: pathlib.Path,
+) -> None:
+    """`tj-jfmv`. One Arabic opening in twenty cannot settle anything.
+
+    Arabic is 1.1% of the corpus, so the whole segment is small enough to
+    measure entire. The template prefix is still found over the corpus, not
+    over the slice, or a one-off long opening becomes "the template".
+    """
+
+    corpus = tmp_path / "dialogs.jsonl"
+    protected = tmp_path / "protected"
+    template = "template-prefix-that-is-longer-than-forty-eight-characters:"
+    dialogs = [
+        _dialog(1, template + "a", manager="A", score=1),
+        _dialog(2, template + "b", manager="A", score=2),
+    ]
+    for index, length in enumerate((2, 5, 8, 13, 21, 34, 55, 89), start=10):
+        dialogs.append(_dialog(index, f"{index} " + "z" * length, manager="A", score=4))
+    for index, length in enumerate((3, 6, 9, 14), start=30):
+        dialogs.append(_dialog(index, f"{index} " + "م" * length, manager="B", score=6))
+    corpus.write_text(
+        "".join(json.dumps(dialog) + "\n" for dialog in dialogs), encoding="utf-8"
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--corpus",
+            str(corpus),
+            "--protected-root",
+            str(protected),
+            "--run-id",
+            "test-arabic",
+            "--seed",
+            "17",
+            "--count",
+            "4",
+            "--strata",
+            "2",
+            "--bootstrap-samples",
+            "200",
+            "--script",
+            "arabic",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    public = json.loads(completed.stdout)
+    assert public["script"] == "arabic"
+    # The four Arabic rows and nothing else: the eight Latin ones and the two
+    # template rows are gone, and the template count is not charged to Arabic.
+    assert public["population"]["with_customer_opening"] == 4
+    assert public["population"]["template"] == 0
+    assert public["population"]["evaluated_natural_text"] == 4
+    assert {item["dialog_id"] for item in public["selection"]} == {30, 31, 32, 33}
+
+
 def _two_turn_dialog(
     dialog_id: int, opening: str, follow_up: str, *, manager: str, score: int
 ) -> dict[str, object]:
