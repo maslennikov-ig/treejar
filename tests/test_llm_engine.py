@@ -48,6 +48,7 @@ from src.llm.engine import (
     process_message,
     sales_agent,
 )
+from src.llm.opening_guard import canonical_opening
 from src.llm.response_policy import (
     AskKind,
     ReplyPolicyState,
@@ -2543,8 +2544,12 @@ async def test_process_message_non_candidate_uses_full_tool_mode(
     assert deps.runtime_directives == (
         substantive_reply_directive(),
         # A first turn is told its opening already states what Treejar offers,
-        # because the opening guard is about to prepend that sentence.
-        consultative_opening_directive(opening_states_the_offer=True),
+        # and is shown the exact sentence, because the opening guard is about
+        # to prepend it.
+        consultative_opening_directive(
+            opening_states_the_offer=True,
+            opening_text=canonical_opening("en"),
+        ),
         project_consultation_directive(),
     )
 

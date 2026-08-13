@@ -509,6 +509,41 @@ def test_the_directive_stops_asking_for_what_the_opening_already_said() -> None:
         assert "never offer a discount" not in directive
 
 
+def test_the_directive_quotes_the_opening_in_the_language_it_is_prepended_in() -> None:
+    """`tj-z1fn`. Describing the sentence held in English and slipped in Arabic.
+
+    Rule 7 is 2.00 over twenty English openings and 1.83 over the whole Arabic
+    population: two Arabic replies wrote "we provide office furniture in the
+    UAE" beside a canonical opening that says "we supply office furniture in
+    the UAE". A model writing Arabic had to translate the English description
+    before it could recognise what it must not restate. Now it is quoted.
+    """
+
+    from src.llm.engine import _turn_runtime_directives
+    from src.llm.opening_guard import canonical_opening
+
+    for language in ("en", "ar"):
+        directive = next(
+            item
+            for item in _turn_runtime_directives(
+                "Hi",
+                sales_stage="greeting",
+                opening_states_the_offer=True,
+                language=language,
+            )
+            if "still building this sale" in item
+        )
+        assert canonical_opening(language) in directive, language
+        # The ban is load-bearing in English and stays beside the quotation.
+        assert "Do not say it again in any words" in directive
+
+    # A later turn gets no opening prepended, so there is nothing to quote.
+    later = "".join(
+        _turn_runtime_directives("Hi", sales_stage="greeting", language="ar")
+    )
+    assert canonical_opening("ar") not in later
+
+
 def test_a_first_turn_is_told_its_opening_already_states_the_offer() -> None:
     """The caller knows what the reply will begin with; the model does not."""
     from src.llm.engine import _turn_runtime_directives

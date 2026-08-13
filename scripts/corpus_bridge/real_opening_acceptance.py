@@ -535,6 +535,7 @@ def build_generation_messages(
         opening,
         sales_stage="greeting",
         opening_states_the_offer=True,
+        language=language,
     )
     if directives:
         block = "\n".join(f"- {directive}" for directive in directives)

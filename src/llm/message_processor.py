@@ -1508,6 +1508,7 @@ async def _sales_agent_route(
         turn.masked_text,
         sales_stage=str(getattr(turn.deps.conversation, "sales_stage", "") or ""),
         opening_states_the_offer=turn.is_first_turn,
+        language=str(turn.deps.conversation.language or ""),
     )
     if turn_directives:
         run_deps = replace(

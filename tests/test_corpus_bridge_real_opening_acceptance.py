@@ -375,8 +375,10 @@ def test_the_round_sends_the_directives_the_opening_earns() -> None:
         opening,
         sales_stage="greeting",
         # The frozen set is one first-turn opening, and the canonical opening
-        # is prepended to every reply in it.
+        # is prepended to every reply in it, and the round quotes it in the
+        # language it will be prepended in.
         opening_states_the_offer=True,
+        language="en",
     )
     assert earned, "this opening is supposed to earn the consultative directives"
 

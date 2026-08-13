@@ -81,6 +81,28 @@ def _has_identity(text: str) -> bool:
     return any(persona in visible_text for persona in _PERSONA_NAMES)
 
 
+def canonical_opening(language: str) -> str:
+    """The exact sentence `apply_opening_guard` will put in front of a first turn.
+
+    `tj-z1fn`. The consultative directive used to *describe* this sentence, in
+    English prose, and tell the model not to repeat it. That holds over twenty
+    English openings and slipped on two of twelve Arabic ones, because a model
+    writing Arabic has to translate the description before it can recognise
+    what it must not restate, and a near-synonym survives the trip: the Arabic
+    reply wrote "we provide office furniture in the UAE" beside a canonical
+    opening that says "we supply office furniture in the UAE".
+
+    Quoting the real sentence removes that step. It is code stating what the
+    reply will begin with, which is the same footing `opening_states_the_offer`
+    already stands on.
+    """
+
+    is_arabic = _is_arabic_language(language)
+    identity = _AR_IDENTITY if is_arabic else _EN_IDENTITY
+    capability = _AR_CAPABILITY if is_arabic else _EN_CAPABILITY
+    return f"{identity} {capability}"
+
+
 def _has_customer_name(customer_name: str | None) -> bool:
     return bool(str(customer_name or "").strip())
 

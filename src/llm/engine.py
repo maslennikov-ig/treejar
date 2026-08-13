@@ -153,6 +153,7 @@ from src.llm.money import (
     SKU_FOLLOWING_CURRENCY_PATTERN,
     canonical_amount,
 )
+from src.llm.opening_guard import canonical_opening
 from src.llm.order_quote_routes import QuotationItem, _order_quote_route_for_turn
 from src.llm.order_status import format_order_status
 from src.llm.pii import EMAIL_PATTERN, PHONE_PATTERN, mask_pii, unmask_pii
@@ -582,6 +583,7 @@ def _turn_runtime_directives(
     *texts: str,
     sales_stage: str = "",
     opening_states_the_offer: bool = False,
+    language: str = "",
 ) -> tuple[str, ...]:
     """Directives this customer turn earns, in one place.
 
@@ -621,6 +623,13 @@ def _turn_runtime_directives(
                 # already states the offer. Asking for it again is what made
                 # nearly every opening say it twice.
                 opening_states_the_offer=opening_states_the_offer,
+                # And quoting it, in the language it will be prepended in,
+                # is what stopped the Arabic reply paraphrasing it back.
+                opening_text=(
+                    canonical_opening(language)
+                    if opening_states_the_offer and language
+                    else ""
+                ),
             )
         )
         # The fork. Widening a seven-chair order is friction; widening a

@@ -833,7 +833,11 @@ def earns_consultative_opening(customer_text: str, *, sales_stage: str) -> bool:
     return not _TRANSACTIONAL_NARROWING_RE.search(text)
 
 
-def consultative_opening_directive(*, opening_states_the_offer: bool = False) -> str:
+def consultative_opening_directive(
+    *,
+    opening_states_the_offer: bool = False,
+    opening_text: str = "",
+) -> str:
     """The three sentences Noor never says.
 
     Measured on 2026-08-07 over all ten stored acceptance transcripts, scored
@@ -915,16 +919,32 @@ def consultative_opening_directive(*, opening_states_the_offer: bool = False) ->
     this directive contains no "never" at all. Saying "a list of products is
     wrong" is the wording that has already been measured at 0.00.
 
+    **`opening_text`, `tj-z1fn`, added 2026-08-13.** The offer clause described
+    the prepended sentence in English prose. That holds over twenty English
+    openings and slipped on two of twelve Arabic ones: a model writing Arabic
+    has to translate the description before it can recognise what it must not
+    restate, and a near-synonym survives the trip. The caller now passes the
+    real sentence, in the language it will be prepended in, and the clause
+    quotes it. The ban stays -- it is what took rule 7 from 1.50 to 2.00 in
+    English and is load-bearing there -- and what is added beside it is a fact
+    the model no longer has to reconstruct.
+
     It lives here rather than in the product system prompt, which the stage
     contract freezes.
     """
 
+    quoted_opening = (
+        f' This reply will begin with exactly this sentence: "{opening_text}"'
+        if opening_states_the_offer and opening_text.strip()
+        else ""
+    )
     offer_clause = (
         "This reply already opens with a sentence saying that Treejar supplies "
         "office furniture in the UAE and quotes from its own catalog with "
-        "confirmed prices and stock. That discharges what Treejar offers. Do "
-        "not say it again in any words, and do not begin with a fragment of "
-        "it: spend the reply on what the opening does not cover."
+        f"confirmed prices and stock.{quoted_opening} That discharges what "
+        "Treejar offers. Do not say it again in any words, and do not begin "
+        "with a fragment of it: spend the reply on what the opening does not "
+        "cover."
         if opening_states_the_offer
         else "In this reply, in one short clause, say what Treejar offers: an "
         "office furniture supplier in the UAE quoting from its own catalog "
