@@ -1,4 +1,4 @@
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from importlib.metadata import version as package_version
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -12,6 +12,20 @@ from src.api.deps import get_db, get_redis
 from src.api.v1 import health
 from src.main import app
 from src.schemas import HealthCheckResponse
+
+
+@pytest.fixture(autouse=True)
+def forget_the_resolved_release_sha() -> Generator[None, None, None]:
+    """`tj-hls5` made the resolver per-process, so each case starts from disk.
+
+    Cleared on the way out as well as on the way in: the cache is a process
+    global, and a value read from this module's `tmp_path` must not survive
+    into a test file that does not patch the path at all.
+    """
+
+    health.resolve_release_sha.cache_clear()
+    yield
+    health.resolve_release_sha.cache_clear()
 
 
 @pytest.fixture
@@ -86,6 +100,72 @@ async def test_health_status_reflects_required_dependencies(
         assert data["dependencies"]["redis"]["message"] == "unavailable"
     if db_fails:
         assert data["dependencies"]["database"]["message"] == "unavailable"
+
+
+class _CountingReleaseShaPath:
+    """A `_RELEASE_SHA_PATH` that says how often it was actually read."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self.reads = 0
+
+    def read_text(self, encoding: str = "utf-8") -> str:
+        self.reads += 1
+        return self._path.read_text(encoding=encoding)
+
+
+@pytest.mark.asyncio
+async def test_the_release_sha_is_read_from_disk_once_per_process(
+    health_dependencies: tuple[AsyncMock, AsyncMock],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """`tj-hls5`. Every health poll did blocking file I/O in an async handler.
+
+    The value cannot change without a container rebuild, and the deploy loop in
+    `scripts/vps-deploy.sh` polls up to twenty times every three seconds while
+    monitoring polls continuously. `resolve_app_version`, the function the
+    design said to copy, is an in-memory metadata lookup.
+    """
+
+    release_sha_path = tmp_path / ".release-sha"
+    release_sha_path.write_text("278c46c8\n", encoding="utf-8")
+    counting = _CountingReleaseShaPath(release_sha_path)
+    monkeypatch.setattr(health, "_RELEASE_SHA_PATH", counting, raising=False)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        first = await ac.get("/api/v1/health")
+        second = await ac.get("/api/v1/health")
+        third = await ac.get("/api/v1/health")
+
+    assert first.json()["release_sha"] == "278c46c8"
+    assert second.json()["release_sha"] == "278c46c8"
+    assert third.json()["release_sha"] == "278c46c8"
+    assert counting.reads == 1
+
+
+@pytest.mark.asyncio
+async def test_a_missing_release_sha_is_not_retried_on_every_poll(
+    health_dependencies: tuple[AsyncMock, AsyncMock],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The fallback is an answer, not a retry: an absent file stays absent."""
+
+    counting = _CountingReleaseShaPath(tmp_path / ".release-sha")
+    monkeypatch.setattr(health, "_RELEASE_SHA_PATH", counting, raising=False)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        first = await ac.get("/api/v1/health")
+        second = await ac.get("/api/v1/health")
+
+    assert first.json()["release_sha"] == "unknown"
+    assert second.json()["release_sha"] == "unknown"
+    assert counting.reads == 1
 
 
 @pytest.mark.asyncio

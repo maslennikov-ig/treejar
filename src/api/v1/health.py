@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import time
 from contextlib import suppress
+from functools import lru_cache
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
@@ -35,8 +36,16 @@ def resolve_app_version() -> str:
         return _FALLBACK_VERSION
 
 
+@lru_cache(maxsize=1)
 def resolve_release_sha() -> str:
     """Return the deployed release SHA without making health depend on metadata.
+
+    Resolved once per process and reused. `tj-hls5`: this was a blocking file
+    read inside an async handler on every poll, and the deploy loop in
+    `scripts/vps-deploy.sh` polls up to twenty times every three seconds while
+    monitoring polls continuously. The value cannot change without a container
+    rebuild, so a second read can only ever return the first answer --
+    including the fallback, which is an answer and not a retry.
 
     `ValueError` is caught beside `OSError` because `read_text` decodes: a
     truncated or non-UTF-8 file raises `UnicodeDecodeError`, which is a
