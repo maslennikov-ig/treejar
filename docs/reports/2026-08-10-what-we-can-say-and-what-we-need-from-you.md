@@ -1,4 +1,4 @@
-# Where Noor stands, what we will not claim, and six things we need from you
+# Where Noor stands, what we will not claim, and what we need from you
 
 Date: 2026-08-10
 Beads: `tj-vz7o`
@@ -111,62 +111,60 @@ quality. Every score we publish from now on carries the ceiling that opening
 could actually attain, and we compare builds against each other rather than
 against an absolute.
 
-## 6. Six things we would like from you
+## 6. What we need from you
 
-Three are questions about the rubric. Three are data.
+**The one thing that matters most: the Zoho deal export, keyed on
+`crm_deal_id`.** Outcomes are visible inside the conversation for only 192 of
+1400 dialogues, so today we have no outcome variable at all. Without it we can
+say that Noor does what the rubric asks. We cannot say that Noor *sells*, and
+we will not pretend otherwise. Everything else on this page is secondary to
+this one export.
 
-**Question 1 — four criteria nobody has ever earned.** Across all 1247 evaluated
-dialogues in seven months: sincere compliment **0.00**, the "drill and hole"
-customer job **0.01**, asking what the customer's company does **0.02**,
-discount or bundle **0.05**. That is 8 of 30 points that no salesperson scored
-in seven months. Either the criteria no longer describe the method, or the
-evaluator cannot detect them, or the method is not practised on WhatsApp. All
-three are plausible and all three change what a target score should be. Which
-is it?
-
-The comparison runs the other way too: Noor already scores **0.75** on asking
-what the company does, against **0.02** for the human corpus. We read that as a
-difference, not a defect.
-
-**Question 2 — criterion 11, discount or bundle.** It applied in 16 of our 106
-reads and scored 0.00. Taking it to a perfect score everywhere it applies would
-move the mean by 0.30 against reader noise of 1.58 — a fifth of the instrument's
-own error, so it is unmeasurable by construction. Noor is also forbidden by her
-owner to offer a discount, which makes the zero structural rather than a bug.
-Three ways forward; we would like one in writing:
-
-1. Drop the criterion and rescale both sides to /28.
-2. Redefine it as "a verified package total or a lead-time commitment, with no
-   price concession" — the only version Noor can honestly earn. This needs a
-   data source we do not currently have.
-3. Keep it, and print beside every score that policy caps the ceiling at 28/30.
-
-Until (2) has a source, we recommend (3). A stated cap is a policy; an
-unexplained zero looks like a defect.
-
-**Question 3 — is the rubric still the thing you want measured?** Given §3, a
-criterion for "replied at all, and how fast" would rank your desks differently
-from all fifteen of the current ones combined.
-
-**Data 1 — your evaluator prompt** (offered in §8 of your note). Unblocks §2.
-
-**Data 2 — the attachments.** "Can you share some pictures" is the most common
+**The attachments.** "Can you share some pictures" is the most common
 unanswered customer request in your corpus, and the export kept the filenames
 but not the files. We cannot reproduce or fix that failure without them.
 
-**Data 3 — the Zoho deal export keyed on `crm_deal_id`.** This is the only route
-to a real outcome variable, and therefore the only route to any of the claims
-we refuse to make in §4.
+**One question, and it is not a complaint about your rubric.** Across all 1247
+evaluated dialogues in seven months, four criteria were almost never earned by
+anyone: sincere compliment **0.00**, the "drill and hole" customer job
+**0.01**, asking what the customer's company does **0.02**, discount or bundle
+**0.05**. That is 8 of 30 points.
+
+We are deliberately *not* concluding that the criteria are wrong. That people
+did not do a thing is no evidence that the thing is not worth doing — the
+question is who sold, and we cannot answer it until the deal export arrives.
+What we would like to know is only this: are those four criteria still part of
+the method you want, so that we know whether to keep building toward them?
+
+For context in the other direction: Noor already scores **0.75** on asking what
+the company does, against **0.02** across the human corpus.
+
+**Criterion 11, discount or bundle — decided on our side, for information.**
+Noor's owner has ruled that she may never offer a discount: a discount is
+either a manager's decision or already inside the catalog price. The zero on
+this criterion is therefore policy, not a product defect, and we will print
+beside every score that policy caps her attainable ceiling at 28/30 rather than
+leave an unexplained zero. Where a package is the right answer, Noor assembles
+verified rows and states their combined total at the catalog price, with no
+price concession anywhere. No decision is needed from you.
+
+**Your evaluator prompt is no longer requested.** We had asked for it in order
+to run your judge over our packets and compare. We have since ruled that
+comparison out: a score from your reader and a score from ours are on different
+scales, and putting them side by side would be misleading in whichever
+direction it fell. We measure our own build against itself, on your openings,
+with one change at a time.
 
 ## 7. What happens next on our side
 
-The two opening defects are fixed and covered by tests. The acceptance rules are
-frozen in code before the next paid measurement, so they cannot be adjusted
-after seeing a result. The rerun on the same 20 openings is the next step and
-needs no decision from you.
+The acceptance rules are frozen in code before each measurement, so they cannot
+be adjusted after seeing a result. Six measured rounds have since run on your
+twenty real openings, each changing exactly one thing, and a separate round
+covered every Arabic opening your corpus contains. None of that needs a
+decision from you.
 
-Everything in §6 is yours. Where you disagree with a reading here, your numbers
-win — they are your conversations.
+What does need you is the deal export. Where you disagree with a reading here,
+your numbers win — they are your conversations.
 
 ---
 
