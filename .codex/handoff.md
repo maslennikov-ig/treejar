@@ -3,10 +3,11 @@
 Updated: 2026-08-13
 Current branch: `main`
 Current stage id: `tj-rcg5-semantic-catalog-evidence`
-Status: `tj-9scy`, `tj-f6yp` and `tj-rcg5` are closed. The first two shipped
-defective in `4985db9`/`ecd9c33`, were reopened by the 2026-08-13 audit and
-fixed in `48a213a`/`629b01d`, acceptance pins in `5318e49`, all deployed.
-`/api/v1/health` returns the deployed commit; it read `unknown` before.
+Status: `tj-9scy`, `tj-f6yp` and `tj-rcg5` are closed and deployed. The seven
+defects the 2026-08-13 audit left -- `tj-eedk`, `tj-d651`, `tj-rdqc`, `tj-qfsy`,
+`tj-izkn`, `tj-hls5`, `tj-bzr0` -- are closed in one tested commit each,
+`c058d08`..`869ee2a`, on local `main` and **not pushed**: a push auto-deploys
+and needs the owner's word.
 
 Documentation: `docs-resolve` covered pgvector and pinned model revisions; local code owns Treejar behavior.
 
@@ -20,6 +21,10 @@ Documentation: `docs-resolve` covered pgvector and pinned model revisions; local
   facts, so a first-turn signature cannot receive another name question in
   either language -- `tj-40gc` added the Arabic introduction shapes, bounded
   like the English ones so a statement about the request is never a sender.
+  `asks_the_company_activity` records the one-turn cooldown only when a signal
+  sits inside a question sentence -- `tj-eedk`: bare phrases let "day to day
+  office use" close the ask nobody made. The broad phrase scan survives under
+  its own name, because suppressing the carry is not writing state.
 - The repair judge receives the original reply and flag reason, not the
   deterministic candidate; unavailable, rejected, empty and `cannot_fix` fall
   back to the validated grounding repair. It notifies on failure by default and
@@ -35,7 +40,10 @@ Documentation: `docs-resolve` covered pgvector and pinned model revisions; local
   catalog evidence now comes from exact local pgvector through
   `src.rag.pipeline.search_products`; a protected artifact pins that path before
   provider work. `FROZEN_SETS` registers measurable sets and `preflight --set`
-  names one.
+  names one. The opening's price anchor comes from the pinned catalog snapshot
+  through the same `anchor_line_from_catalog_rows` production uses, so rules 2
+  and 7 are comparable again; `preflight --catalog-snapshot` is required and
+  hashed against the artifact's own catalog digest before any provider call.
 - `consultative_opening_directive` takes `opening_states_the_offer` and the
   opening's own text, so a first turn is told what it will begin with rather
   than asked what it already said -- the self-cancelling shape removed on
@@ -47,6 +55,12 @@ Documentation: `docs-resolve` covered pgvector and pinned model revisions; local
   under its unchanged `REDUCING` contract: the guard folds the canonical name
   question on and the collapse drops every question after the first, so the old
   order deleted that fold every first turn. A folded pair counts as one.
+
+- `/api/v1/health` resolves the release SHA once per process and answers a
+  commit SHA or `unknown`, bounded by pattern and length in the schema.
+- CI job `semantic-evidence` runs the exact-pgvector producer test against a
+  pgvector service on every change to `scripts/corpus_bridge/` or `src/rag/`,
+  and reads the outcome so a skip cannot pass. It is not in `deploy`'s needs.
 
 ## Protected evidence
 
@@ -65,29 +79,28 @@ Documentation: `docs-resolve` covered pgvector and pinned model revisions; local
 - Six rounds on the same twenty, same reader, one change each, all accepted.
   Weighted mean 14.6 to 18.7 of 30, last interval [15.6, 21.7]; raw 10.6 to
   13.8; the 11 low-ceiling openings 75% to 100% of their 9.6 and the 9 others
-  78% to 99% of 30.0. Attribution per round is in Beads. One `tj-l0e3` round is
+  78% to 99% of 30.0. Per-round attribution is in Beads; one `tj-l0e3` round is
   discarded as unfaithful under `tj-l0e3.2`.
-- The Arabic rounds over `arabic-12`, every Arabic opening the corpus has, 12
-  of 1358 -- a population, not a sample. Weighted 9.6 to 10.6, low band 93% to
-  99%. That mean is *not* comparable to the twenty's: 11 of 12 sit in the 9.6
+- The Arabic rounds over `arabic-12` cover every Arabic opening the corpus has,
+  12 of 1358 -- a population, not a sample. Weighted 9.6 to 10.6, low band 93%
+  to 99%. That mean is *not* comparable to the twenty's: 11 of 12 sit in the 9.6
   band against 11 of 20, so only the band compares. The hypothesis that an
-  English directive fails to reach Arabic is disproved. What Arabic cost was
+  English directive fails to reach Arabic is disproved; what Arabic cost was
   `tj-40gc` and `tj-z1fn`, both closed.
 - `tj-z1fn` is the lesson worth keeping. Quoting the canonical opening helped
-  Arabic and cost English rule 7 2.00 to 1.80: four replies answered the
-  quotation with a capability list. Naming what the opening leaves uncovered --
-  the customer -- removed them. Measure both sets before shipping a shared
-  directive.
+  Arabic and cost English rule 7 2.00 to 1.80: four replies answered it with a
+  capability list, and naming what the opening leaves uncovered -- the customer
+  -- removed them. Measure both sets before shipping a shared directive.
 - No corpus text, request body or reply body is tracked. Durable evidence uses
   dialog ids, integers and digests only.
 
 ## Verification
 
 - Ruff, format and Mypy clean; process verification passed. The protected
-  replay moved once and on purpose toward the frozen `1fc87c04…` baseline and
-  has not moved since; the aggregate stands at `1b425bd1…`. It cannot show a
-  SELLING-turn change: it pins `is_first_turn=True`, and none of its 60 records
-  carries a foldable ask-list.
+  replay has not moved since it was restored toward the frozen `1fc87c04…`
+  baseline; the aggregate stands at `1b425bd1…`. It cannot show a SELLING-turn
+  change: it pins `is_first_turn=True` and no record carries a foldable
+  ask-list.
 
 ## Constraints
 
@@ -99,9 +112,8 @@ Documentation: `docs-resolve` covered pgvector and pinned model revisions; local
   and the `tj-l0e3` round discarded under `tj-l0e3.2`). Per-round authorization
   and attribution are in Beads. The `tj-ge07` baseline is authorized and
   deliberately not taken.
-- `https://noor.starec.ai/api/v1/health` was read once, unauthenticated and
-  read-only, on 2026-08-13 to confirm the `tj-9scy` defect. Nothing else on the
-  canonical runtime was contacted and nothing was mutated.
+- `https://noor.starec.ai/api/v1/health` was read once on 2026-08-13,
+  unauthenticated and read-only. Nothing else on the runtime was contacted.
 
 ## Documentation and graph review
 
@@ -123,16 +135,14 @@ Use $orchestrator-stage after selecting the next open Beads goal.
 - 27 live issues audited against current state; 17 closed with recorded
   reasons, 1 deferred, none on a title alone. The per-issue disposition is in
   Beads. `tj-i653` deferred: it needs live state.
-- The delivery audit of `tj-9scy`, `tj-f6yp` and `tj-rcg5` reopened the first
-  two and left `tj-rcg5` closed; it opened `tj-rdqc` and `tj-qfsy`.
-- A candidate explanation was rejected rather than used: `tj-jlx4` looked like
-  reader variance, but the gap is 2.0 while S07 moved 6.58 with non-overlapping
-  ranges, and the bead already diagnosed a content choice -- a closing turn
-  offering two coffee tables to a lab that asked about fume hoods. Open at P2.
-- Priority inversion named: `tj-final27.6` is engineering-complete, disabled
-  safe and policy-gated, and waits on one written client sentence -- a referral
-  policy or an explicit exclusion -- which blocks `tj-final27.9`, the final
-  acceptance pack. Raised to P1 for what it blocks.
+- The delivery audit reopened two of the three and opened seven defects; all
+  seven are closed above, and `tj-rcg5` itself stayed closed throughout.
+- `tj-jlx4` is not reader variance: the gap is 2.0 while S07 moved 6.58 with
+  non-overlapping ranges, and the bead diagnoses a content choice -- two coffee
+  tables offered to a lab that asked about fume hoods. Open at P2.
+- `tj-final27.6` is engineering-complete, disabled safe and policy-gated, and
+  waits on one written client sentence -- a referral policy or an explicit
+  exclusion. It blocks `tj-final27.9`, so it is P1 for what it blocks.
 
 ## Owner decisions of 2026-08-13
 
@@ -148,12 +158,9 @@ Use $orchestrator-stage after selecting the next open Beads goal.
   does what the rubric asks but not that Noor sells. The four-criteria figure
   is reframed on the owner's point that people not doing a thing is no evidence
   against it. The evaluator prompt is withdrawn.
-- Deploy and live verification are authorized. Production was current at the
-  last read, not stale: CI deploys on any push to `main` touching `src/` and
-  the job succeeded on `d19bfdb`, the last such commit, carrying every fix of
-  12-13 August.
-  `/api/v1/health` read ok before delivery. Commit `4985db9` adds the release
-  SHA to the health response and closes `tj-9scy`; it is now on `origin/main`.
+- Deploy and live verification are authorized, and that authorization was
+  spent: `origin/main` is `87b6879` and production runs `5318e49`. The seven
+  audit fixes above are a separate push and a separate authorization.
 
 ## Active handoff
 
@@ -169,10 +176,9 @@ Use $orchestrator-stage after selecting the next open Beads goal.
   Golden P@3/R@3/nDCG@3 is `0.7222/0.8333/0.8333`, zero hard failures; the
   frozen twenty also has zero hard failures. Presence of rows never creates a
   duty to quote them; only qrels-confirmed SKUs reach generation.
-- Real discovery corrected one planning assumption: exact SKU is owned by the
-  direct `get_stock`/catalog lookup route, not semantic search. BGE-M3 input has
-  name/category/description but no SKU, and a real SKU query missed its product;
-  semantic qrels therefore exclude it rather than masking the route boundary.
+- Exact SKU is owned by the direct `get_stock`/catalog route, not semantic
+  search: BGE-M3 input carries no SKU and a real SKU query missed its product,
+  so semantic qrels exclude it rather than mask the route boundary.
 
 ## Explicit defers
 
@@ -190,11 +196,5 @@ Use $orchestrator-stage after selecting the next open Beads goal.
 - Rule 5's ceiling on the frozen twenty is 1.95, not 2.00: dialog 28 is a job
   application with no furniture need and rule 5 is charged anyway. The measured
   1.95 is that ceiling; the rubric is not changed for it.
-- `tj-ee5f.1` needs real transports and production producers; `tj-ee5f.5`
-  waits on the Wazzup provider fixing delivered/read callbacks, which is
-  theirs, not ours.
-- The measured round sends `anchor_line=None`, `tj-rdqc`. `tj-rcg5` removed the
-  live-catalog anchor with the keyword fetch and did not replace it, so the
-  scored reply no longer carries the price anchor production adds in
-  `opening_guard`. Rounds after `4a0883a` are not comparable to the six before
-  it on rules 2 and 7. A hermetic anchor source is owed before the next round.
+- `tj-ee5f.1` needs real transports and production producers; `tj-ee5f.5` waits
+  on the Wazzup provider fixing delivered/read callbacks, which is theirs.
