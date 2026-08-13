@@ -4441,6 +4441,13 @@ async def test_process_message_first_turn_observed_name_continues_substantive_re
     assert response.model == expected_model
     assert "may i know your name" not in response.text.casefold()
     assert "how should i address" not in response.text.casefold()
+    # `tj-l0e3` audit: `d11a17f` dropped this and replaced it with the name
+    # assertion above. Where the customer brought a request, the point of the
+    # case is that introducing themselves does not cost them their answer, so
+    # the answer has to be asserted. The detail-capture parameter calls no
+    # model at all and has no answer to keep.
+    if expected_model_calls:
+        assert "ergonomic chair" in response.text
     assert mock_run.await_count == expected_model_calls
     mock_notify.assert_not_awaited()
     messaging.send_media.assert_not_called()
