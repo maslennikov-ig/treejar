@@ -6,8 +6,8 @@ Current stage id: `tj-rcg5-semantic-catalog-evidence`
 Status: `tj-9scy`, `tj-f6yp` and `tj-rcg5` are closed and deployed. The seven
 defects the 2026-08-13 audit left -- `tj-eedk`, `tj-d651`, `tj-rdqc`, `tj-qfsy`,
 `tj-izkn`, `tj-hls5`, `tj-bzr0` -- are closed in one tested commit each,
-`c058d08`..`869ee2a`, on local `main` and **not pushed**: a push auto-deploys
-and needs the owner's word.
+`c058d08`..`869ee2a`, pushed and deployed on owner authorization. Production
+runs `2876774`, confirmed through `/api/v1/health`.
 
 Documentation: `docs-resolve` covered pgvector and pinned model revisions; local code owns Treejar behavior.
 
@@ -61,20 +61,22 @@ Documentation: `docs-resolve` covered pgvector and pinned model revisions; local
 - CI job `semantic-evidence` runs the exact-pgvector producer test against a
   pgvector service on every change to `scripts/corpus_bridge/` or `src/rag/`,
   and reads the outcome so a skip cannot pass. It is not in `deploy`'s needs.
+  It fetches the pinned BGE-M3 revision first: `PinnedEmbeddingEngine` passes
+  `local_files_only=True`, so the loader never downloads and an empty cache
+  fails in seconds. Green in 1m22s on `1878000`; the first attempt was red.
 
 ## Protected evidence
 
 - The frozen `tj-t6ug` replay baseline remains
   `1fc87c04a645fa97e35978283584fb840f5ae7b7c2e4291740d4f5c0f1567b00`, never
   re-baselined. Current aggregate `1b425bd1f66a9189a07436f5d75b3bbcb71d68ca716e94b6f0d4c86627c97866`,
-  7 records differing -- dialogs 28, 875 and 1291, each read and intended. It
-  was 55 until the guard order was restored on 2026-08-13, and the 7 are a
-  strict subset: 48 removed, none introduced.
-- The repair judge, measured four times on stored dialogs 819 and 789, 60 calls
-  and $0.0051, notifications suppressed; delivery is 20 of 20 with no handoffs.
-- `tj-7gpw`: every number measured before 2026-08-12, 18.94 included, was
-  scored on a prompt missing the runtime directives and the ask permission
-  list, so nothing after is comparable. The replacement baseline is
+  7 records differing -- dialogs 28, 875 and 1291, each read and intended. It was
+  55 until the guard order was restored, and the 7 are a strict subset of those.
+- The repair judge, measured four times on stored dialogs 819 and 789: 60 calls,
+  $0.0051, notifications suppressed, delivery 20 of 20 with no handoffs.
+- `tj-7gpw`: every number measured before 2026-08-12, 18.94 included, was scored
+  on a prompt missing the runtime directives and the ask permission list, so
+  nothing before it compares. Replacement baseline
   `tj-7gpw-parity-baseline-c-20260812`, digest `61b6c9229ab295a4…`.
 - Six rounds on the same twenty, same reader, one change each, all accepted.
   Weighted mean 14.6 to 18.7 of 30, last interval [15.6, 21.7]; raw 10.6 to
@@ -132,17 +134,15 @@ Use $orchestrator-stage after selecting the next open Beads goal.
 
 ## Tracker after the 2026-08-13 audit
 
-- 27 live issues audited against current state; 17 closed with recorded
-  reasons, 1 deferred, none on a title alone. The per-issue disposition is in
-  Beads. `tj-i653` deferred: it needs live state.
+- 27 live issues audited against current state; 17 closed with recorded reasons,
+  none on a title alone, per-issue disposition in Beads. `tj-i653` needs live
+  state and is deferred.
 - The delivery audit reopened two of the three and opened seven defects; all
   seven are closed above, and `tj-rcg5` itself stayed closed throughout.
 - `tj-jlx4` is not reader variance: the gap is 2.0 while S07 moved 6.58 with
-  non-overlapping ranges, and the bead diagnoses a content choice -- two coffee
-  tables offered to a lab that asked about fume hoods. Open at P2.
+  non-overlapping ranges, and the bead diagnoses a content choice. Open at P2.
 - `tj-final27.6` is engineering-complete, disabled safe and policy-gated, and
-  waits on one written client sentence -- a referral policy or an explicit
-  exclusion. It blocks `tj-final27.9`, so it is P1 for what it blocks.
+  waits on one written client sentence. It blocks `tj-final27.9`, so it is P1.
 
 ## Owner decisions of 2026-08-13
 
@@ -158,9 +158,9 @@ Use $orchestrator-stage after selecting the next open Beads goal.
   does what the rubric asks but not that Noor sells. The four-criteria figure
   is reframed on the owner's point that people not doing a thing is no evidence
   against it. The evaluator prompt is withdrawn.
-- Deploy and live verification are authorized, and that authorization was
-  spent: `origin/main` is `87b6879` and production runs `5318e49`. The seven
-  audit fixes above are a separate push and a separate authorization.
+- Deploy and live verification were authorized again on 2026-08-13 for the
+  seven audit fixes, and spent: `origin/main` is `1878000`, production runs
+  `2876774`, and `/api/v1/health` was read once to confirm it.
 
 ## Active handoff
 
