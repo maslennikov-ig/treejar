@@ -104,12 +104,49 @@ PINNED_PARAMETER_REQUIREMENTS: dict[str, set[str]] = {
 }
 GENERATOR_MAX_TOKENS = 1400
 JUDGE_MAX_TOKENS = 4000
-EXPECTED_OPENINGS = 20
-REPAIR_JUDGE_CALL_CAP = EXPECTED_OPENINGS
 REPAIR_JUDGE_MAX_TOKENS = 800
-SELECTION_SEED = 20260810
 DEFAULT_MODEL_CAP_USD = 1.0
 BOOTSTRAP_SEED = 20260810
+
+
+@dataclass(frozen=True, slots=True)
+class FrozenSetShape:
+    """What a frozen set has to look like before a round may be paid for.
+
+    The seed and the stratum layout used to be module constants, which was the
+    right guard while there was one set: a round could not quietly measure a
+    different twenty and report it against the same baseline. A second set is
+    now needed -- Arabic openings are 1.1% of the corpus and one of them in
+    twenty settles nothing, and `tj-ge07` froze a two-turn set that the same
+    constants rejected -- so the guard is kept and made explicit instead. A set
+    is legitimate only if it is named here, and `preflight --set` has to name
+    which one, so an unnamed or mismatched set still cannot be measured.
+    """
+
+    name: str
+    selection_seed: int
+    openings: int
+    strata: dict[int, int]
+    description: str
+
+
+FROZEN_SETS: dict[str, FrozenSetShape] = {
+    "openings-20": FrozenSetShape(
+        name="openings-20",
+        selection_seed=20260810,
+        openings=20,
+        strata={1: 5, 2: 5, 3: 5, 4: 5},
+        description="the frozen twenty real customer openings, any script",
+    ),
+    "arabic-12": FrozenSetShape(
+        name="arabic-12",
+        selection_seed=20260813,
+        openings=12,
+        strata={1: 4, 2: 4, 3: 4},
+        description="every Arabic opening the corpus has, as a whole population",
+    ),
+}
+DEFAULT_FROZEN_SET = "openings-20"
 BOOTSTRAP_SAMPLES = 10_000
 _BROAD_NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?%?")
 
@@ -307,10 +344,16 @@ def _ceiling_bands(results: list[dict[str, object]]) -> list[dict[str, Any]]:
 
 
 def build_public_summary(
-    results: list[dict[str, object]], *, bootstrap_samples: int, seed: int
+    results: list[dict[str, object]],
+    *,
+    bootstrap_samples: int,
+    seed: int,
+    expected_openings: int,
 ) -> dict[str, Any]:
-    if len(results) != 20:
-        raise ValueError("public acceptance summary requires exactly 20 openings")
+    if len(results) != expected_openings:
+        raise ValueError(
+            f"public acceptance summary requires exactly {expected_openings} openings"
+        )
     expected = {int(item["dialog_id"]) for item in results}
     validate_complete_results(
         results,
@@ -387,10 +430,10 @@ def build_public_summary(
         "ceiling_bands": ceilings,
         "acceptance": ACCEPTANCE_CONTRACT
         | {
-            "coverage_complete": len(results) == EXPECTED_OPENINGS,
+            "coverage_complete": len(results) == expected_openings,
             "critical_failure_count": critical_failure_count,
             "accepted": critical_failure_count == 0
-            and len(results) == EXPECTED_OPENINGS,
+            and len(results) == expected_openings,
             "score_verdict": "paired_comparison_required",
             "observed_ci95_low_tenths": low_tenths,
         },
@@ -703,6 +746,20 @@ def _write_protected_json(path: pathlib.Path, value: object) -> None:
     path.chmod(0o600)
 
 
+def _expected_openings(preflight_doc: dict[str, Any]) -> int:
+    """How many openings this round was authorized for.
+
+    Preflight has recorded it since the set registry landed. The four rounds
+    completed before that predate the key and were all the frozen twenty, so
+    they fall back to it rather than becoming unreadable evidence.
+    """
+
+    recorded = preflight_doc.get("expected_openings")
+    if recorded is None:
+        return FROZEN_SETS[DEFAULT_FROZEN_SET].openings
+    return int(recorded)
+
+
 def _read_object(path: pathlib.Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -710,15 +767,21 @@ def _read_object(path: pathlib.Path) -> dict[str, Any]:
     return value
 
 
-def _load_frozen_scenarios(path: pathlib.Path) -> list[dict[str, Any]]:
+def _load_frozen_scenarios(
+    path: pathlib.Path, shape: FrozenSetShape
+) -> list[dict[str, Any]]:
     payload = _read_object(path)
     if payload.get("schema_version") != "treejar-real-openings/v1":
         raise ValueError("unexpected frozen opening schema")
-    if payload.get("selection_seed") != SELECTION_SEED:
-        raise ValueError(f"frozen set must record selection seed {SELECTION_SEED}")
+    if payload.get("selection_seed") != shape.selection_seed:
+        raise ValueError(
+            f"frozen set {shape.name} must record selection seed {shape.selection_seed}"
+        )
     scenarios = payload.get("scenarios")
-    if not isinstance(scenarios, list) or len(scenarios) != EXPECTED_OPENINGS:
-        raise ValueError("frozen set must contain exactly 20 openings")
+    if not isinstance(scenarios, list) or len(scenarios) != shape.openings:
+        raise ValueError(
+            f"frozen set {shape.name} must contain exactly {shape.openings} openings"
+        )
     rows: list[dict[str, Any]] = []
     for item in scenarios:
         if not isinstance(item, dict):
@@ -728,14 +791,16 @@ def _load_frozen_scenarios(path: pathlib.Path) -> list[dict[str, Any]]:
             raise ValueError("frozen scenario opening must be non-empty text")
         rows.append(dict(item))
     dialog_ids = [int(item["dialog_id"]) for item in rows]
-    if len(set(dialog_ids)) != EXPECTED_OPENINGS:
+    if len(set(dialog_ids)) != shape.openings:
         raise ValueError("frozen dialog ids must be unique")
     stratum_counts = {
         stratum: sum(int(item["length_stratum"]) == stratum for item in rows)
-        for stratum in range(1, 5)
+        for stratum in shape.strata
     }
-    if stratum_counts != {1: 5, 2: 5, 3: 5, 4: 5}:
-        raise ValueError("frozen set must contain five openings in each length stratum")
+    if stratum_counts != shape.strata:
+        raise ValueError(
+            f"frozen set {shape.name} must contain {shape.strata} openings by stratum"
+        )
     return rows
 
 
@@ -964,11 +1029,17 @@ async def preflight(
     output_dir: pathlib.Path,
     per_model_cap_usd: float,
     second_reader: bool = False,
+    frozen_set: str = DEFAULT_FROZEN_SET,
 ) -> dict[str, Any]:
     output_dir = ensure_protected_output(output_dir, repo_root=REPO_ROOT)
     if (output_dir / "preflight.json").exists():
         raise ValueError(f"preflight already exists: {output_dir}")
-    scenarios = _load_frozen_scenarios(scenarios_path)
+    shape = FROZEN_SETS.get(frozen_set)
+    if shape is None:
+        raise ValueError(f"unknown frozen set: {frozen_set}")
+    expected_openings = shape.openings
+    repair_call_cap = expected_openings
+    scenarios = _load_frozen_scenarios(scenarios_path, shape)
     judge_model = SECOND_READER_MODEL if second_reader else ROOT_JUDGE
     models = paid_models(second_reader=second_reader)
     catalog, products = await asyncio.gather(
@@ -1005,14 +1076,14 @@ async def preflight(
     repair_prices = _pricing(catalog, REPAIR_JUDGE_MODEL)
     estimates = {
         GENERATOR_MODEL: estimate_cost_usd(
-            calls=EXPECTED_OPENINGS,
+            calls=expected_openings,
             max_input_tokens=generator_input_bound,
             max_output_tokens=GENERATOR_MAX_TOKENS,
             prompt_price=generator_prices[0],
             completion_price=generator_prices[1],
         ),
         REPAIR_JUDGE_MODEL: estimate_cost_usd(
-            calls=REPAIR_JUDGE_CALL_CAP,
+            calls=repair_call_cap,
             max_input_tokens=repair_input_bound,
             max_output_tokens=REPAIR_JUDGE_MAX_TOKENS,
             prompt_price=repair_prices[0],
@@ -1022,7 +1093,7 @@ async def preflight(
     if second_reader:
         judge_prices = _pricing(catalog, SECOND_READER_MODEL)
         estimates[SECOND_READER_MODEL] += estimate_cost_usd(
-            calls=EXPECTED_OPENINGS,
+            calls=expected_openings,
             max_input_tokens=judge_input_bound,
             max_output_tokens=JUDGE_MAX_TOKENS,
             prompt_price=judge_prices[0],
@@ -1053,9 +1124,9 @@ async def preflight(
         for model, entry in catalog.items()
     }
     calls_per_model = {
-        GENERATOR_MODEL: EXPECTED_OPENINGS,
-        REPAIR_JUDGE_MODEL: REPAIR_JUDGE_CALL_CAP
-        + (EXPECTED_OPENINGS if second_reader else 0),
+        GENERATOR_MODEL: expected_openings,
+        REPAIR_JUDGE_MODEL: repair_call_cap
+        + (expected_openings if second_reader else 0),
     }
     if not second_reader:
         calls_per_model[ROOT_JUDGE] = 0
@@ -1084,10 +1155,15 @@ async def preflight(
         ),
         "generation_model": GENERATOR_MODEL,
         "judge_model": judge_model,
+        # Named here so every later stage counts against the set this round was
+        # authorized for, rather than against a module constant that only ever
+        # described one of them.
+        "frozen_set": shape.name,
+        "expected_openings": expected_openings,
         "calls_per_model": calls_per_model,
         "repair_judge_authority": {
             "model": REPAIR_JUDGE_MODEL,
-            "call_cap": REPAIR_JUDGE_CALL_CAP,
+            "call_cap": repair_call_cap,
         },
         "estimated_cost_usd": estimates,
         "per_model_cap_usd": {
@@ -1317,9 +1393,10 @@ def ingest_root_judgment(
     state_path = output_dir / "run-state.json"
     state = _read_object(state_path)
     records = state["records"]
+    expected_openings = _expected_openings(preflight_doc)
     payload = json.loads(judgments_path.read_text(encoding="utf-8"))
-    if not isinstance(payload, list) or len(payload) != EXPECTED_OPENINGS:
-        raise ValueError(f"expected {EXPECTED_OPENINGS} judgments")
+    if not isinstance(payload, list) or len(payload) != expected_openings:
+        raise ValueError(f"expected {expected_openings} judgments")
     seen: set[int] = set()
     for item in payload:
         dialog_id = int(item["dialog_id"])
@@ -1551,7 +1628,7 @@ def _journaled_repair_runner(
         by_model[REPAIR_JUDGE_MODEL] = int(by_model.get(REPAIR_JUDGE_MODEL) or 0) + 1
         authority = preflight_doc.get("repair_judge_authority") or {
             "model": REPAIR_JUDGE_MODEL,
-            "call_cap": REPAIR_JUDGE_CALL_CAP,
+            "call_cap": _expected_openings(preflight_doc),
         }
         if authority.get("model") != REPAIR_JUDGE_MODEL:
             raise RuntimeError("repair-judge model is outside preflight authority")
@@ -1559,7 +1636,7 @@ def _journaled_repair_runner(
             raise RuntimeError("repair-judge paid-call count would exceed its cap")
         model_cap = int(
             (preflight_doc.get("calls_per_model") or {}).get(
-                REPAIR_JUDGE_MODEL, REPAIR_JUDGE_CALL_CAP
+                REPAIR_JUDGE_MODEL, _expected_openings(preflight_doc)
             )
         )
         if int(by_model[REPAIR_JUDGE_MODEL]) > model_cap:
@@ -1675,16 +1752,17 @@ def _analyze_completed_state(
     if not isinstance(records, dict) or not isinstance(calls_started, dict):
         raise ValueError("protected run state is incomplete")
     judge_model = str(preflight_doc["judge_model"])
+    expected_openings = _expected_openings(preflight_doc)
     by_arm = _calls_started_by_arm(state, judge_model=judge_model)
-    expected_scoring = 0 if judge_model == ROOT_JUDGE else EXPECTED_OPENINGS
+    expected_scoring = 0 if judge_model == ROOT_JUDGE else expected_openings
     if (
-        by_arm["generation"] != EXPECTED_OPENINGS
+        by_arm["generation"] != expected_openings
         or by_arm["scoring_judge"] != expected_scoring
-        or not 0 <= by_arm["repair_judge"] <= REPAIR_JUDGE_CALL_CAP
+        or not 0 <= by_arm["repair_judge"] <= expected_openings
     ):
         raise RuntimeError(f"paid-call journal is incomplete: {calls_started}")
     expected_model_calls = {
-        GENERATOR_MODEL: EXPECTED_OPENINGS,
+        GENERATOR_MODEL: expected_openings,
         REPAIR_JUDGE_MODEL: by_arm["repair_judge"] + expected_scoring,
     }
     if judge_model == ROOT_JUDGE:
@@ -1768,7 +1846,10 @@ def _analyze_completed_state(
         require_acceptance=False,
     )
     public = build_public_summary(
-        results, bootstrap_samples=BOOTSTRAP_SAMPLES, seed=BOOTSTRAP_SEED
+        results,
+        bootstrap_samples=BOOTSTRAP_SAMPLES,
+        seed=BOOTSTRAP_SEED,
+        expected_openings=expected_openings,
     )
     actual_costs = _actual_cost_by_model(state, judge_model)
     public["measurement"] = {
@@ -1809,10 +1890,11 @@ def analyze_protected_run(output_dir: pathlib.Path) -> dict[str, Any]:
     """Recompute derived gates without making any model or catalog request."""
     output_dir = ensure_protected_output(output_dir, repo_root=REPO_ROOT)
     preflight_doc = _read_object(output_dir / "preflight.json")
+    expected_openings = _expected_openings(preflight_doc)
     cases_doc = json.loads(
         (output_dir / "prepared-cases.json").read_text(encoding="utf-8")
     )
-    if not isinstance(cases_doc, list) or len(cases_doc) != EXPECTED_OPENINGS:
+    if not isinstance(cases_doc, list) or len(cases_doc) != expected_openings:
         raise ValueError("prepared cases are incomplete")
     state = _read_object(output_dir / "run-state.json")
     public = _analyze_completed_state(
@@ -1829,10 +1911,11 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
     preflight_doc = _read_object(output_dir / "preflight.json")
     if preflight_doc.get("paid_calls_made") != 0:
         raise ValueError("preflight was not sealed before paid calls")
+    expected_openings = _expected_openings(preflight_doc)
     cases_doc = json.loads(
         (output_dir / "prepared-cases.json").read_text(encoding="utf-8")
     )
-    if not isinstance(cases_doc, list) or len(cases_doc) != EXPECTED_OPENINGS:
+    if not isinstance(cases_doc, list) or len(cases_doc) != expected_openings:
         raise ValueError("prepared cases are incomplete")
     judge_model = str(preflight_doc["judge_model"])
     state_path = output_dir / "run-state.json"
@@ -1908,7 +1991,7 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                     calls_started_by_arm["generation"] = (
                         int(calls_started_by_arm.get("generation") or 0) + 1
                     )
-                    if int(calls_started_by_arm["generation"]) > EXPECTED_OPENINGS:
+                    if int(calls_started_by_arm["generation"]) > expected_openings:
                         raise RuntimeError("Luna paid-call count would exceed 20")
                     record["generation_request_started_at"] = datetime.now(
                         UTC
@@ -1986,7 +2069,7 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                 _write_protected_json(state_path, state)
                 _enforce_actual_caps(state, preflight_doc)
                 print(
-                    f"[Luna {index}/{EXPECTED_OPENINGS}] dialog_id={dialog_id}",
+                    f"[Luna {index}/{expected_openings}] dialog_id={dialog_id}",
                     flush=True,
                 )
 
@@ -2018,7 +2101,7 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                 calls_started_by_arm["scoring_judge"] = (
                     int(calls_started_by_arm.get("scoring_judge") or 0) + 1
                 )
-                if int(calls_started_by_arm["scoring_judge"]) > EXPECTED_OPENINGS:
+                if int(calls_started_by_arm["scoring_judge"]) > expected_openings:
                     raise RuntimeError("scoring-judge paid-call count would exceed 20")
                 model_cap = int(preflight_doc["calls_per_model"][SECOND_READER_MODEL])
                 if int(calls_started[SECOND_READER_MODEL]) > model_cap:
@@ -2080,7 +2163,7 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                 _write_protected_json(state_path, state)
                 _enforce_actual_caps(state, preflight_doc)
                 print(
-                    f"[GLM {index}/{EXPECTED_OPENINGS}] dialog_id={dialog_id}",
+                    f"[GLM {index}/{expected_openings}] dialog_id={dialog_id}",
                     flush=True,
                 )
 
@@ -2101,7 +2184,7 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
         _write_protected_json(state_path, state)
         return {
             "judge_model": ROOT_JUDGE,
-            "generation_complete": len(pack) == EXPECTED_OPENINGS,
+            "generation_complete": len(pack) == expected_openings,
             "next": (
                 "read reading-pack.json, then `ingest-judgment --judgments <file>`"
             ),
@@ -2124,6 +2207,7 @@ def _public_preflight(document: dict[str, Any]) -> dict[str, Any]:
     return {
         "schema_version": document["schema_version"],
         "scenario_count": document["scenario_count"],
+        "frozen_set": document.get("frozen_set", DEFAULT_FROZEN_SET),
         "generation_model": document["generation_model"],
         "judge_model": document["judge_model"],
         "calls_per_model": document["calls_per_model"],
@@ -2143,6 +2227,17 @@ def _parse_args() -> argparse.Namespace:
     preflight_parser.add_argument("--output-dir", type=pathlib.Path, required=True)
     preflight_parser.add_argument(
         "--per-model-cap-usd", type=float, default=DEFAULT_MODEL_CAP_USD
+    )
+    preflight_parser.add_argument(
+        "--set",
+        dest="frozen_set",
+        choices=sorted(FROZEN_SETS),
+        default=DEFAULT_FROZEN_SET,
+        help=(
+            "which frozen set this round measures. Naming it is required "
+            "because a set is only legitimate if it is registered, so a "
+            "different one can never be measured and reported as this one."
+        ),
     )
     preflight_parser.add_argument(
         "--second-reader",
@@ -2174,6 +2269,7 @@ def main() -> int:
                     output_dir=args.output_dir,
                     per_model_cap_usd=args.per_model_cap_usd,
                     second_reader=args.second_reader,
+                    frozen_set=args.frozen_set,
                 )
             )
             print(json.dumps(_public_preflight(document), indent=2, sort_keys=True))

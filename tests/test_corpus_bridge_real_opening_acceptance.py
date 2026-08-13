@@ -12,10 +12,10 @@ from unittest.mock import patch
 import httpx
 import pytest
 from scripts.corpus_bridge.real_opening_acceptance import (
+    FROZEN_SETS,
     GENERATION_RETRY_DELAYS_SECONDS,
     GENERATOR_MODEL,
     PINNED_PARAMETER_REQUIREMENTS,
-    REPAIR_JUDGE_CALL_CAP,
     REPAIR_JUDGE_MODEL,
     ROOT_JUDGE,
     SECOND_READER_MODEL,
@@ -117,7 +117,57 @@ def test_frozen_scenarios_require_the_recorded_seed_and_balanced_strata(
     )
 
     with pytest.raises(ValueError, match="selection seed"):
-        _load_frozen_scenarios(path)
+        _load_frozen_scenarios(path, FROZEN_SETS["openings-20"])
+
+
+def test_a_second_set_is_only_measurable_when_it_is_registered() -> None:
+    """`tj-jfmv`. The seed and stratum layout used to be module constants.
+
+    One set needed no registry, and the constants were the guard: a round
+    could not quietly measure a different twenty and report it against the
+    same baseline. A second set is now needed, so the guard is kept and made
+    explicit -- every registered shape must still pin its own seed, size and
+    strata, and an unnamed set has no shape to be measured against.
+    """
+
+    assert set(FROZEN_SETS) == {"openings-20", "arabic-12"}
+    for name, shape in FROZEN_SETS.items():
+        assert shape.name == name
+        assert shape.openings == sum(shape.strata.values())
+        assert shape.selection_seed > 0
+    seeds = {shape.selection_seed for shape in FROZEN_SETS.values()}
+    assert len(seeds) == len(FROZEN_SETS), "two sets sharing a seed can be swapped"
+
+
+def test_the_arabic_set_is_rejected_against_the_twenty_opening_shape(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A set is measured against the shape the round named, never another."""
+
+    path = tmp_path / "scenarios.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "treejar-real-openings/v1",
+                "selection_seed": FROZEN_SETS["arabic-12"].selection_seed,
+                "scenarios": [
+                    {
+                        "dialog_id": dialog_id,
+                        "length_stratum": (dialog_id - 1) // 4 + 1,
+                        "opening": f"opening {dialog_id}",
+                    }
+                    for dialog_id in range(1, 13)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="selection seed"):
+        _load_frozen_scenarios(path, FROZEN_SETS["openings-20"])
+
+    rows = _load_frozen_scenarios(path, FROZEN_SETS["arabic-12"])
+    assert len(rows) == 12
 
 
 def test_complete_results_require_each_frozen_dialog_once() -> None:
@@ -132,7 +182,9 @@ def test_public_summary_contains_no_opening_or_response_text() -> None:
     """Catch private corpus text leaking through the tracked summary."""
     results = [_result(dialog_id) for dialog_id in range(1, 21)]
 
-    public = build_public_summary(results, bootstrap_samples=200, seed=17)
+    public = build_public_summary(
+        results, bootstrap_samples=200, seed=17, expected_openings=20
+    )
 
     assert public["coverage"] == {
         "frozen_openings": 20,
@@ -197,7 +249,9 @@ def test_failed_quality_round_still_produces_a_text_safe_summary() -> None:
     results = [_result(dialog_id) for dialog_id in range(1, 21)]
     results[4]["critical_failures"] = ["unsafe_commitment"]
 
-    public = build_public_summary(results, bootstrap_samples=200, seed=17)
+    public = build_public_summary(
+        results, bootstrap_samples=200, seed=17, expected_openings=20
+    )
 
     assert public["coverage"]["critical_failures"] == 1
     assert public["acceptance"]["accepted"] is False
@@ -215,7 +269,9 @@ def test_no_absolute_score_threshold_can_come_back() -> None:
 
     results = [_result(dialog_id, score=19.9) for dialog_id in range(1, 21)]
 
-    public = build_public_summary(results, bootstrap_samples=200, seed=17)
+    public = build_public_summary(
+        results, bootstrap_samples=200, seed=17, expected_openings=20
+    )
 
     assert public["weighted_score_tenths"]["mean"] == 199
     assert "minimum_ci95_low_tenths" not in public["acceptance"]
@@ -231,7 +287,9 @@ def test_the_score_is_reported_against_the_ceiling_it_could_reach() -> None:
         _result(dialog_id, score=7.2, attainable=9.6) for dialog_id in range(1, 12)
     ] + [_result(dialog_id, score=21.0, attainable=30.0) for dialog_id in range(12, 21)]
 
-    public = build_public_summary(results, bootstrap_samples=200, seed=17)
+    public = build_public_summary(
+        results, bootstrap_samples=200, seed=17, expected_openings=20
+    )
 
     assert public["ceiling_bands"] == [
         {
@@ -256,7 +314,9 @@ def test_a_critical_failure_still_blocks_acceptance_at_any_score() -> None:
     results = [_result(dialog_id, score=29.0) for dialog_id in range(1, 21)]
     results[3]["critical_failures"] = ["hallucination"]
 
-    public = build_public_summary(results, bootstrap_samples=200, seed=17)
+    public = build_public_summary(
+        results, bootstrap_samples=200, seed=17, expected_openings=20
+    )
 
     assert public["acceptance"]["accepted"] is False
     assert public["acceptance"]["critical_failure_count"] == 1
@@ -540,7 +600,9 @@ def test_the_summary_names_the_judge_that_actually_read_the_round() -> None:
     for row in results:
         row["judge_model"] = ROOT_JUDGE
 
-    public = build_public_summary(results, bootstrap_samples=200, seed=17)
+    public = build_public_summary(
+        results, bootstrap_samples=200, seed=17, expected_openings=20
+    )
 
     assert public["judge_model"] == ROOT_JUDGE
 
@@ -815,12 +877,12 @@ async def test_preflight_authorizes_the_repair_model_and_round_call_cap(
     assert requested_models == [(GENERATOR_MODEL, REPAIR_JUDGE_MODEL)]
     assert document["calls_per_model"] == {
         GENERATOR_MODEL: 20,
-        REPAIR_JUDGE_MODEL: REPAIR_JUDGE_CALL_CAP,
+        REPAIR_JUDGE_MODEL: 20,
         ROOT_JUDGE: 0,
     }
     assert document["repair_judge_authority"] == {
         "model": REPAIR_JUDGE_MODEL,
-        "call_cap": REPAIR_JUDGE_CALL_CAP,
+        "call_cap": 20,
     }
 
 
