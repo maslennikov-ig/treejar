@@ -1,6 +1,6 @@
 # Stage tj-rcg5-semantic-catalog-evidence
 
-Status: accepted; commit and delivery pending
+Status: accepted and delivered to `origin/main` at `4a0883a`
 Base: `codex/tj-rcg5` at `ecd9c33`
 Acceptance owner: root orchestrator
 

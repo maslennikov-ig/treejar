@@ -54,7 +54,7 @@ parallel_group: n/a
 depends_on_streams:
   - none
 parallel_decision: sequential
-status: accepted
+status: merged
 delivery_method: manual integration
 accepted_by_orchestrator: yes
 cleanup_status: cleaned
@@ -132,8 +132,8 @@ privacy boundary and one rollback.
 
 # Delivery / Cleanup
 
-Accepted by the root orchestrator. One root-owned commit and authorized push to
-`origin/main` remain.
+Accepted by the root orchestrator and delivered to `origin/main` in commit
+`4a0883a`.
 
 # Risks / Follow-ups / Explicit Defers
 

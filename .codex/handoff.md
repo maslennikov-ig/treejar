@@ -3,9 +3,8 @@
 Updated: 2026-08-13
 Current branch: `codex/tj-rcg5`
 Current stage id: `tj-rcg5-semantic-catalog-evidence`
-Status: `tj-9scy` and `tj-f6yp` are closed in local commits `4985db9` and
-`ecd9c33`, two commits ahead of `origin/main`. `tj-rcg5` implementation and
-protected evidence, gates and acceptance are complete; commit and push remain.
+Status: `tj-9scy`, `tj-f6yp` and `tj-rcg5` are closed and delivered to
+`origin/main` in commits `4985db9`, `ecd9c33` and `4a0883a` respectively.
 
 Documentation: `docs-resolve` covered pgvector and pinned model revisions; local code owns Treejar behavior.
 
@@ -155,8 +154,8 @@ Use $orchestrator-stage after selecting the next open Beads goal.
   last read, not stale: CI deploys on any push to `main` touching `src/` and
   the job succeeded on `d19bfdb`, the last such commit, carrying every fix of
   12-13 August.
-  `/api/v1/health` reads ok. Local commit `4985db9` adds the release SHA to the
-  health response and closes `tj-9scy`; it has not been pushed yet.
+  `/api/v1/health` read ok before delivery. Commit `4985db9` adds the release
+  SHA to the health response and closes `tj-9scy`; it is now on `origin/main`.
 
 ## Active handoff
 
