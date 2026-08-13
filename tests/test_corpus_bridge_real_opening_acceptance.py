@@ -822,6 +822,79 @@ async def test_the_harness_commits_to_what_it_defers() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_second_reader_is_authorized_beside_the_root_never_instead(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`tj-4q79.1`. The flag replaced the judge the standing decision names.
+
+    AGENTS.md: a paid model may be added beside the root reading, never in
+    place of it, and the flag's own help text says the same. preflight set
+    judge_model to the paid model, the round then skipped writing the pack the
+    root reads, and ingest-judgment refused the root reading outright -- so no
+    round could carry both, which is what tj-4q79 needs. The estimate also
+    raised KeyError from the day the repair judge and the second reader became
+    different vendors, so the flag had been dead since 2026-08-12.
+    """
+
+    scenarios_path = tmp_path / "scenarios.json"
+    scenarios_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "treejar-real-openings/v1",
+                "selection_seed": 20260810,
+                "scenarios": [
+                    {
+                        "dialog_id": dialog_id,
+                        "length_stratum": (dialog_id - 1) // 5 + 1,
+                        "opening": f"Opening {dialog_id}",
+                    }
+                    for dialog_id in range(1, 21)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    async def model_catalog(models: tuple[str, ...]) -> dict[str, dict[str, object]]:
+        return {
+            model: {
+                "id": model,
+                "pricing": {"prompt": "0.000001", "completion": "0.000002"},
+                "provider_order": ["test"],
+                "provider_quantizations": ["fp8"],
+            }
+            for model in models
+        }
+
+    async def catalog_products() -> list[dict[str, object]]:
+        return [{"name": "Desk", "sku": "D-1", "price": 1000, "stock": 9}]
+
+    monkeypatch.setattr(
+        "scripts.corpus_bridge.real_opening_acceptance._pinned_model_catalog",
+        model_catalog,
+    )
+    monkeypatch.setattr(
+        "scripts.corpus_bridge.real_opening_acceptance._fetch_catalog_summaries",
+        catalog_products,
+    )
+
+    document = await preflight(
+        scenarios_path=scenarios_path,
+        output_dir=tmp_path / "protected",
+        per_model_cap_usd=1.0,
+        second_reader=True,
+    )
+
+    assert document["judge_model"] == ROOT_JUDGE
+    assert document["second_reader"] == SECOND_READER_MODEL
+    # Its own budget. It shared the repair judge's until they split vendors.
+    assert document["calls_per_model"][SECOND_READER_MODEL] == 20
+    assert document["calls_per_model"][REPAIR_JUDGE_MODEL] == 20
+    assert SECOND_READER_MODEL in document["estimated_cost_usd"]
+
+
+@pytest.mark.asyncio
 async def test_preflight_authorizes_the_repair_model_and_round_call_cap(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

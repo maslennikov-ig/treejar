@@ -1041,7 +1041,11 @@ async def preflight(
     expected_openings = shape.openings
     repair_call_cap = expected_openings
     scenarios = _load_frozen_scenarios(scenarios_path, shape)
-    judge_model = SECOND_READER_MODEL if second_reader else ROOT_JUDGE
+    # The root judge is the judge, always. `tj-4q79.1`: this used to become the
+    # paid model, which excluded the root reading the standing owner decision
+    # requires and the flag's own help text promises.
+    judge_model = ROOT_JUDGE
+    second_reader_model = SECOND_READER_MODEL if second_reader else None
     models = paid_models(second_reader=second_reader)
     catalog, products = await asyncio.gather(
         _pinned_model_catalog(models), _fetch_catalog_summaries()
@@ -1093,7 +1097,10 @@ async def preflight(
     }
     if second_reader:
         judge_prices = _pricing(catalog, SECOND_READER_MODEL)
-        estimates[SECOND_READER_MODEL] += estimate_cost_usd(
+        # Its own key. It shared one with the repair judge until they became
+        # different vendors on 2026-08-12, and this line has raised KeyError
+        # ever since, so no second-reader round has been possible at all.
+        estimates[SECOND_READER_MODEL] = estimate_cost_usd(
             calls=expected_openings,
             max_input_tokens=judge_input_bound,
             max_output_tokens=JUDGE_MAX_TOKENS,
@@ -1126,20 +1133,17 @@ async def preflight(
     }
     calls_per_model = {
         GENERATOR_MODEL: expected_openings,
-        REPAIR_JUDGE_MODEL: repair_call_cap
-        + (expected_openings if second_reader else 0),
+        REPAIR_JUDGE_MODEL: repair_call_cap,
+        ROOT_JUDGE: 0,
     }
-    if not second_reader:
-        calls_per_model[ROOT_JUDGE] = 0
     input_token_upper_bounds = {
         GENERATOR_MODEL: generator_input_bound,
-        REPAIR_JUDGE_MODEL: max(
-            repair_input_bound,
-            judge_input_bound if second_reader else 0,
-        ),
+        REPAIR_JUDGE_MODEL: repair_input_bound,
+        ROOT_JUDGE: 0,
     }
-    if not second_reader:
-        input_token_upper_bounds[ROOT_JUDGE] = 0
+    if second_reader:
+        calls_per_model[SECOND_READER_MODEL] = expected_openings
+        input_token_upper_bounds[SECOND_READER_MODEL] = judge_input_bound
     document = {
         "schema_version": "treejar-real-opening-preflight/v1",
         "created_at": datetime.now(UTC).isoformat(),
@@ -1161,6 +1165,7 @@ async def preflight(
         # described one of them.
         "frozen_set": shape.name,
         "expected_openings": expected_openings,
+        "second_reader": second_reader_model,
         "calls_per_model": calls_per_model,
         "repair_judge_authority": {
             "model": REPAIR_JUDGE_MODEL,
@@ -1386,7 +1391,7 @@ def ingest_root_judgment(
     output_dir = ensure_protected_output(output_dir, repo_root=REPO_ROOT)
     preflight_doc = _read_object(output_dir / "preflight.json")
     if str(preflight_doc["judge_model"]) != ROOT_JUDGE:
-        raise ValueError("this round was preflighted for a paid second reader")
+        raise ValueError("this round was not preflighted for the root judge")
     cases_doc = json.loads(
         (output_dir / "prepared-cases.json").read_text(encoding="utf-8")
     )
@@ -1717,6 +1722,61 @@ def _calls_started_by_arm(state: dict[str, Any], *, judge_model: str) -> dict[st
     }
 
 
+def _reader_disagreement(
+    records: dict[str, Any], cases_doc: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """How far the paid second reader sits from the root reading, per rule.
+
+    `tj-4q79`. A paired delta smaller than reader variance is not evidence, and
+    nothing in this harness measured that variance until two readings could
+    exist on one round. Only rules both readers marked applicable are counted:
+    a rule one of them stood down on is a disagreement about the rubric, not
+    about the reply, and averaging the two together would hide both.
+    """
+
+    per_rule: dict[int, list[float]] = {}
+    totals: list[float] = []
+    for case in cases_doc:
+        record = records[str(int(case["dialog_id"]))]
+        root = record.get("judge")
+        other = record.get("second_reader")
+        if not isinstance(root, dict) or not isinstance(other, dict):
+            return None
+        root_rules = {
+            int(row["rule_number"]): row
+            for row in root["evaluation"]["criteria"]
+            if row.get("applicable")
+        }
+        other_rules = {
+            int(row["rule_number"]): row
+            for row in other["evaluation"]["criteria"]
+            if row.get("applicable")
+        }
+        shared = sorted(set(root_rules) & set(other_rules))
+        if not shared:
+            continue
+        gap = 0.0
+        for rule in shared:
+            delta = float(other_rules[rule]["score"]) - float(root_rules[rule]["score"])
+            per_rule.setdefault(rule, []).append(delta)
+            gap += abs(delta)
+        totals.append(gap)
+    if not totals:
+        return None
+    return {
+        "second_reader": str(
+            records[str(int(cases_doc[0]["dialog_id"]))]["second_reader"]["model"]
+        ),
+        "mean_absolute_gap_per_opening_tenths": round(10 * sum(totals) / len(totals)),
+        "worst_opening_gap_tenths": round(10 * max(totals)),
+        "mean_signed_delta_by_rule_tenths": {
+            str(rule): round(10 * sum(values) / len(values))
+            for rule, values in sorted(per_rule.items())
+        },
+        "openings_compared": len(totals),
+    }
+
+
 def _aggregate_repair_counts(records: dict[str, Any]) -> dict[str, int]:
     keys = (
         "flags",
@@ -1754,8 +1814,9 @@ def _analyze_completed_state(
         raise ValueError("protected run state is incomplete")
     judge_model = str(preflight_doc["judge_model"])
     expected_openings = _expected_openings(preflight_doc)
-    by_arm = _calls_started_by_arm(state, judge_model=judge_model)
-    expected_scoring = 0 if judge_model == ROOT_JUDGE else expected_openings
+    second_reader_model = preflight_doc.get("second_reader")
+    by_arm = _calls_started_by_arm(state, judge_model=second_reader_model or ROOT_JUDGE)
+    expected_scoring = expected_openings if second_reader_model else 0
     if (
         by_arm["generation"] != expected_openings
         or by_arm["scoring_judge"] != expected_scoring
@@ -1764,10 +1825,11 @@ def _analyze_completed_state(
         raise RuntimeError(f"paid-call journal is incomplete: {calls_started}")
     expected_model_calls = {
         GENERATOR_MODEL: expected_openings,
-        REPAIR_JUDGE_MODEL: by_arm["repair_judge"] + expected_scoring,
+        REPAIR_JUDGE_MODEL: by_arm["repair_judge"],
+        ROOT_JUDGE: 0,
     }
-    if judge_model == ROOT_JUDGE:
-        expected_model_calls[ROOT_JUDGE] = 0
+    if second_reader_model:
+        expected_model_calls[second_reader_model] = expected_scoring
     if any(
         int(calls_started.get(model) or 0) != expected
         for model, expected in expected_model_calls.items()
@@ -1853,6 +1915,9 @@ def _analyze_completed_state(
         expected_openings=expected_openings,
     )
     actual_costs = _actual_cost_by_model(state, judge_model)
+    disagreement = _reader_disagreement(records, cases_doc)
+    if disagreement is not None:
+        public["reader_disagreement"] = disagreement
     public["measurement"] = {
         "scenario_digest": str(preflight_doc["scenario_digest"]),
         "generation_prompt_set_digest": _sha256_json(
@@ -1913,6 +1978,7 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
     if preflight_doc.get("paid_calls_made") != 0:
         raise ValueError("preflight was not sealed before paid calls")
     expected_openings = _expected_openings(preflight_doc)
+    second_reader_model = preflight_doc.get("second_reader")
     cases_doc = json.loads(
         (output_dir / "prepared-cases.json").read_text(encoding="utf-8")
     )
@@ -2084,13 +2150,14 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                 language=str(case["language"]),
                 catalog_relevant=bool(case["catalog_relevant"]),
             )
-            if judge_model == ROOT_JUDGE:
-                # No second reader was authorized, so the round stops at the
-                # generation arm and writes the pack the root judge reads.
-                record["reading"] = _reading_entry(case, response_text, assessment)
-                _write_protected_json(state_path, state)
+            # Unconditional. `tj-4q79.1`: the root judge reads every round,
+            # so every round writes the pack it reads. A paid second reader is
+            # recorded beside that, never instead of it.
+            record["reading"] = _reading_entry(case, response_text, assessment)
+            _write_protected_json(state_path, state)
+            if second_reader_model is None:
                 continue
-            if not isinstance(record.get("judge"), dict):
+            if not isinstance(record.get("second_reader"), dict):
                 if record.get("judge_request_started_at") is not None:
                     raise RuntimeError(
                         f"dialog {dialog_id}: GLM request outcome is ambiguous; "
@@ -2148,7 +2215,7 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                     ungrounded_numbers=ungrounded,
                     language_ok=language_ok,
                 )
-                record["judge"] = {
+                record["second_reader"] = {
                     "model": SECOND_READER_MODEL,
                     "provider_model": body.get("model"),
                     "finish_reason": finish_reason,
@@ -2164,7 +2231,8 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                 _write_protected_json(state_path, state)
                 _enforce_actual_caps(state, preflight_doc)
                 print(
-                    f"[GLM {index}/{expected_openings}] dialog_id={dialog_id}",
+                    f"[second reader {index}/{expected_openings}] "
+                    f"dialog_id={dialog_id}",
                     flush=True,
                 )
 
