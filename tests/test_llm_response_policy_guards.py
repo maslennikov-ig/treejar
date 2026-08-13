@@ -37,6 +37,33 @@ def test_one_function_derives_the_permitted_asks_from_turn_state() -> None:
     )
 
 
+def test_company_activity_ask_has_a_one_turn_cooldown() -> None:
+    first_ask = render_reply(
+        "We can plan the workstations around your team.",
+        state=ReplyPolicyState(
+            language="en",
+            is_first_turn=False,
+            owes_company_question=True,
+        ),
+        provenance="model",
+    )
+    cooldown = render_reply(
+        "We can plan the workstations around your team.",
+        state=ReplyPolicyState(
+            language="en",
+            is_first_turn=False,
+            owes_company_question=True,
+            company_activity_asked_previous_turn=True,
+        ),
+        provenance="model",
+    )
+
+    assert AskKind.COMPANY_ACTIVITY in first_ask.emitted_asks
+    assert "what does your company" in first_ask.text.casefold()
+    assert AskKind.COMPANY_ACTIVITY not in cooldown.emitted_asks
+    assert "what does your company" not in cooldown.text.casefold()
+
+
 def test_first_turn_opening_guard_needs_only_explicit_state() -> None:
     guarded = apply_first_turn_opening_guard(
         "I can help with office furniture.",

@@ -316,7 +316,10 @@ async def test_turn_finalizer_is_the_single_async_customer_boundary() -> None:
     turn = SimpleNamespace(
         masked_text="Can you buy my used desks?",
         pii_map={},
-        deps=SimpleNamespace(executed_tool_names=()),
+        deps=SimpleNamespace(
+            executed_tool_names=(),
+            conversation=SimpleNamespace(metadata_={}),
+        ),
         _record_reply_on_conversation=lambda model, text: recorded.append(
             (model, text)
         ),
@@ -393,7 +396,10 @@ async def test_turn_finalizer_masks_reply_and_candidate_pii_from_the_judge(
     turn = SimpleNamespace(
         masked_text="Can you buy my used desks?",
         pii_map={},
-        deps=SimpleNamespace(executed_tool_names=()),
+        deps=SimpleNamespace(
+            executed_tool_names=(),
+            conversation=SimpleNamespace(metadata_={}),
+        ),
         _record_reply_on_conversation=lambda model, text: recorded.append(
             (model, text)
         ),
@@ -428,7 +434,10 @@ async def test_unflagged_turn_records_once_without_calling_the_judge() -> None:
     turn = SimpleNamespace(
         pii_map={},
         masked_text="Hello",
-        deps=SimpleNamespace(executed_tool_names=()),
+        deps=SimpleNamespace(
+            executed_tool_names=(),
+            conversation=SimpleNamespace(metadata_={}),
+        ),
         _record_reply_on_conversation=lambda model, text: recorded.append(
             (model, text)
         ),
@@ -588,6 +597,37 @@ async def test_a_folded_away_name_ask_does_not_record_the_slot() -> None:
     await _finalize_turn_response(turn, response)
 
     assert "customer_name_asked" not in turn.deps.conversation.metadata_
+
+
+@pytest.mark.asyncio
+async def test_selected_company_ask_records_only_the_previous_turn() -> None:
+    turn = _turn_for_fallback([])
+    asked = LLMResponse(
+        text="What does your company do day to day?",
+        tokens_in=0,
+        tokens_out=0,
+        cost=0.0,
+        model="deterministic-company-question",
+        emitted_asks=frozenset({AskKind.COMPANY_ACTIVITY}),
+    )
+
+    await _finalize_turn_response(turn, asked)
+
+    assert turn.deps.conversation.metadata_["company_activity_asked_previous_turn"]
+
+    answered_without_reasking = LLMResponse(
+        text="The CH 616 is available.",
+        tokens_in=0,
+        tokens_out=0,
+        cost=0.0,
+        model="deterministic-answer",
+        emitted_asks=frozenset(),
+    )
+    await _finalize_turn_response(turn, answered_without_reasking)
+
+    assert "company_activity_asked_previous_turn" not in (
+        turn.deps.conversation.metadata_
+    )
 
 
 @pytest.mark.asyncio

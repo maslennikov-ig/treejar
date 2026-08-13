@@ -22,6 +22,7 @@ from src.llm.grounding_output import (
 )
 from src.llm.opening_guard import apply_opening_guard, opening_replacement_covers
 from src.llm.sales_turn_guard import (
+    asks_the_company_activity,
     carry_the_company_question,
     collapse_question_form,
     commit_to_what_you_deferred,
@@ -56,6 +57,7 @@ def permitted_asks_for_turn(
     customer_name_asked: bool,
     owes_company_question: bool,
     quote_consent_granted: bool,
+    company_activity_asked_previous_turn: bool = False,
 ) -> frozenset[AskKind]:
     """Derive the semantic asks allowed on this turn from explicit state."""
 
@@ -66,7 +68,7 @@ def permitted_asks_for_turn(
         and not customer_name_asked
     ):
         permitted.add(AskKind.CUSTOMER_NAME)
-    if owes_company_question:
+    if owes_company_question and not company_activity_asked_previous_turn:
         permitted.add(AskKind.COMPANY_ACTIVITY)
     if quote_consent_granted:
         permitted.add(AskKind.QUOTE_DETAILS)
@@ -103,6 +105,7 @@ class ReplyPolicyState:
     customer_type: str | None = None
     delivery_address: str | None = None
     owes_company_question: bool = False
+    company_activity_asked_previous_turn: bool = False
     quote_consent_granted: bool = False
     inventory_confirmed: bool = False
     grounded_amounts: tuple[object, ...] | None = None
@@ -217,6 +220,9 @@ def _permitted_asks_for_policy_state(state: ReplyPolicyState) -> frozenset[AskKi
         customer_name_asked=state.customer_name_asked,
         owes_company_question=state.owes_company_question,
         quote_consent_granted=state.quote_consent_granted,
+        company_activity_asked_previous_turn=(
+            state.company_activity_asked_previous_turn
+        ),
     )
 
 
@@ -735,14 +741,18 @@ def render_reply(
         ),
     )
     # Permission is decided from state before generation. This observation is
-    # narrower: it records whether the selected customer text still carries
-    # the permitted name ask after every reducing guard has run.
-    emitted_asks = frozenset(
-        {AskKind.CUSTOMER_NAME}
-        if AskKind.CUSTOMER_NAME in permitted_asks
-        and response_asks_customer_name(rendered)
-        else ()
-    )
+    # narrower: it records which permitted stateful asks the selected customer
+    # text still carries after every reducing guard has run.
+    emitted: set[AskKind] = set()
+    if AskKind.CUSTOMER_NAME in permitted_asks and response_asks_customer_name(
+        rendered
+    ):
+        emitted.add(AskKind.CUSTOMER_NAME)
+    if AskKind.COMPANY_ACTIVITY in permitted_asks and asks_the_company_activity(
+        rendered
+    ):
+        emitted.add(AskKind.COMPANY_ACTIVITY)
+    emitted_asks = frozenset(emitted)
     return RenderedReply(
         text=rendered,
         provenance=provenance,

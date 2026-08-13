@@ -326,6 +326,7 @@ ORDER_RUNTIME_METADATA_KEY = "order_runtime"
 ORDER_RUNTIME_TRACE_LIMIT = 10
 NAME_GATE_PENDING_REQUEST_KEY = "name_gate_pending_request"
 CUSTOMER_NAME_ASKED_KEY = "customer_name_asked"
+COMPANY_ACTIVITY_ASKED_PREVIOUS_TURN_KEY = "company_activity_asked_previous_turn"
 MAX_NAME_GATE_PENDING_REQUEST_CHARS = 600
 LAST_APPLIED_BOT_RULES_KEY = "last_applied_bot_rules"
 BOT_TEST_MARKER_RE = re.compile(
@@ -5312,6 +5313,25 @@ def _record_customer_name_asked(conversation: Conversation) -> None:
 def _clear_customer_name_asked(conversation: Conversation) -> None:
     metadata = dict(conversation.metadata_ or {})
     metadata.pop(CUSTOMER_NAME_ASKED_KEY, None)
+    conversation.metadata_ = metadata
+
+
+def _company_activity_was_asked_previous_turn(conversation: Conversation) -> bool:
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
+    )
+    return metadata.get(COMPANY_ACTIVITY_ASKED_PREVIOUS_TURN_KEY) is True
+
+
+def _record_company_activity_asked(conversation: Conversation) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    metadata[COMPANY_ACTIVITY_ASKED_PREVIOUS_TURN_KEY] = True
+    conversation.metadata_ = metadata
+
+
+def _clear_company_activity_asked(conversation: Conversation) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    metadata.pop(COMPANY_ACTIVITY_ASKED_PREVIOUS_TURN_KEY, None)
     conversation.metadata_ = metadata
 
 

@@ -374,6 +374,25 @@ def test_the_fold_proof_admits_the_two_shapes_it_was_measured_on() -> None:
     assert only_asks_were_dropped(form, collapse_question_form(form))
 
 
+@pytest.mark.parametrize(
+    ("item", "terminal"),
+    [
+        ("How many people or workstations you are furnishing", "?"),
+        ("the delivery address", "."),
+    ],
+)
+def test_a_folded_ask_list_has_terminal_punctuation(
+    item: str,
+    terminal: str,
+) -> None:
+    original = f"To narrow this down, could you share:\n1. {item}\n2. your timeline"
+
+    folded = collapse_question_form(original)
+
+    assert folded.endswith(terminal)
+    assert only_asks_were_dropped(original, folded)
+
+
 def test_the_fold_proof_refuses_a_lost_answer_and_an_invented_sentence() -> None:
     """The two ways a reduction stops being one, and both raise a flag.
 

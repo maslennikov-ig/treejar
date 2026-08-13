@@ -420,6 +420,9 @@ class _Turn:
                 customer_name_asked=engine._customer_name_was_asked(self.conv),
                 owes_company_question=_turn_owes_the_company_question(self.deps),
                 quote_consent_granted=(quote_workflow.consent is QuoteConsent.GRANTED),
+                company_activity_asked_previous_turn=(
+                    engine._company_activity_was_asked_previous_turn(self.conv)
+                ),
             )
         return self.permitted_asks_cache
 
@@ -467,6 +470,9 @@ class _Turn:
                 ),
                 delivery_address=delivery_address or None,
                 owes_company_question=_turn_owes_the_company_question(response_deps),
+                company_activity_asked_previous_turn=(
+                    engine._company_activity_was_asked_previous_turn(self.conv)
+                ),
                 quote_consent_granted=(quote_workflow.consent is QuoteConsent.GRANTED),
                 inventory_confirmed=response_deps.inventory_confirmed,
                 grounded_amounts=grounded_amounts_for_turn(
@@ -771,6 +777,10 @@ async def _finalize_turn_response(
         # This is selected-output metadata from the policy chain. A permitted
         # ask folded away before delivery must not close the persistent slot.
         engine._record_customer_name_asked(turn.deps.conversation)
+    if AskKind.COMPANY_ACTIVITY in response.emitted_asks:
+        engine._record_company_activity_asked(turn.deps.conversation)
+    else:
+        engine._clear_company_activity_asked(turn.deps.conversation)
     return response
 
 

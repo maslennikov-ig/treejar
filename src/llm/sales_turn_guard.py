@@ -57,6 +57,12 @@ _ASK_LIST_LEAD_IN_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+_QUESTION_ITEM_RE = re.compile(
+    r"^(?:(?:who|what|when|where|why|how|which|whose|can|could|would|should|"
+    r"do|does|did|is|are|was|were|will|may)\b|"
+    r"(?:هل|ما|ماذا|من|متى|أين|كيف|كم|أي|لماذا)\b)",
+    re.IGNORECASE,
+)
 
 
 def _is_question(text: str) -> bool:
@@ -113,6 +119,12 @@ def _collapse_ask_list(text: str) -> str:
         kept = _LIST_ITEM_RE.sub("", lines[item_indices[0]]).strip()
         lead = line.rstrip()
         if lead.endswith(":"):
+            if kept and kept[-1] not in ".!?\u061f":
+                if _QUESTION_ITEM_RE.match(kept):
+                    terminal = "\u061f" if re.search(r"[\u0600-\u06ff]", kept) else "?"
+                else:
+                    terminal = "."
+                kept = f"{kept}{terminal}"
             merged = f"{lead} {kept}"
         else:
             merged = f"{lead}\n{lines[item_indices[0]]}"
