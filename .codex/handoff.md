@@ -1,12 +1,12 @@
 # Orchestrator Handoff
 
 Updated: 2026-08-13
-Current branch: `codex/audit-fixes-20260813`
+Current branch: `main`
 Current stage id: `tj-rcg5-semantic-catalog-evidence`
-Status: `tj-rcg5` delivered in `4a0883a`. `tj-9scy` and `tj-f6yp` shipped
-defective in `4985db9`/`ecd9c33`; the 2026-08-13 audit reopened both and their
-fixes are delivered in `48a213a`/`629b01d`, acceptance pins in `9306cf1`. Both
-stay open until the deployed endpoint is read back.
+Status: `tj-9scy`, `tj-f6yp` and `tj-rcg5` are closed. The first two shipped
+defective in `4985db9`/`ecd9c33`, were reopened by the 2026-08-13 audit and
+fixed in `48a213a`/`629b01d`, acceptance pins in `5318e49`, all deployed.
+`/api/v1/health` returns the deployed commit; it read `unknown` before.
 
 Documentation: `docs-resolve` covered pgvector and pinned model revisions; local code owns Treejar behavior.
 
