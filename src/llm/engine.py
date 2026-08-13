@@ -425,6 +425,21 @@ _THIS_IS_INTRODUCTION = (
     r"\bthis\s+is\s+"
     r"(?!(?:an?|the|my|our|your|his|her|their|this|that|just)\s)"
 )
+# The Arabic half of the same promise, `tj-40gc`. The Arabic round of
+# 2026-08-13 asked dialog 686 for a name her own opening had given, in a reply
+# that had just used it: only "اسمي" was read, so "معك الاء من ..." and
+# "انا احمد من ..." -- the two commonest Arabic self-introductions, and the
+# direct equivalents of the English shapes above -- yielded nothing at all.
+#
+# Bounded the same way and for the same reason. "انا مهتم بالكراسي" is "I am
+# interested in chairs", not a customer called "interested", so the words that
+# turn the sentence into a statement about the request rather than the sender
+# are excluded, exactly as `interested|looking|asking` are on the English side.
+_AR_INTRODUCTION = (
+    r"\b(?:معك|معاك|أنا|انا)\s+"
+    r"(?!(?:من|في|مع|إلى|الى|هذا|هذه|ذلك|مهتم(?:ة)?|أبحث|ابحث|أريد|اريد"
+    r"|أحتاج|احتاج|بحاجة|أسأل|اسأل|أستفسر|استفسر)\b)"
+)
 _PERSON_NAME_WORDS = r"[^\W\d_]+(?:\s+[^\W\d_]+)?"
 
 NATURAL_NAME_PATTERNS = (
@@ -455,6 +470,18 @@ NATURAL_NAME_PATTERNS = (
         _THIS_IS_INTRODUCTION + rf"(?P<value>{_PERSON_NAME_WORDS})\s+from\b",
         re.I | re.S,
     ),
+    re.compile(
+        _AR_INTRODUCTION + rf"(?P<value>{_PERSON_NAME_WORDS})\s+من\b",
+        re.S,
+    ),
+    re.compile(
+        _AR_INTRODUCTION + r"(?P<value>.+?)(?=$|[\n\[]|[.!?;,،؛؟]\s)",
+        re.S,
+    ),
+    re.compile(
+        r"\bنادني\s+(?P<value>.+?)(?=$|[\n\[]|[.!?;,،؛؟]\s)",
+        re.S,
+    ),
 )
 NATURAL_COMPANY_PATTERNS = (
     re.compile(
@@ -477,6 +504,14 @@ NATURAL_COMPANY_PATTERNS = (
         r"(?:وأنا\s+)?(?:مدير(?:ة)?|مسؤول(?:ة)?)\s+"
         r"(?:المرافق|المكتب|المشتريات|العمليات|المشروع)\s+"
         r"(?:في|لدى)\s+(?:شركة\s+)?"
+        r"(?P<value>.+?)(?=$|[\n\[]|[.!?;,،؛؟]\s?)",
+        re.S,
+    ),
+    # `tj-40gc`. The job-title shape above was the only Arabic company reading,
+    # and it needs a title. The introduction shape needs nothing but the
+    # sentence people actually write.
+    re.compile(
+        _AR_INTRODUCTION + _PERSON_NAME_WORDS + r"\s+من\s+(?:شركة\s+)?"
         r"(?P<value>.+?)(?=$|[\n\[]|[.!?;,،؛؟]\s?)",
         re.S,
     ),

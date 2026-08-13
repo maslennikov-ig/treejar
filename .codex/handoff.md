@@ -8,7 +8,7 @@ green; `main` is pushed to `origin/main` with CI green. No deploy or runtime
 mutation was authorized or performed. Five measured rounds were read blind
 with the owner's authority: four on the frozen twenty, taking the weighted mean
 14.6 to 17.5 of 30, and one over the whole Arabic population. They found and
-closed `tj-fcv8`, `tj-l0e3`, `tj-fcfn` and `tj-jfmv`, and opened `tj-40gc` and
+closed `tj-fcv8`, `tj-l0e3`, `tj-fcfn`, `tj-jfmv` and `tj-40gc`, and opened
 `tj-z1fn`.
 
 Documentation: no external/versioned boundary — the behavior is owned by the
@@ -25,8 +25,9 @@ local reply-policy contract, Python implementation, tests and protected replay.
   the one re-elicitation trigger: `_store_name_gate_pending_request` clears the
   slot when it parks a request behind the name. A name in the current inbound
   message joins the current-message facts used by rendering and persistence, so
-  a first-turn signature cannot receive another name question -- in English.
-  `tj-40gc` is the Arabic half of that promise, unkept.
+  a first-turn signature cannot receive another name question in either
+  language: `tj-40gc` added the Arabic introduction shapes, bounded like the
+  English ones so a statement about the request is never read as a sender.
 - The opening guard recognises an introduction as our persona *and* our
   company, after URLs are excluded, in either script; it removes at most one
   sentence and keeps the whole reply when removal would leave nothing. The
@@ -127,7 +128,7 @@ local reply-policy contract, Python implementation, tests and protected replay.
 ## Verification
 
 - Ruff and format clean over `src/ tests/ scripts/`; Mypy clean over 174 source
-  files; full Pytest `3689 passed, 19 skipped`; process verification passed. The
+  files; full Pytest `3691 passed, 19 skipped`; process verification passed. The
   protected replay moved once and on purpose, toward the frozen `1fc87c04…`
   baseline: 55 differing records to 7, the 7 a strict subset of the 55, so 48
   were removed and none introduced. It has not moved since; `tj-fcfn` is
@@ -158,9 +159,8 @@ local reply-policy contract, Python implementation, tests and protected replay.
 
 ## Next recommended
 
-Next stage id: not opened. Recommended action: `tj-40gc`, the Arabic name
-shapes -- certain, small and customer-visible. Do not deploy without new
-authority.
+Next stage id: not opened. Recommended action: `tj-z1fn`, the Arabic offer
+restated. Do not deploy without new authority.
 
 ## Starter prompt for next orchestrator
 
@@ -185,10 +185,10 @@ current repository truth.
   having, not what the task was opened for, waiting on a decision. The frozen
   set exists, `tj-ge07-two-turn-20260812`, human mean raw total 5.2, tracked
   and text-free.
-- `tj-40gc`: `NATURAL_NAME_PATTERNS` carries one Arabic shape against six
-  English ones, so an Arabic customer who introduces themselves is asked their
-  name anyway, in a reply that already used it. Certain, not probabilistic.
-  `tj-z1fn`: the Arabic reply restates the offer in 2 of 12. Both opened.
+- `tj-z1fn`: the Arabic reply restates the offer in 2 of 12 against 0 of 20 in
+  English. Opened, not fixed. `tj-40gc` is closed and was proved free: the
+  extractor fires once over the frozen twelve, on the dialog that needed it,
+  and the ask is then forbidden before generation.
 - Rule 5's achievable ceiling on the frozen twenty is 1.90, not 2.00: dialogs
   28 and 1000 score 1 in all four rounds, one a job application with no
   furniture need and the other a price asked with no item named, and rule 5 is

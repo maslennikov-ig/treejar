@@ -4344,6 +4344,46 @@ def test_extract_quote_customer_details_accepts_a_first_message_signature() -> N
     assert details["company"] == "Bikram Interiors Sharjah"
 
 
+def test_an_arabic_first_message_signature_fills_the_same_slots() -> None:
+    """`tj-40gc`. The Arabic round asked a customer for the name she gave.
+
+    Only "اسمي" was read, so the two commonest Arabic self-introductions --
+    "معك X من Y" and "انا X من Y", the direct equivalents of the English
+    shapes -- yielded nothing, and the reply used her name and then asked for
+    it. The Arabic company reading needed a job title before this.
+    """
+
+    signed = _extract_quote_customer_details("معك الاء من Media Solutions")
+    assert signed["name"] == "الاء"
+    assert signed["company"] == "Media Solutions"
+
+    inline = _extract_quote_customer_details("انا احمد من شركة النور")
+    assert inline["name"] == "احمد"
+    assert inline["company"] == "النور"
+
+    assert _extract_quote_customer_details("أنا محمد")["name"] == "محمد"
+    assert _extract_quote_customer_details("نادني ابو خالد")["name"] == "ابو خالد"
+
+
+def test_an_arabic_statement_about_the_request_is_not_a_name() -> None:
+    """The bound the English shape already had, in Arabic.
+
+    "انا مهتم بالكراسي" is "I am interested in chairs", not a customer called
+    "interested". Unbounded, this pattern would store one on every other
+    Arabic opening.
+    """
+
+    for statement in (
+        "انا مهتم بالكراسي المكتبية",
+        "انا ابحث عن مكتب",
+        "انا احتاج كراسي",
+        "انا من دبي",
+        "السلام عليكم",
+        "بكم السعر",
+    ):
+        assert "name" not in _extract_quote_customer_details(statement), statement
+
+
 def test_clearing_the_name_ask_slot_is_the_only_reask_reset() -> None:
     conversation = SimpleNamespace(metadata_={"customer_name_asked": True})
 
