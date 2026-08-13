@@ -192,6 +192,30 @@ jobs:
           key: bge-m3-5617a9f61b028005a4858fdac845db406aefb181
       - name: Install dependencies
         run: uv sync --locked --all-extras --dev
+      # `PinnedEmbeddingEngine` builds the model with `local_files_only=True`:
+      # the pinned revision is offline by design and never fetches anything, so
+      # the model has to be in `HF_HOME` before the test runs. A cache hit makes
+      # this a no-op. The file list is the one the loader actually reads --
+      # `onnx/` is excluded and the suite passes without it -- so a run costs
+      # 2.2GB once rather than the whole repository every time.
+      - name: Fetch the pinned embedding model
+        run: |
+          set -euo pipefail
+          uv run hf download BAAI/bge-m3 \
+            --revision 5617a9f61b028005a4858fdac845db406aefb181 \
+            --include \
+              '1_Pooling/*' \
+              'colbert_linear.pt' \
+              'config.json' \
+              'config_sentence_transformers.json' \
+              'modules.json' \
+              'pytorch_model.bin' \
+              'sentence_bert_config.json' \
+              'sentencepiece.bpe.model' \
+              'sparse_linear.pt' \
+              'special_tokens_map.json' \
+              'tokenizer.json' \
+              'tokenizer_config.json'
       - name: Run the pgvector retrieval integration test
         run: |
           set -euo pipefail

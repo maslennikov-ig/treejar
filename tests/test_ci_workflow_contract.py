@@ -102,6 +102,38 @@ def test_the_pgvector_retrieval_claim_has_an_automatic_gate() -> None:
     assert "1 passed" in command
 
 
+def test_the_pinned_model_is_fetched_before_a_run_that_cannot_fetch_it() -> None:
+    """`PinnedEmbeddingEngine` passes `local_files_only=True`.
+
+    The pin is offline by design: it never downloads, it only reads what is
+    already in `HF_HOME`. The first run of this job proved it -- an empty cache
+    failed in 1.7s with "couldn't connect to huggingface.co", because nothing
+    had put the model there. The fetch step and the cache have to name the same
+    revision, or the cache key promises a model the fetch does not place.
+    """
+
+    workflow = _load_ci_workflow()
+    steps = workflow["jobs"]["semantic-evidence"]["steps"]
+    names = [step.get("name") for step in steps]
+
+    assert names.index("Fetch the pinned embedding model") < names.index(
+        "Run the pgvector retrieval integration test"
+    )
+
+    fetch = steps[names.index("Fetch the pinned embedding model")]["run"]
+    cache = next(
+        step for step in steps if step.get("name") == "Cache the pinned embedding model"
+    )
+    revision = "5617a9f61b028005a4858fdac845db406aefb181"
+
+    assert revision in fetch
+    assert revision in cache["with"]["key"]
+    # Verified against the loader rather than guessed: the suite passes with
+    # `onnx/` absent, and every other file in the pinned snapshot is fetched.
+    assert "pytorch_model.bin" in fetch
+    assert "onnx" not in fetch
+
+
 def test_the_semantic_gate_runs_on_every_change_to_what_it_guards() -> None:
     workflow = _load_ci_workflow()
     classify = "".join(
