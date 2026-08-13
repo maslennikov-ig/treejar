@@ -7,10 +7,10 @@ Status: `tj-9scy`, `tj-f6yp` and `tj-rcg5` are closed and deployed. The seven
 defects the 2026-08-13 audit left -- `tj-eedk`, `tj-d651`, `tj-rdqc`, `tj-qfsy`,
 `tj-izkn`, `tj-hls5`, `tj-bzr0` -- are closed in one tested commit each,
 `c058d08`..`869ee2a`, pushed and deployed on owner authorization. Production
-runs `2876774`, confirmed through `/api/v1/health`. `tj-68au` measured the first
-round comparable to the six before `4a0883a` on rules 2 and 7 and opened four
-defects; `tj-3jo0`, `tj-7vhq`, `tj-b8il` and `tj-zewi` are closed in one tested
-commit and are **unmeasured** -- no round has read them.
+ran `2876774` and now runs `b5ab693`. `tj-68au` measured the first round
+comparable to the six before `4a0883a` on rules 2 and 7 and opened four defects;
+`tj-3jo0`, `tj-7vhq`, `tj-b8il` and `tj-zewi` are closed in one tested commit,
+delivered and deployed, and are **unmeasured** -- no round has read them.
 
 Documentation: `docs-resolve` covered pgvector and pinned model revisions; local
 code owns Treejar behavior.
@@ -160,8 +160,8 @@ Use $orchestrator-stage after selecting the next open Beads goal.
 - The client document leads with the Zoho deal export: outcomes are visible for
   192 of 1400 dialogues, so we can say Noor does what the rubric asks, not that
   Noor sells.
-- Deploy and live verification were authorized for the seven audit fixes and
-  spent; production runs `2876774`.
+- Deploy was authorized for the seven audit fixes and again for the four anchor
+  and contract fixes. `/api/v1/health` answers `b5ab693`, redis and database ok.
 
 ## Active handoff
 
