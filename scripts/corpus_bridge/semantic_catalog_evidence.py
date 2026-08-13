@@ -794,6 +794,29 @@ def main() -> int:
     return 0
 
 
+def load_and_validate_catalog_snapshot(
+    path: pathlib.Path, *, expected_sha256: str
+) -> CatalogSnapshot:
+    """The pinned catalog rows themselves, for a caller that needs the prices.
+
+    `tj-rdqc`. The evidence artifact records the catalog's digest and the rows
+    each opening retrieved, which is everything retrieval needs and not enough
+    to price an opening: production's anchor is the cheapest orderable row in a
+    family across the whole catalog. That reads from the snapshot the evidence
+    was built on, checked against the same pin, so it stays a hermetic protected
+    source and no live catalog fetch comes back.
+    """
+
+    snapshot = _load_snapshot(path)
+    digest = _sha256_json(snapshot.model_dump(mode="json"))
+    if digest != expected_sha256:
+        raise ValueError(
+            "catalog snapshot does not match the pinned catalog: "
+            f"expected {expected_sha256}, found {digest}"
+        )
+    return snapshot
+
+
 def load_and_validate_evidence(
     path: pathlib.Path,
     *,

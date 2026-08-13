@@ -45,6 +45,8 @@ from scripts.corpus_bridge.semantic_catalog_evidence import (
     PINNED_EMBEDDING_REVISION,
     PINNED_PGVECTOR_EXTENSION,
     PINNED_QRELS_SHA256,
+    CatalogSnapshot,
+    _sha256_json,
     retrieval_contract_sha,
 )
 
@@ -191,8 +193,77 @@ def _criteria(scores: dict[int, int], applicable: set[int]) -> list[dict[str, ob
     ]
 
 
+# Two chairs and a bench, priced and orderable, so the opening anchor has
+# something real to name. `tj-rdqc`: a round that sends `anchor_line=None`
+# measures an opening production would have priced.
+CATALOG_SNAPSHOT_ROWS: tuple[dict[str, object], ...] = (
+    {
+        "id": "00000000-0000-0000-0000-000000000101",
+        "sku": "CH-616",
+        "name_en": "CH 616 NEW black mesh chair",
+        "name_ar": None,
+        "description_en": None,
+        "description_ar": None,
+        "category": "Seating",
+        "subcategory": None,
+        "price": 295.0,
+        "currency": "AED",
+        "stock": 36,
+        "is_active": True,
+    },
+    {
+        "id": "00000000-0000-0000-0000-000000000102",
+        "sku": "CH-140",
+        "name_en": "Task chair, mesh back",
+        "name_ar": None,
+        "description_en": None,
+        "description_ar": None,
+        "category": "Seating",
+        "subcategory": None,
+        "price": 140.0,
+        "currency": "AED",
+        "stock": 12,
+        "is_active": True,
+    },
+    {
+        "id": "00000000-0000-0000-0000-000000000103",
+        "sku": "WS-1813",
+        "name_en": "Bench workstation, four seats",
+        "name_ar": None,
+        "description_en": None,
+        "description_ar": None,
+        "category": "Workspace",
+        "subcategory": None,
+        "price": 1813.0,
+        "currency": "AED",
+        "stock": 8,
+        "is_active": True,
+    },
+)
+
+
+def _write_test_catalog_snapshot(path: pathlib.Path) -> tuple[pathlib.Path, str]:
+    """The pinned snapshot, and the digest the evidence must claim."""
+
+    document = {
+        "schema_version": "treejar-semantic-catalog-snapshot/v1",
+        "source": "test",
+        "captured_at": None,
+        "products": list(CATALOG_SNAPSHOT_ROWS),
+    }
+    path.write_text(json.dumps(document), encoding="utf-8")
+    path.chmod(0o600)
+    digest = _sha256_json(
+        CatalogSnapshot.model_validate(document).model_dump(mode="json")
+    )
+    return path, digest
+
+
 def _write_test_semantic_evidence(
-    path: pathlib.Path, scenarios: list[dict[str, object]]
+    path: pathlib.Path,
+    scenarios: list[dict[str, object]],
+    *,
+    catalog_sha256: str = "a" * 64,
 ) -> pathlib.Path:
     query_digest = hashlib.sha256(
         json.dumps(
@@ -206,7 +277,7 @@ def _write_test_semantic_evidence(
         json.dumps(
             {
                 "schema_version": "treejar-semantic-catalog-evidence/v1",
-                "catalog": {"sha256": "a" * 64, "rows": 1},
+                "catalog": {"sha256": catalog_sha256, "rows": 1},
                 "embedding": {
                     "model": "BAAI/bge-m3",
                     "revision": "b" * 40,
@@ -819,6 +890,7 @@ async def test_preflight_refuses_missing_semantic_evidence_before_provider_looku
         await preflight(
             scenarios_path=scenarios_path,
             retrieval_evidence_path=tmp_path / "missing-evidence.json",
+            catalog_snapshot_path=tmp_path / "missing-snapshot.json",
             expected_catalog_sha256="a" * 64,
             expected_embedding_revision="b" * 40,
             expected_qrels_sha256="d" * 64,
@@ -852,6 +924,9 @@ async def test_preflight_withholds_rows_that_qrels_mark_irrelevant(
             }
         ),
         encoding="utf-8",
+    )
+    snapshot_path, catalog_sha256 = _write_test_catalog_snapshot(
+        tmp_path / "catalog-snapshot.json"
     )
     evidence_path = tmp_path / "retrieval-evidence.json"
     results: list[dict[str, object]] = []
@@ -895,7 +970,7 @@ async def test_preflight_withholds_rows_that_qrels_mark_irrelevant(
         json.dumps(
             {
                 "schema_version": "treejar-semantic-catalog-evidence/v1",
-                "catalog": {"sha256": "a" * 64, "rows": 332},
+                "catalog": {"sha256": catalog_sha256, "rows": 332},
                 "embedding": {
                     "model": "BAAI/bge-m3",
                     "revision": "b" * 40,
@@ -941,7 +1016,8 @@ async def test_preflight_withholds_rows_that_qrels_mark_irrelevant(
     document = await preflight(
         scenarios_path=scenarios_path,
         retrieval_evidence_path=evidence_path,
-        expected_catalog_sha256="a" * 64,
+        catalog_snapshot_path=snapshot_path,
+        expected_catalog_sha256=catalog_sha256,
         expected_embedding_revision="b" * 40,
         expected_qrels_sha256="d" * 64,
         expected_pgvector_extension="0.8.1",
@@ -957,8 +1033,21 @@ async def test_preflight_withholds_rows_that_qrels_mark_irrelevant(
     assert prepared[0]["catalog_evidence"] == []
     assert "Nearest but unjudged row" not in str(prepared[0]["generation_messages"])
     assert document["catalog_products"] == 332
+    # `tj-rdqc`. Every opening carries the price production would prepend, and
+    # the round records which catalog it was priced from.
+    assert prepared[0]["anchor_line"] == (
+        "Chairs from AED 140, desks and workstations from AED 1,813."
+    )
+    assert document["opening_anchor"] == {
+        "source": "pinned_catalog_snapshot",
+        "catalog_sha256": catalog_sha256,
+        "lines": {
+            "en": "Chairs from AED 140, desks and workstations from AED 1,813.",
+            "ar": "الكراسي من 140 درهم, المكاتب ومحطات العمل من 1,813 درهم.",
+        },
+    }
     assert document["semantic_retrieval"] == {
-        "catalog_sha256": "a" * 64,
+        "catalog_sha256": catalog_sha256,
         "embedding_model": "BAAI/bge-m3",
         "embedding_revision": "b" * 40,
         "retrieval_code_sha": retrieval_contract_sha(),
@@ -969,6 +1058,72 @@ async def test_preflight_withholds_rows_that_qrels_mark_irrelevant(
         "search_mode": "exact",
         "query_source": "frozen_opening",
     }
+
+
+@pytest.mark.asyncio
+async def test_preflight_refuses_a_snapshot_that_is_not_the_pinned_catalog(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`tj-rdqc`. The anchor is only faithful if it prices the pinned catalog.
+
+    A snapshot that is not the one the retrieval artifact was built on would
+    price one catalog and retrieve from another, which is the exact class of
+    silent drift the evidence pin exists to stop. It fails closed, and before
+    any provider is paid.
+    """
+
+    scenarios = [
+        {
+            "dialog_id": dialog_id,
+            "length_stratum": (dialog_id - 1) // 5 + 1,
+            "opening": f"Opening {dialog_id}",
+        }
+        for dialog_id in range(1, 21)
+    ]
+    scenarios_path = tmp_path / "scenarios.json"
+    scenarios_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "treejar-real-openings/v1",
+                "selection_seed": 20260810,
+                "scenarios": scenarios,
+            }
+        ),
+        encoding="utf-8",
+    )
+    snapshot_path, catalog_sha256 = _write_test_catalog_snapshot(
+        tmp_path / "catalog-snapshot.json"
+    )
+    evidence_path = _write_test_semantic_evidence(
+        tmp_path / "retrieval-evidence.json",
+        scenarios,
+        catalog_sha256="a" * 64,
+    )
+
+    async def provider_lookup_must_not_run(
+        _models: tuple[str, ...],
+    ) -> dict[str, dict[str, object]]:
+        pytest.fail("provider lookup ran before the catalog snapshot was checked")
+
+    monkeypatch.setattr(
+        "scripts.corpus_bridge.real_opening_acceptance._pinned_model_catalog",
+        provider_lookup_must_not_run,
+    )
+
+    assert catalog_sha256 != "a" * 64
+    with pytest.raises(ValueError, match="does not match the pinned catalog"):
+        await preflight(
+            scenarios_path=scenarios_path,
+            retrieval_evidence_path=evidence_path,
+            catalog_snapshot_path=snapshot_path,
+            expected_catalog_sha256="a" * 64,
+            expected_embedding_revision="b" * 40,
+            expected_qrels_sha256="d" * 64,
+            expected_pgvector_extension="0.8.1",
+            output_dir=tmp_path / "protected",
+            per_model_cap_usd=1.0,
+        )
 
 
 def test_critical_failure_codes_combine_judge_and_deterministic_gates() -> None:
@@ -1175,8 +1330,13 @@ async def test_a_second_reader_is_authorized_beside_the_root_never_instead(
         encoding="utf-8",
     )
     scenarios = json.loads(scenarios_path.read_text(encoding="utf-8"))["scenarios"]
+    snapshot_path, catalog_sha256 = _write_test_catalog_snapshot(
+        tmp_path / "catalog-snapshot.json"
+    )
     evidence_path = _write_test_semantic_evidence(
-        tmp_path / "retrieval-evidence.json", scenarios
+        tmp_path / "retrieval-evidence.json",
+        scenarios,
+        catalog_sha256=catalog_sha256,
     )
 
     async def model_catalog(models: tuple[str, ...]) -> dict[str, dict[str, object]]:
@@ -1198,7 +1358,8 @@ async def test_a_second_reader_is_authorized_beside_the_root_never_instead(
     document = await preflight(
         scenarios_path=scenarios_path,
         retrieval_evidence_path=evidence_path,
-        expected_catalog_sha256="a" * 64,
+        catalog_snapshot_path=snapshot_path,
+        expected_catalog_sha256=catalog_sha256,
         expected_embedding_revision="b" * 40,
         expected_qrels_sha256="d" * 64,
         expected_pgvector_extension="0.8.1",
@@ -1239,8 +1400,13 @@ async def test_preflight_authorizes_the_repair_model_and_round_call_cap(
         encoding="utf-8",
     )
     scenarios = json.loads(scenarios_path.read_text(encoding="utf-8"))["scenarios"]
+    snapshot_path, catalog_sha256 = _write_test_catalog_snapshot(
+        tmp_path / "catalog-snapshot.json"
+    )
     evidence_path = _write_test_semantic_evidence(
-        tmp_path / "retrieval-evidence.json", scenarios
+        tmp_path / "retrieval-evidence.json",
+        scenarios,
+        catalog_sha256=catalog_sha256,
     )
     requested_models: list[tuple[str, ...]] = []
 
@@ -1264,7 +1430,8 @@ async def test_preflight_authorizes_the_repair_model_and_round_call_cap(
     document = await preflight(
         scenarios_path=scenarios_path,
         retrieval_evidence_path=evidence_path,
-        expected_catalog_sha256="a" * 64,
+        catalog_snapshot_path=snapshot_path,
+        expected_catalog_sha256=catalog_sha256,
         expected_embedding_revision="b" * 40,
         expected_qrels_sha256="d" * 64,
         expected_pgvector_extension="0.8.1",
@@ -1447,6 +1614,8 @@ def test_the_round_judges_itself_unless_a_second_reader_is_asked_for() -> None:
         "s.json",
         "--retrieval-evidence",
         "evidence.json",
+        "--catalog-snapshot",
+        "snapshot.json",
         "--catalog-sha256",
         "a" * 64,
         "--embedding-revision",
@@ -1497,6 +1666,8 @@ def test_a_measured_round_pins_its_evidence_identity_without_the_operator() -> N
         "scenarios.json",
         "--retrieval-evidence",
         "evidence.json",
+        "--catalog-snapshot",
+        "snapshot.json",
         "--output-dir",
         "out",
     ]

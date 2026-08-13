@@ -5,7 +5,7 @@ import json
 import logging
 import re
 import sys
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from decimal import Decimal, InvalidOperation
 from functools import wraps
@@ -834,6 +834,53 @@ _ANCHOR_MIN_STOCK = 5
 _anchor_line_cache: dict[str, str] = {}
 
 
+def _anchor_part(lowest: float, *, label: str, is_arabic: bool) -> str:
+    amount = f"{float(lowest):,.0f}"
+    return f"{label} من {amount} درهم" if is_arabic else f"{label} from AED {amount}"
+
+
+def anchor_line_from_catalog_rows(
+    rows: Iterable[tuple[str, float | None, int | None]],
+    *,
+    language: str,
+) -> str | None:
+    """The same line as `catalog_anchor_line`, from rows already in hand.
+
+    `tj-rdqc`: the measured round has no database. It has the pinned catalog
+    snapshot the retrieval evidence was built on, which holds the same rows the
+    query below reads, so it derives the anchor here rather than sending an
+    opening with no price where production adds one. The families, the stock
+    floor and the wording are declared once and used by both callers, so a
+    round follows production when production changes.
+
+    Rows are `(name, price, stock)`. A row missing either number is skipped
+    exactly as the query's `IS NOT NULL` skips it.
+    """
+
+    is_arabic = is_arabic_customer_language(language)
+    lowest: dict[str, float] = {}
+    for name, price, stock in rows:
+        if price is None or stock is None or price <= 0 or stock < _ANCHOR_MIN_STOCK:
+            continue
+        normalized = str(name or "").casefold()
+        for family, terms, _label_en, _label_ar in _ANCHOR_FAMILIES:
+            if not any(term in normalized for term in terms):
+                continue
+            current = lowest.get(family)
+            if current is None or price < current:
+                lowest[family] = price
+    parts = [
+        _anchor_part(
+            lowest[family],
+            label=(label_ar if is_arabic else label_en),
+            is_arabic=is_arabic,
+        )
+        for family, _terms, label_en, label_ar in _ANCHOR_FAMILIES
+        if family in lowest
+    ]
+    return (", ".join(parts) + ".") if parts else None
+
+
 async def catalog_anchor_line(db: AsyncSession, language: str) -> str | None:
     """ "Chairs from AED 140, desks and workstations from AED 1,813."
 
@@ -871,10 +918,12 @@ async def catalog_anchor_line(db: AsyncSession, language: str) -> str | None:
         lowest = result.scalar_one_or_none()
         if not isinstance(lowest, int | float | Decimal) or isinstance(lowest, bool):
             continue
-        amount = f"{float(lowest):,.0f}"
-        label = label_ar if is_arabic else label_en
         parts.append(
-            f"{label} من {amount} درهم" if is_arabic else f"{label} from AED {amount}"
+            _anchor_part(
+                float(lowest),
+                label=(label_ar if is_arabic else label_en),
+                is_arabic=is_arabic,
+            )
         )
 
     line = (", ".join(parts) + ".") if parts else ""
@@ -3817,6 +3866,7 @@ __all__ = (
     "_verified_prose_response",
     "_verify_volunteered_claims",
     "_zoho_stock_for_catalog_candidates",
+    "anchor_line_from_catalog_rows",
     "catalog_anchor_line",
     "build_runtime_tool_trace",
     "grounded_amounts_for_turn",

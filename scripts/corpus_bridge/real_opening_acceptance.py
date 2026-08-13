@@ -37,7 +37,9 @@ from scripts.corpus_bridge.semantic_catalog_evidence import (
     PINNED_EMBEDDING_REVISION,
     PINNED_PGVECTOR_EXTENSION,
     PINNED_QRELS_SHA256,
+    CatalogSnapshot,
     SemanticCatalogEvidence,
+    load_and_validate_catalog_snapshot,
     load_and_validate_evidence,
 )
 from scripts.model_battle import (
@@ -53,6 +55,7 @@ from scripts.model_battle import (
 
 from src.core.config import settings
 from src.dialogue.state import DialogueState
+from src.llm.catalog_planning import anchor_line_from_catalog_rows
 from src.llm.communication_policy import (
     COMMUNICATION_RULES_POLICY,
     finalize_evidence_grounding_prompt,
@@ -863,9 +866,33 @@ def _judge_system_prompt() -> str:
     )
 
 
+def _opening_anchor_lines(snapshot: CatalogSnapshot) -> dict[str, str | None]:
+    """Production's opening price anchor, in both languages, from the pin.
+
+    `tj-rdqc`. `anchor_line` never reaches the model prompt; it reaches
+    `apply_first_turn_opening_guard`, which prepends the price when the reply
+    body carries no currency of its own. Production supplies one from the
+    catalog on every first turn, so a round that sends `None` measures a
+    strictly poorer opening than the one that ships, on exactly the two rules
+    -- 2 and 7 -- that read for a concrete number.
+    """
+
+    rows = [
+        (product.name_en, product.price, product.stock)
+        for product in snapshot.products
+    ]
+    return {
+        language: anchor_line_from_catalog_rows(rows, language=language)
+        for language in ("en", "ar")
+    }
+
+
 def _prepare_cases(
-    scenarios: list[dict[str, Any]], semantic_evidence: SemanticCatalogEvidence
+    scenarios: list[dict[str, Any]],
+    semantic_evidence: SemanticCatalogEvidence,
+    catalog_snapshot: CatalogSnapshot,
 ) -> list[dict[str, Any]]:
+    anchors = _opening_anchor_lines(catalog_snapshot)
     cases: list[dict[str, Any]] = []
     for scenario, retrieval_result in zip(
         scenarios, semantic_evidence.results, strict=True
@@ -895,7 +922,7 @@ def _prepare_cases(
                 "catalog_evidence": evidence,
                 "catalog_rows_present": retrieval_result.rows_present,
                 "catalog_relevant": retrieval_result.catalog_relevant,
-                "anchor_line": None,
+                "anchor_line": anchors[language],
                 "generation_messages": messages,
                 "generation_prompt_digest": _sha256_json(messages),
             }
@@ -907,6 +934,7 @@ async def preflight(
     *,
     scenarios_path: pathlib.Path,
     retrieval_evidence_path: pathlib.Path,
+    catalog_snapshot_path: pathlib.Path,
     expected_catalog_sha256: str,
     expected_embedding_revision: str,
     expected_qrels_sha256: str,
@@ -933,6 +961,13 @@ async def preflight(
         expected_qrels_sha256=expected_qrels_sha256,
         expected_pgvector_extension=expected_pgvector_extension,
     )
+    # Loaded before any provider work, like the evidence above it, and against
+    # the same pin: the anchor has to come from the very catalog the retrieval
+    # artifact was built on or the round prices one catalog and retrieves from
+    # another.
+    catalog_snapshot = load_and_validate_catalog_snapshot(
+        catalog_snapshot_path, expected_sha256=semantic_evidence.catalog.sha256
+    )
     # The root judge is the judge, always. `tj-4q79.1`: this used to become the
     # paid model, which excluded the root reading the standing owner decision
     # requires and the flag's own help text promises.
@@ -940,7 +975,7 @@ async def preflight(
     second_reader_model = SECOND_READER_MODEL if second_reader else None
     models = paid_models(second_reader=second_reader)
     catalog = await _pinned_model_catalog(models)
-    cases = _prepare_cases(scenarios, semantic_evidence)
+    cases = _prepare_cases(scenarios, semantic_evidence, catalog_snapshot)
 
     generator_input_bound = max(
         conservative_input_token_bound({"messages": case["generation_messages"]})
@@ -1067,6 +1102,14 @@ async def preflight(
         "input_token_upper_bounds": input_token_upper_bounds,
         "model_catalog": public_catalog,
         "catalog_products": semantic_evidence.catalog.rows,
+        # Recorded so a round can be read against its own anchor rather than
+        # against an assumption about it. `tj-rdqc` was invisible precisely
+        # because nothing wrote down what the openings were priced with.
+        "opening_anchor": {
+            "source": "pinned_catalog_snapshot",
+            "catalog_sha256": semantic_evidence.catalog.sha256,
+            "lines": _opening_anchor_lines(catalog_snapshot),
+        },
         "semantic_retrieval": {
             "catalog_sha256": semantic_evidence.catalog.sha256,
             "embedding_model": semantic_evidence.embedding.model,
@@ -2201,6 +2244,7 @@ def _public_preflight(document: dict[str, Any]) -> dict[str, Any]:
         "estimated_cost_usd": document["estimated_cost_usd"],
         "per_model_cap_usd": document["per_model_cap_usd"],
         "catalog_products": document["catalog_products"],
+        "opening_anchor": document["opening_anchor"],
         "semantic_retrieval": document["semantic_retrieval"],
         "paid_calls_made": document["paid_calls_made"],
     }
@@ -2232,6 +2276,12 @@ def _parse_args() -> argparse.Namespace:
     preflight_parser.add_argument("--scenarios", type=pathlib.Path, required=True)
     preflight_parser.add_argument(
         "--retrieval-evidence", type=pathlib.Path, required=True
+    )
+    # The same snapshot `semantic_catalog_evidence produce` was given. Required
+    # rather than defaulted because it is a protected path outside the tree,
+    # and checked against the artifact's own catalog digest either way.
+    preflight_parser.add_argument(
+        "--catalog-snapshot", type=pathlib.Path, required=True
     )
     # Defaulted from the repository, not required from the operator. Required
     # flags made the pin only as strong as what was typed: an artifact built on
@@ -2290,6 +2340,7 @@ def main() -> int:
                 preflight(
                     scenarios_path=args.scenarios,
                     retrieval_evidence_path=args.retrieval_evidence,
+                    catalog_snapshot_path=args.catalog_snapshot,
                     expected_catalog_sha256=args.catalog_sha256,
                     expected_embedding_revision=args.embedding_revision,
                     expected_qrels_sha256=_qrels_sha256_for_set(
