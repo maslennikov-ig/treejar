@@ -240,6 +240,65 @@ def test_first_turn_question_form_keeps_content_and_one_ask() -> None:
     )
 
 
+def test_the_name_ask_survives_the_one_question_bound_it_is_half_of() -> None:
+    """`tj-l0e3`. The collapse used to delete the ask the opening guard added."""
+
+    rendered = render_reply(
+        "I can help. What are you furnishing? What is your budget? When do you need it?",
+        state=ReplyPolicyState(
+            language="en",
+            is_first_turn=True,
+            customer_name=None,
+        ),
+        provenance="model",
+    )
+
+    # One question from the model, and the canonical name ask folded onto it:
+    # the directive's own bound, which counts a folded pair as one.
+    assert "What are you furnishing?" in rendered.text
+    assert "What is your budget?" not in rendered.text
+    assert "When do you need it?" not in rendered.text
+    assert rendered.text.endswith("And how should I address you?")
+    assert rendered.flags == ()
+
+
+def test_the_name_ask_is_not_added_twice_when_the_model_already_asked() -> None:
+    """The collapse now runs first, so the model's own name ask reaches the guard."""
+
+    rendered = render_reply(
+        "Happy to help. May I know your name, and what are you furnishing?",
+        state=ReplyPolicyState(
+            language="en",
+            is_first_turn=True,
+            customer_name=None,
+        ),
+        provenance="model",
+    )
+
+    assert "May I know your name" in rendered.text
+    assert "how should I address you" not in rendered.text
+
+
+def test_a_later_turn_is_the_same_text_under_either_guard_order() -> None:
+    """The opening guard is a no-op after turn one, so only first turns moved."""
+
+    original = "We found suitable desks. What size works? Which finish do you prefer?"
+
+    rendered = render_reply(
+        original,
+        state=ReplyPolicyState(
+            language="en",
+            is_first_turn=False,
+            customer_name="Binu",
+            customer_name_asked=True,
+        ),
+        provenance="model",
+    )
+
+    assert rendered.text == "We found suitable desks. What size works?"
+    assert rendered.flags == ()
+
+
 def test_first_turn_name_chase_and_company_question_stay_gated() -> None:
     repeated_name_ask = "We found suitable desks. May I know your name?"
 

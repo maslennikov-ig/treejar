@@ -5480,7 +5480,7 @@ async def test_process_message_assist_opener_returns_clarification_without_hando
     # Nothing is parked any more: the request is served on the turn it arrives,
     # so there is no pending state for a second message to resume.
     assert "name_gate_pending_request" not in (conv.metadata_ or {})
-    assert "how should I address you" not in response.text
+    assert "how should I address you" in response.text
     assert conv.escalation_status == "none"
 
 
@@ -5519,7 +5519,7 @@ async def test_process_message_first_turn_static_clarification_gets_opening(
     )
 
     assert mock_notify.await_count == 0
-    assert "how should I address you" not in response.text
+    assert "how should I address you" in response.text
     assert "name_gate_pending_request" not in (conv.metadata_ or {})
 
 
@@ -23557,7 +23557,7 @@ async def test_a_model_written_turn_is_capped_at_one_question(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_the_first_turn_keeps_its_answer_and_drops_the_surplus_name_ask(
+async def test_the_first_turn_keeps_its_own_folded_pair(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -23567,11 +23567,16 @@ async def test_the_first_turn_keeps_its_answer_and_drops_the_surplus_name_ask(
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
 ) -> None:
-    """The first-turn reducing guard keeps the answer and its useful ask.
+    """The opening guard folds the name onto the model's reply, and the
+    one-question cap must not then throw it away.
 
     The value proposition it carries is what moved rule 7 from 0.08 to 1.66.
-    The appended name ask is the surplus second question and is removed only
-    after `only_asks_were_dropped` proves the answer survived.
+    Since 2026-08-10 the model writes the turn and the guard only adds to it.
+
+    `tj-l0e3`: this assertion was inverted on 2026-08-12 by `d11a17f`, whose
+    subject was state-owned reply content. The cap then deleted the fold on
+    every first turn, and both measured rounds that day scored rule 3 at
+    0.20/2 over 19 openings of 20.
     """
 
     db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
@@ -23595,7 +23600,7 @@ async def test_the_first_turn_keeps_its_answer_and_drops_the_surplus_name_ask(
     assert response.text.startswith("Hello, I'm Noor from Treejar.")
     assert "quote from our own catalog" in response.text
     assert "What are you furnishing?" in response.text
-    assert "how should I address you" not in response.text
+    assert "how should I address you" in response.text
     mock_notify.assert_not_awaited()
 
 

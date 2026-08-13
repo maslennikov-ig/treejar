@@ -626,6 +626,28 @@ def render_reply(
         ),
     )
     raised_flags.extend(flags)
+    if rendered.strip():
+        # Before the opening guard, not after. Both orders enforce one question
+        # from the model; only this one lets the name ask survive. The guard
+        # below folds the canonical name question onto the end of the reply,
+        # and this collapse keeps the first question of a line and drops every
+        # later one -- so with the old order it deleted, every first turn, the
+        # question the owner decided on 2026-08-10 that we owe. Measured at
+        # rule 3 = 0.20/2 across two rounds, 19 openings of 20. The one-question
+        # bound is unchanged and is the directive's own: at most one question,
+        # counting a folded pair as one, and the name ask is that pair's other
+        # half. Only first turns move; on every later turn the opening guard
+        # returns the text untouched, so the two orders are the same text.
+        #
+        # This REDUCING guard applies only when its executable proof shows that
+        # every answer word survived and only surplus asks were dropped.
+        rendered, flags = _render_declared_guard(
+            rendered,
+            guard_name="question_form",
+            guard=collapse_question_form,
+            flag_details=("deterministic_fold_would_lose_content",),
+        )
+        raised_flags.extend(flags)
     rendered, flags = _render_declared_guard(
         rendered,
         guard_name="first_turn_opening",
@@ -640,17 +662,6 @@ def render_reply(
     )
     raised_flags.extend(flags)
     if rendered.strip():
-        # Safe on first turns: this REDUCING guard applies only when its
-        # executable proof shows that every answer word survived and only
-        # surplus asks were dropped.
-        rendered, flags = _render_declared_guard(
-            rendered,
-            guard_name="question_form",
-            guard=collapse_question_form,
-            flag_details=("deterministic_fold_would_lose_content",),
-        )
-        raised_flags.extend(flags)
-
         if not state.is_first_turn:
             # Deliberately still gated on first turns: the measured bad replies
             # were unchanged by this guard even with a known name, so there is
