@@ -25,6 +25,7 @@ from scripts.corpus_bridge.real_opening_acceptance import (
     _journaled_repair_runner,
     _load_frozen_scenarios,
     _parse_args,
+    _prepare_cases,
     _qrels_sha256_for_set,
     _reader_disagreement,
     apply_shipped_output_guards,
@@ -46,6 +47,7 @@ from scripts.corpus_bridge.semantic_catalog_evidence import (
     PINNED_PGVECTOR_EXTENSION,
     PINNED_QRELS_SHA256,
     CatalogSnapshot,
+    SemanticCatalogEvidence,
     _sha256_json,
     retrieval_contract_sha,
 )
@@ -204,8 +206,8 @@ CATALOG_SNAPSHOT_ROWS: tuple[dict[str, object], ...] = (
         "name_ar": None,
         "description_en": None,
         "description_ar": None,
-        "category": "Seating",
-        "subcategory": None,
+        "category": "Chairs",
+        "subcategory": "Executive Chair",
         "price": 295.0,
         "currency": "AED",
         "stock": 36,
@@ -218,8 +220,8 @@ CATALOG_SNAPSHOT_ROWS: tuple[dict[str, object], ...] = (
         "name_ar": None,
         "description_en": None,
         "description_ar": None,
-        "category": "Seating",
-        "subcategory": None,
+        "category": "Chairs",
+        "subcategory": "Workstation Chair",
         "price": 140.0,
         "currency": "AED",
         "stock": 12,
@@ -232,7 +234,7 @@ CATALOG_SNAPSHOT_ROWS: tuple[dict[str, object], ...] = (
         "name_ar": None,
         "description_en": None,
         "description_ar": None,
-        "category": "Workspace",
+        "category": "Workstation",
         "subcategory": None,
         "price": 1813.0,
         "currency": "AED",
@@ -1043,8 +1045,10 @@ async def test_preflight_withholds_rows_that_qrels_mark_irrelevant(
         "catalog_sha256": catalog_sha256,
         "lines": {
             "en": "Chairs from AED 140, desks and workstations from AED 1,813.",
-            "ar": "الكراسي من 140 درهم, المكاتب ومحطات العمل من 1,813 درهم.",
+            "ar": "الكراسي من 140 درهم، المكاتب ومحطات العمل من 1,813 درهم.",
         },
+        "openings_priced": 20,
+        "openings_withheld": 0,
     }
     assert document["semantic_retrieval"] == {
         "catalog_sha256": catalog_sha256,
@@ -1694,3 +1698,40 @@ def test_a_set_with_no_pinned_qrels_stops_the_round() -> None:
 
     explicit = "f" * 64
     assert _qrels_sha256_for_set("arabic-12", explicit) == explicit
+
+
+def test_an_opening_with_no_furniture_need_is_prepared_without_the_anchor(
+    tmp_path: pathlib.Path,
+) -> None:
+    """`tj-7vhq`. Production withholds the anchor there, so a round must too.
+
+    The round is only faithful if it sends the message production would send.
+    A job application that receives chair and desk prices and then a redirect
+    to the careers channel is not that message, and it was measured once.
+    """
+
+    scenarios: list[dict[str, object]] = [
+        {"dialog_id": 1, "length_stratum": 1, "opening": "Do you have mesh chairs?"},
+        {
+            "dialog_id": 2,
+            "length_stratum": 1,
+            "opening": "Please find my CV attached, salary expectation 6000 AED.",
+        },
+    ]
+    snapshot_path, _catalog_sha256 = _write_test_catalog_snapshot(
+        tmp_path / "catalog-snapshot.json"
+    )
+    snapshot = CatalogSnapshot.model_validate(
+        json.loads(snapshot_path.read_text(encoding="utf-8"))
+    )
+    evidence_path = _write_test_semantic_evidence(tmp_path / "evidence.json", scenarios)
+    evidence = SemanticCatalogEvidence.model_validate(
+        json.loads(evidence_path.read_text(encoding="utf-8"))
+    )
+
+    cases = _prepare_cases(scenarios, evidence, snapshot)
+
+    assert [case["anchor_line"] for case in cases] == [
+        "Chairs from AED 140, desks and workstations from AED 1,813.",
+        None,
+    ]

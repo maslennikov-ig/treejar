@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import hashlib
 import importlib.metadata
+import inspect
 import json
 import math
 import os
@@ -52,6 +53,14 @@ PINNED_CATALOG_SHA256 = (
 )
 PINNED_EMBEDDING_REVISION = "5617a9f61b028005a4858fdac845db406aefb181"
 PINNED_PGVECTOR_EXTENSION = "0.8.5"
+# `tj-zewi`. The contract digest is allowed to move; it is not allowed to move
+# unnoticed. Every stored artifact records the digest of the day it was built,
+# so a change here strands all of them, and the round that finds out is the paid
+# one. This pin fails in the same commit as the edit, and
+# `stale-evidence` names what has to be re-produced before the next round.
+PINNED_RETRIEVAL_CONTRACT_SHA = (
+    "29123d5fb9d3a8bc4dabce9585e333f5e51305e75044b47270d9b51c0c6a3da1"
+)
 PINNED_QRELS_SHA256: dict[str, str] = {
     "openings-20": ("cddfb117c4d304ba26ac7f8e1a50e298280c4c209dbea89f1bdacc7cbd16a79b"),
     "retrieval-golden": (
@@ -309,22 +318,94 @@ def evaluate_retrieval(
     }
 
 
-def retrieval_contract_sha(repo_root: pathlib.Path = REPO_ROOT) -> str:
-    """Bind evidence to every source file that owns retrieval semantics."""
-    paths = (
-        pathlib.Path("src/models/product.py"),
-        pathlib.Path("src/rag/embeddings.py"),
-        pathlib.Path("src/rag/pipeline.py"),
-        pathlib.Path("src/schemas/product.py"),
-        pathlib.Path("scripts/corpus_bridge/semantic_catalog_evidence.py"),
+_CONTRACT_MODULE = "scripts.corpus_bridge.semantic_catalog_evidence"
+_RETRIEVAL_CONTRACT_FILES = (
+    pathlib.Path("src/models/product.py"),
+    pathlib.Path("src/rag/embeddings.py"),
+    pathlib.Path("src/rag/pipeline.py"),
+    pathlib.Path("src/schemas/product.py"),
+)
+
+
+def _retrieval_contract_members() -> tuple[tuple[str, str], ...]:
+    """The definitions in this module that decide what retrieval returns."""
+
+    return (
+        ("EMBEDDING_MODEL", EMBEDDING_MODEL),
+        ("EMBEDDING_DIMENSIONS", repr(EMBEDDING_DIMENSIONS)),
+        ("RETRIEVAL_ENTRYPOINT", RETRIEVAL_ENTRYPOINT),
+        ("RETRIEVAL_LIMIT", repr(RETRIEVAL_LIMIT)),
+        ("PinnedEmbeddingEngine", inspect.getsource(PinnedEmbeddingEngine)),
+        ("_product_embedding_text", inspect.getsource(_product_embedding_text)),
+        ("produce_evidence", inspect.getsource(produce_evidence)),
     )
+
+
+def retrieval_contract_sha(repo_root: pathlib.Path = REPO_ROOT) -> str:
+    """Bind evidence to what can change what retrieval returns, and no more.
+
+    `tj-zewi`: this hashed five whole files, and one of them was this module. Any
+    edit anywhere in it invalidated every stored artifact, whether or not it
+    could touch retrieval. The `tj-rdqc` fix did exactly that -- it added a
+    catalog-snapshot loader and some pinned digests, and the next round could not
+    preflight against evidence whose body, re-produced, came back byte-identical
+    apart from this field.
+
+    The four files below own retrieval end to end and are bound whole. This
+    module is bound only through the definitions named in
+    `_retrieval_contract_members`, so everything else in it can change without
+    invalidating evidence that would come out the same.
+    """
     digest = hashlib.sha256()
-    for relative in paths:
+    for relative in _RETRIEVAL_CONTRACT_FILES:
         digest.update(relative.as_posix().encode("utf-8"))
         digest.update(b"\0")
         digest.update((repo_root / relative).read_bytes())
         digest.update(b"\0")
+    for label, source in _retrieval_contract_members():
+        # Not `__name__`: this module is run both as `python -m` and imported,
+        # and a digest that told those apart would fail every artifact the CLI
+        # produced.
+        digest.update(f"{_CONTRACT_MODULE}.{label}".encode())
+        digest.update(b"\0")
+        digest.update(source.encode("utf-8"))
+        digest.update(b"\0")
     return digest.hexdigest()
+
+
+def stale_evidence_artifacts(
+    root: pathlib.Path, *, repo_root: pathlib.Path = REPO_ROOT
+) -> list[dict[str, str]]:
+    """Stored artifacts under `root` that this working tree can no longer read.
+
+    `tj-zewi`. The digest moving is a reviewed edit; discovering it at the front
+    of a paid round is not. `PINNED_RETRIEVAL_CONTRACT_SHA` fails the moment it
+    moves, and this names which protected artifacts have to be re-produced
+    before the next round can use them.
+    """
+
+    expected = retrieval_contract_sha(repo_root)
+    stale: list[dict[str, str]] = []
+    for path in sorted(root.rglob("*.json")):
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(raw, dict) or raw.get("schema_version") != EVIDENCE_SCHEMA:
+            continue
+        retrieval = raw.get("retrieval")
+        found = (
+            str(retrieval.get("code_sha") or "") if isinstance(retrieval, dict) else ""
+        )
+        if found != expected:
+            stale.append(
+                {
+                    "path": str(path),
+                    "retrieval_code_sha": found,
+                    "expected_retrieval_code_sha": expected,
+                }
+            )
+    return stale
 
 
 def _require_protected_file(
@@ -713,6 +794,8 @@ def _parse_args() -> argparse.Namespace:
     produce.add_argument("--output", type=pathlib.Path, required=True)
     produce.add_argument("--model", default=EMBEDDING_MODEL, choices=[EMBEDDING_MODEL])
     produce.add_argument("--revision", required=True)
+    stale = subparsers.add_parser("stale-evidence")
+    stale.add_argument("--root", type=pathlib.Path, required=True)
     validate = subparsers.add_parser("validate")
     validate.add_argument("--evidence", type=pathlib.Path, required=True)
     validate.add_argument("--scenarios", type=pathlib.Path, required=True)
@@ -762,6 +845,13 @@ def main() -> int:
                 "aggregate": report["aggregate"],
                 "hard_failure_count": len(report["hard_failures"]),
                 "output": str(args.output),
+            }
+        elif args.command == "stale-evidence":
+            stale = stale_evidence_artifacts(args.root)
+            public = {
+                "retrieval_code_sha": retrieval_contract_sha(),
+                "stale_count": len(stale),
+                "stale": stale,
             }
         else:
             scenarios = _load_scenarios(args.scenarios)

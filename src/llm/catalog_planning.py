@@ -14,7 +14,7 @@ from typing import Annotated, Any, Literal, cast
 from pydantic import BaseModel, ConfigDict, Field, SkipValidation, ValidationError
 from pydantic_ai import RunContext, ToolReturn
 from redis.asyncio import Redis
-from sqlalchemy import func, or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
@@ -813,17 +813,52 @@ def _requested_seat_count(text: str) -> int | None:
     return _planning_count_value(match.group("count")) if match else None
 
 
+@dataclass(frozen=True)
+class AnchorFamily:
+    """One family the anchor is allowed to name, and how a row joins it."""
+
+    key: str
+    name_terms: tuple[str, ...]
+    taxonomy_terms: tuple[str, ...]
+    label_en: str
+    label_ar: str
+
+
+@dataclass(frozen=True)
+class AnchorCatalogRow:
+    """One catalog row as the anchor reads it."""
+
+    name: str
+    category: str | None
+    subcategory: str | None
+    price: float | None
+    stock: int | None
+
+
 # Narrower than the family term lists on purpose: the anchor names what it
-# prices. "workspace" also matches coffee tables, and quoting one under the
-# label "desks and workstations" would be true of the row and false to the
-# customer.
-_ANCHOR_FAMILIES: tuple[tuple[str, tuple[str, ...], str, str], ...] = (
-    ("seating", ("chair",), "Chairs", "الكراسي"),
-    (
-        "workspace",
-        ("desk", "workstation"),
-        "desks and workstations",
-        "المكاتب ومحطات العمل",
+# prices. A row joins a family only when its name *and* its catalog taxonomy
+# both say so, and it joins exactly one -- the first it matches.
+#
+# `tj-3jo0`: the name alone was not enough. "Desk height pedestal", a Storage /
+# Pedestal row, headed "desks and workstations" and priced the whole clause at
+# AED 154 while the cheapest orderable desk or workstation was AED 491. The same
+# rule counted workstation chairs as desks. Requiring the taxonomy to agree
+# removes both, and the order below settles the overlap the honest way: a
+# workstation chair is a chair.
+_ANCHOR_FAMILIES: tuple[AnchorFamily, ...] = (
+    AnchorFamily(
+        key="seating",
+        name_terms=("chair",),
+        taxonomy_terms=("chair",),
+        label_en="Chairs",
+        label_ar="الكراسي",
+    ),
+    AnchorFamily(
+        key="workspace",
+        name_terms=("desk", "workstation"),
+        taxonomy_terms=("desk", "workstation"),
+        label_en="desks and workstations",
+        label_ar="المكاتب ومحطات العمل",
     ),
 )
 # An anchor is a promise the customer can act on. The cheapest row in the
@@ -839,8 +874,21 @@ def _anchor_part(lowest: float, *, label: str, is_arabic: bool) -> str:
     return f"{label} من {amount} درهم" if is_arabic else f"{label} from AED {amount}"
 
 
+def anchor_family_of_row(row: AnchorCatalogRow) -> AnchorFamily | None:
+    """The one family this row may be priced under, or none."""
+
+    name = str(row.name or "").casefold()
+    taxonomy = f"{row.category or ''} {row.subcategory or ''}".casefold()
+    for family in _ANCHOR_FAMILIES:
+        names_it = any(term in name for term in family.name_terms)
+        catalogued_as_it = any(term in taxonomy for term in family.taxonomy_terms)
+        if names_it and catalogued_as_it:
+            return family
+    return None
+
+
 def anchor_line_from_catalog_rows(
-    rows: Iterable[tuple[str, float | None, int | None]],
+    rows: Iterable[AnchorCatalogRow],
     *,
     language: str,
 ) -> str | None:
@@ -853,32 +901,38 @@ def anchor_line_from_catalog_rows(
     floor and the wording are declared once and used by both callers, so a
     round follows production when production changes.
 
-    Rows are `(name, price, stock)`. A row missing either number is skipped
-    exactly as the query's `IS NOT NULL` skips it.
+    A row missing either number is skipped exactly as the query's `IS NOT NULL`
+    skips it.
     """
 
     is_arabic = is_arabic_customer_language(language)
     lowest: dict[str, float] = {}
-    for name, price, stock in rows:
+    for row in rows:
+        price, stock = row.price, row.stock
         if price is None or stock is None or price <= 0 or stock < _ANCHOR_MIN_STOCK:
             continue
-        normalized = str(name or "").casefold()
-        for family, terms, _label_en, _label_ar in _ANCHOR_FAMILIES:
-            if not any(term in normalized for term in terms):
-                continue
-            current = lowest.get(family)
-            if current is None or price < current:
-                lowest[family] = price
+        family = anchor_family_of_row(row)
+        if family is None:
+            continue
+        current = lowest.get(family.key)
+        if current is None or price < current:
+            lowest[family.key] = price
     parts = [
         _anchor_part(
-            lowest[family],
-            label=(label_ar if is_arabic else label_en),
+            lowest[family.key],
+            label=(family.label_ar if is_arabic else family.label_en),
             is_arabic=is_arabic,
         )
-        for family, _terms, label_en, label_ar in _ANCHOR_FAMILIES
-        if family in lowest
+        for family in _ANCHOR_FAMILIES
+        if family.key in lowest
     ]
-    return (", ".join(parts) + ".") if parts else None
+    if not parts:
+        return None
+    # `tj-b8il`: Arabic separates clauses with its own comma. The full stop is
+    # the Latin one in both languages -- Modern Standard Arabic writes it that
+    # way, and U+06D4 belongs to Urdu and Persian, not to a UAE customer.
+    separator = "، " if is_arabic else ", "
+    return separator.join(parts) + "."
 
 
 async def catalog_anchor_line(db: AsyncSession, language: str) -> str | None:
@@ -892,6 +946,11 @@ async def catalog_anchor_line(db: AsyncSession, language: str) -> str | None:
     Every figure is a catalog row. There is no fallback text with a number in
     it: if the catalog cannot answer, the reply simply goes out without an
     anchor rather than with an invented one.
+
+    `tj-3jo0`: this used to run one `MIN(price)` per family in SQL, which is why
+    it could not tell a Storage / Pedestal row from a desk -- the query only saw
+    the name. It reads the orderable rows and hands them to the same pure
+    function the measured round uses, so there is one family rule and not two.
     """
 
     from src.models.product import Product
@@ -902,33 +961,84 @@ async def catalog_anchor_line(db: AsyncSession, language: str) -> str | None:
     if cached is not None:
         return cached or None
 
-    parts: list[str] = []
-    for _family, terms, label_en, label_ar in _ANCHOR_FAMILIES:
-        conditions = [func.lower(Product.name_en).like(f"%{term}%") for term in terms]
-        if not conditions:
-            continue
-        result = await db.execute(
-            select(func.min(Product.price)).where(
-                or_(*conditions),
-                Product.price.is_not(None),
-                Product.price > 0,
-                Product.stock >= _ANCHOR_MIN_STOCK,
-            )
+    result = await db.execute(
+        select(
+            Product.name_en,
+            Product.category,
+            Product.subcategory,
+            Product.price,
+            Product.stock,
+        ).where(
+            Product.price.is_not(None),
+            Product.price > 0,
+            Product.stock >= _ANCHOR_MIN_STOCK,
         )
-        lowest = result.scalar_one_or_none()
-        if not isinstance(lowest, int | float | Decimal) or isinstance(lowest, bool):
-            continue
-        parts.append(
-            _anchor_part(
-                float(lowest),
-                label=(label_ar if is_arabic else label_en),
-                is_arabic=is_arabic,
-            )
+    )
+    rows = [
+        AnchorCatalogRow(
+            name=str(name or ""),
+            category=category,
+            subcategory=subcategory,
+            price=(float(price) if isinstance(price, int | float | Decimal) else None),
+            stock=stock,
         )
+        for name, category, subcategory, price, stock in result.all()
+    ]
 
-    line = (", ".join(parts) + ".") if parts else ""
+    line = anchor_line_from_catalog_rows(rows, language=language) or ""
     _anchor_line_cache[cache_key] = line
     return line or None
+
+
+# `tj-7vhq`. The anchor puts a price on the table before the customer has asked
+# for one, and on a bare greeting -- a third of every conversation this channel
+# has -- that is the whole point of it. On a message that is not about furniture
+# it is worse than silence: on 2026-08-13 a job application received chair and
+# desk prices and, three sentences later, the news that this channel cannot
+# process applications.
+#
+# The test is deliberately one-sided. Saying nothing about furniture still earns
+# the anchor, because that is the case it was built for; only a message that
+# positively says it is about something else loses it. A named piece of
+# furniture then wins the argument back, so a supplier pitching chairs is still
+# answered with our own prices.
+#
+# The word "furniture" is not one of those names, and that is the whole
+# calibration: the applicant on dialog 28 wrote it about the industry they want
+# to work in. A need is stated in items -- a chair, a desk, ten workstations --
+# and the industry is stated in the abstract noun.
+_ANCHORLESS_OPENING_RE = re.compile(
+    r"\bcv\b|\bresum(?:e|es)\b|curriculum\s+vitae|\bvacanc(?:y|ies)\b"
+    r"|\bjob\s+(?:application|vacanc(?:y|ies)|opening|opportunit(?:y|ies)|interview)\b"
+    r"|\b(?:looking|apply(?:ing)?)\s+for\s+(?:a\s+|any\s+)?job\b"
+    r"|\bhiring\b|\brecruit(?:er|ment|ing)?\b|\bapplicants?\b"
+    r"|\bapply\s+for\s+(?:a|the|this|any)\s+(?:position|role|vacancy)\b"
+    r"|\bemployment\b|\bsalary\b|\binternship\b|\bfresher\b"
+    r"|tracking\s+number|\bawb\b|\bwaybill\b|out\s+for\s+delivery|\bconsignment\b"
+    r"|\bcourier\b|\bshipments?\b|has\s+been\s+(?:shipped|dispatched|delivered)"
+    r"|investment\s+opportunit(?:y|ies)|\bseo\b|digital\s+marketing|\bbacklinks?\b"
+    r"|\bcrypto\w*|business\s+proposal|partnership\s+proposal"
+    r"|سيرة\s*ذاتية|وظيف|وظائف|توظيف|أبحث\s+عن\s+عمل|راتب"
+    r"|رقم\s+التتبع|شحنة|الشحنة|تم\s+الشحن"
+    r"|تسويق\s+رقمي|فرصة\s+استثمار",
+    re.IGNORECASE | re.UNICODE,
+)
+_FURNITURE_MENTION_RE = re.compile(
+    r"\bchairs?\b|\bdesks?\b|\btables?\b|\bsofas?\b|\bcabinets?\b"
+    r"|\bworkstations?\b|\bpedestals?\b|\bwardrobes?\b|\bshel(?:f|ves|ving)\b"
+    r"|\bcredenzas?\b|\bpartitions?\b|\bcatalogue?s?\b"
+    r"|كرسي|كراسي|مكتب|مكاتب|طاولة|طاولات|كنب|خزانة|خزائن|رفوف|كتالوج",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def opening_wants_a_price_anchor(customer_text: str) -> bool:
+    """Whether a first turn on this message should carry the catalog anchor."""
+
+    text = str(customer_text or "")
+    if not _ANCHORLESS_OPENING_RE.search(text):
+        return True
+    return bool(_FURNITURE_MENTION_RE.search(text))
 
 
 def _turn_owes_the_company_question(deps: SalesDeps) -> bool:
@@ -3866,8 +3976,12 @@ __all__ = (
     "_verified_prose_response",
     "_verify_volunteered_claims",
     "_zoho_stock_for_catalog_candidates",
+    "AnchorCatalogRow",
+    "AnchorFamily",
+    "anchor_family_of_row",
     "anchor_line_from_catalog_rows",
     "catalog_anchor_line",
+    "opening_wants_a_price_anchor",
     "build_runtime_tool_trace",
     "grounded_amounts_for_turn",
     "validate_catalog_decision",

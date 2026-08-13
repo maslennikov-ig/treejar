@@ -496,3 +496,75 @@ def test_validate_cli_checks_all_expected_identities_without_provider_work(
     assert public["catalog_sha256"] == "a" * 64
     assert public["qrels_sha256"] == "d" * 64
     assert "Synthetic Chair" not in str(public)
+
+
+def test_the_retrieval_contract_digest_is_pinned_in_the_repository() -> None:
+    """`tj-zewi`. The digest moving strands every stored artifact.
+
+    Each one records the digest of the day it was produced, so a change here
+    means no protected evidence can preflight until it is re-produced. That is
+    a reviewed decision, and it belongs in the commit that makes it rather than
+    at the front of the next paid round. Re-produce the artifacts, run
+    `stale-evidence` against the protected root, and then move this pin.
+    """
+
+    assert semantic.retrieval_contract_sha() == semantic.PINNED_RETRIEVAL_CONTRACT_SHA
+
+
+def test_an_unrelated_edit_to_the_producer_module_leaves_the_digest_alone() -> None:
+    """The whole point of `tj-zewi`: bind retrieval, not the file it lives in."""
+
+    # The labels are written down rather than read from `__name__`, which is
+    # `__main__` under `python -m` -- the CLI produced an artifact the importing
+    # validator would have rejected.
+    assert semantic.__name__ == semantic._CONTRACT_MODULE
+
+    bound = {label for label, _source in semantic._retrieval_contract_members()}
+
+    assert bound == {
+        "EMBEDDING_MODEL",
+        "EMBEDDING_DIMENSIONS",
+        "RETRIEVAL_ENTRYPOINT",
+        "RETRIEVAL_LIMIT",
+        "PinnedEmbeddingEngine",
+        "_product_embedding_text",
+        "produce_evidence",
+    }
+    # The pinned catalog constants and the loaders beside them are not retrieval
+    # semantics, and it was adding those that broke the last round.
+    joined = "\n".join(
+        source for _label, source in semantic._retrieval_contract_members()
+    )
+    assert "load_and_validate_catalog_snapshot" not in joined
+    assert "PINNED_CATALOG_SHA256" not in joined
+
+
+def test_stale_evidence_names_the_artifacts_a_moved_digest_stranded(
+    tmp_path: pathlib.Path,
+) -> None:
+    protected = tmp_path / "corpus-bridge"
+    (protected / "old-round").mkdir(parents=True)
+    (protected / "new-round").mkdir(parents=True)
+    current = semantic.retrieval_contract_sha()
+
+    def _write(path: pathlib.Path, code_sha: str) -> None:
+        path.write_text(
+            json.dumps(
+                {
+                    "schema_version": semantic.EVIDENCE_SCHEMA,
+                    "retrieval": {"code_sha": code_sha},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    _write(protected / "old-round" / "evidence.json", "0" * 64)
+    _write(protected / "new-round" / "evidence.json", current)
+    (protected / "not-evidence.json").write_text("{}", encoding="utf-8")
+    (protected / "broken.json").write_text("{", encoding="utf-8")
+
+    stale = semantic.stale_evidence_artifacts(protected)
+
+    assert [pathlib.Path(row["path"]).parent.name for row in stale] == ["old-round"]
+    assert stale[0]["retrieval_code_sha"] == "0" * 64
+    assert stale[0]["expected_retrieval_code_sha"] == current

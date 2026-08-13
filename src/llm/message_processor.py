@@ -72,6 +72,7 @@ from src.llm.catalog_planning import (
     _verify_volunteered_claims,
     catalog_anchor_line,
     grounded_amounts_for_turn,
+    opening_wants_a_price_anchor,
 )
 from src.llm.closed_question_guard import response_asks_customer_name
 from src.llm.grounding_output import GroundingOutputAction
@@ -2085,9 +2086,13 @@ async def _capture_details_and_name_gate_routes(
         # deferred at all.
         #
         # The anchor is still read here, where the catalog is in reach, so the
-        # opening carries a price when the reply itself found none.
-        turn.opening_anchor_line = await catalog_anchor_line(
-            turn.db, str(turn.conv.language)
+        # opening carries a price when the reply itself found none. `tj-7vhq`:
+        # not on a message that is about something other than furniture, where a
+        # price list only contradicts the answer that follows it.
+        turn.opening_anchor_line = (
+            await catalog_anchor_line(turn.db, str(turn.conv.language))
+            if opening_wants_a_price_anchor(turn.combined_text)
+            else None
         )
 
     # Store customer details from the original, unmasked text before any route

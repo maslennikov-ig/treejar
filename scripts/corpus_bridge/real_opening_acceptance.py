@@ -55,7 +55,11 @@ from scripts.model_battle import (
 
 from src.core.config import settings
 from src.dialogue.state import DialogueState
-from src.llm.catalog_planning import anchor_line_from_catalog_rows
+from src.llm.catalog_planning import (
+    AnchorCatalogRow,
+    anchor_line_from_catalog_rows,
+    opening_wants_a_price_anchor,
+)
 from src.llm.communication_policy import (
     COMMUNICATION_RULES_POLICY,
     finalize_evidence_grounding_prompt,
@@ -878,7 +882,14 @@ def _opening_anchor_lines(snapshot: CatalogSnapshot) -> dict[str, str | None]:
     """
 
     rows = [
-        (product.name_en, product.price, product.stock) for product in snapshot.products
+        AnchorCatalogRow(
+            name=product.name_en,
+            category=product.category,
+            subcategory=product.subcategory,
+            price=product.price,
+            stock=product.stock,
+        )
+        for product in snapshot.products
     ]
     return {
         language: anchor_line_from_catalog_rows(rows, language=language)
@@ -921,7 +932,12 @@ def _prepare_cases(
                 "catalog_evidence": evidence,
                 "catalog_rows_present": retrieval_result.rows_present,
                 "catalog_relevant": retrieval_result.catalog_relevant,
-                "anchor_line": anchors[language],
+                # `tj-7vhq`: production withholds the anchor on an opening that
+                # is not about furniture, so a round that always sent it was
+                # measuring a message production would not send.
+                "anchor_line": (
+                    anchors[language] if opening_wants_a_price_anchor(opening) else None
+                ),
                 "generation_messages": messages,
                 "generation_prompt_digest": _sha256_json(messages),
             }
@@ -1108,6 +1124,15 @@ async def preflight(
             "source": "pinned_catalog_snapshot",
             "catalog_sha256": semantic_evidence.catalog.sha256,
             "lines": _opening_anchor_lines(catalog_snapshot),
+            # `tj-7vhq`. The line alone no longer says what the round sends: an
+            # opening that carries no furniture need is priced at nothing, on
+            # purpose, and a reader has to be able to see how many.
+            "openings_priced": sum(
+                1 for case in cases if case["anchor_line"] is not None
+            ),
+            "openings_withheld": sum(
+                1 for case in cases if case["anchor_line"] is None
+            ),
         },
         "semantic_retrieval": {
             "catalog_sha256": semantic_evidence.catalog.sha256,
