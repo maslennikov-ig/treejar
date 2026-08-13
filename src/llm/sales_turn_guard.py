@@ -474,13 +474,56 @@ _EN_ACTIVITY_SIGNALS = (
     "day to day",
 )
 _AR_ACTIVITY_SIGNALS = ("طبيعة عمل", "مجال عمل", "ماذا تعمل شركت")
+# `tj-eedk`. "day to day" is not one of these. It is prose -- a chair that
+# holds up to day to day office use says nothing about anyone's trade -- and
+# the canonical question carries "what does your company" anyway, so dropping
+# it costs the ask nothing and stops it firing on a product description.
+_EN_ACTIVITY_ASK_SIGNALS = tuple(
+    signal for signal in _EN_ACTIVITY_SIGNALS if signal != "day to day"
+)
 
 
-def asks_the_company_activity(text: str) -> bool:
+def _mentions_the_company_activity(text: str) -> bool:
+    """Whether the reply touches the customer's line of work at all.
+
+    Deliberately broad, and deliberately not the same question as the one
+    below. This one guards an *addition*: `carry_the_company_question` uses it
+    to decide whether the reply has already covered this ground, and a reply
+    that talks about the customer's day to day has. Reading it narrowly would
+    append a question to replies that already read as though they asked, which
+    is a change to live customer text and not what `tj-eedk` is about.
+    """
+
     normalized = text.casefold()
     return any(signal in normalized for signal in _EN_ACTIVITY_SIGNALS) or any(
         signal in text for signal in _AR_ACTIVITY_SIGNALS
     )
+
+
+def asks_the_company_activity(text: str) -> bool:
+    """Whether this reply actually puts the question to the customer.
+
+    `tj-eedk`: since `ecd9c33` this answer is persistent. `render_reply`
+    records it in `emitted_asks`, `_finalize_turn_response` turns that into
+    `company_activity_asked_previous_turn`, and the next turn is then forbidden
+    from asking. A bare phrase match therefore costs the customer a question
+    rule 13 scored 0.00/2 on -- "These chairs hold up to day to day office use"
+    closed the ask without anyone having made it.
+
+    So the signal has to sit inside a sentence that reads as a question. This
+    stays on the safe side of the module's own rule: it reads the reply's own
+    words, never what Noor believes she already did.
+    """
+
+    for sentence in _SENTENCE_SPLIT_RE.split(text):
+        if not _is_question(sentence):
+            continue
+        normalized = sentence.casefold()
+        if any(signal in normalized for signal in _EN_ACTIVITY_ASK_SIGNALS) or any(
+            signal in sentence for signal in _AR_ACTIVITY_SIGNALS
+        ):
+            return True
+    return False
 
 
 def carry_the_company_question(text: str, *, language: str) -> str:
@@ -498,7 +541,7 @@ def carry_the_company_question(text: str, *, language: str) -> str:
     one.
     """
 
-    if asks_the_company_activity(text):
+    if _mentions_the_company_activity(text):
         return text
     question = (
         _AR_ACTIVITY_QUESTION

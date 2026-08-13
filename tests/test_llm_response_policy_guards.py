@@ -64,6 +64,52 @@ def test_company_activity_ask_has_a_one_turn_cooldown() -> None:
     assert "what does your company" not in cooldown.text.casefold()
 
 
+def test_activity_words_in_prose_do_not_record_the_company_cooldown() -> None:
+    """`tj-eedk`, reproduced through the chain that writes the slot.
+
+    `emitted_asks` is read by `_finalize_turn_response`, so a false positive
+    here is a turn that starts the cooldown without having asked anything. The
+    customer then waits an extra turn for a question rule 13 scored 0.00/2 on.
+    """
+
+    rendered = render_reply(
+        "These chairs hold up to day to day office use.",
+        state=ReplyPolicyState(
+            language="en",
+            is_first_turn=False,
+            owes_company_question=True,
+            inventory_confirmed=True,
+        ),
+        provenance="model",
+    )
+
+    permitted = permitted_asks_for_turn(
+        is_first_turn=False,
+        customer_name=None,
+        customer_name_asked=False,
+        owes_company_question=True,
+        quote_consent_granted=False,
+    )
+
+    assert AskKind.COMPANY_ACTIVITY in permitted
+    assert AskKind.COMPANY_ACTIVITY not in rendered.emitted_asks
+
+
+def test_a_reply_that_carries_the_company_question_still_records_it() -> None:
+    rendered = render_reply(
+        "We can plan the workstations around your team.",
+        state=ReplyPolicyState(
+            language="en",
+            is_first_turn=False,
+            owes_company_question=True,
+        ),
+        provenance="model",
+    )
+
+    assert "what does your company" in rendered.text.casefold()
+    assert AskKind.COMPANY_ACTIVITY in rendered.emitted_asks
+
+
 def test_first_turn_opening_guard_needs_only_explicit_state() -> None:
     guarded = apply_first_turn_opening_guard(
         "I can help with office furniture.",

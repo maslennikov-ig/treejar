@@ -126,14 +126,41 @@ def test_a_reply_that_asks_nothing_is_left_alone() -> None:
         ("And what does your company actually do, day to day?", True),
         ("What kind of work does the team do?", True),
         ("وما طبيعة عمل شركتكم فعليًا؟", True),
+        ("So what is your line of work?", True),
         # The failure this rule keeps scoring zero on: the company's name read
         # as its line of work. Naming the company is not asking about it.
         ("I've noted you're the facilities manager at Cedarline Test Offices.", False),
         ("Which chair would you prefer?", False),
+        # `tj-eedk`. The signal phrases are bare, so ordinary prose carries
+        # them: a chair described for daily use, or a finish matched to the
+        # customer's trade. Neither puts the question to anyone.
+        ("These chairs hold up to day to day office use.", False),
+        ("We'll match the finish to your line of work.", False),
+        ("The nature of your business decides the warranty term.", False),
+        ("How many do you need? They suit day to day office use.", False),
     ],
 )
 def test_naming_the_company_is_not_asking_what_it_does(text: str, asked: bool) -> None:
     assert asks_the_company_activity(text) is asked
+
+
+def test_a_signal_phrase_in_prose_is_not_an_ask_but_still_suppresses_the_carry() -> (
+    None
+):
+    """`tj-eedk`, both halves, on the same reply.
+
+    The prose sentence must not read as an ask, because the ask is what records
+    the one-turn cooldown. The carry is a separate question: it asks whether
+    the reply already touches the topic at all, and a reply that talks about
+    the customer's day to day does. Keeping the second one broad is what stops
+    this fix from adding a question to a live reply that already reads as
+    though it covered the ground.
+    """
+
+    reply = "These chairs hold up to day to day office use."
+
+    assert asks_the_company_activity(reply) is False
+    assert carry_the_company_question(reply, language="en") == reply
 
 
 def test_the_company_question_is_folded_onto_the_reply_not_added_as_a_form() -> None:
