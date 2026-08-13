@@ -878,8 +878,7 @@ def _opening_anchor_lines(snapshot: CatalogSnapshot) -> dict[str, str | None]:
     """
 
     rows = [
-        (product.name_en, product.price, product.stock)
-        for product in snapshot.products
+        (product.name_en, product.price, product.stock) for product in snapshot.products
     ]
     return {
         language: anchor_line_from_catalog_rows(rows, language=language)
