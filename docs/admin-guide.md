@@ -178,11 +178,19 @@ The dashboard is no longer metrics-only. It now includes the operator controls t
 GET https://noor.starec.ai/api/v1/health
 ```
 Returns HTTP `200` only when both Redis and PostgreSQL pass their probes. The
-response contains the installed application `version` and structured
-`dependencies.redis` / `dependencies.database` entries with status and
-latency. If either required dependency is unavailable, it returns HTTP `503`
-with `status: "degraded"` and a sanitized `message: "unavailable"` rather than
-raw connection details.
+response contains the installed application `version`, the deployed
+`release_sha`, and structured `dependencies.redis` / `dependencies.database`
+entries with status and latency. If either required dependency is unavailable,
+it returns HTTP `503` with `status: "degraded"` and a sanitized
+`message: "unavailable"` rather than raw connection details.
+
+`release_sha` is the commit the running container was built from, read from the
+`.release-sha` file CI writes into the release archive. It answers "what is
+live" from the service itself rather than from the last successful deploy job.
+It reads `unknown` when that metadata is missing or unreadable, because a
+health endpoint must not fail over a metadata file — so `unknown` on a
+deployed release means the packaging is wrong, not that the service is
+unhealthy.
 
 `/api/v1/debug/redis` is intentionally absent. Raw queue payloads are not a
 supported troubleshooting surface.

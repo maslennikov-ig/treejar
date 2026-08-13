@@ -78,6 +78,14 @@ RUN UV_NO_DEV=1 uv sync --locked
 
 RUN chmod +x /entrypoint.sh
 
+# The release identity CI writes into the archive, read back by
+# /api/v1/health. It lands in the build context on the VPS but was never
+# copied into the image, so the endpoint reported "unknown" for every release.
+# README.md is listed beside it because a wildcard matching nothing fails the
+# build, and .release-sha is absent from every local checkout. Kept last so a
+# new SHA does not invalidate the layers above it.
+COPY README.md .release-sha* ./
+
 EXPOSE 8000
 
 ENTRYPOINT ["/entrypoint.sh"]

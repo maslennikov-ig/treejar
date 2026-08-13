@@ -106,7 +106,9 @@ async def test_health_reports_deployed_release_sha(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path_kind", ["missing", "unreadable"])
+@pytest.mark.parametrize(
+    "path_kind", ["missing", "unreadable", "empty", "blank", "undecodable"]
+)
 async def test_health_reports_unknown_when_release_sha_is_unavailable(
     health_dependencies: tuple[AsyncMock, AsyncMock],
     monkeypatch: pytest.MonkeyPatch,
@@ -116,6 +118,15 @@ async def test_health_reports_unknown_when_release_sha_is_unavailable(
     release_sha_path = tmp_path / ".release-sha"
     if path_kind == "unreadable":
         release_sha_path.mkdir()
+    elif path_kind == "empty":
+        release_sha_path.write_bytes(b"")
+    elif path_kind == "blank":
+        release_sha_path.write_text("   \n\t ", encoding="utf-8")
+    elif path_kind == "undecodable":
+        # A truncated or half-written file is not UTF-8. This raised
+        # UnicodeDecodeError -- a ValueError, not an OSError -- and returned
+        # 500, which the deploy health loop reads as a failed release.
+        release_sha_path.write_bytes(b"\xff\xfe\x00sha")
     monkeypatch.setattr(health, "_RELEASE_SHA_PATH", release_sha_path, raising=False)
 
     async with AsyncClient(
@@ -125,3 +136,45 @@ async def test_health_reports_unknown_when_release_sha_is_unavailable(
 
     assert response.status_code == 200
     assert response.json()["release_sha"] == "unknown"
+
+
+# --- the shipped location, not a patched one ------------------------------
+#
+# Every test above patches `_RELEASE_SHA_PATH`, so none of them can see where
+# the file actually has to be. That is how the endpoint reached production
+# reporting "unknown" for every release: CI wrote `.release-sha` into the
+# release archive, the archive landed on the VPS, and the Dockerfile never
+# copied it into the image. The two tests below hold the packaging contract.
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_release_sha_is_read_from_the_application_root() -> None:
+    """The resolved path is the directory the image's WORKDIR holds."""
+
+    assert health._RELEASE_SHA_PATH.name == ".release-sha"
+    assert health._RELEASE_SHA_PATH.parent == _REPO_ROOT
+    assert (health._RELEASE_SHA_PATH.parent / "pyproject.toml").is_file()
+
+
+def test_the_runtime_image_copies_the_release_sha_it_reports() -> None:
+    """A build that does not ship the file can only ever answer 'unknown'."""
+
+    dockerfile = (_REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    runtime_stage = dockerfile.split("FROM uv AS runtime", 1)[1].split("FROM ", 1)[0]
+
+    copies = [
+        line
+        for line in runtime_stage.splitlines()
+        if line.startswith("COPY ") and ".release-sha" in line
+    ]
+
+    assert copies, "the runtime stage must COPY .release-sha into the image"
+    # A wildcard matching nothing fails the build, and .release-sha is absent
+    # from every local checkout, so it has to travel with a file that is not.
+    assert any("*" in line for line in copies)
+    assert any(
+        other.strip() and not other.startswith(".release-sha")
+        for line in copies
+        for other in line.removeprefix("COPY ").split()[:-1]
+    )

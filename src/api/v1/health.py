@@ -31,13 +31,20 @@ def resolve_app_version() -> str:
 
 
 def resolve_release_sha() -> str:
-    """Return the deployed release SHA without making health depend on metadata."""
+    """Return the deployed release SHA without making health depend on metadata.
+
+    `ValueError` is caught beside `OSError` because `read_text` decodes: a
+    truncated or non-UTF-8 file raises `UnicodeDecodeError`, which is a
+    `ValueError` and not an `OSError`. Uncaught it returned 500, and the deploy
+    health loop retries twenty times before failing the release -- a metadata
+    file must never be able to do that.
+    """
     try:
         return (
             _RELEASE_SHA_PATH.read_text(encoding="utf-8").strip()
             or _FALLBACK_RELEASE_SHA
         )
-    except OSError:
+    except (OSError, ValueError):
         return _FALLBACK_RELEASE_SHA
 
 
