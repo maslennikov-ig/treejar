@@ -40,11 +40,10 @@ local reply-policy contract, Python implementation, tests and protected replay.
   passes `notify_on_failure=False`. An unavailable judge no longer costs the
   customer their reply, but a vendor going dark is worth hearing about. The
   protected journal lives in the Git common dir, never the working tree.
-- `--second-reader` adds the paid reader beside the root, never instead: the
-  root is `judge_model` on every round, the reading pack is always written, and
-  the paid arm records into `record["second_reader"]`. It set the paid model as
-  the judge until 2026-08-13 and had raised `KeyError` since the vendor split,
-  so no two-reader round had ever run.
+- `--second-reader` adds the paid reader beside the root, never instead, and is
+  off by owner decision. It set the paid model as the judge until 2026-08-13
+  and had raised `KeyError` since the vendor split, so no two-reader round had
+  ever run.
 - The paid round sends the prompt production sends: `[RUNTIME DIRECTIVES]`
   from `engine._turn_runtime_directives`, `[PERMITTED ASKS THIS TURN]` from
   `permitted_asks_for_turn`, and `_inbound_customer_name` reading the opening
@@ -157,8 +156,8 @@ local reply-policy contract, Python implementation, tests and protected replay.
 
 ## Next recommended
 
-Next stage id: not opened. Recommended action: write the frozen reading
-convention `tj-4q79` asks for. Do not deploy without new authority.
+Next stage id: not opened. Recommended action: re-read one stored round under
+`docs/root-reading-convention.md` and report the drift. No deploy authority.
 
 ## Starter prompt for next orchestrator
 
@@ -184,14 +183,15 @@ current repository truth.
   set exists, `tj-ge07-two-turn-20260812`, human mean raw total 5.2, tracked
   and text-free.
 - The reader gap is a number now, `tj-4q79`. One round carried both readings,
-  the root judge blind and `z-ai/glm-5.2` paid beside it, $0.1627 of it the
-  second reader. Mean absolute gap 2.0 raw points per opening, worst 4.0. Rules
-  1, 2 and 8 agree exactly; the paid reader is harsher on the judgement-heavy
-  three -- rule 4 -0.80, rule 9 -0.70, rule 5 -0.50. So a paired delta under
-  about 2 raw points sits inside reader variance. The session series clears it,
-  raw 10.6 to 13.8, but no single round should be defended by its total alone.
-  Within-reader drift across two sittings of the root judge, which `tj-vhto`
-  exposed, is still unmeasured; the frozen convention is the answer, unwritten.
+  the root judge blind and `z-ai/glm-5.2` paid beside it at $0.1627. Mean
+  absolute gap 2.0 raw points per opening, worst 4.0; rules 1, 2 and 8 agree
+  exactly and the paid reader is harsher on the judgement-heavy three, rule 4
+  -0.80, rule 9 -0.70, rule 5 -0.50. So a paired delta under about 2 raw points
+  is inside reader variance: the session series clears it, raw 10.6 to 13.8,
+  but no single round should be defended by its total. The owner decided on
+  2026-08-13 not to buy a second reader again, so
+  `docs/root-reading-convention.md` holds the 0/1/2 standard a later sitting
+  reads to. The re-read that would make that a drift number is still owed.
 - Rule 5's ceiling on the frozen twenty is 1.95, not 2.00: dialog 28 is a job
   application with no furniture need and rule 5 is charged on it anyway. The
   measured 1.95 is that ceiling; the rubric is not changed for it.

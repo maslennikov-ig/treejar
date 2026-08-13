@@ -29,6 +29,8 @@ Typical code-change gates in this repo include:
 ## Safety Boundaries
 
 - The judge of a measured round is the orchestrating agent itself, reading blind. A paid model may be added beside that reading as a second reader, never in place of it. Standing owner decision; the acceptance harness defaults to it.
+- Do not buy a second reader. Owner decision 2026-08-13: the root reading is what the owner wants, and `--second-reader` is not to be used without a fresh explicit request. The mechanism stays and defaults off; it cost $0.163 on the one round that used it and produced the reader-gap figure recorded in `tj-4q79`, which is enough. A round is defended by named defect shapes and per-rule evidence, never by its total alone.
+- Read a round against `docs/root-reading-convention.md`. That decision only holds if a later sitting scores to the same standard as this one, and the convention is where the standard is written. Extend it when a new case is scored; never let it change which rules apply.
 - Keep one task per branch or dedicated worktree.
 - Prefer dedicated worktrees for delegated or parallel streams.
 - Keep canonical runtime triage, deploy drift, and product fixes in separate delivery streams.
