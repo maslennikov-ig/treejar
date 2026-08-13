@@ -40,6 +40,25 @@ RETRIEVAL_LIMIT = 3
 _SHA256_PATTERN = r"^[0-9a-f]{64}$"
 _REVISION_PATTERN = r"^[0-9a-f]{40}$"
 
+# The identity of the evidence a measured round is allowed to consume. These
+# were command-line arguments, which made the pin only as strong as what the
+# operator typed: an artifact built on a stale catalog passed every check by
+# being described accurately. The repository is the record now, so replacing
+# the authoritative catalog, qrels or model is a reviewed commit rather than a
+# different flag. `tj-rcg5` produced these on 2026-08-13; the digests are the
+# ones recorded in the bead and in `.codex/handoff.md`.
+PINNED_CATALOG_SHA256 = (
+    "979e791b1d5c52e53976ec455fb301aab59e1e4848601d1a7939d4efe18df2d7"
+)
+PINNED_EMBEDDING_REVISION = "5617a9f61b028005a4858fdac845db406aefb181"
+PINNED_PGVECTOR_EXTENSION = "0.8.5"
+PINNED_QRELS_SHA256: dict[str, str] = {
+    "openings-20": ("cddfb117c4d304ba26ac7f8e1a50e298280c4c209dbea89f1bdacc7cbd16a79b"),
+    "retrieval-golden": (
+        "cb3cf2991c98b8d525f4dfec695e092c2be4ecd2d996e6399c23b5a866208055"
+    ),
+}
+
 
 class _StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)

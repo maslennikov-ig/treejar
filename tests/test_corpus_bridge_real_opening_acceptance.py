@@ -25,6 +25,7 @@ from scripts.corpus_bridge.real_opening_acceptance import (
     _journaled_repair_runner,
     _load_frozen_scenarios,
     _parse_args,
+    _qrels_sha256_for_set,
     _reader_disagreement,
     apply_shipped_output_guards,
     build_generation_messages,
@@ -39,7 +40,13 @@ from scripts.corpus_bridge.real_opening_acceptance import (
     run_paid_round,
     validate_complete_results,
 )
-from scripts.corpus_bridge.semantic_catalog_evidence import retrieval_contract_sha
+from scripts.corpus_bridge.semantic_catalog_evidence import (
+    PINNED_CATALOG_SHA256,
+    PINNED_EMBEDDING_REVISION,
+    PINNED_PGVECTOR_EXTENSION,
+    PINNED_QRELS_SHA256,
+    retrieval_contract_sha,
+)
 
 from src.llm.message_processor import _finalize_turn_response
 from src.llm.repair_judge import (
@@ -1476,3 +1483,43 @@ def test_a_root_judged_result_is_a_complete_result() -> None:
     results[0]["judge_model"] = "anthropic/claude-haiku-4.5"
     with pytest.raises(ValueError, match="root judge"):
         validate_complete_results(results, expected_dialog_ids=set(range(1, 21)))
+
+
+# --- the pin lives in the repository, not on the command line --------------
+
+
+def test_a_measured_round_pins_its_evidence_identity_without_the_operator() -> None:
+    """Required flags made the pin only as strong as what was typed."""
+
+    argv = [
+        "preflight",
+        "--scenarios",
+        "scenarios.json",
+        "--retrieval-evidence",
+        "evidence.json",
+        "--output-dir",
+        "out",
+    ]
+    with patch.object(sys, "argv", ["prog", *argv]):
+        args = _parse_args()
+
+    assert args.catalog_sha256 == PINNED_CATALOG_SHA256
+    assert args.embedding_revision == PINNED_EMBEDDING_REVISION
+    assert args.pgvector_extension == PINNED_PGVECTOR_EXTENSION
+    assert (
+        _qrels_sha256_for_set(args.frozen_set, args.qrels_sha256)
+        == (PINNED_QRELS_SHA256[args.frozen_set])
+    )
+
+
+def test_a_set_with_no_pinned_qrels_stops_the_round() -> None:
+    """`arabic-12` is registered and measurable, and has no semantic qrels."""
+
+    assert "arabic-12" in FROZEN_SETS
+    assert "arabic-12" not in PINNED_QRELS_SHA256
+
+    with pytest.raises(ValueError, match="no pinned qrels digest"):
+        _qrels_sha256_for_set("arabic-12", None)
+
+    explicit = "f" * 64
+    assert _qrels_sha256_for_set("arabic-12", explicit) == explicit

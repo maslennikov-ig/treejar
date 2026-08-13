@@ -1,10 +1,12 @@
 # Orchestrator Handoff
 
 Updated: 2026-08-13
-Current branch: `codex/tj-rcg5`
+Current branch: `codex/audit-fixes-20260813`
 Current stage id: `tj-rcg5-semantic-catalog-evidence`
-Status: `tj-9scy`, `tj-f6yp` and `tj-rcg5` are closed and delivered to
-`origin/main` in commits `4985db9`, `ecd9c33` and `4a0883a` respectively.
+Status: `tj-rcg5` delivered in `4a0883a`. `tj-9scy` and `tj-f6yp` shipped
+defective in `4985db9`/`ecd9c33`; the 2026-08-13 audit reopened both and their
+fixes are delivered in `48a213a`/`629b01d`, acceptance pins in `9306cf1`. Both
+stay open until the deployed endpoint is read back.
 
 Documentation: `docs-resolve` covered pgvector and pinned model revisions; local code owns Treejar behavior.
 
@@ -81,27 +83,25 @@ Documentation: `docs-resolve` covered pgvector and pinned model revisions; local
 
 ## Verification
 
-- Ruff and format clean over `src/ tests/ scripts/`; Mypy clean over 174 source
-  files; full Pytest `3695 passed, 19 skipped`; process verification passed. The
-  protected replay moved once and on purpose, toward the frozen `1fc87c04…`
-  baseline: 55 differing records to 7, the 7 a strict subset of the 55, so 48
-  were removed and none introduced. It has not moved since; `tj-fcfn` is
-  generation-side and the aggregate stands at `1b425bd1…`.
+- Ruff, format and Mypy clean; process verification passed. The protected
+  replay moved once and on purpose toward the frozen `1fc87c04…` baseline and
+  has not moved since; the aggregate stands at `1b425bd1…`. It cannot show a
+  SELLING-turn change: it pins `is_first_turn=True`, and none of its 60 records
+  carries a foldable ask-list.
 
 ## Constraints
 
 - Push to `origin/main` was authorized on 2026-08-12 and performed. No PR,
   deploy, production/staging mutation, model-configuration change or real-user
   message is authorized or performed.
-- Paid calls: 60 on the repair judge, all on stored dialogs 819 and 789 with the
-  failure page suppressed. The owner then authorized, on 2026-08-12, a
-  re-baseline round, the paired `tj-fcv8` round and the `tj-ge07` baseline as
-  one block, then on 2026-08-13 the `tj-l0e3`, `tj-fcfn`, Arabic and `tj-z1fn`
-  rounds, and the two-reader round. Total spent $0.1908 across ten rounds, of
-  which $0.1627 is the single paid second reader and $0.0045 bought nothing: $0.0020 to four attempts killed by upstream 429s and a 503, and
-  $0.0025 to the `tj-l0e3` round discarded as unfaithful under `tj-l0e3.2`. The `tj-ge07` baseline
-  is authorized and deliberately not taken. The canonical runtime target
-  remains `https://noor.starec.ai`; it was not contacted.
+- Paid calls total $0.1908 across ten authorized rounds, of which $0.1627 is
+  the single paid second reader and $0.0045 bought nothing (upstream 429s/503,
+  and the `tj-l0e3` round discarded under `tj-l0e3.2`). Per-round authorization
+  and attribution are in Beads. The `tj-ge07` baseline is authorized and
+  deliberately not taken.
+- `https://noor.starec.ai/api/v1/health` was read once, unauthenticated and
+  read-only, on 2026-08-13 to confirm the `tj-9scy` defect. Nothing else on the
+  canonical runtime was contacted and nothing was mutated.
 
 ## Documentation and graph review
 
@@ -121,12 +121,10 @@ Use $orchestrator-stage after selecting the next open Beads goal.
 ## Tracker after the 2026-08-13 audit
 
 - 27 live issues audited against current state; 17 closed with recorded
-  reasons, 1 deferred. Nothing closed on a title alone. Verified in code:
-  `tj-6f4z`, `tj-07bs`, `tj-g3f`. Superseded by measurement or owner decision:
-  `tj-wvo4`, `tj-odeq`, `tj-vz7o.8`, `tj-vz7o.9`, `tj-vz7o.10`, `tj-vz7o.12`,
-  `tj-vz7o.13`, `tj-swgu.14`, and the P0 epics `tj-2m5m` and `tj-swgu`. Not to
-  be done as written: `tj-vz7o.4`, `tj-vz7o.5`, `tj-ge07`, `tj-2m5m.4`.
-  `tj-i653` deferred: it needs live state.
+  reasons, 1 deferred, none on a title alone. The per-issue disposition is in
+  Beads. `tj-i653` deferred: it needs live state.
+- The delivery audit of `tj-9scy`, `tj-f6yp` and `tj-rcg5` reopened the first
+  two and left `tj-rcg5` closed; it opened `tj-rdqc` and `tj-qfsy`.
 - A candidate explanation was rejected rather than used: `tj-jlx4` looked like
   reader variance, but the gap is 2.0 while S07 moved 6.58 with non-overlapping
   ranges, and the bead already diagnosed a content choice -- a closing turn
@@ -183,17 +181,20 @@ Use $orchestrator-stage after selecting the next open Beads goal.
   913 defers), 6, 10 and 13 a project signal (9 of 913), 11 a two-family order
   (16 of 106), 12 a later turn. This bounds what any opening round can claim
   and it closed four beads. The two-turn set is kept for a tools-enabled rig.
-- The reader gap is a number, `tj-4q79`: one round carried both readings, the
-  root judge blind and `z-ai/glm-5.2` paid beside it at $0.1627. Mean absolute
-  gap 2.0 raw points per opening, worst 4.0; rules 1, 2 and 8 agree exactly,
-  the paid reader harsher on 4 (-0.80), 9 (-0.70) and 5 (-0.50). A paired delta
-  under about 2 raw points is inside reader variance: the session series clears
-  it, but no single round should be defended by its total. No second reader
-  again by owner decision, so `docs/root-reading-convention.md` holds the 0/1/2
-  standard. The re-read that would make it a drift number is still owed.
+- The reader gap is a number, `tj-4q79`: mean absolute 2.0 raw points per
+  opening, worst 4.0, measured once against a paid reader at $0.1627. A paired
+  delta under about 2 points is inside reader variance, so no single round is
+  defended by its total. Detail and per-rule split are in the bead and in
+  `docs/root-reading-convention.md`. The re-read that would make it a drift
+  number is still owed.
 - Rule 5's ceiling on the frozen twenty is 1.95, not 2.00: dialog 28 is a job
   application with no furniture need and rule 5 is charged anyway. The measured
   1.95 is that ceiling; the rubric is not changed for it.
 - `tj-ee5f.1` needs real transports and production producers; `tj-ee5f.5`
   waits on the Wazzup provider fixing delivered/read callbacks, which is
   theirs, not ours.
+- The measured round sends `anchor_line=None`, `tj-rdqc`. `tj-rcg5` removed the
+  live-catalog anchor with the keyword fetch and did not replace it, so the
+  scored reply no longer carries the price anchor production adds in
+  `opening_guard`. Rounds after `4a0883a` are not comparable to the six before
+  it on rules 2 and 7. A hermetic anchor source is owed before the next round.

@@ -33,6 +33,10 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, ConfigDict
 from scripts.corpus_bridge.semantic_catalog_evidence import (
+    PINNED_CATALOG_SHA256,
+    PINNED_EMBEDDING_REVISION,
+    PINNED_PGVECTOR_EXTENSION,
+    PINNED_QRELS_SHA256,
     SemanticCatalogEvidence,
     load_and_validate_evidence,
 )
@@ -2202,6 +2206,25 @@ def _public_preflight(document: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _qrels_sha256_for_set(frozen_set: str, override: str | None) -> str:
+    """The qrels a named set is allowed to be measured against.
+
+    Qrels are per-set, so the pin is a mapping rather than one constant. A set
+    with no pinned qrels stops the round instead of silently accepting
+    whatever artifact it is handed.
+    """
+
+    if override:
+        return override
+    pinned = PINNED_QRELS_SHA256.get(frozen_set)
+    if not pinned:
+        raise ValueError(
+            f"frozen set {frozen_set!r} has no pinned qrels digest; register it "
+            "in PINNED_QRELS_SHA256 or pass --qrels-sha256 explicitly"
+        )
+    return pinned
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -2210,10 +2233,20 @@ def _parse_args() -> argparse.Namespace:
     preflight_parser.add_argument(
         "--retrieval-evidence", type=pathlib.Path, required=True
     )
-    preflight_parser.add_argument("--catalog-sha256", required=True)
-    preflight_parser.add_argument("--embedding-revision", required=True)
-    preflight_parser.add_argument("--qrels-sha256", required=True)
-    preflight_parser.add_argument("--pgvector-extension", required=True)
+    # Defaulted from the repository, not required from the operator. Required
+    # flags made the pin only as strong as what was typed: an artifact built on
+    # a stale catalog passed every identity check by describing itself
+    # honestly. Overriding one is still possible and still fails closed against
+    # the artifact; it is now a visible argument rather than the normal way to
+    # run a round.
+    preflight_parser.add_argument("--catalog-sha256", default=PINNED_CATALOG_SHA256)
+    preflight_parser.add_argument(
+        "--embedding-revision", default=PINNED_EMBEDDING_REVISION
+    )
+    preflight_parser.add_argument("--qrels-sha256", default=None)
+    preflight_parser.add_argument(
+        "--pgvector-extension", default=PINNED_PGVECTOR_EXTENSION
+    )
     preflight_parser.add_argument("--output-dir", type=pathlib.Path, required=True)
     preflight_parser.add_argument(
         "--per-model-cap-usd", type=float, default=DEFAULT_MODEL_CAP_USD
@@ -2259,7 +2292,9 @@ def main() -> int:
                     retrieval_evidence_path=args.retrieval_evidence,
                     expected_catalog_sha256=args.catalog_sha256,
                     expected_embedding_revision=args.embedding_revision,
-                    expected_qrels_sha256=args.qrels_sha256,
+                    expected_qrels_sha256=_qrels_sha256_for_set(
+                        args.frozen_set, args.qrels_sha256
+                    ),
                     expected_pgvector_extension=args.pgvector_extension,
                     output_dir=args.output_dir,
                     per_model_cap_usd=args.per_model_cap_usd,
