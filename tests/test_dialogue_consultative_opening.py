@@ -226,6 +226,28 @@ def test_the_directive_unlocks_no_fact_and_no_commercial_term() -> None:
     assert "never" not in discount.instruction.casefold()
 
 
+def test_the_options_offered_are_kinds_of_work_not_a_shelf() -> None:
+    """`tj-fcfn`. Rule 5 fell 1.85 to 1.70 to 1.45 over three readings.
+
+    "Find out what the furniture is for" was already here and was not enough:
+    it named the target without saying what the options themselves should be,
+    and nine replies of twenty offered a list of what we sell. The reading
+    separates them cleanly -- every reply scoring 2 offered kinds of work or
+    kinds of space, every reply scoring 1 offered catalog categories.
+    """
+
+    lowered = consultative_opening_directive().casefold()
+
+    assert "make the options kinds of work or kinds of space" in lowered
+    # The reason it pays, so the instruction is not arbitrary to the model.
+    assert "tells you which products to bring" in lowered
+    # Stated positively. A ban here is the wording already measured at 0.00,
+    # so this variant of the directive carries no prohibition at all.
+    assert "never" not in lowered
+    assert "do not" not in lowered
+    assert "avoid" not in lowered
+
+
 def test_the_directive_carries_the_job_but_no_longer_the_widening() -> None:
     """Rule 9 stays on every early turn; rule 10 moved to the project fork on
     2026-08-09. Widening a seven-chair order is friction, not expertise."""

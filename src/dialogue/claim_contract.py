@@ -892,6 +892,29 @@ def consultative_opening_directive(*, opening_states_the_offer: bool = False) ->
     self-cancelling condition of 2026-08-08: this is not the model judging what
     it has already said, it is code stating what the reply will begin with.
 
+    **The product menu, `tj-fcfn`, added 2026-08-13.** Rule 5 fell three
+    readings running on the frozen twenty, 1.85 to 1.70 to 1.45 of 2, and the
+    losing replies all had one shape: the single question offered a list of
+    what we sell. "Find out what the furniture is for" was already here and was
+    not enough, because it described the target without forbidding the miss --
+    the same failure mode as the value proposition before it and the name ask
+    before that.
+
+    The reading separates the two cleanly. Every reply scoring 2 offered
+    choices that were kinds of work or kinds of space: individual workstations
+    against a meeting room, files in a staff area against a client-facing one,
+    collaboration against privacy. Every reply scoring 1 offered choices that
+    were catalog categories. So the instruction is stated on the options
+    themselves, which is the part the model actually writes.
+
+    It is stated positively, with no prohibition, under the owner's observation
+    of 2026-08-10 that this model follows a positive instruction and loses a
+    ban -- the observation that took rule 11 out of two prohibitions wrapped
+    around a permission, and that
+    `test_the_widening_is_a_package_at_the_catalog_price` guards by asserting
+    this directive contains no "never" at all. Saying "a list of products is
+    wrong" is the wording that has already been measured at 0.00.
+
     It lives here rather than in the product system prompt, which the stage
     contract freezes.
     """
@@ -918,7 +941,12 @@ def consultative_opening_directive(*, opening_states_the_offer: bool = False) ->
         "in this reply. Find out what the "
         "furniture is for -- the work done in the space, who uses it, what "
         "would make the result right -- and recommend against that job rather "
-        "than against the words of the request. Keep the whole reply to at most "
+        "than against the words of the request. Where you offer them options "
+        "inside that question, make the options kinds of work or kinds of "
+        "space -- one person's desk, a room people meet in, a reception "
+        "visitors wait in. Someone who has not yet said what they need can "
+        "answer that, and their answer is what tells you which products to "
+        "bring. Keep the whole reply to at most "
         "one question, counting a folded pair as one. None of this comes before "
         "answering what they asked. State a service, term or capability where a "
         "tool in this run has confirmed it, and quote every figure at the "
