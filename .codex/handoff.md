@@ -12,17 +12,19 @@ protected evidence define this delivery.
 
 ## Current truth
 
-- Code release `d30b2d918f75353b3ad75438b29b409a2776cdca` deployed through
-  GitHub Actions run `31811997412`; public `/api/v1/health` returned that
-  exact SHA. The measured round was generated on `f5be6a26…`, and the
-  difference between the two is the audit repair in
-  `tj-l6pw-outbound-guard-repair`.
+- Code release `c87ea878abffc8015d347bbca75e70917ea93727` deployed through
+  GitHub Actions run `31822779522`; public `/api/v1/health` returned that
+  exact SHA, with redis and database ok.
 - The final client pack keeps the measurement boundary at the start: the
   opening stand charges 8/15 rules, seven rules are unreachable there, and deal
   outcomes exist for only 192/1400 dialogues.
 - The pinned protected opening anchor remains
   `Chairs from AED 139, desks and workstations from AED 58.`; preflight is 19
   priced and one withheld.
+- The fixed first-turn opening is a fallback since 2026-08-14. A reply that
+  greets the customer, names Noor and says what Treejar does keeps its own
+  words; one that does not still receives the canonical sentence. Reverting is
+  one line: `opening_states_the_offer=False` in `_turn_runtime_directives`.
 - Customer-facing output passes through one final deterministic boundary. It
   stays in the language selected for the current turn. It also folds the
   canonical name question into an existing question, and the first turn is

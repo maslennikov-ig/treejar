@@ -107,6 +107,22 @@ GitHub Actions run `31811997412` deployed that repair as
 `main@d30b2d918f75353b3ad75438b29b409a2776cdca`, and `/api/v1/health` returned
 that exact release SHA.
 
+On the owner's decision of 2026-08-14 the first-turn rules were then loosened
+rather than tightened. The fixed opening sentence became a fallback: a reply
+that greets the customer, names Noor and says what Treejar does keeps its own
+words, and the fixed sentence arrives only when the reply does not do that. A
+second paired round on the same frozen twenty, `tj-loosen1-round-20260814e`,
+cost `$0.004955` and returned 20/20 replies in the customer's language, zero
+critical failures and exactly one question mark per reply. Against the accepted
+round it moved rule 8 to its ceiling on all six dialogues that charge it
+(`+0.33`), rule 5 up `+0.10` and rule 2 up `+0.05`, while rule 7 fell `-0.15`
+because three replies of twenty now state the offer and then restate it as a
+capability list. Every delta lies inside the measured 2.0 reader gap, so no
+total-score claim is made; the movement is reported as named defect shapes.
+GitHub Actions run `31822779522` deployed it as
+`main@c87ea878abffc8015d347bbca75e70917ea93727` with an exact health-SHA
+readback.
+
 The production catalog is live data and currently yields a rounded opening
 floor of AED 99 / 58; the protected acceptance snapshot remains AED 139 / 58.
 Owner decision 2026-08-14 permits whole-AED rounding in a `from` price. The
@@ -178,7 +194,7 @@ Commercial and operational promises include:
 
 ## What Is Done
 
-Current deployed baseline is `main@d30b2d918f75353b3ad75438b29b409a2776cdca`, delivered by GitHub Actions run `31811997412`, with runtime `.release-sha` matching and `/api/v1/health` OK. The measured round above was generated on `main@f5be6a26b292b81da1288ca3c394ceac21eb57a3`, and the difference between the two is the audit repair described there. The approved historical `tj-final27.9` E2E evidence below was collected earlier on `main@090e318d06662eb4a4c4f2247eb01bd1ed317b94`.
+Current deployed baseline is `main@c87ea878abffc8015d347bbca75e70917ea93727`, delivered by GitHub Actions run `31822779522`, with runtime `.release-sha` matching and `/api/v1/health` OK. The measured round above was generated on `main@f5be6a26b292b81da1288ca3c394ceac21eb57a3`, and the difference between the two is the audit repair described there. The approved historical `tj-final27.9` E2E evidence below was collected earlier on `main@090e318d06662eb4a4c4f2247eb01bd1ed317b94`.
 
 Delivered product and runtime evidence:
 
@@ -218,6 +234,15 @@ Confirmed production and local evidence already recorded:
   health-SHA readback. The accepted protected round had 20/20 language matches,
   zero critical failures and exactly one question marker in every reply.
   Synthetic production readback confirmed the outbound and logging guards.
+- 2026-08-14 opening loosening: `c87ea87…` passed 3846 tests with the same 20
+  skips, process verification, stage closeout and a re-pinned protected replay,
+  then deployed with an exact health-SHA readback. On the owner's decision the
+  fixed first-turn opening became a fallback: a reply that introduces us itself
+  keeps its own words, and the fixed sentence arrives only when it does not.
+  The paired round `tj-loosen1-round-20260814e` cost `$0.004955` and returned
+  20/20 customer language, zero critical failures, rule 8 at its ceiling on all
+  six dialogues that charge it, rule 5 up 0.10 and rule 7 down 0.15. All deltas
+  lie inside the 2.0 reader gap, so no total-score claim is made.
 - 2026-08-14 audit repair: `d30b2d9…` passed 3842 tests with the same 20 skips,
   process verification, stage closeout and the unchanged protected replay, then
   deployed with an exact health-SHA readback. The ten added tests are the

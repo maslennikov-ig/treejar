@@ -77,6 +77,9 @@ internal SKU is the machinery-leak shape.
 - Full pytest: 3846 passed, 20 skipped, 0 failed. The +4 over the deployed
   3842/20/0 is this stage's focused cases.
 - Process verification and stage closeout: passed.
+- GitHub Actions run `31822779522`: passed and deployed
+  `c87ea878abffc8015d347bbca75e70917ea93727`.
+- Production `/api/v1/health`: OK with that exact SHA, redis and database ok.
 - Protected replay: the loosening changes how every first turn renders, so the
   frozen `1fc87c04…` pin went to 55 differences of 60. Under explicit owner
   authorization of 2026-08-14 the raw convention was re-pinned to
