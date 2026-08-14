@@ -2844,7 +2844,6 @@ def _materialize_verified_opening_catalog_options(
                 "هذه خيارات بداية وليست حجزاً للكمية كاملة. يعتمد موعد التسليم "
                 "على المنتجات والكمية المختارة، لذلك سأؤكده مقابل المخزون الحالي "
                 "قبل الالتزام.",
-                "أي خيار أبني عليه التكوين؟",
             )
         )
         return "\n".join(rendered)
@@ -2861,7 +2860,6 @@ def _materialize_verified_opening_catalog_options(
             "These are starting options, not a reservation for the full quantity. "
             "Delivery timing depends on the chosen SKUs and quantity, so I will "
             "confirm it against current stock before committing.",
-            "Which option should I build the configuration around?",
         )
     )
     return "\n".join(rendered)

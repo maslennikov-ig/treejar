@@ -22186,6 +22186,18 @@ async def test_realistic_opening_always_returns_verified_rows_not_a_form(
         assert "AED 139.00" in reply
         assert reply.count("?") + reply.count("؟") <= 1
         assert "please share" not in reply.casefold()
+        rendered = engine_module.render_reply(
+            reply,
+            state=engine_module.ReplyPolicyState(
+                language="en",
+                is_first_turn=True,
+                current_message_customer_name=(
+                    "Ahmed" if opening == _R02_REALISTIC_OPENING else None
+                ),
+            ),
+            provenance="deterministic_static",
+        ).text
+        assert rendered.count("?") + rendered.count("؟") <= 1
 
 
 def test_catalog_plan_starts_new_epoch_for_independent_product_intent() -> None:
