@@ -3,7 +3,7 @@
   "stage_id": "tj-final27-client-handoff",
   "goal_id": "tj-final27",
   "profile_at_creation": "balanced-v2.19",
-  "status": "in_progress",
+  "status": "blocked",
   "sequence": 1,
   "acceptance_boundary_id": "client-handoff-code-measurement-e2e-delivery",
   "acceptance_owner": "root-orchestrator",

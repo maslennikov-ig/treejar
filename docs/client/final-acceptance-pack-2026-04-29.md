@@ -5,7 +5,7 @@ Stage: `tj-final27`
 Task: `tj-final27.9`
 Runtime target: `https://noor.starec.ai`
 
-This pack is the client-review record refreshed for final delivery on 2026-08-14. The approved controlled final E2E subset from 2026-04-29 passed; the current release refresh, measured opening round, and final controlled E2E are recorded here as they close.
+This pack is the client-review record refreshed for final delivery on 2026-08-14. The approved controlled final E2E subset from 2026-04-29 passed; the current release refresh, measured opening round, deployment and final controlled E2E are recorded below.
 
 ## Current Measurement Boundary — Read This First
 
@@ -79,7 +79,50 @@ Generation used 20 paid Luna calls for `$0.006569`; one triggered repair call
 cost `$0.000134`; total paid cost was `$0.006703`, below the authorized `$0.05`
 cap. The root reading was free.
 
-Refresh note, 2026-04-30: the snapshot was promoted into the repo after later narrow follow-ups were delivered. Current production runtime is `main@354015280c8f8d39b538bbaba769e70d29d1c6b2`; later deployments addressed the generic objection/retention/off-catalog fallback quality risk (`tj-final27.11`), commercial-offer/proposal escalation routing (`tj-jy5i`), and payment-reminder provider reuse (`tj-final27.13`). The 2026-04-29 final E2E evidence remains tied to the runtime recorded below.
+After those generations, the delivered code received one deterministic-only
+alignment: the rounded amount stored as grounding evidence now exactly matches
+the rounded customer line. It did not change generated reply text. A no-spend
+postfix preflight on the delivered code repeated AED 139 / 58 and 19 priced / 1
+withheld. The paid round was not rerun after its authorized calls were exhausted.
+
+### Current deployment and controlled E2E
+
+GitHub Actions run `31798763684` deployed
+`main@68800f29a89f493af8585bc77423cef6bdb2182e`. Public API smoke passed 8/8,
+and `/api/v1/health` returned that exact release SHA.
+
+The production catalog is live data and currently yields a rounded opening
+floor of AED 99 / 58; the protected acceptance snapshot remains AED 139 / 58.
+Owner decision 2026-08-14 permits whole-AED rounding in a `from` price. The
+runtime uses the same rounded amounts in the customer line and its grounding
+evidence, so the approved rounding cannot trigger a false price rejection.
+
+Controlled readback recorded only identifiers and digests, never message bodies:
+
+- Anchor conversation `5decbb27-cf64-4ff2-bc09-9ca6d80a4af3`, digest
+  `1536b1aa3fcab6c03b6fbd402aa165ff6ff9ad8233279131328fd21bbc820805`:
+  exact live-catalog anchor, limited-stock disclosure and volume-price caveat
+  were present; escalation status was `none`.
+- Literal R04 conversation `8605eba9-1aeb-4cd5-a0ac-9c58eaac2cb9`, digest
+  `eda9598c59292866fb9b411a0ce1cab90f29a3b5b65b7fe9b6f8392cca752577`:
+  `verified-opening-catalog` supplied SKU and price, avoided a form, and asked
+  exactly one question; escalation status was `none`.
+- Final aggregate: zero pending synthetic conversations and zero pending
+  escalation rows. Two pre-fix synthetic escalation rows were resolved.
+
+The live anchor response also carried two literal question marks. This does not
+change the anchor or R04 criteria, but it is tracked as P2 `tj-final27.20`.
+Diagnostics also found that Telegram's HTTP client logs a credential-bearing
+request URL; P0 `tj-final27.19` blocks formal acceptance until future logging is
+safe and the credential is rotated under explicit owner authority.
+
+Historical refresh note, 2026-04-30: the snapshot was promoted into the repo
+after later narrow follow-ups were delivered. Production runtime at that time
+was `main@354015280c8f8d39b538bbaba769e70d29d1c6b2`; those deployments addressed
+the generic objection/retention/off-catalog fallback quality risk
+(`tj-final27.11`), commercial-offer/proposal escalation routing (`tj-jy5i`),
+and payment-reminder provider reuse (`tj-final27.13`). The 2026-04-29 final E2E
+evidence remains tied to the runtime recorded below.
 
 ## Source Evidence
 
@@ -108,7 +151,7 @@ Commercial and operational promises include:
 
 ## What Is Done
 
-Current deployed baseline is `main@354015280c8f8d39b538bbaba769e70d29d1c6b2`, delivered by GitHub Actions run `25156910086`, with runtime `.release-sha` matching, `/api/v1/health` OK, Redis OK, and payment reminders still resolving to disabled defaults. The approved `tj-final27.9` E2E evidence below was collected earlier on `main@090e318d06662eb4a4c4f2247eb01bd1ed317b94`.
+Current deployed baseline is `main@68800f29a89f493af8585bc77423cef6bdb2182e`, delivered by GitHub Actions run `31798763684`, with runtime `.release-sha` matching and `/api/v1/health` OK. The approved historical `tj-final27.9` E2E evidence below was collected earlier on `main@090e318d06662eb4a4c4f2247eb01bd1ed317b94`.
 
 Delivered product and runtime evidence:
 
@@ -143,6 +186,10 @@ Confirmed production and local evidence already recorded:
 - `tj-final27.9`: approved controlled E2E subset passed on 2026-04-29 against runtime `090e318d06662eb4a4c4f2247eb01bd1ed317b94`. It covered customer discovery, SKU `00-07024023` exact price/stock, quotation approve/reject (`Fr3167`/`Fr3168`), Telegram private manager reply, active escalation fallback, outbound audit readback, phone filtering, and final pending count (`6` conversations, `0` pending).
 - `tj-final27.9` quality pass: approved bounded text-only synthetic quality scenarios covered consultative sales, price objection, retention, payment terms/discount request, Saudi Arabia delivery, Arabic sales request, off-catalog request, and large-order handoff. Final readback showed `6` `tj-final27-quality` conversations and `0` pending.
 - Later follow-ups: `tj-final27.11` sales fallback deployed on `ab897878e2f0ee339bd7626b63d5c6f3a9497042`, `tj-jy5i` commercial-offer routing deployed on `1cce2aa4bdbc82b9a11ce2f7ce117103e6a3e6f0`, and `tj-final27.13` payment-reminder provider reuse deployed on `354015280c8f8d39b538bbaba769e70d29d1c6b2`. Each had targeted verification and production health/readback evidence recorded in Beads or handoff.
+- 2026-08-14 refresh: `68800f2…` passed 3822 tests with 20 skips,
+  process verification, protected replay, stage closeout, public API smoke 8/8,
+  exact health-SHA readback, live anchor evidence and literal R04. Synthetic
+  pending conversations and escalation rows both ended at zero.
 
 What was not confirmed by the historical 2026-04-29 run:
 
@@ -184,13 +231,23 @@ These items are explicit boundaries of the current delivery:
 - Zoho UTM/source outbound mapping: exact Zoho CRM API field names and overwrite policy are still a client decision.
 - Payment reminders: template IDs/names, timing, copy/tone, stop conditions, and enablement policy are still client decisions. Default runtime sends zero reminders.
 - Support window: source documents mention at least 15 working days of startup support, but final start date, contact path, hours, and escalation rules should be confirmed in the client handoff.
+- Measured opening language: `tj-08ve` remains open because dialog 293 switched
+  the substantive reply away from the customer language. A fresh measured round
+  needs new paid-call authority; no second reader is authorized.
+- Security: `tj-final27.19` must stop credential-bearing Telegram request URLs
+  from entering logs and rotate the existing credential under explicit owner
+  authority.
+- Opening question count: `tj-final27.20` tracks one bare live greeting with two
+  question marks. The R04/R02 verified-opening acceptance is unaffected.
 
 ## Acceptance Recommendation
 
 Use this pack for client review of the final delivery state. The project has fresh evidence for the core sales path, production runtime health, quotation approve/reject, manager handoff, auth guards, cost-control defaults, catalog/Zoho truth policy, CRM attribution storage, disabled-safe payment reminders, and the approved controlled E2E subset.
 
-Mark `tj-final27` ready for client evaluation only when the current controlled
-E2E leaves zero pending synthetic conversations, the release gates are green,
-the blind measured round is recorded with per-rule ceilings, and production
-health reports the delivered commit. Referral activation is not a condition of
-this delivery because it is explicitly excluded above.
+The pack is ready for client evaluation: controlled E2E left zero pending
+synthetic state, release gates are green, the blind round is recorded with
+per-rule ceilings, and production health reports the delivered commit. Do not
+mark the overall stage formally accepted while P0 `tj-final27.19` and measured
+P1 `tj-08ve` remain open. Referral activation is not a condition because it is
+explicitly excluded above. The bounded pack/E2E task `tj-final27.9` is closed;
+that task closure does not override the parent-stage blockers.

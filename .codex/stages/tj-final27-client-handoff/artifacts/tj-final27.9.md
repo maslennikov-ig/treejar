@@ -13,7 +13,10 @@ non_goals:
   - no protected replay re-baseline
   - no second reader or tj-jlx4 work
 evidence:
-  - none
+  - protected-round
+  - github-actions-deploy
+  - production-health
+  - controlled-e2e
 task_id: tj-final27.9
 epic_id: tj-final27
 stage_id: tj-final27-client-handoff
@@ -92,10 +95,11 @@ verification:
   - uv run ruff check src/ tests/: passed
   - uv run ruff format --check src/ tests/: passed
   - uv run mypy src/: passed
-  - uv run pytest tests/ -v --tb=short: passed 3821 passed 20 skipped
+  - uv run pytest tests/ -v --tb=short: passed 3822 passed 20 skipped
   - scripts/orchestration/run_process_verification.sh: passed
   - run_stage_closeout corpus bridge acceptance: passed 71 passed 1 skipped
-  - post-deploy controlled E2E and release SHA readback: pending
+  - post-deploy health returned exact release SHA and public API smoke passed 8/8
+  - controlled anchor and literal R04 readback passed with zero pending synthetic state
 changed_files:
   - .beads/issues.jsonl
   - .codex/goals/tj-final27/scope-criterion-snapshot.json
@@ -125,14 +129,17 @@ changed_files:
   - tests/test_opening_guard.py
 explicit_defers:
   - tj-08ve requires a deterministic language guard and fresh measured-round authority
+  - tj-final27.19 requires safe Telegram URL logging and credential rotation under fresh authority
+  - tj-final27.20 tracks two question marks in one bare-greeting live reply
 ---
 
 # Summary
 
 The requested anchor, low-stock disclosure, realistic-opening route, referral
-exclusion, final pack, blind measured round and local release gates are complete.
-The stage is not accepted because the round found one new critical language
-failure on dialog 293, tracked as P1 `tj-08ve`.
+exclusion, final pack, blind measured round, deployment and controlled E2E are
+complete. The stage is not accepted because the round found one new critical
+language failure on dialog 293 (`tj-08ve`) and diagnostics found a
+credential-bearing Telegram request URL in logs (`tj-final27.19`).
 
 # Scope / Routing
 
@@ -143,17 +150,22 @@ withholding and Arabic separator rules are unchanged.
 # Verification
 
 The pinned line is `Chairs from AED 139, desks and workstations from AED 58.`;
-preflight is 19 priced / 1 withheld. Full pytest is 3821 passed, 20 skipped,
+preflight is 19 priced / 1 withheld. Full pytest is 3822 passed, 20 skipped,
 zero failed. Raw replay is unchanged. The measured-round detail, paid cost and
 defect movement are recorded in the handoff and client pack.
 
 # Delivery / Cleanup
 
-Production delivery and post-deploy readback are pending. No delegated branch or
-worktree exists to clean.
+Release `68800f29a89f493af8585bc77423cef6bdb2182e` was deployed by run
+`31798763684`; health returned the exact SHA and public API smoke passed 8/8.
+Controlled anchor and literal-R04 readback passed, and all postdeploy synthetic
+attempts ended with zero pending conversations and escalation rows. No delegated
+branch or worktree exists to clean.
 
 # Risks / Follow-ups / Explicit Defers
 
-`tj-08ve` blocks formal acceptance. The authorized 20 generation calls are
-exhausted, so its confirming paired round needs fresh owner authority. No
-protected message or reply body is included in tracked evidence.
+P1 `tj-08ve` and P0 `tj-final27.19` block formal acceptance. The authorized 20
+generation calls are exhausted, so the language fix and confirming paired round
+need fresh owner authority; credential rotation also needs fresh authority.
+P2 `tj-final27.20` separately tracks one bare greeting with two question marks.
+No protected message or reply body is included in tracked evidence.

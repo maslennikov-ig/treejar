@@ -1,6 +1,7 @@
 # Stage `tj-final27-client-handoff`
 
-Status: delivery in progress; acceptance blocked by `tj-08ve`.
+Status: delivered; formal acceptance blocked by P1 `tj-08ve` and P0
+`tj-final27.19`. P2 `tj-final27.20` is tracked separately.
 
 ## Outcome
 
@@ -14,6 +15,8 @@ Status: delivery in progress; acceptance blocked by `tj-08ve`.
   `tj-final27.6` is closed.
 - The client pack states 8/15 opening rules, names the seven unreachable rules,
   and limits deal-outcome evidence to 192/1400 dialogues.
+- The bounded anchor task `tj-final27.18` and pack/E2E task `tj-final27.9` are
+  closed; their parent stage remains blocked by the separately tracked P0/P1.
 
 ## Measurement
 
@@ -35,17 +38,20 @@ reply language, one critical failure now tracked as P1 `tj-08ve`.
 - repeated R04/R02 state and answer checks: passed
 - ruff check and format: passed
 - mypy: passed
-- full pytest: 3821 passed, 20 skipped, 0 failed
+- full pytest: 3822 passed, 20 skipped, 0 failed
 - protected replay: current `1b425bd1…` versus frozen `1fc87c04…`, the same
   seven differences only on dialogs 28, 875 and 1291
 - process verification: passed
 - root stage closeout: 71 passed, 1 skipped; process verification passed
-- production delivery/readback: pending
+- production: GitHub Actions run `31798763684` deployed `68800f29…`; health
+  returned that exact SHA and public API smoke passed 8/8
+- controlled E2E: anchor and literal R04 readback passed; zero pending synthetic
+  conversations and zero pending escalation rows
 
-The +18 full-test delta from 3803/20/0 is fully named: 15 direct regressions for
-anchor, scarcity, R04/R02, cost cap and failed-language reporting, plus three
-registry parameterizations created by the new deterministic route. Skips are
-unchanged.
+The +19 full-test delta from 3803/20/0 is fully named: 16 direct regressions for
+anchor, rounded grounding evidence, scarcity, R04/R02, cost cap and
+failed-language reporting, plus three registry parameterizations created by the
+new deterministic route. Skips are unchanged.
 
 ## Documentation and graph review
 
@@ -55,9 +61,12 @@ unchanged.
   boundary changed; `.codex/orchestrator.toml` only points at this stage.
 - `graph-reviewed: no-change-needed` — Graphify is not initialized.
 
-## Explicit defer
+## Explicit defers
 
 `tj-08ve` needs a deterministic customer-language guard and a fresh paired
 round. The 20 generation calls authorized for this stage are exhausted, so that
-measurement needs new owner authority. The requested code can be delivered,
-but this P1 prevents marking the stage accepted.
+measurement needs new owner authority. P0 `tj-final27.19` needs Telegram URL
+redaction and credential rotation under fresh authority. P2 `tj-final27.20`
+tracks one bare greeting with two question marks; R04/R02 passed their
+one-question criterion. The delivery is complete, but the P0 and P1 prevent
+marking the stage accepted.
