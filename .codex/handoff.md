@@ -4,8 +4,8 @@ Updated: 2026-08-14
 Current branch: `main`
 Current stage id: `tj-tjgx-opening-quality`
 Status: `tj-tjgx` fixed and accepted the four bounded opening defects measured
-by `tj-399z`. Release gates are green at 3803 passed and 20 skipped. Production
-still runs `b5ab693`; this task made no live mutation.
+by `tj-399z`. CI run `31773387225` deployed runtime commit `8c832b4`; public
+health reports that exact SHA with Redis and database `ok`, and smoke is 8/8.
 
 Documentation: `docs-resolve` covered pgvector and pinned model revisions; local
 code owns Treejar behavior.
@@ -102,11 +102,16 @@ code owns Treejar behavior.
   baseline.
 - Protected replay is unchanged: current `1b425bd1…` against frozen
   `1fc87c04…`, the same 7 records on dialogs 28, 875 and 1291. No re-baseline.
+- CI run `31773387225` passed changes, lint, type-check, test and deploy. The
+  deploy saved rollback archive `deploy-20260814T053624Z-from-b5ab693….tar.gz`,
+  activated `8c832b4`, and the bounded public API smoke passed 8/8.
 
 ## Constraints
 
-- No PR, deploy, production/staging mutation, model-configuration change or
-  real-user message was made.
+- The prior `main` push automatically completed its CI deploy before the
+  owner's explicit “Push, Merge, Deploy” message. No redundant dispatch,
+  rollback, model change or real-user message followed; `tj-o4qi` records the
+  production readback and exact chronology.
 - `tj-tjgx` made zero paid calls; it used only local tests and stored replay.
 - `tj-399z` was owner-authorized in the current session and cost $0.006473: 20
   Luna calls, zero repair-judge and scoring-judge calls, no second reader; root
@@ -122,8 +127,8 @@ code owns Treejar behavior.
 ## Next recommended
 
 Next stage id: not opened
-Recommended action: deploy `main` only with fresh owner authorization, then run
-a new paired measured round if the owner wants product-level evidence.
+Recommended action: run a new paired measured round only if the owner wants
+product-level evidence for these four fixes.
 
 ## Starter prompt for next orchestrator
 
@@ -140,7 +145,7 @@ Use $orchestrator-stage after selecting the next open Beads goal.
   `tj-i653`; `tj-ee5f.1`, needing real transports; `tj-ee5f.5`, waiting on the
   Wazzup provider's callbacks.
 - `tj-j62b`, `tj-593w`, `tj-1orh` and `tj-b8px` closed under accepted parent
-  `tj-tjgx`; each retains its own measured defect shape and criterion.
+  `tj-tjgx`; `tj-o4qi` records their production deployment and live readback.
 
 ## Owner decisions of 2026-08-13
 
@@ -151,8 +156,9 @@ Use $orchestrator-stage after selecting the next open Beads goal.
 - The client document leads with the Zoho deal export: outcomes are visible for
   192 of 1400 dialogues, so we can say Noor does what the rubric asks, not that
   Noor sells.
-- Deploy was authorized for the seven audit fixes and again for the four anchor
-  and contract fixes. `/api/v1/health` answers `b5ab693`, redis and database ok.
+- Deploy was authorized for the four opening-quality fixes. `/api/v1/health`
+  answers `8c832b4`, Redis and database `ok`; predecessor `b5ab693` is retained
+  in the named rollback archive.
 
 ## Active handoff
 
