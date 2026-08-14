@@ -414,6 +414,7 @@ class _Turn:
     dialogue_kernel_result: DialogueKernelResultT | None = None
     opening_anchor_line: str | None = None
     opening_anchor_has_limited_stock: bool = False
+    opening_anchor_grounded_amounts: tuple[float, ...] = ()
     name_gate_resume_customer_name: str | None = None
     failed_run_usage: RunUsageT | None = None
     permitted_asks_cache: frozenset[AskKind] | None = None
@@ -478,6 +479,15 @@ class _Turn:
         quote_workflow = quote_workflow_from_metadata(
             response_deps.conversation.metadata_
         )
+        grounded_amounts = grounded_amounts_for_turn(
+            response_deps,
+            customer_text=self.combined_text,
+        )
+        if grounded_amounts is not None:
+            grounded_amounts = (
+                *grounded_amounts,
+                *self.opening_anchor_grounded_amounts,
+            )
         rendered = render_reply(
             unmask_pii(text, self.pii_map),
             state=ReplyPolicyState(
@@ -503,10 +513,7 @@ class _Turn:
                 ),
                 quote_consent_granted=(quote_workflow.consent is QuoteConsent.GRANTED),
                 inventory_confirmed=response_deps.inventory_confirmed,
-                grounded_amounts=grounded_amounts_for_turn(
-                    response_deps,
-                    customer_text=self.combined_text,
-                ),
+                grounded_amounts=grounded_amounts,
                 required_tool_disclosure=(
                     engine._string_value(response_deps.required_cross_sell_disclosure)
                     or None
@@ -2145,6 +2152,9 @@ async def _capture_details_and_name_gate_routes(
         turn.opening_anchor_line = anchor.line if anchor is not None else None
         turn.opening_anchor_has_limited_stock = bool(
             anchor is not None and anchor.has_limited_stock
+        )
+        turn.opening_anchor_grounded_amounts = (
+            anchor.grounded_amounts if anchor is not None else ()
         )
 
     # Store customer details from the original, unmasked text before any route

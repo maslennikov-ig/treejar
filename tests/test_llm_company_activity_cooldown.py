@@ -134,6 +134,7 @@ def test_the_turn_carries_low_stock_anchor_state_into_the_shipped_renderer() -> 
         "Chairs from AED 139, desks and workstations from AED 58."
     )
     turn.opening_anchor_has_limited_stock = True
+    turn.opening_anchor_grounded_amounts = (139.0, 58.0)
 
     rendered = turn.render_reply(
         "What kind of office are you furnishing?",
@@ -144,6 +145,7 @@ def test_the_turn_carries_low_stock_anchor_state_into_the_shipped_renderer() -> 
 
     assert "limited stock" in rendered.text.casefold()
     assert "larger quantities" in rendered.text.casefold()
+    assert rendered.flags == ()
 
 
 def test_the_turn_derives_low_stock_references_from_retrieved_state() -> None:

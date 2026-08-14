@@ -113,6 +113,7 @@ def test_the_anchor_result_carries_whether_its_floor_is_limited() -> None:
     assert anchor is not None
     assert anchor.line == "Chairs from AED 58, desks and workstations from AED 1,813."
     assert anchor.has_limited_stock is True
+    assert anchor.grounded_amounts == (58.0, 1813.0)
 
 
 def test_both_families_are_read_from_the_one_declaration() -> None:

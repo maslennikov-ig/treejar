@@ -857,6 +857,7 @@ class CatalogAnchor:
 
     line: str
     has_limited_stock: bool
+    grounded_amounts: tuple[float, ...]
 
 
 # Narrower than the family term lists on purpose: the anchor names what it
@@ -958,6 +959,9 @@ def catalog_anchor_from_catalog_rows(
     return CatalogAnchor(
         line=separator.join(parts) + ".",
         has_limited_stock=any(stock < 5 for _price, stock in lowest.values()),
+        grounded_amounts=tuple(
+            lowest[family.key][0] for family in _ANCHOR_FAMILIES if family.key in lowest
+        ),
     )
 
 
