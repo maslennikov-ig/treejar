@@ -116,6 +116,21 @@ def test_the_anchor_result_carries_whether_its_floor_is_limited() -> None:
     assert anchor.grounded_amounts == (58.0, 1813.0)
 
 
+def test_fractional_floor_uses_the_same_approved_rounding_in_text_and_evidence() -> (
+    None
+):
+    """Owner decision 2026-08-14: a whole-AED `from` floor may round fils."""
+
+    anchor = catalog_planning.catalog_anchor_from_catalog_rows(
+        (_row("Task desk", 58.48, 1, category="Desks"),),
+        language="en",
+    )
+
+    assert anchor is not None
+    assert anchor.line == "desks and workstations from AED 58."
+    assert anchor.grounded_amounts == (58.0,)
+
+
 def test_both_families_are_read_from_the_one_declaration() -> None:
     """A family added to `_ANCHOR_FAMILIES` must reach the pure function too."""
 

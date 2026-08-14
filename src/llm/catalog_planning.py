@@ -893,8 +893,14 @@ _ANCHOR_MIN_STOCK = 1
 _anchor_line_cache: dict[str, CatalogAnchor | None] = {}
 
 
+def _rounded_anchor_amount(lowest: float) -> float:
+    """Return the whole-AED floor printed by the approved `from` convention."""
+
+    return float(f"{float(lowest):.0f}")
+
+
 def _anchor_part(lowest: float, *, label: str, is_arabic: bool) -> str:
-    amount = f"{float(lowest):,.0f}"
+    amount = f"{_rounded_anchor_amount(lowest):,.0f}"
     return f"{label} من {amount} درهم" if is_arabic else f"{label} from AED {amount}"
 
 
@@ -960,7 +966,9 @@ def catalog_anchor_from_catalog_rows(
         line=separator.join(parts) + ".",
         has_limited_stock=any(stock < 5 for _price, stock in lowest.values()),
         grounded_amounts=tuple(
-            lowest[family.key][0] for family in _ANCHOR_FAMILIES if family.key in lowest
+            _rounded_anchor_amount(lowest[family.key][0])
+            for family in _ANCHOR_FAMILIES
+            if family.key in lowest
         ),
     )
 
