@@ -1,0 +1,34 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-tjgx",
+  "source_kind": "beads",
+  "source_id": "tj-tjgx",
+  "source_digest": "a6c36acf355f40a90b4b95c62cc97e624ba2e77d7fc958e89a2d7269e85c16e7",
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "text": "Ambiguous first-turn discovery is led by the customer's work or space, not a product category, without changing the canonical opening.",
+      "text_digest": "1f43fe214887372be7dcaa9440bf6195e1f2f1ed522058cbf7781f3a9e7800a0"
+    },
+    {
+      "criterion_id": "AC-02",
+      "text": "The canonical opening states Treejar's offer once; the remaining reply does not repeat it as a supplied-category capability list.",
+      "text_digest": "98eedf2e2576c3b92631a02020465d9dcd1a3986ed4bf7b8f5af94abff5df4c5"
+    },
+    {
+      "criterion_id": "AC-03",
+      "text": "Every need stated in the first customer message is acknowledged or explicitly left unconfirmed; requested mobile drawers and delivery timing are not silently dropped.",
+      "text_digest": "1df00eac567dfc01d9221089b4e627f16120ca208cca37faf7eb2b228ee952e3"
+    },
+    {
+      "criterion_id": "AC-04",
+      "text": "The first opening asks one apt requirement clarification and folds at most one equivalent customer-name question into it.",
+      "text_digest": "dbe1b97e5e1333454af42cd0a0ffcfc0a265967dce3d578bdd88c5ee86f112b8"
+    },
+    {
+      "criterion_id": "AC-05",
+      "text": "Focused tests, repository code gates, process verification, and the protected replay check pass without re-baselining.",
+      "text_digest": "20f67b5ce425de6bfd4eb938093db1d645a6700167b3d2f8f7dc0c008713659a"
+    }
+  ]
+}

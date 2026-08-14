@@ -12,6 +12,10 @@ def test_response_asks_customer_name_detects_direct_name_questions() -> None:
     assert not response_asks_customer_name("I already have your name on the request.")
 
 
+def test_a_named_object_is_not_mistaken_for_the_customer_name() -> None:
+    assert not response_asks_customer_name("What name should I use for the project?")
+
+
 def test_closed_question_guard_repairs_known_customer_name_question() -> None:
     result = apply_closed_question_guard(
         "May I know your name so I can address you properly?",

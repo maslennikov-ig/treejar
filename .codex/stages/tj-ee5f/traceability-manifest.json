@@ -2,7 +2,7 @@
   "schema_version": "noor-e2e-traceability/v1",
   "goal_id": "tj-ee5f",
   "scope_source_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
-  "source_set_digest": "eea98f9f8359e40f70c01237a44947754df2124dff2d4af7e89f0fd49e78b9e5",
+  "source_set_digest": "b2adfba0755654d58d5370689ffbf1744b61db74cb8027ebe191d3831cb9fabe",
   "precedence_order": [
     "current repository and runtime contracts",
     "original and updated requirements",
@@ -36,23 +36,23 @@
     },
     "orchestration-contract": {
       "path": ".codex/orchestrator.toml",
-      "content_digest": "8caa62b9956da5df76079b1f5a97c3742138c0d0770322f27f7c762c283ed766",
+      "content_digest": "d74f88e8f2ad44271388bcdc684ba91275dcad466ba493475e600bcc394540ce",
       "sections": [
         {
           "start_locator": "schema_version = 2",
           "end_locator": null,
-          "content_digest": "8caa62b9956da5df76079b1f5a97c3742138c0d0770322f27f7c762c283ed766"
+          "content_digest": "d74f88e8f2ad44271388bcdc684ba91275dcad466ba493475e600bcc394540ce"
         }
       ]
     },
     "runtime-truth": {
       "path": ".codex/handoff.md",
-      "content_digest": "c81a95f59fb5776188ea63ea172c9c487589db2d331e0265e91208019f511d90",
+      "content_digest": "4efaf987113e4bf77cc58429f26b6635634dbcd08c208ba02a9190418dd391f8",
       "sections": [
         {
           "start_locator": "# Orchestrator Handoff",
           "end_locator": null,
-          "content_digest": "c81a95f59fb5776188ea63ea172c9c487589db2d331e0265e91208019f511d90"
+          "content_digest": "4efaf987113e4bf77cc58429f26b6635634dbcd08c208ba02a9190418dd391f8"
         }
       ]
     },

@@ -1,13 +1,11 @@
 # Orchestrator Handoff
 
-Updated: 2026-08-13
+Updated: 2026-08-14
 Current branch: `main`
-Current stage id: `tj-399z-measured-round`
-Status: `tj-399z` measured the four shipped fixes on `openings-20`: 20/20
-generated and read blind, 20/20 in language, zero critical failures. Rule 2
-moved +0.05 because dialog 28's contradiction is gone; rule 5 moved -0.05 on a
-new product-led draw. The paired raw delta is -0.15 per opening, inside the 2.0
-reader gap. Production still runs `b5ab693`; this task made no live mutation.
+Current stage id: `tj-tjgx-opening-quality`
+Status: `tj-tjgx` fixed and accepted the four bounded opening defects measured
+by `tj-399z`. Release gates are green at 3803 passed and 20 skipped. Production
+still runs `b5ab693`; this task made no live mutation.
 
 Documentation: `docs-resolve` covered pgvector and pinned model revisions; local
 code owns Treejar behavior.
@@ -39,13 +37,14 @@ code owns Treejar behavior.
   says it is about something else -- a job application, a dispatch notice, a
   cold pitch -- and a named piece of furniture wins it back (`tj-7vhq`); silence
   still earns it. Arabic joins its clauses with `،` (`tj-b8il`).
-- `consultative_opening_directive` quotes the opening the reply will begin with
-  rather than describing it, and states the options a discovery question may
-  offer -- kinds of work or space -- positively, under the 2026-08-10
-  observation that this model follows an instruction and loses a ban.
-- `collapse_question_form` runs before the first-turn opening guard, not after:
-  the guard folds the canonical name question on and the collapse then drops
-  every question after the first.
+- `consultative_opening_directive` treats the canonical offer as complete,
+  ties any later product category to the customer's job, accounts for every
+  distinct need before discovery, and uses kinds of work -- focused solo work,
+  collaborative meetings, visitor reception -- instead of a desk example
+  (`tj-j62b`, `tj-593w`, `tj-1orh`).
+- The shared name-question detector recognises bounded “what name should I use
+  for you” variants without matching named projects. The opening guard therefore
+  does not append a second equivalent name ask (`tj-b8px`).
 - `/api/v1/health` resolves the release SHA once per process and answers a
   commit SHA or `unknown`, bounded by pattern and length in the schema.
 - CI job `semantic-evidence` runs the exact-pgvector producer test on every
@@ -97,21 +96,18 @@ code owns Treejar behavior.
 
 ## Verification
 
-- Ruff, format, Mypy and process verification pass. The first full pytest after
-  moving the current-stage pointer found only four stale traceability pins:
-  3794 passed, 20 skipped, 4 failed. The sanctioned re-pin updated three digest
-  fields; the four focused tests passed, then the final full suite matched the
-  baseline exactly: 3798 passed, 20 skipped, 0 failed.
-- The protected replay, re-run after the four fixes, has not moved: aggregate
-  `1b425bd1…` against the frozen `1fc87c04…`, the same 7 records differing on
-  dialogs 28, 875 and 1291. It replays a stored `anchor_line` rather than
-  recomputing one, so it cannot see this change, and it pins
-  `is_first_turn=True`, so it cannot show a SELLING-turn one.
+- Focused TDD first failed in four intended cases, then passed 85/85. Ruff,
+  format, Mypy and process verification pass. Full pytest is 3803 passed,
+  20 skipped, 0 failed: exactly five new passing tests over the 3798/20/0
+  baseline.
+- Protected replay is unchanged: current `1b425bd1…` against frozen
+  `1fc87c04…`, the same 7 records on dialogs 28, 875 and 1291. No re-baseline.
 
 ## Constraints
 
 - No PR, deploy, production/staging mutation, model-configuration change or
-  real-user message is authorized beyond what is recorded here.
+  real-user message was made.
+- `tj-tjgx` made zero paid calls; it used only local tests and stored replay.
 - `tj-399z` was owner-authorized in the current session and cost $0.006473: 20
   Luna calls, zero repair-judge and scoring-judge calls, no second reader; root
   read it blind for free. Recorded paid-round total is now about $0.2037.
@@ -126,8 +122,8 @@ code owns Treejar behavior.
 ## Next recommended
 
 Next stage id: not opened
-Recommended action: select among the four bounded defects found by `tj-399z`;
-no further measured round is needed for the four 2026-08-13 fixes.
+Recommended action: deploy `main` only with fresh owner authorization, then run
+a new paired measured round if the owner wants product-level evidence.
 
 ## Starter prompt for next orchestrator
 
@@ -143,6 +139,8 @@ Use $orchestrator-stage after selecting the next open Beads goal.
   sentence. It blocks `tj-final27.9`, hence P1. Deferred on state we do not own:
   `tj-i653`; `tj-ee5f.1`, needing real transports; `tj-ee5f.5`, waiting on the
   Wazzup provider's callbacks.
+- `tj-j62b`, `tj-593w`, `tj-1orh` and `tj-b8px` closed under accepted parent
+  `tj-tjgx`; each retains its own measured defect shape and criterion.
 
 ## Owner decisions of 2026-08-13
 
@@ -191,5 +189,3 @@ Use $orchestrator-stage after selecting the next open Beads goal.
   `docs/root-reading-convention.md`: the round before scored both 2, so adopting
   either moves no delta but needs a re-read. Rule 5's ceiling on the twenty
   stays 1.95: dialog 28 is charged whether or not it now carries a price.
-- `tj-j62b`, `tj-593w`, `tj-1orh` and `tj-b8px` track the new rule 5, 7, 4 and
-  8 defect shapes from `tj-399z`; fixes are outside the measured-round scope.

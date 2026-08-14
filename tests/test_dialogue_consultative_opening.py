@@ -248,6 +248,40 @@ def test_the_options_offered_are_kinds_of_work_not_a_shelf() -> None:
     assert "avoid" not in lowered
 
 
+def test_the_work_led_question_uses_jobs_not_products_as_its_examples() -> None:
+    """`tj-j62b`. A desk example taught the model to lead with a desk."""
+
+    lowered = consultative_opening_directive().casefold()
+
+    assert "focused solo work" in lowered
+    assert "collaborative meetings" in lowered
+    assert "visitor reception" in lowered
+    assert "one person's desk" not in lowered
+
+
+def test_the_opening_accounts_for_every_distinct_need_before_discovery() -> None:
+    """`tj-1orh`. A generic answer-first clause did not cover every ask."""
+
+    lowered = consultative_opening_directive().casefold()
+
+    assert "account for each distinct need they stated" in lowered
+    assert "answer it, or name it as unconfirmed" in lowered
+    assert "before the discovery question" in lowered
+
+
+def test_product_categories_answer_the_job_instead_of_relisting_the_offer() -> None:
+    """`tj-593w`. The offer is complete once the canonical opening says it."""
+
+    lowered = consultative_opening_directive(
+        opening_states_the_offer=True,
+        opening_text="canonical opening",
+    ).casefold()
+
+    assert "treat the offer as complete" in lowered
+    assert "only as an answer or recommendation tied to that job" in lowered
+    assert "not as a list of what treejar supplies" in lowered
+
+
 def test_the_directive_carries_the_job_but_no_longer_the_widening() -> None:
     """Rule 9 stays on every early turn; rule 10 moved to the project fork on
     2026-08-09. Widening a seven-chair order is friction, not expertise."""

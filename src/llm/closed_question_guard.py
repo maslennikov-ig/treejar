@@ -69,6 +69,10 @@ _EN_CUSTOMER_NAME_QUESTION_PATTERNS = (
         r"\b(?:customer\s+name|full\s+name|your\s+name)\b"
     ),
     re.compile(r"\bwhat\s+(?:is|was)\s+your\s+name\b"),
+    re.compile(
+        r"\bwhat\s+name\s+(?:should|could|can|may|would|do)\s+"
+        r"(?:i|we)\s+use(?:\s+for\s+you|\s+to\s+address\s+you)\b"
+    ),
 )
 _EN_COMPANY_STATUS_QUESTION_PATTERNS = (
     re.compile(

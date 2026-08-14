@@ -279,6 +279,24 @@ def test_the_name_ask_is_not_added_twice_when_the_model_already_asked() -> None:
     assert "how should I address you" not in rendered.text
 
 
+def test_an_equivalent_name_wording_is_not_followed_by_the_canonical_ask() -> None:
+    """`tj-b8px`. The model folded a requirement and an unseen name wording."""
+
+    rendered = render_reply(
+        "Is this for focused individual work, and what name should I use for you?",
+        state=ReplyPolicyState(
+            language="en",
+            is_first_turn=True,
+            customer_name=None,
+        ),
+        provenance="model",
+    )
+
+    assert "what name should i use for you?" in rendered.text.casefold()
+    assert "how should i address you" not in rendered.text.casefold()
+    assert rendered.text.count("?") == 1
+
+
 def test_a_later_turn_is_the_same_text_under_either_guard_order() -> None:
     """The opening guard is a no-op after turn one, so only first turns moved."""
 
