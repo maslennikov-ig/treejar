@@ -146,7 +146,11 @@ def test_the_value_proposition_is_not_discharged_by_the_greeting() -> None:
 
     assert "if you have not already said it" not in lowered
     assert "does not discharge this" in lowered
-    assert "the greeting names treejar" in lowered
+    # Owner decision of 2026-08-14 loosened the guard, so the model now writes
+    # the greeting itself and the sentence about a prepended greeting is gone.
+    # The act it was protecting is not: naming Treejar still does not count.
+    assert "naming treejar does not discharge this" in lowered
+    assert "saying what treejar does is the part that counts" in lowered
 
 
 def test_the_company_question_is_folded_rather_than_deferred() -> None:
@@ -551,35 +555,36 @@ def test_the_directive_quotes_the_opening_in_the_language_it_is_prepended_in() -
     UAE" beside a canonical opening that says "we supply office furniture in
     the UAE". A model writing Arabic had to translate the English description
     before it could recognise what it must not restate. Now it is quoted.
+
+    Owner decision of 2026-08-14 stopped the runtime prepending that sentence
+    unconditionally, so no turn is told what it will begin with any more. The
+    lesson is kept where it still applies: a caller that does prepend the
+    opening must quote the real sentence rather than describe it.
     """
 
-    from src.llm.engine import _turn_runtime_directives
+    from src.dialogue.claim_contract import consultative_opening_directive
     from src.llm.opening_guard import canonical_opening
 
     for language in ("en", "ar"):
-        directive = next(
-            item
-            for item in _turn_runtime_directives(
-                "Hi",
-                sales_stage="greeting",
-                opening_states_the_offer=True,
-                language=language,
-            )
-            if "still building this sale" in item
+        directive = consultative_opening_directive(
+            opening_states_the_offer=True,
+            opening_text=canonical_opening(language),
         )
         assert canonical_opening(language) in directive, language
         # The ban is load-bearing in English and stays beside the quotation.
         assert "Do not say it again in any words" in directive
 
-    # A later turn gets no opening prepended, so there is nothing to quote.
-    later = "".join(
-        _turn_runtime_directives("Hi", sales_stage="greeting", language="ar")
-    )
-    assert canonical_opening("ar") not in later
 
+def test_a_first_turn_writes_its_own_opening() -> None:
+    """Owner decision of 2026-08-14: the fixed opening became a fallback.
 
-def test_a_first_turn_is_told_its_opening_already_states_the_offer() -> None:
-    """The caller knows what the reply will begin with; the model does not."""
+    The runtime can no longer state what the reply will begin with, because on
+    this turn that depends on what the model writes. So the promise is gone
+    from every turn and the request is back on every turn -- which is the state
+    that measured zero for rule 7, and is why the guard still supplies the
+    sentence when the model does not.
+    """
+
     from src.llm.engine import _turn_runtime_directives
 
     opening = "We are fitting out a new office for 12 people"
@@ -588,5 +593,8 @@ def test_a_first_turn_is_told_its_opening_already_states_the_offer() -> None:
     )
     later = _turn_runtime_directives(opening, sales_stage="greeting")
 
-    assert any("Do not say it again in any words" in item for item in first)
-    assert any("does not discharge this" in item for item in later)
+    for directives in (first, later):
+        assert any("Open this reply in your own words" in item for item in directives)
+        assert not any(
+            "Do not say it again in any words" in item for item in directives
+        )

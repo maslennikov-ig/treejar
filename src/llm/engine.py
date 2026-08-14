@@ -621,12 +621,11 @@ def _turn_runtime_directives(
     ):
         directives.append(
             consultative_opening_directive(
-                # The first-turn opening is prepended after generation and
-                # already states the offer. Asking for it again is what made
-                # nearly every opening say it twice.
-                opening_states_the_offer=opening_states_the_offer,
-                # And quoting it, in the language it will be prepended in,
-                # is what stopped the Arabic reply paraphrasing it back.
+                # Owner decision of 2026-08-14. The fixed opening is a fallback
+                # now, so no turn can be told what it will begin with: the
+                # model writes its own introduction and the sentence catches
+                # only the misses. Flip this back to restore the old contract.
+                opening_states_the_offer=False,
                 opening_text=(
                     canonical_opening(language)
                     if opening_states_the_offer and language

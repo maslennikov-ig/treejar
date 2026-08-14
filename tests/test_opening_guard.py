@@ -24,7 +24,10 @@ def test_the_first_reply_answers_the_question_it_was_asked() -> None:
 
     assert "295.00 AED" in response
     assert "36 in stock now" in response
-    assert "And how should I address you?" in response
+    # The name ask now folds into the question already standing there, at the
+    # guard rather than at the send boundary, so the shipped shape is unchanged
+    # and only this intermediate one moved.
+    assert "How many do you need, and how should I address you?" in response
     # The answer comes before the question about them.
     assert response.index("295.00 AED") < response.index("how should I address")
 
@@ -288,7 +291,7 @@ def test_only_the_introducing_sentence_is_dropped() -> None:
     )
 
     assert "AED 292" in guarded
-    assert "How many do you need?" in guarded
+    assert "How many do you need, and how should I address you?" in guarded
 
 
 def test_a_sentence_that_answers_is_kept_even_when_it_names_the_company() -> None:
@@ -322,7 +325,7 @@ def test_a_commitment_that_names_the_company_is_not_removed() -> None:
     )
 
     assert "within three working days" in guarded
-    assert "Would you like me to check stock?" in guarded
+    assert "Would you like me to check stock, and how should I address you?" in guarded
 
 
 def test_the_company_name_inside_a_url_is_not_an_identity_sentence() -> None:
@@ -396,7 +399,10 @@ def test_removing_a_sentence_keeps_the_paragraph_break() -> None:
         customer_name=None,
     )
 
-    assert "We supply desks and chairs.\n\nWhat are you furnishing today?" in guarded
+    assert (
+        "We supply desks and chairs.\n\nWhat are you furnishing today,"
+        " and how should I address you?"
+    ) in guarded
 
 
 def test_the_customers_own_punctuation_survives() -> None:
@@ -410,3 +416,71 @@ def test_the_customers_own_punctuation_survives() -> None:
     )
 
     assert "I’m sorry, I can’t confirm that today." in guarded
+
+
+# --- the 2026-08-14 loosening ------------------------------------------------
+#
+# Owner decision: the bot works badly under hard rules, so the fixed opening
+# stops being unconditional. It stays as the fallback, because the sentence it
+# supplies is the one that measured zero in 26 transcripts of 26 while it was a
+# request with nothing behind it.
+
+
+def test_a_reply_that_introduces_us_itself_keeps_its_own_words() -> None:
+    body = (
+        "Hello! I'm Noor from Treejar, we supply office furniture across the "
+        "UAE. Sounds like a new team space -- how many people is it for?"
+    )
+    guarded = apply_opening_guard(
+        body,
+        language="en",
+        is_first_turn=True,
+        customer_name=None,
+        anchor_line=_ANCHOR,
+    )
+
+    assert guarded.startswith("Hello! I'm Noor from Treejar, we supply office")
+    assert "I quote from our own catalog with confirmed prices and stock" not in guarded
+    assert "how many people is it for, and how should I address you?" in guarded
+    # The customer still gets a price they can act on.
+    assert _ANCHOR in guarded
+
+
+def test_naming_us_without_saying_what_we_do_still_gets_the_fallback() -> None:
+    guarded = apply_opening_guard(
+        "Hi, Noor from Treejar here. What are you furnishing?",
+        language="en",
+        is_first_turn=True,
+        customer_name=None,
+    )
+
+    assert guarded.startswith("Hello, I'm Noor from Treejar. We supply office")
+
+
+def test_an_arabic_reply_that_introduces_us_itself_keeps_its_own_words() -> None:
+    body = "مرحبًا، أنا Noor من Treejar، نورّد أثاث المكاتب في الإمارات. ما الذي تجهّزه؟"
+    guarded = apply_opening_guard(
+        body,
+        language="ar",
+        is_first_turn=True,
+        customer_name=None,
+    )
+
+    assert guarded.startswith("مرحبًا، أنا Noor من Treejar، نورّد أثاث المكاتب")
+    assert guarded.count("؟") == 1
+
+
+def test_the_low_stock_warning_rides_the_price_it_qualifies() -> None:
+    guarded = apply_opening_guard(
+        "What are you furnishing?",
+        language="en",
+        is_first_turn=True,
+        customer_name=None,
+        anchor_line=_ANCHOR,
+        anchor_has_limited_stock=True,
+    )
+
+    paragraphs = [part for part in guarded.split("\n\n") if part.strip()]
+    anchor_paragraphs = [part for part in paragraphs if _ANCHOR in part]
+    assert len(anchor_paragraphs) == 1
+    assert "limited stock" in anchor_paragraphs[0]

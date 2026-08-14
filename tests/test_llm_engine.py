@@ -2543,11 +2543,11 @@ async def test_process_message_non_candidate_uses_full_tool_mode(
     # fork adds its directive on top of the two every early turn earns.
     assert deps.runtime_directives == (
         substantive_reply_directive(),
-        # A first turn is told its opening already states what Treejar offers,
-        # and is shown the exact sentence, because the opening guard is about
-        # to prepend it.
+        # Since the 2026-08-14 loosening the opening guard only prepends when
+        # the model did not introduce us itself, so a first turn is asked to
+        # write its own opening rather than told what it will begin with.
         consultative_opening_directive(
-            opening_states_the_offer=True,
+            opening_states_the_offer=False,
             opening_text=canonical_opening("en"),
         ),
         project_consultation_directive(),

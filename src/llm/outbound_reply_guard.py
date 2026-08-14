@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from src.llm.language_guard import enforce_customer_reply_language
-from src.llm.opening_guard import canonical_discovery_question, canonical_name_question
+from src.llm.opening_guard import (
+    canonical_discovery_question,
+    canonical_name_question,
+    fold_name_question,
+    name_question_conjunction,
+)
 from src.services.customer_language import normalize_customer_language
 
 
@@ -38,32 +43,43 @@ def _fold_trailing_name_question(text: str, *, language: str) -> str:
     )
 
 
-def _restore_lost_discovery(guarded: str, *, language: str) -> str:
-    """Give back the substantive question the language guard just removed.
+def _asks_anything(text: str) -> bool:
+    return "?" in text or "؟" in text
+
+
+def _restore_lost_discovery(guarded: str, before: str, *, language: str) -> str:
+    """Give back the questions the language guard just removed.
 
     `tj-yiiq`. On dialog 293 the removed second-language sentence was the only
     place the reply asked the customer anything, so a fix for the language left
-    a first turn that asked for a name and nothing else. Restoring is bounded to
-    a first turn -- the reply still ends with the name question -- because
-    re-asking what someone already told us is its own defect.
+    a first turn that asked for a name and nothing else. The opening guard folds
+    the name ask into a question already standing there, so that sentence can
+    carry both asks and a removal can take the whole turn's questions with it.
+
+    Bounded to a first turn, which is the only turn that ends with our own name
+    ask or its folded form: re-asking what someone already told us is its own
+    defect.
     """
 
     stripped = guarded.rstrip()
     trailing = guarded[len(stripped) :]
     name_question = canonical_name_question(language)
-    if not stripped.endswith(name_question):
-        return guarded
-
-    body = stripped[: -len(name_question)].rstrip()
-    if "?" in body or "؟" in body:
-        return guarded
-
     discovery = canonical_discovery_question(language)
-    rebuilt = f"{body} {discovery}".strip() if body else discovery
-    folded = _fold_trailing_name_question(
-        f"{rebuilt} {name_question}", language=language
+    asked_the_name = name_question in before or (
+        name_question_conjunction(language) in before
     )
-    return f"{folded}{trailing}"
+
+    if stripped.endswith(name_question):
+        body = stripped[: -len(name_question)].rstrip()
+        if _asks_anything(body):
+            return guarded
+        rebuilt = f"{body} {discovery} {name_question}".strip()
+    elif not _asks_anything(stripped) and asked_the_name:
+        rebuilt = f"{stripped} {discovery} {name_question}".strip()
+    else:
+        return guarded
+
+    return f"{fold_name_question(rebuilt, language=language)}{trailing}"
 
 
 def finalize_customer_reply_text(text: str, *, language: str) -> str:
@@ -76,4 +92,4 @@ def finalize_customer_reply_text(text: str, *, language: str) -> str:
         return guarded
     # The fold removes foreign narrative of its own, so what the reply lost is
     # only visible against the text this boundary was handed.
-    return _restore_lost_discovery(guarded, language=language)
+    return _restore_lost_discovery(guarded, folded, language=language)

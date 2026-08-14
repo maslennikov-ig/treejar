@@ -256,10 +256,9 @@ def test_the_name_ask_survives_the_one_question_bound_it_is_half_of() -> None:
 
     # One question from the model, and the canonical name ask folded onto it:
     # the directive's own bound, which counts a folded pair as one.
-    assert "What are you furnishing?" in rendered.text
+    assert "What are you furnishing, and how should I address you?" in rendered.text
     assert "What is your budget?" not in rendered.text
     assert "When do you need it?" not in rendered.text
-    assert rendered.text.endswith("And how should I address you?")
     assert rendered.flags == ()
 
 

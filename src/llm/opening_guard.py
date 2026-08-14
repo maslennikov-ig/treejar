@@ -64,6 +64,11 @@ _EN_CAPABILITY = (
 _AR_CAPABILITY = (
     "نورّد أثاث المكاتب في الإمارات، وأعمل من كتالوجنا وأؤكد كل سعر وتوفر قبل إرساله."
 )
+# What "saying what Treejar does" looks like in either language. Kept narrow on
+# purpose: a loose match here would let a reply that only greets the customer
+# skip the fallback, which is the state that measured zero.
+_EN_OFFER_TERMS = ("office furniture", "office fit-out", "workspace furniture")
+_AR_OFFER_TERMS = ("أثاث المكاتب", "أثاث مكتبي", "الأثاث المكتبي", "أثاث مكاتب")
 _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 # The Arabic replies write the persona in Arabic script, so a Latin-only match
 # read them as carrying no introduction at all.
@@ -218,6 +223,102 @@ def _drop_identity_sentences(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "".join(kept)).strip()
 
 
+def _states_the_offer(text: str) -> bool:
+    """Whether this text says what Treejar does, not merely who is writing."""
+
+    lowered = text.casefold()
+    return any(term in lowered for term in _EN_OFFER_TERMS) or any(
+        term in text for term in _AR_OFFER_TERMS
+    )
+
+
+def opening_carries_its_own_introduction(text: str) -> bool:
+    """Whether the model already did the whole job the fixed opening does.
+
+    Both halves are required, because they are different acts and the measured
+    failure was always the second one: naming Treejar is not saying what
+    Treejar sells.
+    """
+
+    return _has_identity(text) and _states_the_offer(text)
+
+
+def name_question_conjunction(language: str) -> str:
+    """How the name ask joins a question that is already there."""
+
+    return (
+        "، وكيف أخاطبك؟"
+        if _is_arabic_language(language)
+        else ", and how should I address you?"
+    )
+
+
+def fold_name_question(text: str, *, language: str) -> str:
+    """Make a trailing canonical name ask share an existing question mark."""
+
+    stripped = text.rstrip()
+    trailing = text[len(stripped) :]
+    name_question = canonical_name_question(language)
+    if not stripped.endswith(name_question):
+        return text
+
+    prefix = stripped[: -len(name_question)].rstrip()
+    positions = [
+        position for mark in ("?", "؟") if (position := prefix.find(mark)) >= 0
+    ]
+    if not positions:
+        return text
+
+    position = min(positions)
+    tail = prefix[position + 1 :].replace("?", "").replace("؟", "")
+    conjunction = name_question_conjunction(language)
+    return f"{prefix[:position].rstrip()}{conjunction}{tail}{trailing}"
+
+
+def _anchor_block(anchor_line: str, is_arabic: bool, has_limited_stock: bool) -> str:
+    """The catalog anchor as one paragraph rather than two.
+
+    Owner decision of 2026-08-14. The warning is a clause of the price it
+    qualifies, so a customer who is handed a starting price reads one fixed
+    line instead of two stacked ones.
+    """
+
+    if not has_limited_stock:
+        return anchor_line
+    warning = _AR_LIMITED_ANCHOR_STOCK if is_arabic else _EN_LIMITED_ANCHOR_STOCK
+    return f"{anchor_line.rstrip()} {warning}"
+
+
+def _with_name_question(
+    parts: list[str],
+    *,
+    language: str,
+    body: str,
+    customer_name: str | None,
+    ask_customer_name: bool,
+) -> str:
+    """Attach the name ask to the model's own words, never to our price line.
+
+    It rides the reply the customer actually reads, and it folds into a
+    question already standing there, so the turn asks once however the parts
+    are ordered.
+    """
+
+    if (
+        not ask_customer_name
+        or _has_customer_name(customer_name)
+        or response_asks_customer_name(body)
+    ):
+        return "\n\n".join(parts)
+
+    name_question = canonical_name_question(language)
+    index = parts.index(body) if body in parts else len(parts) - 1
+    parts[index] = fold_name_question(
+        f"{parts[index].rstrip()} {name_question}", language=language
+    )
+    return "\n\n".join(parts)
+
+
 def apply_opening_guard(
     text: str,
     *,
@@ -245,7 +346,26 @@ def apply_opening_guard(
     is_arabic = _is_arabic_language(language)
     identity = _AR_IDENTITY if is_arabic else _EN_IDENTITY
     capability = _AR_CAPABILITY if is_arabic else _EN_CAPABILITY
-    name_question = canonical_name_question(language)
+
+    if opening_carries_its_own_introduction(body):
+        # Owner decision of 2026-08-14: loosen this guard. When the model has
+        # already introduced us and said what we do, its own words stand and
+        # nothing fixed is prepended or stripped. The fallback below is what
+        # earns the loosening -- the value proposition scored zero in 26 of 26
+        # transcripts while it was a request with nothing behind it, so the
+        # request is back and the fixed sentence now catches only the misses.
+        parts = [body]
+        if anchor_line and not contains_customer_output_currency(body):
+            parts.append(
+                _anchor_block(anchor_line, is_arabic, anchor_has_limited_stock)
+            )
+        return _with_name_question(
+            parts,
+            language=language,
+            body=body,
+            customer_name=customer_name,
+            ask_customer_name=ask_customer_name,
+        )
 
     body = _strip_legacy_identity(body) or body
     if not is_arabic:
@@ -263,26 +383,33 @@ def apply_opening_guard(
 
     parts = [f"{identity} {capability}"]
     if anchor_line and not contains_customer_output_currency(body):
-        parts.append(anchor_line)
-        if anchor_has_limited_stock:
-            parts.append(
-                _AR_LIMITED_ANCHOR_STOCK if is_arabic else _EN_LIMITED_ANCHOR_STOCK
-            )
+        parts.append(_anchor_block(anchor_line, is_arabic, anchor_has_limited_stock))
     if body:
         parts.append(body)
 
-    if (
-        ask_customer_name
-        and not _has_customer_name(customer_name)
-        and not response_asks_customer_name(body)
-    ):
-        parts[-1] = f"{parts[-1].rstrip()} {name_question}"
+    return _with_name_question(
+        parts,
+        language=language,
+        body=body,
+        customer_name=customer_name,
+        ask_customer_name=ask_customer_name,
+    )
 
-    return "\n\n".join(parts)
+
+def _retains_every_word(body: str, replacement: str) -> bool:
+    required = iter(re.findall(r"\w+", body.casefold(), flags=re.UNICODE))
+    available = iter(re.findall(r"\w+", replacement.casefold(), flags=re.UNICODE))
+    return all(any(word == candidate for candidate in available) for word in required)
 
 
 def opening_replacement_covers(text: str, replacement: str) -> bool:
     """Whether the opening replacement retains every non-header word."""
+
+    if opening_carries_its_own_introduction(text.strip()):
+        # Since the 2026-08-14 loosening this reply keeps its own introduction,
+        # so there is no header of ours to discount: every word the model wrote
+        # has to still be there, and what we added beside it is the anchor.
+        return _retains_every_word(text.strip(), replacement)
 
     is_arabic = _AR_CAPABILITY in replacement
     identity = _AR_IDENTITY if is_arabic else _EN_IDENTITY
@@ -302,9 +429,7 @@ def opening_replacement_covers(text: str, replacement: str) -> bool:
     ):
         return replacement == text
 
-    required = iter(re.findall(r"\w+", body.casefold(), flags=re.UNICODE))
-    available = iter(re.findall(r"\w+", replacement.casefold(), flags=re.UNICODE))
-    return all(any(word == candidate for candidate in available) for word in required)
+    return _retains_every_word(body, replacement)
 
 
 def is_own_opening_plus_question(text: str, *, language: str) -> bool:

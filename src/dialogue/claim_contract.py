@@ -959,10 +959,13 @@ def consultative_opening_directive(
         "an answer or recommendation tied to that job, not as a list of what "
         "Treejar supplies."
         if opening_states_the_offer
-        else "In this reply, in one short clause, say what Treejar offers: an "
-        "office furniture supplier in the UAE quoting from its own catalog "
-        "with confirmed prices and stock. The greeting names Treejar but does "
-        "not say what Treejar does, so it does not discharge this."
+        else "Open this reply in your own words: greet the customer, say you "
+        "are Noor from Treejar, and in one short clause say what Treejar "
+        "offers -- an office furniture supplier in the UAE quoting from its "
+        "own catalog with confirmed prices and stock. Naming Treejar "
+        "does not discharge this; saying what Treejar does is the part that "
+        "counts. Then spend the reply on the customer: their space, their "
+        "work, what they came to solve."
     )
     return (
         "You are still building this sale, so do the things a salesperson does "
