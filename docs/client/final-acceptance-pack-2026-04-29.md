@@ -5,7 +5,79 @@ Stage: `tj-final27`
 Task: `tj-final27.9`
 Runtime target: `https://noor.starec.ai`
 
-This pack is a client-review snapshot. It does not claim full final acceptance yet because `tj-final27.4` through `tj-final27.8` are still open unless the client explicitly excludes them. The approved controlled final E2E subset was run on 2026-04-29 and passed. A separately approved bounded sales-quality pass was also run and found safe factual behavior, but uneven objection/retention handling at that time.
+This pack is the client-review record refreshed for final delivery on 2026-08-14. The approved controlled final E2E subset from 2026-04-29 passed; the current release refresh, measured opening round, and final controlled E2E are recorded here as they close.
+
+## Current Measurement Boundary — Read This First
+
+- The isolated opening stand charges **eight rules out of fifteen**. The other
+  **seven rules are unreachable on the first turn**; this opening result is not
+  presented as full fifteen-rule coverage.
+- The seven are rules 6, 10, 11, 12, 13, 14 and 15: they require a project or
+  multi-family state, a later turn, or a tool-filled commercial next step.
+- Deal outcomes are visible in the supplied channel data for only **192 of 1400
+  dialogues**. The evidence supports claims about observable assistant behavior,
+  not conversion, revenue, deal size, close rate, or causal sales impact.
+- Every measured number in the final refresh is paired with its actual ceiling
+  and the deployed `release_sha`; a raw total is not used to hide applicability.
+
+## Referral Scope Exclusion
+
+«Реферальная программа в объём текущей сдачи не входит. Механика
+реализована и отключена; запуск выполняется отдельным решением заказчика
+после приёмки.»
+
+## Final Refresh — 2026-08-14
+
+The refreshed code produces the pinned opening line `Chairs from AED 139,
+desks and workstations from AED 58.` The price is an executable offer for one
+customer because each winning row has a non-zero price and at least one unit in
+stock. Whenever a quoted row has fewer than five units, the reply says plainly
+that stock is limited and that a larger quantity may require another option and
+price.
+
+The protected preflight found 19 priced openings and one correctly withheld
+anchor. The blind root reading covered all 20 openings. No second reader was
+used. The rule result, with the attainable mean ceiling beside each score and
+the delta against `tj-399z`, was:
+
+| Rule | New score / ceiling | Delta |
+|---|---:|---:|
+| 1 | 2.00 / 2.00 | 0.00 |
+| 2 | 1.85 / 2.00 | -0.10 |
+| 3 | 2.00 / 2.00 | 0.00 |
+| 4 | 1.95 / 2.00 | 0.00 |
+| 5 | 1.80 / 1.95 | 0.00 |
+| 7 | 2.00 / 2.00 | +0.05 |
+| 8 (`n=6`) | 2.00 / 2.00 | +0.17 |
+| 9 (`n=6`) | 2.00 / 2.00 | 0.00 |
+
+The raw paired delta was `0.00` per opening (95% interval `-0.25` to `+0.20`)
+and the weighted delta was `+0.10` (95% interval `-0.15` to `+0.36`). Both are
+inside the measured reader gap of 2.0 points per opening and are not presented
+as evidence of improvement. Fourteen of 20 openings reached their own ceiling,
+against 13 of 20 in `tj-399z`.
+
+The result is **not an accepted round**. Dialog 293 switched the substantive
+reply away from the customer's language and created one `wrong_language`
+critical failure; it is tracked as `tj-08ve`. The price anchor introduced no
+contradiction with quoted rows, and every reply that owed a low-stock warning
+carried it before asking the customer to continue.
+
+Named defect movement:
+
+- New: the language switch and generic need question on dialog 293; exposure
+  of an internal catalog-lookup step on dialog 1067.
+- Gone: repeated value-proposition copy on dialog 807; the product-led need
+  question on dialog 442; stacked clarification/name questions on dialog 1067.
+- Unchanged: wrong-family end-table wording on dialog 436; product-list
+  questions on 420 and 1000; the job-application rule-5 ceiling on 28; dropped
+  delivery timing on 819.
+
+The protected artifact is
+`.git/codex-orchestration/corpus-bridge/tj-final27.18-round-20260814b`.
+Generation used 20 paid Luna calls for `$0.006569`; one triggered repair call
+cost `$0.000134`; total paid cost was `$0.006703`, below the authorized `$0.05`
+cap. The root reading was free.
 
 Refresh note, 2026-04-30: the snapshot was promoted into the repo after later narrow follow-ups were delivered. Current production runtime is `main@354015280c8f8d39b538bbaba769e70d29d1c6b2`; later deployments addressed the generic objection/retention/off-catalog fallback quality risk (`tj-final27.11`), commercial-offer/proposal escalation routing (`tj-jy5i`), and payment-reminder provider reuse (`tj-final27.13`). The 2026-04-29 final E2E evidence remains tied to the runtime recorded below.
 
@@ -51,6 +123,14 @@ Delivered product and runtime evidence:
 - `tj-final27.11`: compact deterministic sales fallback was deployed for price objection, retention/drop-off, and known off-catalog requests. Controlled text-only E2E on `[PROTECTED_TEST_PHONE]` passed for all three scenarios with `z-ai/glm-5|sales-fallback`, `escalation_status=none`, and `0` pending conversations.
 - `tj-jy5i`: commercial offer/business proposal clarification routing was deployed so incomplete proposal requests ask for missing items/quantities without verified-policy escalation, while high-risk payment terms still route to manager confirmation.
 - `tj-final27.13`: payment-reminder run-level provider reuse was deployed without changing the existing scan-loop or hard-cap warning. Payment reminders remain disabled by default.
+- `tj-final27.18`: the opening price floor uses every purchasable row with a
+  non-zero price and at least one unit. The pinned English line is `Chairs from
+  AED 139, desks and workstations from AED 58.` A cited row below five units is
+  explicitly qualified as limited stock, with larger quantities requiring a
+  potentially different option and price.
+- `tj-6tx6`: the realistic R04/R02 office openings now enter a verified catalog
+  state before free generation. They carry purchasable SKU/price rows and at
+  most one question instead of a numbered questionnaire.
 
 ## Confirmed E2E, CI, And Smoke Evidence
 
@@ -64,10 +144,12 @@ Confirmed production and local evidence already recorded:
 - `tj-final27.9` quality pass: approved bounded text-only synthetic quality scenarios covered consultative sales, price objection, retention, payment terms/discount request, Saudi Arabia delivery, Arabic sales request, off-catalog request, and large-order handoff. Final readback showed `6` `tj-final27-quality` conversations and `0` pending.
 - Later follow-ups: `tj-final27.11` sales fallback deployed on `ab897878e2f0ee339bd7626b63d5c6f3a9497042`, `tj-jy5i` commercial-offer routing deployed on `1cce2aa4bdbc82b9a11ce2f7ce117103e6a3e6f0`, and `tj-final27.13` payment-reminder provider reuse deployed on `354015280c8f8d39b538bbaba769e70d29d1c6b2`. Each had targeted verification and production health/readback evidence recorded in Beads or handoff.
 
-What is not confirmed in this task:
+What was not confirmed by the historical 2026-04-29 run:
 
 - Voice/audio, payment reminder sends/templates, referral live branch, feedback live branch, scheduled QA, broad production suites, deploy, or staging/production config changes were not run for the original `tj-final27.9` E2E task. The 2026-04-30 docs promotion was a docs/.codex-only merge and did not run live E2E, production mutation, or deploy.
-- Formal final acceptance still depends on closing or explicitly excluding the remaining `tj-final27.4` through `tj-final27.8` modules.
+- The 2026-08-14 refresh supplies the current measured round, release gates,
+  deployment health SHA, and controlled E2E record; those results supersede this
+  historical limitation only where explicitly recorded.
 
 ## Sales Quality Findings
 
@@ -89,12 +171,14 @@ Quality risks:
 
 ## Client Decisions And Explicit Defers
 
-These items remain outside formal final acceptance until the client either approves the rule/test or explicitly excludes the module:
+These items are explicit boundaries of the current delivery:
 
 - Final live E2E approval: exact phone/channel, allowed synthetic suffix prefix, approved scenarios, and permitted media/voice/payment/referral branches.
 - Voice/audio: production hardening and live voice E2E remain open under `tj-final27.4`; no live voice test should run without explicit approval.
 - Post-delivery feedback: final dashboard/reporting/customer-flow acceptance remains open under `tj-final27.5`.
-- Referrals: business rules, admin/reporting expectations, or written exclusion remain open under `tj-final27.6`.
+- Referrals are excluded by the approved wording above. The mechanics remain
+  implemented and disabled; activation is a separate customer decision after
+  acceptance.
 - QA/reporting: final owner-visible report/AI Quality Controls acceptance remains open under `tj-final27.7`; scheduled AI Quality Controls stay disabled unless explicitly enabled.
 - Nonfunctional readiness: fresh load/security/backup/SLA evidence remains open under `tj-final27.8`.
 - Zoho UTM/source outbound mapping: exact Zoho CRM API field names and overwrite policy are still a client decision.
@@ -105,4 +189,8 @@ These items remain outside formal final acceptance until the client either appro
 
 Use this pack for client review of the final delivery state. The project has fresh evidence for the core sales path, production runtime health, quotation approve/reject, manager handoff, auth guards, cost-control defaults, catalog/Zoho truth policy, CRM attribution storage, disabled-safe payment reminders, and the approved controlled E2E subset.
 
-Do not mark `tj-final27` as fully accepted until `tj-final27.4` through `tj-final27.8` are either closed with evidence or explicitly excluded, and the approved final controlled E2E leaves zero pending synthetic conversations.
+Mark `tj-final27` ready for client evaluation only when the current controlled
+E2E leaves zero pending synthetic conversations, the release gates are green,
+the blind measured round is recorded with per-rule ceilings, and production
+health reports the delivered commit. Referral activation is not a condition of
+this delivery because it is explicitly excluded above.

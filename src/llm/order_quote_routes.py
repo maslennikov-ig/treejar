@@ -161,6 +161,7 @@ ProcessStaticRoute = Literal[
     "service-confirmation-handoff",
     "showroom-location",
     "verified-catalog-functional-failure",
+    "verified-opening-catalog",
     "verified-policy-clarify",
 ]
 
@@ -227,6 +228,12 @@ def build_declared_static_response(
         return build_static_response(
             text,
             f"{model_prefix}|verified-catalog-functional-failure",
+            **response_kwargs,
+        )
+    if route == "verified-opening-catalog":
+        return build_static_response(
+            text,
+            f"{model_prefix}|verified-opening-catalog",
             **response_kwargs,
         )
     if route == "verified-policy-clarify":

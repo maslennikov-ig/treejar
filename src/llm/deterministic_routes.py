@@ -58,6 +58,7 @@ _LUNA = "openai/gpt-5.6-luna"
 _TODAY = "2026-08-07"
 # The routes reworked for tj-ja1v and the name gate. Same model, later day.
 _ANCHOR_DAY = "2026-08-09"
+_CLIENT_HANDOFF_DAY = "2026-08-14"
 
 
 DETERMINISTIC_CUSTOMER_ROUTES: dict[str, DeterministicRoute] = {
@@ -251,6 +252,15 @@ DETERMINISTIC_CUSTOMER_ROUTES: dict[str, DeterministicRoute] = {
         prose="model_written",
         rechecked_against_model=_LUNA,
         rechecked_on=_TODAY,
+    ),
+    "verified-opening-catalog": DeterministicRoute(
+        does=(
+            "Answers a headcount-plus-office brief with the cheapest verified "
+            "purchasable row in each requested furniture family."
+        ),
+        carries="verified_fact",
+        rechecked_against_model=_LUNA,
+        rechecked_on=_CLIENT_HANDOFF_DAY,
     ),
 }
 

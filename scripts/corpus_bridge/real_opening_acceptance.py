@@ -57,7 +57,9 @@ from src.core.config import settings
 from src.dialogue.state import DialogueState
 from src.llm.catalog_planning import (
     AnchorCatalogRow,
+    CatalogAnchor,
     anchor_line_from_catalog_rows,
+    catalog_anchor_from_catalog_rows,
     opening_wants_a_price_anchor,
 )
 from src.llm.communication_policy import (
@@ -219,7 +221,7 @@ def validate_complete_results(
             raise ValueError("critical failures must be a list")
         if failures and require_acceptance:
             raise ValueError("critical failures cannot be averaged away")
-        if item.get("language_ok") is not True:
+        if item.get("language_ok") is not True and require_acceptance:
             raise ValueError("every response must match the customer language")
         for key in (
             "weighted_score",
@@ -594,6 +596,7 @@ async def apply_shipped_output_guards(
     *,
     language: str,
     anchor_line: str | None,
+    anchor_has_limited_stock: bool = False,
     catalog_evidence: object,
     customer_message: str = "",
     runner: RepairJudgeRunner | None = None,
@@ -619,10 +622,23 @@ async def apply_shipped_output_guards(
     """
 
     grounded: list[object] = []
+    limited_stock_references: list[str] = []
     if isinstance(catalog_evidence, list):
         for product in catalog_evidence:
             if isinstance(product, dict) and product.get("price_aed") is not None:
                 grounded.append(product["price_aed"])
+            if not isinstance(product, dict):
+                continue
+            try:
+                stock = int(product.get("stock", 0))
+            except (TypeError, ValueError):
+                continue
+            if not 1 <= stock < 5:
+                continue
+            for field in ("sku", "name_en", "name", "display_name"):
+                value = str(product.get(field, "") or "").strip()
+                if value:
+                    limited_stock_references.append(value)
     grounded_amounts = tuple(grounded) if grounded else None
     state = ReplyPolicyState(
         language=language,
@@ -630,6 +646,10 @@ async def apply_shipped_output_guards(
         customer_name=None,
         current_message_customer_name=_inbound_customer_name(customer_message),
         anchor_line=anchor_line,
+        anchor_has_limited_stock=anchor_has_limited_stock,
+        limited_stock_product_references=tuple(
+            dict.fromkeys(limited_stock_references)
+        ),
         grounded_amounts=grounded_amounts,
     )
     rendered = render_reply(raw_content, state=state, provenance="model")
@@ -897,12 +917,29 @@ def _opening_anchor_lines(snapshot: CatalogSnapshot) -> dict[str, str | None]:
     }
 
 
+def _opening_anchors(snapshot: CatalogSnapshot) -> dict[str, CatalogAnchor | None]:
+    rows = [
+        AnchorCatalogRow(
+            name=product.name_en,
+            category=product.category,
+            subcategory=product.subcategory,
+            price=product.price,
+            stock=product.stock,
+        )
+        for product in snapshot.products
+    ]
+    return {
+        language: catalog_anchor_from_catalog_rows(rows, language=language)
+        for language in ("en", "ar")
+    }
+
+
 def _prepare_cases(
     scenarios: list[dict[str, Any]],
     semantic_evidence: SemanticCatalogEvidence,
     catalog_snapshot: CatalogSnapshot,
 ) -> list[dict[str, Any]]:
-    anchors = _opening_anchor_lines(catalog_snapshot)
+    anchors = _opening_anchors(catalog_snapshot)
     cases: list[dict[str, Any]] = []
     for scenario, retrieval_result in zip(
         scenarios, semantic_evidence.results, strict=True
@@ -936,7 +973,15 @@ def _prepare_cases(
                 # is not about furniture, so a round that always sent it was
                 # measuring a message production would not send.
                 "anchor_line": (
-                    anchors[language] if opening_wants_a_price_anchor(opening) else None
+                    anchors[language].line
+                    if opening_wants_a_price_anchor(opening)
+                    and anchors[language] is not None
+                    else None
+                ),
+                "anchor_has_limited_stock": bool(
+                    opening_wants_a_price_anchor(opening)
+                    and anchors[language] is not None
+                    and anchors[language].has_limited_stock
                 ),
                 "generation_messages": messages,
                 "generation_prompt_digest": _sha256_json(messages),
@@ -1682,6 +1727,14 @@ def _enforce_actual_caps(state: dict[str, Any], preflight_doc: dict[str, Any]) -
     ]
     if exceeded:
         raise RuntimeError("actual model cost cap exceeded: " + "; ".join(exceeded))
+    total_cap = preflight_doc.get("actual_total_cap_usd")
+    if total_cap is not None:
+        total = sum(actual.values())
+        if total > float(total_cap) + 1e-12:
+            raise RuntimeError(
+                "actual total cost cap exceeded: "
+                f"${total:.6f} > ${float(total_cap):.6f}"
+            )
 
 
 def _calls_started_by_arm(state: dict[str, Any], *, judge_model: str) -> dict[str, int]:
@@ -1956,9 +2009,17 @@ def analyze_protected_run(output_dir: pathlib.Path) -> dict[str, Any]:
     return public
 
 
-async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
+async def run_paid_round(
+    output_dir: pathlib.Path,
+    *,
+    actual_total_cap_usd: float | None = None,
+) -> dict[str, Any]:
     output_dir = ensure_protected_output(output_dir, repo_root=REPO_ROOT)
     preflight_doc = _read_object(output_dir / "preflight.json")
+    if actual_total_cap_usd is not None:
+        if actual_total_cap_usd <= 0:
+            raise ValueError("actual total cost cap must be positive")
+        preflight_doc["actual_total_cap_usd"] = actual_total_cap_usd
     if preflight_doc.get("paid_calls_made") != 0:
         raise ValueError("preflight was not sealed before paid calls")
     expected_openings = _expected_openings(preflight_doc)
@@ -2024,6 +2085,9 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                     "language": str(case["language"]),
                     "catalog_evidence": case["catalog_evidence"],
                     "anchor_line": case["anchor_line"],
+                    "anchor_has_limited_stock": bool(
+                        case.get("anchor_has_limited_stock", False)
+                    ),
                 },
             )
             if not isinstance(record, dict):
@@ -2099,6 +2163,9 @@ async def run_paid_round(output_dir: pathlib.Path) -> dict[str, Any]:
                         str(case["anchor_line"])
                         if isinstance(case.get("anchor_line"), str)
                         else None
+                    ),
+                    anchor_has_limited_stock=bool(
+                        case.get("anchor_has_limited_stock")
                     ),
                     catalog_evidence=case["catalog_evidence"],
                     customer_message=str(case["opening"]),
@@ -2346,6 +2413,7 @@ def _parse_args() -> argparse.Namespace:
     )
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("--output-dir", type=pathlib.Path, required=True)
+    run_parser.add_argument("--actual-total-cap-usd", type=float, default=None)
     ingest_parser = subparsers.add_parser("ingest-judgment")
     ingest_parser.add_argument("--output-dir", type=pathlib.Path, required=True)
     ingest_parser.add_argument("--judgments", type=pathlib.Path, required=True)
@@ -2379,7 +2447,12 @@ def main() -> int:
             )
             print(json.dumps(_public_preflight(document), indent=2, sort_keys=True))
         elif args.command == "run":
-            public = asyncio.run(run_paid_round(args.output_dir))
+            public = asyncio.run(
+                run_paid_round(
+                    args.output_dir,
+                    actual_total_cap_usd=args.actual_total_cap_usd,
+                )
+            )
             print(json.dumps(public, indent=2, sort_keys=True))
         elif args.command == "ingest-judgment":
             public = ingest_root_judgment(args.output_dir, args.judgments)

@@ -22,6 +22,7 @@ EXPECTED_MODES = {
     "closed_question": GuardMode.REPLACING,
     "premature_quote_details": GuardMode.REPLACING,
     "first_turn_opening": GuardMode.REPLACING,
+    "limited_stock": GuardMode.REPLACING,
     "question_form": GuardMode.REDUCING,
     "name_chase": GuardMode.REDUCING,
     "company_question": GuardMode.REPLACING,

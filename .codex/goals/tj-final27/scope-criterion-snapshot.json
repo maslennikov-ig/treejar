@@ -1,0 +1,14 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-final27",
+  "source_kind": "beads",
+  "source_id": "tj-final27",
+  "source_digest": "eba37cf66a84ed66e7c941755e343ffe864a713f6fb7d8e16919ee64daf049f9",
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "text": "All child tasks are implemented or explicitly excluded by the client; final controlled E2E and handoff pack are complete.",
+      "text_digest": "27ad74a0d3682a265e7c41a0f09325f1f9b22dfea958f1f3d8c3eaa07cd3ced0"
+    }
+  ]
+}

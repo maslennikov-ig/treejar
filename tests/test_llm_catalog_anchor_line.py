@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+from src.llm import catalog_planning
 from src.llm.catalog_planning import (
     _ANCHOR_FAMILIES,
     _ANCHOR_MIN_STOCK,
@@ -37,8 +38,8 @@ def _row(
     )
 
 
-# Shapes taken from the catalog: an orderable chair, an orderable workstation, a
-# single leftover unit, a free row, and something in neither family.
+# Shapes taken from the catalog: an in-stock chair, an in-stock workstation, a
+# single available unit, a free row, and something in neither family.
 ROWS: tuple[AnchorCatalogRow, ...] = (
     _row("CH 616 NEW black mesh chair", 295.0, 36, category="Chairs"),
     _row("Executive chair, leather", 140.0, 12, category="Chairs"),
@@ -53,7 +54,7 @@ ROWS: tuple[AnchorCatalogRow, ...] = (
 def test_the_anchor_names_the_cheapest_orderable_row_in_each_family() -> None:
     assert (
         anchor_line_from_catalog_rows(ROWS, language="en")
-        == "Chairs from AED 140, desks and workstations from AED 1,813."
+        == "Chairs from AED 58, desks and workstations from AED 1,813."
     )
 
 
@@ -61,7 +62,7 @@ def test_the_anchor_follows_the_customers_language() -> None:
     line = anchor_line_from_catalog_rows(ROWS, language="ar")
 
     assert line is not None
-    assert "الكراسي من 140 درهم" in line
+    assert "الكراسي من 58 درهم" in line
     assert "المكاتب ومحطات العمل من 1,813 درهم" in line
 
 
@@ -83,9 +84,7 @@ def test_the_arabic_anchor_separates_its_clauses_in_arabic() -> None:
     [
         (),
         (_row("Meeting room rug", 90.0, 60, category="Accessories"),),
-        # A single leftover unit is true and not orderable, which is the whole
-        # reason for the stock floor.
-        (_row("Last chair in the corner", 58.0, _ANCHOR_MIN_STOCK - 1),),
+        (_row("Out-of-stock chair", 58.0, _ANCHOR_MIN_STOCK - 1),),
         (_row("Chair with no price", None, 40, category="Chairs"),),
         (_row("Chair with no stock figure", 295.0, None, category="Chairs"),),
     ],
@@ -96,6 +95,24 @@ def test_a_catalog_that_cannot_answer_gets_no_invented_anchor(
     """No fallback text with a number in it: the reply goes out without one."""
 
     assert anchor_line_from_catalog_rows(rows, language="en") is None
+
+
+def test_one_available_unit_is_a_real_anchor_floor() -> None:
+    """Owner decision 2026-08-14: one customer can buy one available item."""
+
+    rows = (_row("Last chair in the corner", 58.0, 1, category="Chairs"),)
+
+    assert anchor_line_from_catalog_rows(rows, language="en") == ("Chairs from AED 58.")
+
+
+def test_the_anchor_result_carries_whether_its_floor_is_limited() -> None:
+    """The renderer needs state, not a guess from the formatted price line."""
+
+    anchor = catalog_planning.catalog_anchor_from_catalog_rows(ROWS, language="en")
+
+    assert anchor is not None
+    assert anchor.line == "Chairs from AED 58, desks and workstations from AED 1,813."
+    assert anchor.has_limited_stock is True
 
 
 def test_both_families_are_read_from_the_one_declaration() -> None:

@@ -40,6 +40,10 @@ and the company in Latin script; that is still a 2.
   the evidence it has.
 - **1** where a reply in one language leaves an English product term untranslated
   inside otherwise fluent Arabic.
+- **1** where the canonical introduction stays in the expected language but the
+  substantive reply switches to another language. Added 2026-08-14 from dialog
+  293; the deterministic language failure is recorded once here and is not also
+  charged under active listening.
 - **1** where the reply contradicts itself inside three sentences — sending a
   request elsewhere and then pursuing it anyway.
 - **1** where a catalog row is quoted under a family label it does not belong

@@ -2,196 +2,136 @@
 
 Updated: 2026-08-14
 Current branch: `main`
-Current stage id: `tj-tjgx-opening-quality`
-Status: `tj-tjgx` fixed and accepted the four bounded opening defects measured
-by `tj-399z`. CI run `31773387225` deployed runtime commit `8c832b4`; public
-health reports that exact SHA with Redis and database `ok`, and smoke is 8/8.
+Current stage id: `tj-final27-client-handoff`
+Status: final client-handoff delivery is in verification. The requested anchor,
+realistic-opening fix, referral exclusion, acceptance pack, controlled E2E and
+measured round are recorded. One new measured P1, `tj-08ve`, remains open.
 
-Documentation: `docs-resolve` covered pgvector and pinned model revisions; local
-code owns Treejar behavior.
+Documentation: no external/versioned boundary - this delivery follows repository
+code and the already pinned pgvector/model evidence.
 
 ## Current truth
 
-- Reply asks are derived once before generation by `permitted_asks_for_turn`,
-  and the prompt and guards consume the same immutable set. The name ask is
-  state-owned: `customer_name_asked` is recorded only when an ask reaches the
-  customer, so a first-turn signature cannot be asked again in either language
-  (`tj-40gc`). `asks_the_company_activity` records its one-turn cooldown only
-  when the signal sits inside a question sentence (`tj-eedk`).
-- The repair judge receives the original reply and flag reason, not the
-  deterministic candidate; every failure mode falls back to the validated
-  grounding repair. Its journal lives in the Git common dir.
-- The paid round sends the prompt production sends, built from the product's
-  own functions so a round follows them when they change. Its catalog evidence
-  comes from exact local pgvector through `src.rag.pipeline.search_products`,
-  pinned by a protected artifact before provider work; `FROZEN_SETS` registers
-  measurable sets and `preflight --set` names one. The price anchor comes from
-  the pinned snapshot through the same code production uses; `preflight
-  --catalog-snapshot` is required and hashed against the artifact's own catalog
-  digest before any provider call.
-- A row joins an anchor family only when its name and its catalog taxonomy both
-  say so, and joins one -- the first, so a workstation chair is a chair
-  (`tj-3jo0`). The database path reads rows and calls that same pure function
-  instead of running `MIN(price)` per family in SQL, where the name was all it
-  could see. The anchor is withheld on a first turn whose message positively
-  says it is about something else -- a job application, a dispatch notice, a
-  cold pitch -- and a named piece of furniture wins it back (`tj-7vhq`); silence
-  still earns it. Arabic joins its clauses with `،` (`tj-b8il`).
-- `consultative_opening_directive` treats the canonical offer as complete,
-  ties any later product category to the customer's job, accounts for every
-  distinct need before discovery, and uses kinds of work -- focused solo work,
-  collaborative meetings, visitor reception -- instead of a desk example
-  (`tj-j62b`, `tj-593w`, `tj-1orh`).
-- The shared name-question detector recognises bounded “what name should I use
-  for you” variants without matching named projects. The opening guard therefore
-  does not append a second equivalent name ask (`tj-b8px`).
-- `/api/v1/health` resolves the release SHA once per process and answers a
-  commit SHA or `unknown`, bounded by pattern and length in the schema.
-- CI job `semantic-evidence` runs the exact-pgvector producer test on every
-  change to `scripts/corpus_bridge/` or `src/rag/` and reads the outcome, so a
-  skip cannot pass. It is not in `deploy`'s needs.
-- The retrieval contract binds the four source files that own retrieval plus the
-  named definitions in the producer that decide what it returns, not the whole
-  producer file -- binding that stranded every artifact when `tj-rdqc` added a
-  validator to it. `PINNED_RETRIEVAL_CONTRACT_SHA` fails in the commit that moves
-  the digest, and `stale-evidence` names what to re-produce (`tj-zewi`).
+- A catalog row joins an anchor family only when its name and taxonomy agree,
+  and joins the first matching family (`tj-3jo0`). A first message explicitly
+  about something other than furniture still withholds the anchor (`tj-7vhq`).
+  Arabic still uses `،` (`tj-b8il`).
+- The opening price floor now uses every row with a non-zero price and at least
+  one unit in stock. On the pinned catalog it is `Chairs from AED 139, desks and
+  workstations from AED 58.` If a cited row has fewer than five units, the reply
+  says stock is limited and a larger quantity may require another option and
+  price (`tj-final27.18`).
+- R04 and R02 no longer fall through to a model questionnaire. Headcount plus
+  named furniture families, or a generic office brief, enters a verified
+  opening-catalog state, prints purchasable SKU/price rows, qualifies delivery
+  timing, and asks at most one question (`tj-6tx6`).
+- The opening-round prompt is built from production functions. Its retrieval
+  evidence has 332 catalog rows, BGE-M3 revision
+  `5617a9f61b028005a4858fdac845db406aefb181`, pgvector `0.8.5`, and retrieval
+  contract `29123d5fb9d3a8bc4dabce9585e333f5e51305e75044b47270d9b51c0c6a3da1`.
+- `/api/v1/health` returns the deployed release SHA or bounded `unknown`.
 
-## Protected evidence
+## Referral scope exclusion approved 2026-08-14
 
-- The frozen `tj-t6ug` replay baseline remains
-  `1fc87c04a645fa97e35978283584fb840f5ae7b7c2e4291740d4f5c0f1567b00`, never
-  re-baselined. Current aggregate
-  `1b425bd1f66a9189a07436f5d75b3bbcb71d68ca716e94b6f0d4c86627c97866`, 7 records
-  differing on dialogs 28, 875 and 1291, each read and intended.
-- Repair judge: 60 calls on stored 819 and 789, $0.0051, 20 of 20 delivered.
-  `tj-7gpw`: nothing measured before 2026-08-12, 18.94 included, compares; the
-  baseline is `tj-7gpw-parity-baseline-c-20260812`.
-- Six rounds on the same twenty, same reader, one change each, all accepted:
-  weighted 14.6 to 18.7 of 30, raw 10.6 to 13.8, attribution in Beads, one
-  `tj-l0e3` round discarded under `tj-l0e3.2`. `arabic-12` is every Arabic
-  opening the corpus has, 12 of 1358; only its band compares with the twenty's.
-- `tj-z1fn` is the lesson worth keeping: quoting the canonical opening helped
-  Arabic and cost English rule 7 2.00 to 1.80, and naming what the opening
-  leaves uncovered -- the customer -- removed it. Measure both sets first.
-- `tj-68au-round-20260813` is the first round after the anchor was restored.
-  Raw 13.0 of a 13.2 mean ceiling, [12.2, 13.6]; 16 of 20 at their own ceiling;
-  zero critical failures; 20/20 in language. Rules 1, 3, 4, 7, 8 and 9 held at
-  2.00, rule 7 included, which answers what the round was for: the price anchor
-  bought no restatement of the offer. Rule 2 fell 2.00 to 1.90 (`tj-7vhq`, and a
-  coffee table quoted as an office table) and rule 5 1.95 to 1.85, on two
-  product-led lists beside the dialog-28 ceiling case. The paired raw delta
-  against `tj-z1fn-english-paired-b` is -0.75 per opening, inside the 2.0 reader
-  gap, so it stands on those shapes and not on any total. Weighted 15.5 against
-  18.7 is **not** a regression: the map follows the reply, so three openings
-  moved to the 9.6 band, 14/6 against 11/9.
-- `tj-399z-round-20260814` measures the four fixes. Raw 12.8 of a 13.2 mean
-  ceiling, [12.2, 13.4]; 13/20 at their own ceiling; weighted 15.2; zero
-  critical failures. Per rule: 1 2.00/2.00, 2 1.95/2.00, 3 2.00/2.00,
-  4 1.95/2.00, 5 1.80/1.95, 7 1.95/2.00, 8 1.83/2.00 (n=6), 9 2.00/2.00
-  (n=6). Against `tj-68au`, raw -0.15 and weighted -0.28, both inside the 2.0
-  reader gap. Dialog 28 moved only rule 2, 1 to 2. AED 491 is credible beside
-  the priced workstation rows. Rule 13 remains inapplicable on all twenty.
-- No corpus text, request body or reply body is tracked. Durable evidence uses
-  dialog ids, integers and digests only.
+«Реферальная программа в объём текущей сдачи не входит. Механика
+реализована и отключена; запуск выполняется отдельным решением заказчика
+после приёмки.»
+
+This exact wording is also in the client acceptance pack. `tj-final27.6` is
+closed; referral activation is not a delivery condition.
+
+## Final measurement
+
+- Protected output:
+  `.git/codex-orchestration/corpus-bridge/tj-final27.18-round-20260814b`.
+- Preflight: 20 scenarios, 19 priced, 1 withheld, AED 139 / 58, zero paid calls.
+- Root read 20/20 blind and free. No second reader. Score/mean ceiling and delta
+  from `tj-399z`: r1 2.00/2.00 (0.00), r2 1.85/2.00 (-0.10), r3 2.00/2.00
+  (0.00), r4 1.95/2.00 (0.00), r5 1.80/1.95 (0.00), r7 2.00/2.00 (+0.05),
+  r8 2.00/2.00 (+0.17, n=6), r9 2.00/2.00 (0.00, n=6).
+- Raw paired delta: 0.00/opening, 95% -0.25 to +0.20. Weighted delta: +0.10,
+  95% -0.15 to +0.36. Both are inside the measured 2.0-point reader gap.
+  Fourteen of 20 reached their own ceiling, versus 13/20 in `tj-399z`.
+- The anchor contradicted no quoted row. Every reply that owed a low-stock
+  warning carried it before the next question.
+- New defects: wrong language plus a generic need question on dialog 293;
+  internal catalog-lookup wording on 1067. Gone: repeated value copy on 807;
+  product-led question on 442; stacked clarification questions on 1067.
+  Unchanged: wrong-family wording on 436; product lists on 420/1000; the
+  rule-5 ceiling on 28; dropped delivery timing on 819.
+- The round is not accepted because dialog 293 switched the substantive reply
+  away from the customer language. The one critical failure is `tj-08ve`.
+- Paid calls: 20 Luna generation calls, $0.006569; one triggered repair call,
+  $0.000134; total $0.006703 under the $0.05 cap. Scoring cost zero.
+
+## Protected replay
+
+- Frozen baseline:
+  `1fc87c04a645fa97e35978283584fb840f5ae7b7c2e4291740d4f5c0f1567b00`.
+- Current raw aggregate:
+  `1b425bd1f66a9189a07436f5d75b3bbcb71d68ca716e94b6f0d4c86627c97866`.
+- Exactly 7 expected differences remain, only on dialogs 28, 875 and 1291.
+  No re-baseline.
+- No protected request or reply body is tracked; durable records use only ids,
+  integers and digests.
+
+## Final package and E2E
+
+- The client pack states prominently that the opening stand charges 8 of 15
+  rules. Rules 6, 10, 11, 12, 13, 14 and 15 are unreachable on the first turn.
+- Deal outcomes are visible for only 192 of 1400 dialogues. The pack makes no
+  conversion, revenue, close-rate or causal sales claim.
+- Before delivery, public API smoke passed 8/8 on production `8c832b4`. Two
+  approved text-only synthetic conversations returned grounded chat and exact
+  SKU answers with 0 pending. Reply digests:
+  `a5e01a3dbcef9e96fe8f5d8a318b67a8619b7d9b488906e40d612cfbb465f6a6` and
+  `718d82e85471c098a4df756aaa3b0fa4db876a5240795cc6d859e518b1d04a16`.
+- Post-delivery R04/anchor E2E and delivered-SHA health readback are pending.
 
 ## Verification
 
-- Focused TDD first failed in four intended cases, then passed 85/85. Ruff,
-  format, Mypy and process verification pass. Full pytest is 3803 passed,
-  20 skipped, 0 failed: exactly five new passing tests over the 3798/20/0
-  baseline.
-- Protected replay is unchanged: current `1b425bd1…` against frozen
-  `1fc87c04…`, the same 7 records on dialogs 28, 875 and 1291. No re-baseline.
-- CI run `31773387225` passed changes, lint, type-check, test and deploy. The
-  deploy saved rollback archive `deploy-20260814T053624Z-from-b5ab693….tar.gz`,
-  activated `8c832b4`, and the bounded public API smoke passed 8/8.
-
-## Constraints
-
-- The prior `main` push automatically completed its CI deploy before the
-  owner's explicit “Push, Merge, Deploy” message. No redundant dispatch,
-  rollback, model change or real-user message followed; `tj-o4qi` records the
-  production readback and exact chronology.
-- `tj-tjgx` made zero paid calls; it used only local tests and stored replay.
-- `tj-399z` was owner-authorized in the current session and cost $0.006473: 20
-  Luna calls, zero repair-judge and scoring-judge calls, no second reader; root
-  read it blind for free. Recorded paid-round total is now about $0.2037.
-- `https://noor.starec.ai/api/v1/health` was read once on 2026-08-13; nothing
-  else on the runtime was contacted.
+- Focused anchor/guard/harness checks: 119 passed.
+- R04/R02 state and three repeated answers per form: passed.
+- Ruff check and format: passed. Mypy: passed.
+- Full pytest: 3821 passed, 20 skipped, 0 failed. The +18 passes from the
+  3803/20/0 baseline are 15 direct regressions and three automatically
+  parameterized registry checks for the new deterministic route. The first pass
+  exposed seven maintenance failures; all seven were fixed before this clean
+  run.
+- Process verification: passed. Root stage closeout: 71 passed, 1 skipped.
+- Final raw replay after closeout retained `1b425bd1…` versus `1fc87c04…` and
+  the same seven expected differences.
+- Production delivery and post-deploy readback are pending.
 
 ## Documentation and graph review
 
-- `docs-reviewed: updated`; `project-index: reviewed-no-change`;
-  `graph-reviewed: no-change-needed` — Graphify is not initialized.
+- `docs-reviewed: updated` - handoff, client pack, root reading convention and
+  stage evidence carry the changed behavior and measured result.
+- `project-index: reviewed-no-change` - no stable entrypoint or module ownership
+  boundary changed.
+- `graph-reviewed: no-change-needed` - Graphify is not initialized.
 
 ## Next recommended
 
 Next stage id: not opened
-Recommended action: run a new paired measured round only if the owner wants
-product-level evidence for these four fixes.
+Recommended action: fix `tj-08ve`, then run a fresh paired opening round only
+with new owner authority. Never use `--second-reader`.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage after selecting the next open Beads goal.
-
-## Tracker
-
-- 27 live issues were audited on 2026-08-13 and 17 closed with recorded reasons,
-  none on a title alone; disposition is in Beads. `tj-jlx4` is not reader
-  variance -- the gap is 2.0 while S07 moved 6.58 with non-overlapping ranges --
-  and stays open at P2.
-- `tj-final27.6` is engineering-complete and waits on one written client
-  sentence. It blocks `tj-final27.9`, hence P1. Deferred on state we do not own:
-  `tj-i653`; `tj-ee5f.1`, needing real transports; `tj-ee5f.5`, waiting on the
-  Wazzup provider's callbacks.
-- `tj-j62b`, `tj-593w`, `tj-1orh` and `tj-b8px` closed under accepted parent
-  `tj-tjgx`; `tj-o4qi` records their production deployment and live readback.
-
-## Owner decisions of 2026-08-13
-
-- Referrals wait on the owner's own message; the missing policy is not a defect.
-- Rule 11: disposition 3. A discount is a manager's decision or is already in
-  the catalog price, so Noor never offers one and the zero is policy; every
-  score prints the 28/30 policy cap beside it.
-- The client document leads with the Zoho deal export: outcomes are visible for
-  192 of 1400 dialogues, so we can say Noor does what the rubric asks, not that
-  Noor sells.
-- Deploy was authorized for the four opening-quality fixes. `/api/v1/health`
-  answers `8c832b4`, Redis and database `ok`; predecessor `b5ab693` is retained
-  in the named rollback archive.
-
-## Active handoff
-
-- `tj-rcg5` implements the two-stage route: exact local pgvector retrieval, then
-  a fail-closed measured consumer. Spec and plan are under
-  `docs/superpowers/{specs,plans}/2026-08-13-semantic-catalog-evidence-boundary*`.
-- Final protected evidence uses 332 catalog rows, BGE-M3 revision
-  `5617a9f61b028005a4858fdac845db406aefb181`, exact pgvector extension `0.8.5`
-  and retrieval code `29123d5fb9d3a8bc4dabce9585e333f5e51305e75044b47270d9b51c0c6a3da1`,
-  pinned as `PINNED_RETRIEVAL_CONTRACT_SHA`. Golden P@3/R@3/nDCG@3 is
-  `0.7222/0.8333/0.8333`, zero hard failures on it and on the twenty. Rows being
-  present never creates a duty to quote them; only qrels-confirmed SKUs reach
-  generation.
-- Use `tj-zewi-evidence-20260813`. Both artifacts were re-produced there on a
-  throwaway `pgvector/pgvector:pg16` with no residue, from the same pinned
-  snapshot, qrels and revision; each body is byte-identical to its predecessor
-  apart from `retrieval.code_sha`, and the golden numbers are unchanged, so
-  narrowing the contract changed nothing retrieval does. Preflight passed
-  against it end to end. `stale-evidence --root <protected>` names the seven
-  superseded artifacts.
-- Exact SKU is owned by the direct `get_stock`/catalog route, not semantic
-  search: BGE-M3 input carries no SKU, so semantic qrels exclude it.
+Use $orchestrator-stage on `tj-08ve`. Keep the customer-language fix
+deterministic, preserve the protected raw replay, and request fresh authority
+before any new measured generation calls.
 
 ## Explicit defers
 
-- Seven rules of fifteen cannot be charged by any rig this project has: 14 and
-  15 need a tool-filled next step, 6, 10 and 13 a project signal, 11 a two-family
-  order, 12 a later turn. The two-turn set is kept.
-- The reader gap is a number, `tj-4q79`: mean absolute 2.0 raw points per
-  opening, worst 4.0, measured once at $0.1627. A paired delta under 2 points is
-  inside reader variance, so no round is defended by its total. The drift re-read
-  is still owed. `--second-reader` is off by owner decision.
-- `tj-68au` left two candidate rule-2 cases unadopted in
-  `docs/root-reading-convention.md`: the round before scored both 2, so adopting
-  either moves no delta but needs a re-read. Rule 5's ceiling on the twenty
-  stays 1.95: dialog 28 is charged whether or not it now carries a price.
+- `tj-08ve`: dialog 293 switched the substantive first reply away from the
+  stored customer language. A deterministic language guard and a new paired
+  20-opening round are required; this stage's 20 generation calls are exhausted.
+- The opening stand cannot exercise rules 6, 10, 11, 12, 13, 14 or 15. They
+  remain covered by separate multi-turn/functional evidence and are never
+  presented as part of the opening score.
+- Reader-gap drift re-read remains owed under `tj-4q79`; the 2.0-point gap is
+  not recomputed here and no paid second reader is authorized.
+- Two candidate rule-2 convention cases from `tj-68au` remain unadopted until
+  both paired rounds are reread. Rule 5's mean ceiling remains 1.95.

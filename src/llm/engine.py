@@ -130,6 +130,7 @@ from src.llm.catalog_planning import (
     _stock_follow_up_contract,
     _store_catalog_planning,
     _track_sales_tool,
+    _try_verified_opening_catalog_options,  # noqa: F401 - compatibility export
     _zoho_stock_for_catalog_candidates,
 )
 from src.llm.catalog_planning import (

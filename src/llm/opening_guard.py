@@ -38,6 +38,14 @@ _EN_IDENTITY = "Hello, I'm Noor from Treejar."
 _EN_NAME_QUESTION = "And how should I address you?"
 _AR_IDENTITY = "مرحبًا، أنا Noor من Treejar."
 _AR_NAME_QUESTION = "وكيف أخاطبك؟"
+_EN_LIMITED_ANCHOR_STOCK = (
+    "The items at these starting prices have limited stock; larger quantities "
+    "may need different options and prices."
+)
+_AR_LIMITED_ANCHOR_STOCK = (
+    "المخزون محدود للمنتجات بهذه الأسعار الابتدائية؛ وقد تحتاج الكميات الأكبر "
+    "إلى خيارات وأسعار مختلفة."
+)
 
 # What Treejar is, which is rule 7 and which the model does not say on its own.
 #
@@ -192,6 +200,7 @@ def apply_opening_guard(
     is_first_turn: bool,
     customer_name: str | None,
     anchor_line: str | None = None,
+    anchor_has_limited_stock: bool = False,
     ask_customer_name: bool = True,
 ) -> str:
     """Ensure the first customer-facing reply carries value before it asks.
@@ -230,6 +239,10 @@ def apply_opening_guard(
     parts = [f"{identity} {capability}"]
     if anchor_line and not contains_customer_output_currency(body):
         parts.append(anchor_line)
+        if anchor_has_limited_stock:
+            parts.append(
+                _AR_LIMITED_ANCHOR_STOCK if is_arabic else _EN_LIMITED_ANCHOR_STOCK
+            )
     if body:
         parts.append(body)
 

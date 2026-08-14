@@ -22085,6 +22085,109 @@ def _stored_catalog_plan(
     }
 
 
+_R04_REALISTIC_OPENING = (
+    "hello we are moving to a new office in business bay next month and i need "
+    "desks and chairs for about 14 people plus something for the meeting room "
+    "what can you do and how fast"
+)
+_R02_REALISTIC_OPENING = "Ahmed. for a small office, 4 people"
+
+
+@pytest.mark.parametrize(
+    ("opening", "expected_seats"),
+    [
+        pytest.param(_R04_REALISTIC_OPENING, 14, id="R04"),
+        pytest.param(_R02_REALISTIC_OPENING, 4, id="R02"),
+    ],
+)
+def test_realistic_opening_state_is_ready_for_catalog_options(
+    opening: str,
+    expected_seats: int,
+) -> None:
+    conversation = SimpleNamespace(id=uuid.uuid4(), metadata_={})
+
+    planning = engine_module._catalog_planning_for_turn(
+        conversation,
+        [f"user: {opening}"],
+        opening,
+    )
+
+    assert planning.requested_seats == expected_seats
+    assert planning.families == ("seating", "workspace")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "opening",
+    [
+        pytest.param(_R04_REALISTIC_OPENING, id="R04"),
+        pytest.param(_R02_REALISTIC_OPENING, id="R02"),
+    ],
+)
+async def test_realistic_opening_always_returns_verified_rows_not_a_form(
+    opening: str,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    products = [
+        SimpleNamespace(
+            sku="CHAIR-A",
+            name_en="Task Chair",
+            name_ar=None,
+            category="chairs",
+            subcategory="task chairs",
+            price=139.0,
+            currency="AED",
+            stock=12,
+        ),
+        SimpleNamespace(
+            sku="DESK-A",
+            name_en="Computer Desk",
+            name_ar=None,
+            category="desks & tables",
+            subcategory="computer desks",
+            price=250.0,
+            currency="AED",
+            stock=12,
+        ),
+    ]
+    db.execute.return_value.scalars.return_value.all.return_value = products
+    planning = engine_module._catalog_planning_for_turn(
+        conv,
+        [f"user: {opening}"],
+        opening,
+    )
+    deps = SalesDeps(
+        db=db,
+        redis=redis,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        user_query=opening,
+        recent_history=[f"user: {opening}"],
+        catalog_planning=planning,
+    )
+
+    replies = [
+        await engine_module._try_verified_opening_catalog_options(deps)
+        for _attempt in range(3)
+    ]
+
+    assert all(reply is not None for reply in replies)
+    assert len(set(replies)) == 1
+    for reply in replies:
+        assert reply is not None
+        assert "SKU CHAIR-A" in reply
+        assert "AED 139.00" in reply
+        assert reply.count("?") + reply.count("؟") <= 1
+        assert "please share" not in reply.casefold()
+
+
 def test_catalog_plan_starts_new_epoch_for_independent_product_intent() -> None:
     current = "Now I need an ergonomic chair for my home office."
     conversation = SimpleNamespace(

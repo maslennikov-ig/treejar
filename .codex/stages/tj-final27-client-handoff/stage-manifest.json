@@ -1,0 +1,74 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-final27-client-handoff",
+  "goal_id": "tj-final27",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "in_progress",
+  "sequence": 1,
+  "acceptance_boundary_id": "client-handoff-code-measurement-e2e-delivery",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "opening-response-policy",
+      "acceptance-measurement",
+      "client-handoff",
+      "production-delivery"
+    ],
+    "risk_models": [
+      "catalog-grounding",
+      "state-transition",
+      "paid-generation-calls",
+      "protected-corpus-handling",
+      "production-rollout"
+    ],
+    "test_environments": [
+      "focused-opening-tests",
+      "realistic-opening-set",
+      "frozen-openings-20",
+      "controlled-e2e",
+      "repository-release-gates"
+    ],
+    "rollback_boundary": "one-main-delivery-commit-and-existing-production-rollback-archive",
+    "acceptance_proofs": [
+      "pinned-anchor-139-58",
+      "realistic-openings-carry-priced-row",
+      "blind-root-reading-20-of-20",
+      "unchanged-protected-replay",
+      "controlled-e2e-zero-pending",
+      "green-release-gates",
+      "production-release-sha-readback"
+    ]
+  },
+  "work_areas": [
+    "contract",
+    "implementation",
+    "consumer_adoption",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-final27",
+    "source_digest": "eba37cf66a84ed66e7c941755e343ffe864a713f6fb7d8e16919ee64daf049f9",
+    "criteria": [
+      {
+        "criterion_id": "AC-01",
+        "text": "All child tasks are implemented or explicitly excluded by the client; final controlled E2E and handoff pack are complete.",
+        "text_digest": "27ad74a0d3682a265e7c41a0f09325f1f9b22dfea958f1f3d8c3eaa07cd3ced0"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-final27/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "eba37cf66a84ed66e7c941755e343ffe864a713f6fb7d8e16919ee64daf049f9",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-final27.9",
+      "stream_owner": "tj-final27-client-handoff-root",
+      "artifact_path": ".codex/stages/tj-final27-client-handoff/artifacts/tj-final27.9.md"
+    }
+  ]
+}

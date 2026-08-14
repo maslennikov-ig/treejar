@@ -158,6 +158,38 @@ def test_selling_turn_guards_need_only_explicit_state() -> None:
     assert guarded.flags == ()
 
 
+def test_a_quoted_low_stock_row_is_disclosed_before_the_question() -> None:
+    guarded = render_reply(
+        "Task chair CH-LOW is AED 139. Would one suit the reception desk?",
+        state=ReplyPolicyState(
+            language="en",
+            is_first_turn=False,
+            limited_stock_product_references=("CH-LOW", "Task chair CH-LOW"),
+        ),
+        provenance="model",
+    )
+
+    assert "limited stock" in guarded.text.casefold()
+    assert "larger quantities" in guarded.text.casefold()
+    assert guarded.text.index("limited stock") < guarded.text.index("Would one")
+
+
+def test_an_unquoted_low_stock_row_does_not_add_a_warning() -> None:
+    original = "The Workstation NOVO is AED 491. Would one suit the team?"
+
+    guarded = render_reply(
+        original,
+        state=ReplyPolicyState(
+            language="en",
+            is_first_turn=False,
+            limited_stock_product_references=("CH-LOW", "Task chair CH-LOW"),
+        ),
+        provenance="model",
+    )
+
+    assert guarded.text == original
+
+
 def test_name_reask_decision_comes_from_the_explicit_slot() -> None:
     guarded = render_reply(
         "The CH 616 is available. May I know your name?",

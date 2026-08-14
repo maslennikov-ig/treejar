@@ -87,6 +87,20 @@ _AUXILIARY_QUESTION_ITEM_RE = re.compile(
 # sentence, and a sentence does not end on a comma.
 _ITEM_SEPARATOR_CHARS = ",;:،؛"
 _TERMINAL_CHARS = ".!?؟"
+_LIMITED_STOCK_DISCLOSURE_EN = (
+    "This item has limited stock; larger quantities may need a different "
+    "option and price."
+)
+_LIMITED_STOCK_DISCLOSURE_AR = (
+    "مخزون هذا المنتج محدود؛ وقد تحتاج الكميات الأكبر إلى خيار وسعر مختلفين."
+)
+_LIMITED_STOCK_SIGNALS = (
+    "limited stock",
+    "stock is limited",
+    "availability is limited",
+    "مخزون محدود",
+    "المخزون محدود",
+)
 
 
 class _FoldedAsk(NamedTuple):
@@ -139,6 +153,52 @@ def collapse_question_form(text: str, *, language: str = "en") -> str:
     if ask is None:
         return reduced
     return _terminate_folded_ask(reduced, ask, language=language)
+
+
+def disclose_limited_stock(
+    text: str,
+    *,
+    product_references: Sequence[str],
+    language: str,
+) -> str:
+    """Disclose scarcity only when the reply names a verified low-stock row.
+
+    The references come from retrieved catalog state, never from the draft's
+    own claims.  The warning sits before the first question so the customer
+    sees the volume qualification before being asked to continue.
+    """
+
+    normalized = text.casefold()
+    if any(signal in normalized for signal in _LIMITED_STOCK_SIGNALS):
+        return text
+    references = tuple(
+        reference.strip().casefold()
+        for reference in product_references
+        if len(reference.strip()) >= 3
+    )
+    if not references or not any(reference in normalized for reference in references):
+        return text
+
+    disclosure = (
+        _LIMITED_STOCK_DISCLOSURE_AR
+        if is_arabic_customer_language(language)
+        else _LIMITED_STOCK_DISCLOSURE_EN
+    )
+    question_positions = [
+        position for mark in ("?", "؟") if (position := text.find(mark)) >= 0
+    ]
+    if not question_positions:
+        return f"{text.rstrip()} {disclosure}"
+
+    question_position = min(question_positions)
+    question_start = 0
+    for match in _SENTENCE_SPLIT_RE.finditer(text[:question_position]):
+        question_start = match.end()
+    before = text[:question_start].rstrip()
+    question_and_after = text[question_start:].lstrip()
+    if not before:
+        return f"{disclosure} {question_and_after}"
+    return f"{before} {disclosure} {question_and_after}"
 
 
 def _item_reads_as_a_question(item: str) -> bool:

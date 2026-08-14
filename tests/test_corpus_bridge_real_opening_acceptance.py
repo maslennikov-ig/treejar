@@ -21,6 +21,7 @@ from scripts.corpus_bridge.real_opening_acceptance import (
     ROOT_JUDGE,
     SECOND_READER_MODEL,
     _actual_cost_by_model,
+    _enforce_actual_caps,
     _generate_with_backoff,
     _journaled_repair_runner,
     _load_frozen_scenarios,
@@ -460,6 +461,24 @@ def test_failed_quality_round_still_produces_a_text_safe_summary() -> None:
     results = [_result(dialog_id) for dialog_id in range(1, 21)]
     results[4]["critical_failures"] = ["unsafe_commitment"]
 
+    public = build_public_summary(
+        results, bootstrap_samples=200, seed=17, expected_openings=20
+    )
+
+    assert public["coverage"]["critical_failures"] == 1
+    assert public["acceptance"]["accepted"] is False
+
+
+def test_failed_language_round_still_produces_a_text_safe_summary() -> None:
+    results = [_result(dialog_id) for dialog_id in range(1, 21)]
+    results[4]["language_ok"] = False
+    results[4]["critical_failures"] = ["language_mismatch"]
+
+    validate_complete_results(
+        results,
+        expected_dialog_ids=set(range(1, 21)),
+        require_acceptance=False,
+    )
     public = build_public_summary(
         results, bootstrap_samples=200, seed=17, expected_openings=20
     )
@@ -1232,6 +1251,41 @@ async def test_a_price_on_a_retrieved_row_survives_without_a_repair_call() -> No
 
 
 @pytest.mark.asyncio
+async def test_the_measured_reply_carries_the_low_stock_anchor_disclosure() -> None:
+    result = await apply_shipped_output_guards(
+        "What kind of office are you furnishing?",
+        language="en",
+        anchor_line="Chairs from AED 139, desks and workstations from AED 58.",
+        anchor_has_limited_stock=True,
+        catalog_evidence=[],
+        customer_message="Hello",
+    )
+
+    assert "limited stock" in result.content.casefold()
+    assert "larger quantities" in result.content.casefold()
+
+
+@pytest.mark.asyncio
+async def test_the_measured_reply_discloses_a_quoted_low_stock_catalog_row() -> None:
+    result = await apply_shipped_output_guards(
+        "Task chair CH-LOW is AED 139. Would one suit the reception desk?",
+        language="en",
+        anchor_line=None,
+        catalog_evidence=[
+            {
+                "sku": "CH-LOW",
+                "name_en": "Task chair CH-LOW",
+                "price_aed": 139,
+                "stock": 1,
+            }
+        ],
+        customer_message="I need a chair",
+    )
+
+    assert "limited stock" in result.content.casefold()
+
+
+@pytest.mark.asyncio
 async def test_triggered_harness_reply_matches_the_production_finalizer() -> None:
     raw = "We can assess and buy your used desks."
     state = ReplyPolicyState(language="en", is_first_turn=True)
@@ -1502,6 +1556,29 @@ def _prepared_round_files(output_dir: pathlib.Path) -> None:
         path = output_dir / name
         path.write_text(json.dumps(value), encoding="utf-8")
         path.chmod(0o600)
+
+
+def test_actual_total_cost_cap_counts_generation_and_repair_together() -> None:
+    state = {
+        "records": {
+            "1": {
+                "generation_raw": {"cost_micro_usd": 30_000},
+                "repair_judge": {"cost_micro_usd": 21_000},
+            }
+        }
+    }
+    preflight_doc = {
+        "judge_model": ROOT_JUDGE,
+        "per_model_cap_usd": {
+            GENERATOR_MODEL: 1.0,
+            REPAIR_JUDGE_MODEL: 1.0,
+            ROOT_JUDGE: 0.0,
+        },
+        "actual_total_cap_usd": 0.05,
+    }
+
+    with pytest.raises(RuntimeError, match="actual total cost cap exceeded"):
+        _enforce_actual_caps(state, preflight_doc)
 
 
 @pytest.mark.asyncio

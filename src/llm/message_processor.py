@@ -67,10 +67,11 @@ from src.llm.catalog_planning import (
     _materialize_verified_catalog_facts,
     _should_override_policy_for_catalog_fact_query,
     _store_catalog_planning,
+    _try_verified_opening_catalog_options,
     _turn_owes_the_company_question,
     _verified_prose_response,
     _verify_volunteered_claims,
-    catalog_anchor_line,
+    catalog_anchor,
     grounded_amounts_for_turn,
     opening_wants_a_price_anchor,
 )
@@ -347,6 +348,27 @@ async def _run_prose_agent_on(
     )
 
 
+def _limited_stock_product_references(deps: SalesDepsT) -> tuple[str, ...]:
+    """Names and SKUs for retrieved rows whose verified stock is 1--4."""
+
+    rows_by_sku = {
+        row.sku.strip().casefold(): row for row in deps.claim_rows.values() if row.sku
+    }
+    references: list[str] = []
+    for snapshot in deps.stock_snapshots.values():
+        if not 1 <= snapshot.available < 5:
+            continue
+        references.append(snapshot.sku)
+        row = rows_by_sku.get(snapshot.sku.strip().casefold())
+        if row is None:
+            continue
+        for field in ("name", "name_en", "display_name"):
+            value = str(row.fields.get(field, "") or "").strip()
+            if value:
+                references.append(value)
+    return tuple(dict.fromkeys(references))
+
+
 @dataclass
 class _Turn:
     """The state one turn shares, and the operations that read and write it.
@@ -391,6 +413,7 @@ class _Turn:
     dialogue_kernel_mode: str = ""
     dialogue_kernel_result: DialogueKernelResultT | None = None
     opening_anchor_line: str | None = None
+    opening_anchor_has_limited_stock: bool = False
     name_gate_resume_customer_name: str | None = None
     failed_run_usage: RunUsageT | None = None
     permitted_asks_cache: frozenset[AskKind] | None = None
@@ -465,6 +488,10 @@ class _Turn:
                 customer_name_asked=engine._customer_name_was_asked(self.conv),
                 permitted_asks=self.permitted_asks(),
                 anchor_line=self.opening_anchor_line,
+                anchor_has_limited_stock=self.opening_anchor_has_limited_stock,
+                limited_stock_product_references=(
+                    _limited_stock_product_references(response_deps)
+                ),
                 company=engine._string_value(quote_details.get("company")) or None,
                 customer_type=(
                     engine._string_value(quote_details.get("customer_type")) or None
@@ -1504,6 +1531,27 @@ async def _verified_catalog_plan_route(
     return replace(response, tool_traces=plan_traces)
 
 
+async def _verified_opening_catalog_route(
+    turn: _Turn,
+    *,
+    db_model_main: str,
+) -> LLMResponseT | None:
+    """A scoped office brief gets verified rows before a model can ask a form."""
+
+    verified_text = await _try_verified_opening_catalog_options(turn.deps)
+    if verified_text is None:
+        return None
+    await turn.clear_repair_state()
+    return build_declared_static_response(
+        verified_text,
+        route="verified-opening-catalog",
+        build_static_response=turn.build_static_response,
+        model_prefix=db_model_main,
+        response_deps=turn.deps,
+        allow_product_media=False,
+    )
+
+
 async def _sales_agent_route(
     turn: _Turn,
     *,
@@ -2089,10 +2137,14 @@ async def _capture_details_and_name_gate_routes(
         # opening carries a price when the reply itself found none. `tj-7vhq`:
         # not on a message that is about something other than furniture, where a
         # price list only contradicts the answer that follows it.
-        turn.opening_anchor_line = (
-            await catalog_anchor_line(turn.db, str(turn.conv.language))
+        anchor = (
+            await catalog_anchor(turn.db, str(turn.conv.language))
             if opening_wants_a_price_anchor(turn.combined_text)
             else None
+        )
+        turn.opening_anchor_line = anchor.line if anchor is not None else None
+        turn.opening_anchor_has_limited_stock = bool(
+            anchor is not None and anchor.has_limited_stock
         )
 
     # Store customer details from the original, unmasked text before any route
@@ -2546,6 +2598,11 @@ async def process_message_impl(
                 turn,
                 db_model_main=db_model_main,
                 dynamic_model=dynamic_model,
+            )
+        if response is None:
+            response = await _verified_opening_catalog_route(
+                turn,
+                db_model_main=db_model_main,
             )
         if response is None:
             response = await _sales_agent_route(

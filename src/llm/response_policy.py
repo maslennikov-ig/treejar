@@ -26,6 +26,7 @@ from src.llm.sales_turn_guard import (
     carry_the_company_question,
     collapse_question_form,
     commit_to_what_you_deferred,
+    disclose_limited_stock,
     only_asks_were_dropped,
     refuse_to_chase_the_name,
 )
@@ -101,6 +102,8 @@ class ReplyPolicyState:
     ask_before_filling: bool = False
     permitted_asks: frozenset[AskKind] | None = None
     anchor_line: str | None = None
+    anchor_has_limited_stock: bool = False
+    limited_stock_product_references: tuple[str, ...] = ()
     company: str | None = None
     customer_type: str | None = None
     delivery_address: str | None = None
@@ -191,6 +194,7 @@ def apply_first_turn_opening_guard(
     is_first_turn: bool,
     customer_name: str | None,
     anchor_line: str | None,
+    anchor_has_limited_stock: bool = False,
     ask_customer_name: bool = True,
 ) -> str:
     """Apply the existing opening guard from explicit turn state."""
@@ -201,6 +205,7 @@ def apply_first_turn_opening_guard(
         is_first_turn=is_first_turn,
         customer_name=customer_name,
         anchor_line=anchor_line,
+        anchor_has_limited_stock=anchor_has_limited_stock,
         ask_customer_name=ask_customer_name,
     )
 
@@ -435,6 +440,12 @@ RESPONSE_GUARD_DECLARATIONS: dict[str, GuardDeclaration] = {
         reason="Deduplicates greeting and identity only after the canonical identity and capability replace them.",
         replacement_covers=opening_replacement_covers,
     ),
+    "limited_stock": GuardDeclaration(
+        name="limited_stock",
+        mode=GuardMode.REPLACING,
+        reason="Adds the required scarcity qualification while preserving the cited row and reply.",
+        replacement_covers=_additive_replacement_covers,
+    ),
     "question_form": GuardDeclaration(
         name="question_form",
         mode=GuardMode.REDUCING,
@@ -663,6 +674,7 @@ def render_reply(
             is_first_turn=state.is_first_turn,
             customer_name=_customer_name_for_turn(state),
             anchor_line=state.anchor_line,
+            anchor_has_limited_stock=state.anchor_has_limited_stock,
             ask_customer_name=AskKind.CUSTOMER_NAME in permitted_asks,
         ),
     )
@@ -698,6 +710,16 @@ def render_reply(
                 guard=partial(carry_the_company_question, language=state.language),
             )
             raised_flags.extend(flags)
+    rendered, flags = _render_declared_guard(
+        rendered,
+        guard_name="limited_stock",
+        guard=partial(
+            disclose_limited_stock,
+            product_references=state.limited_stock_product_references,
+            language=state.language,
+        ),
+    )
+    raised_flags.extend(flags)
     rendered, flags = _render_declared_guard(
         rendered,
         guard_name="deferred_commitment",

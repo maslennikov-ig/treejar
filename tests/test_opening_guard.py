@@ -51,6 +51,23 @@ def test_the_first_reply_carries_value_before_it_asks_for_anything() -> None:
     assert response.index("ergonomic chairs") < response.index("how should I address")
 
 
+def test_a_low_stock_anchor_states_the_quantity_limit() -> None:
+    """A from-price on fewer than five units must not read like a volume price."""
+
+    response = apply_opening_guard(
+        "What kind of office are you furnishing?",
+        language="en",
+        is_first_turn=True,
+        customer_name=None,
+        anchor_line="Chairs from AED 139, desks and workstations from AED 58.",
+        anchor_has_limited_stock=True,
+    )
+
+    assert "Chairs from AED 139, desks and workstations from AED 58." in response
+    assert "limited stock" in response.casefold()
+    assert "larger quantities" in response.casefold()
+
+
 def test_a_generic_anchor_stands_down_where_the_reply_has_a_real_price() -> None:
     """A floor price beside a confirmed one is noise, and worse than noise: it
     invites the customer to compare our own two numbers."""

@@ -13,12 +13,14 @@ writer (`_finalize_turn_response`), in that order, turn after turn. `tj-d651`.
 
 from __future__ import annotations
 
+import datetime
 from typing import Any, cast
 from uuid import uuid4
 
 import pytest
 
-from src.llm.catalog_planning import SalesDeps
+from src.dialogue.claim_contract import RetrievedRow
+from src.llm.catalog_planning import SalesDeps, StockSnapshot
 from src.llm.message_processor import _finalize_turn_response, _Turn
 from src.llm.response_policy import AskKind
 from src.llm.response_runtime import LLMResponse
@@ -124,6 +126,47 @@ async def _take_one_turn(
     )
     await _finalize_turn_response(turn, response)
     return permitted, rendered.text, rendered.emitted_asks
+
+
+def test_the_turn_carries_low_stock_anchor_state_into_the_shipped_renderer() -> None:
+    turn = _turn(_conversation(), is_first_turn=True)
+    turn.opening_anchor_line = (
+        "Chairs from AED 139, desks and workstations from AED 58."
+    )
+    turn.opening_anchor_has_limited_stock = True
+
+    rendered = turn.render_reply(
+        "What kind of office are you furnishing?",
+        response_deps=turn.deps,
+        provenance="model",
+        model_name="test-model",
+    )
+
+    assert "limited stock" in rendered.text.casefold()
+    assert "larger quantities" in rendered.text.casefold()
+
+
+def test_the_turn_derives_low_stock_references_from_retrieved_state() -> None:
+    turn = _turn(_conversation())
+    turn.deps.claim_rows["CH-LOW"] = RetrievedRow(
+        sku="CH-LOW",
+        fields={"name": "Task chair CH-LOW"},
+    )
+    turn.deps.stock_snapshots["ch-low"] = StockSnapshot(
+        sku="CH-LOW",
+        available=1,
+        source="zoho",
+        as_of=datetime.datetime.now(datetime.UTC),
+    )
+
+    rendered = turn.render_reply(
+        "Task chair CH-LOW is AED 139. Would one suit the reception desk?",
+        response_deps=turn.deps,
+        provenance="model",
+        model_name="test-model",
+    )
+
+    assert "limited stock" in rendered.text.casefold()
 
 
 @pytest.mark.asyncio

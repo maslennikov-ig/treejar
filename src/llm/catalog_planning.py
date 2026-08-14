@@ -296,6 +296,10 @@ _CATALOG_PRODUCT_FAMILIES: tuple[tuple[CatalogFamily, tuple[str, ...]], ...] = (
     ),
     ("privacy", ("pod", "booth", "كبسولة", "مقصورة")),
 )
+_GENERIC_OFFICE_OPENING_RE = re.compile(
+    r"\b(?:small|new|our|the|an?|your)?\s*office\b|(?:مكتب|مكاتب)",
+    re.IGNORECASE,
+)
 _CATALOG_PLANNING_KEY = "catalog_planning_v1"
 _VERIFIED_CATALOG_PLAN_KEY = "verified_catalog_plan_v1"
 _CATALOG_BUDGET_CURRENCY = "AED"
@@ -435,6 +439,18 @@ class VerifiedCatalogLine:
     currency: str
     stock: int
     capacity: int
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedOpeningCatalogLine:
+    """One purchasable catalog row selected before an opening can ask a form."""
+
+    family: CatalogFamily
+    name: str
+    sku: str
+    unit_price: float
+    currency: str
+    stock: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -835,6 +851,14 @@ class AnchorCatalogRow:
     stock: int | None
 
 
+@dataclass(frozen=True)
+class CatalogAnchor:
+    """Rendered floor plus the volume caveat the winning rows require."""
+
+    line: str
+    has_limited_stock: bool
+
+
 # Narrower than the family term lists on purpose: the anchor names what it
 # prices. A row joins a family only when its name *and* its catalog taxonomy
 # both say so, and it joins exactly one -- the first it matches.
@@ -861,12 +885,11 @@ _ANCHOR_FAMILIES: tuple[AnchorFamily, ...] = (
         label_ar="المكاتب ومحطات العمل",
     ),
 )
-# An anchor is a promise the customer can act on. The cheapest row in the
-# catalog is often a single leftover unit, and "desks from AED 58" is a poor
-# thing to say to somebody who needs fourteen of them. A small stock floor keeps
-# the number both true and orderable.
-_ANCHOR_MIN_STOCK = 5
-_anchor_line_cache: dict[str, str] = {}
+# An anchor is the price one customer can act on now. Owner decision 2026-08-14:
+# one available unit is a real purchasable floor; volume is a separate promise
+# and is disclosed whenever the winning row has fewer than five units.
+_ANCHOR_MIN_STOCK = 1
+_anchor_line_cache: dict[str, CatalogAnchor | None] = {}
 
 
 def _anchor_part(lowest: float, *, label: str, is_arabic: bool) -> str:
@@ -887,12 +910,12 @@ def anchor_family_of_row(row: AnchorCatalogRow) -> AnchorFamily | None:
     return None
 
 
-def anchor_line_from_catalog_rows(
+def catalog_anchor_from_catalog_rows(
     rows: Iterable[AnchorCatalogRow],
     *,
     language: str,
-) -> str | None:
-    """The same line as `catalog_anchor_line`, from rows already in hand.
+) -> CatalogAnchor | None:
+    """The same anchor as `catalog_anchor`, from rows already in hand.
 
     `tj-rdqc`: the measured round has no database. It has the pinned catalog
     snapshot the retrieval evidence was built on, which holds the same rows the
@@ -906,7 +929,7 @@ def anchor_line_from_catalog_rows(
     """
 
     is_arabic = is_arabic_customer_language(language)
-    lowest: dict[str, float] = {}
+    lowest: dict[str, tuple[float, int]] = {}
     for row in rows:
         price, stock = row.price, row.stock
         if price is None or stock is None or price <= 0 or stock < _ANCHOR_MIN_STOCK:
@@ -915,11 +938,11 @@ def anchor_line_from_catalog_rows(
         if family is None:
             continue
         current = lowest.get(family.key)
-        if current is None or price < current:
-            lowest[family.key] = price
+        if current is None or price < current[0]:
+            lowest[family.key] = (price, stock)
     parts = [
         _anchor_part(
-            lowest[family.key],
+            lowest[family.key][0],
             label=(family.label_ar if is_arabic else family.label_en),
             is_arabic=is_arabic,
         )
@@ -932,11 +955,25 @@ def anchor_line_from_catalog_rows(
     # the Latin one in both languages -- Modern Standard Arabic writes it that
     # way, and U+06D4 belongs to Urdu and Persian, not to a UAE customer.
     separator = "، " if is_arabic else ", "
-    return separator.join(parts) + "."
+    return CatalogAnchor(
+        line=separator.join(parts) + ".",
+        has_limited_stock=any(stock < 5 for _price, stock in lowest.values()),
+    )
 
 
-async def catalog_anchor_line(db: AsyncSession, language: str) -> str | None:
-    """ "Chairs from AED 140, desks and workstations from AED 1,813."
+def anchor_line_from_catalog_rows(
+    rows: Iterable[AnchorCatalogRow],
+    *,
+    language: str,
+) -> str | None:
+    """Compatibility surface for callers that only need the exact line."""
+
+    anchor = catalog_anchor_from_catalog_rows(rows, language=language)
+    return anchor.line if anchor is not None else None
+
+
+async def catalog_anchor(db: AsyncSession, language: str) -> CatalogAnchor | None:
+    """Build the live purchasable price floor and its volume qualification.
 
     The cheapest live row in each of the two families a customer names first.
     It exists so the opening reply carries a real number before the customer has
@@ -957,9 +994,8 @@ async def catalog_anchor_line(db: AsyncSession, language: str) -> str | None:
 
     is_arabic = is_arabic_customer_language(language)
     cache_key = "ar" if is_arabic else "en"
-    cached = _anchor_line_cache.get(cache_key)
-    if cached is not None:
-        return cached or None
+    if cache_key in _anchor_line_cache:
+        return _anchor_line_cache[cache_key]
 
     result = await db.execute(
         select(
@@ -985,9 +1021,16 @@ async def catalog_anchor_line(db: AsyncSession, language: str) -> str | None:
         for name, category, subcategory, price, stock in result.all()
     ]
 
-    line = anchor_line_from_catalog_rows(rows, language=language) or ""
-    _anchor_line_cache[cache_key] = line
-    return line or None
+    anchor = catalog_anchor_from_catalog_rows(rows, language=language)
+    _anchor_line_cache[cache_key] = anchor
+    return anchor
+
+
+async def catalog_anchor_line(db: AsyncSession, language: str) -> str | None:
+    """Compatibility surface for callers that only need the exact line."""
+
+    anchor = await catalog_anchor(db, language)
+    return anchor.line if anchor is not None else None
 
 
 # `tj-7vhq`. The anchor puts a price on the table before the customer has asked
@@ -1353,6 +1396,15 @@ def _catalog_planning_for_turn(
     planning.complete_coverage = planning.complete_coverage or any(
         _requests_complete_catalog_coverage(turn) for turn in user_turns
     )
+    if (
+        planning.requested_seats is not None
+        and not planning.families
+        and any(_GENERIC_OFFICE_OPENING_RE.search(turn) for turn in user_turns)
+    ):
+        # R02 names the use and headcount but not a product noun. That is
+        # enough state to show one chair and one desk before asking anything;
+        # it is not enough to claim a full fit-out or create a quotation.
+        planning.families = ("seating", "workspace")
     return planning
 
 
@@ -2710,6 +2762,179 @@ def _product_search_call_limit(deps: SalesDeps) -> int:
     return min(6, max(2, 2 * family_count))
 
 
+def _verified_opening_catalog_lines(
+    products: Sequence[Any],
+    *,
+    families: Sequence[CatalogFamily],
+    language: str,
+) -> tuple[VerifiedOpeningCatalogLine, ...]:
+    """Pick one cheapest purchasable row per requested anchor family.
+
+    Family membership is deliberately the `tj-3jo0` rule used by the price
+    anchor: both the row name and its catalog taxonomy must agree. A generic
+    office opening can therefore gain concrete options without letting a
+    pedestal or workstation chair masquerade as a desk.
+    """
+
+    requested = set(families)
+    cheapest: dict[str, VerifiedOpeningCatalogLine] = {}
+    arabic = is_arabic_customer_language(language)
+    for product in products:
+        name_en = _string_value(getattr(product, "name_en", None))
+        family = anchor_family_of_row(
+            AnchorCatalogRow(
+                name=name_en,
+                category=_string_value(getattr(product, "category", None)) or None,
+                subcategory=(
+                    _string_value(getattr(product, "subcategory", None)) or None
+                ),
+                price=None,
+                stock=None,
+            )
+        )
+        if family is None or family.key not in requested:
+            continue
+        try:
+            price = float(getattr(product, "price", 0) or 0)
+            stock = int(getattr(product, "stock", 0) or 0)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        sku = _string_value(getattr(product, "sku", None))
+        currency = _string_value(getattr(product, "currency", None)).upper()
+        name_ar = _string_value(getattr(product, "name_ar", None))
+        name = name_ar if arabic and name_ar else name_en
+        if not name or not sku or price <= 0 or stock <= 0 or not currency:
+            continue
+        line = VerifiedOpeningCatalogLine(
+            family=cast("CatalogFamily", family.key),
+            name=name,
+            sku=sku,
+            unit_price=price,
+            currency=currency,
+            stock=stock,
+        )
+        previous = cheapest.get(family.key)
+        if previous is None or (line.unit_price, line.name.casefold(), line.sku) < (
+            previous.unit_price,
+            previous.name.casefold(),
+            previous.sku,
+        ):
+            cheapest[family.key] = line
+    return tuple(cheapest[family] for family in families if family in cheapest)
+
+
+def _materialize_verified_opening_catalog_options(
+    lines: Sequence[VerifiedOpeningCatalogLine],
+    *,
+    requested_seats: int,
+    language: str,
+) -> str | None:
+    if not lines:
+        return None
+    if is_arabic_customer_language(language):
+        rendered = [
+            f"هذه خيارات بداية مؤكدة من الكتالوج لمكتب يضم {requested_seats} أشخاص:"
+        ]
+        rendered.extend(
+            f"- {line.name} (SKU {line.sku}) — {line.unit_price:.2f} {line.currency}."
+            for line in lines
+        )
+        rendered.extend(
+            (
+                "هذه خيارات بداية وليست حجزاً للكمية كاملة. يعتمد موعد التسليم "
+                "على المنتجات والكمية المختارة، لذلك سأؤكده مقابل المخزون الحالي "
+                "قبل الالتزام.",
+                "أي خيار أبني عليه التكوين؟",
+            )
+        )
+        return "\n".join(rendered)
+
+    rendered = [
+        f"Here are verified catalog starting options for the {requested_seats}-person office:"
+    ]
+    rendered.extend(
+        f"- {line.name} (SKU {line.sku}) — {line.currency} {line.unit_price:.2f}."
+        for line in lines
+    )
+    rendered.extend(
+        (
+            "These are starting options, not a reservation for the full quantity. "
+            "Delivery timing depends on the chosen SKUs and quantity, so I will "
+            "confirm it against current stock before committing.",
+            "Which option should I build the configuration around?",
+        )
+    )
+    return "\n".join(rendered)
+
+
+async def _try_verified_opening_catalog_options(deps: SalesDeps) -> str | None:
+    """Answer a scoped office opening from catalog state before free generation."""
+
+    planning = deps.catalog_planning
+    current_families = _catalog_product_families(deps.user_query)
+    generic_office = _GENERIC_OFFICE_OPENING_RE.search(deps.user_query) is not None
+    if (
+        planning.requested_seats is None
+        or not planning.families
+        or not (current_families or generic_office)
+        or is_active_human_handoff(deps.conversation.escalation_status)
+    ):
+        return None
+
+    result = await deps.db.execute(
+        select(Product)
+        .options(
+            load_only(
+                Product.sku,
+                Product.name_en,
+                Product.name_ar,
+                Product.category,
+                Product.subcategory,
+                Product.price,
+                Product.currency,
+                Product.stock,
+            )
+        )
+        .where(
+            Product.is_active.is_(True),
+            Product.stock > 0,
+            Product.price > 0,
+        )
+    )
+    lines = _verified_opening_catalog_lines(
+        tuple(result.scalars().all()),
+        families=planning.families,
+        language=str(deps.conversation.language),
+    )
+    response = _materialize_verified_opening_catalog_options(
+        lines,
+        requested_seats=planning.requested_seats,
+        language=str(deps.conversation.language),
+    )
+    if response is None:
+        return None
+
+    captured_at = datetime.datetime.now(datetime.UTC)
+    for line in lines:
+        deps.claim_rows[line.sku] = RetrievedRow(
+            sku=line.sku,
+            fields={
+                "name": line.name,
+                "price": f"{line.unit_price:.2f}",
+                "currency": line.currency,
+            },
+        )
+        deps.stock_snapshots[line.sku.casefold()] = StockSnapshot(
+            sku=line.sku,
+            available=line.stock,
+            source="catalog",
+            as_of=captured_at,
+            provenance="unconfirmed",
+        )
+    deps.product_results_seen = True
+    return response
+
+
 def _append_required_tool_disclosures(text: str, deps: SalesDeps) -> str:
     return append_required_tool_disclosure(
         text,
@@ -3831,6 +4056,7 @@ __all__ = (
     "StockSnapshot",
     "VerifiedCatalogFactProduct",
     "VerifiedCatalogLine",
+    "VerifiedOpeningCatalogLine",
     "VerifiedCrossSell",
     "_ACOUSTIC_FACT_GAP",
     "_ACOUSTIC_MEASUREMENT_RE",
@@ -3965,6 +4191,7 @@ __all__ = (
     "_store_verified_catalog_plan",
     "_track_sales_tool",
     "_try_verified_catalog_plan",
+    "_try_verified_opening_catalog_options",
     "_turn_owes_the_company_question",
     "_turn_saw_catalog_evidence",
     "_verified_catalog_plan_payload",
@@ -3977,9 +4204,12 @@ __all__ = (
     "_verify_volunteered_claims",
     "_zoho_stock_for_catalog_candidates",
     "AnchorCatalogRow",
+    "CatalogAnchor",
     "AnchorFamily",
     "anchor_family_of_row",
     "anchor_line_from_catalog_rows",
+    "catalog_anchor",
+    "catalog_anchor_from_catalog_rows",
     "catalog_anchor_line",
     "opening_wants_a_price_anchor",
     "build_runtime_tool_trace",
