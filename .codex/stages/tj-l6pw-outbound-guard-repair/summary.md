@@ -1,6 +1,6 @@
 # Stage `tj-l6pw-outbound-guard-repair`
 
-Status: implemented, awaiting delivery authorization.
+Status: accepted and delivered.
 Base: `main` at `c70e7e9`.
 Acceptance owner: root orchestrator.
 
@@ -49,6 +49,9 @@ edited; this stage carries the repair.
 - Process verification: passed.
 - Protected raw replay: `1b425bd1…` against frozen `1fc87c04…`, the same seven
   expected differences on dialogs 28, 875 and 1291. No re-baseline.
+- GitHub Actions run `31811997412`: passed and deployed
+  `d30b2d918f75353b3ad75438b29b409a2776cdca`.
+- Production `/api/v1/health`: OK with that exact SHA, redis and database ok.
 
 No paid round was bought for this repair, and none is needed for the language
 claim: the stored-round replay shows the shipped text directly. The rule-5

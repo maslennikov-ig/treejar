@@ -3,7 +3,7 @@
 Updated: 2026-08-14
 Current branch: `main`
 Current stage id: `tj-l6pw-outbound-guard-repair`
-Status: implemented and green locally; awaiting delivery authorization.
+Status: accepted, deployed, and ready for client handoff.
 Previous stage `tj-final27-client-handoff` stays accepted history.
 
 Documentation: no external/versioned boundary - repository code and pinned
@@ -11,9 +11,11 @@ protected evidence define this delivery.
 
 ## Current truth
 
-- Code release `f5be6a26b292b81da1288ca3c394ceac21eb57a3` deployed through
-  GitHub Actions run `31805222594`; public `/api/v1/health` returned that
-  exact SHA.
+- Code release `d30b2d918f75353b3ad75438b29b409a2776cdca` deployed through
+  GitHub Actions run `31811997412`; public `/api/v1/health` returned that
+  exact SHA. The measured round was generated on `f5be6a26…`, and the
+  difference between the two is the audit repair in
+  `tj-l6pw-outbound-guard-repair`.
 - The final client pack keeps the measurement boundary at the start: the
   opening stand charges 8/15 rules, seven rules are unreachable there, and deal
   outcomes exist for only 192/1400 dialogues.
@@ -88,15 +90,16 @@ protected evidence define this delivery.
 - `tj-l6pw`, `tj-yiiq`, `tj-lo92` and `tj-jgns` came out of the audit of that
   accepted stage and are closed by `tj-l6pw-outbound-guard-repair`.
 - Client pack: accepted for handoff; the language, logging-safety and
-  double-question blockers are removed. Its deployed baseline still names
-  `f5be6a26…` and is refreshed when this repair is delivered.
+  double-question blockers are removed. Its deployed baseline names
+  `d30b2d9…` and carries the audit repair beside the measured round.
 
 ## Next recommended
 
-Next stage id: `tj-l6pw-outbound-guard-repair`
-Recommended action: deliver this repair to `main` under current owner
-authorization, read `/api/v1/health` back, then refresh the client pack
-baseline. Do not reopen the accepted `tj-final27-client-handoff`.
+Next stage id: not opened
+Recommended action: hand the accepted client package to the owner. Open a new
+stage only for separately authorized work, and start from the deferred opening
+defects if that work is quality of the first reply. Do not reopen the accepted
+`tj-final27-client-handoff` or `tj-l6pw-outbound-guard-repair`.
 
 ## Starter prompt for next orchestrator
 

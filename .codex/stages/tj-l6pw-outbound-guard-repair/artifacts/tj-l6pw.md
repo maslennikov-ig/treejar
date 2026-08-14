@@ -19,7 +19,7 @@ epic_id: n/a
 stage_id: tj-l6pw-outbound-guard-repair
 session_id: tj-l6pw
 milestone: cohesive-vertical-slice
-milestone_status: in_progress
+milestone_status: accepted
 agent_type: n/a
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
@@ -51,9 +51,9 @@ parallel_group: n/a
 depends_on_streams:
   - none
 parallel_decision: local
-status: returned
-delivery_method: not accepted
-accepted_by_orchestrator: no
+status: accepted
+delivery_method: merge
+accepted_by_orchestrator: yes
 cleanup_status: not_applicable
 cleanup_notes: work performed in the primary worktree; no stage branch or worktree created
 risk_level: medium
@@ -120,8 +120,9 @@ seven expected differences.
 
 # Delivery / Cleanup
 
-Not delivered. The change is committed locally and waits for owner
-authorization to push to `main`, which deploys.
+Delivered to `main` under explicit owner authorization on 2026-08-14 as
+`6921673` and `d30b2d9`, deployed by GitHub Actions run `31811997412`, with an
+exact `/api/v1/health` SHA readback. No stage branch or worktree to clean.
 
 # Risks / Follow-ups / Explicit Defers
 

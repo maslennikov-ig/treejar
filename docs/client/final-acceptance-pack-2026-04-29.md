@@ -91,6 +91,22 @@ GitHub Actions run `31805222594` deployed
 `main@f5be6a26b292b81da1288ca3c394ceac21eb57a3`. Public API smoke passed 8/8,
 and `/api/v1/health` returned that exact release SHA.
 
+An audit of that release then found one customer-visible defect in the same
+outbound boundary and it was repaired before handoff. The boundary had judged
+an Arabic reply by its share of Arabic letters; our catalog is named in Latin
+script, so a true Arabic answer that named several products, quoted a price or
+carried a link was replaced by a fixed sentence and the customer lost the
+answer. The boundary now decides per side: an Arabic reply keeps the customer's
+language when it carries Arabic of its own, an English reply still may not
+carry Arabic script, and a first turn that loses its only question to the guard
+regains one work-led question. Replaying the accepted round's shipped output
+through the repaired boundary, at no cost, returned 18 of the 20 replies
+byte-identical; dialogs 293 and 1291 each gained one work-led question, every
+reply still carried exactly one question mark, and no reply changed language.
+GitHub Actions run `31811997412` deployed that repair as
+`main@d30b2d918f75353b3ad75438b29b409a2776cdca`, and `/api/v1/health` returned
+that exact release SHA.
+
 The production catalog is live data and currently yields a rounded opening
 floor of AED 99 / 58; the protected acceptance snapshot remains AED 139 / 58.
 Owner decision 2026-08-14 permits whole-AED rounding in a `from` price. The
@@ -162,7 +178,7 @@ Commercial and operational promises include:
 
 ## What Is Done
 
-Current deployed baseline is `main@f5be6a26b292b81da1288ca3c394ceac21eb57a3`, delivered by GitHub Actions run `31805222594`, with runtime `.release-sha` matching and `/api/v1/health` OK. The approved historical `tj-final27.9` E2E evidence below was collected earlier on `main@090e318d06662eb4a4c4f2247eb01bd1ed317b94`.
+Current deployed baseline is `main@d30b2d918f75353b3ad75438b29b409a2776cdca`, delivered by GitHub Actions run `31811997412`, with runtime `.release-sha` matching and `/api/v1/health` OK. The measured round above was generated on `main@f5be6a26b292b81da1288ca3c394ceac21eb57a3`, and the difference between the two is the audit repair described there. The approved historical `tj-final27.9` E2E evidence below was collected earlier on `main@090e318d06662eb4a4c4f2247eb01bd1ed317b94`.
 
 Delivered product and runtime evidence:
 
@@ -202,6 +218,14 @@ Confirmed production and local evidence already recorded:
   health-SHA readback. The accepted protected round had 20/20 language matches,
   zero critical failures and exactly one question marker in every reply.
   Synthetic production readback confirmed the outbound and logging guards.
+- 2026-08-14 audit repair: `d30b2d9…` passed 3842 tests with the same 20 skips,
+  process verification, stage closeout and the unchanged protected replay, then
+  deployed with an exact health-SHA readback. The ten added tests are the
+  repaired boundary's own: five Arabic replies that must reach the customer
+  unchanged, one wrong-language reply that must still be replaced, one English
+  reply that must lose only its Arabic sentence, first-turn question
+  restoration in both languages, and a later turn that must never be handed a
+  discovery question.
 
 What was not confirmed by the historical 2026-04-29 run:
 
