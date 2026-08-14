@@ -687,6 +687,23 @@ async def test_the_guards_do_not_re_ask_a_name_the_opening_supplied() -> None:
     assert "how should I address you" not in result.content
 
 
+@pytest.mark.asyncio
+async def test_two_character_openings_cannot_ship_a_second_language() -> None:
+    for opening in ("Hi", "Ok", "Yo", "No", "Go"):
+        result = await apply_shipped_output_guards(
+            "I can help with office furniture. هل تريد كراسي أم مكاتب؟",
+            language="en",
+            anchor_line=None,
+            catalog_evidence=[],
+            customer_message=opening,
+        )
+
+        assert not any(
+            "\u0600" <= character <= "\u06ff" for character in result.content
+        )
+        assert result.content.count("?") + result.content.count("؟") == 1
+
+
 @pytest.mark.parametrize("second_reader", [False, True])
 def test_every_model_the_round_pays_can_be_pinned(second_reader: bool) -> None:
     """The repair judge changed vendor and preflight died on a missing key."""
@@ -1219,7 +1236,8 @@ async def test_the_harness_applies_the_guards_that_ship() -> None:
     )
 
     assert "buy your used desks" not in invented.content
-    assert "What are you furnishing?" in invented.content
+    assert "What are you furnishing" in invented.content
+    assert invented.content.count("?") == 1
     assert invented.repair_trace is not None
     assert invented.repair_trace.counts.calls == 1
     assert len(calls) == 1
@@ -1336,6 +1354,40 @@ async def test_triggered_harness_reply_matches_the_production_finalizer() -> Non
     assert production.repair_trace is not None
     assert harness.repair_trace.answer == production.repair_trace.answer == "correct"
     assert harness.repair_trace.counts == production.repair_trace.counts
+
+
+@pytest.mark.asyncio
+async def test_production_finalizer_enforces_the_selected_language_before_recording() -> (
+    None
+):
+    state = ReplyPolicyState(language="en", is_first_turn=True)
+    recorded: list[str] = []
+    production = await _finalize_turn_response(
+        SimpleNamespace(
+            masked_text="Hi",
+            pii_map={},
+            deps=SimpleNamespace(
+                executed_tool_names=(),
+                conversation=SimpleNamespace(metadata_={}, language="en"),
+            ),
+            _record_reply_on_conversation=lambda _model, text: recorded.append(text),
+        ),
+        LLMResponse(
+            text=(
+                "I can help with office furniture. "
+                "هل تريد كراسي أم مكاتب؟ And how should I address you?"
+            ),
+            tokens_in=10,
+            tokens_out=10,
+            cost=0.001,
+            model=GENERATOR_MODEL,
+            repair_policy_state=state,
+        ),
+    )
+
+    assert not any("\u0600" <= character <= "\u06ff" for character in production.text)
+    assert production.text.count("?") == 1
+    assert recorded == [production.text]
 
 
 @pytest.mark.asyncio

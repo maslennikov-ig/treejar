@@ -13,6 +13,7 @@ from src.api.v1.admin import require_admin_session
 from src.core.config import settings
 from src.core.database import async_session_factory, engine
 from src.core.redis import redis_client
+from src.core.safe_logging import install_sensitive_url_filter
 from src.integrations.notifications.telegram_webhook import sync_telegram_webhook
 from src.services.admin_audit import log_admin_action
 from src.services.telegram_admin_login import consume_telegram_admin_login_token
@@ -21,6 +22,7 @@ from src.services.telegram_admin_login import consume_telegram_admin_login_token
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Startup
+    install_sensitive_url_filter()
     app.state.arq_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     app.state.redis = redis_client
     await sync_telegram_webhook()

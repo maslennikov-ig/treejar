@@ -8,6 +8,7 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 
 from src.core.config import settings
+from src.core.safe_logging import install_sensitive_url_filter
 from src.integrations.inventory.sync import (
     sync_products_from_treejar_catalog,
     sync_products_from_zoho,
@@ -43,6 +44,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
         force=True,
     )
+    install_sensitive_url_filter()
 
     # Verify critical settings
     if not settings.wazzup_channel_id:

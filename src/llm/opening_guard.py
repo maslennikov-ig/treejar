@@ -111,6 +111,12 @@ def canonical_opening(language: str) -> str:
     return f"{identity} {capability}"
 
 
+def canonical_name_question(language: str) -> str:
+    """Return the exact first-turn name question appended by this guard."""
+
+    return _AR_NAME_QUESTION if _is_arabic_language(language) else _EN_NAME_QUESTION
+
+
 def _has_customer_name(customer_name: str | None) -> bool:
     return bool(str(customer_name or "").strip())
 
@@ -220,7 +226,7 @@ def apply_opening_guard(
     is_arabic = _is_arabic_language(language)
     identity = _AR_IDENTITY if is_arabic else _EN_IDENTITY
     capability = _AR_CAPABILITY if is_arabic else _EN_CAPABILITY
-    name_question = _AR_NAME_QUESTION if is_arabic else _EN_NAME_QUESTION
+    name_question = canonical_name_question(language)
 
     body = _strip_legacy_identity(body) or body
     if not is_arabic:

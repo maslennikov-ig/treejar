@@ -185,7 +185,7 @@ class WazzupProvider(MessagingProvider):
 
             page_url: str = data["data"]["url"]
             dl_url = await _resolve_tmpfiles_download_url(http, page_url, content)
-        logger.info("Uploaded %d bytes to %s", len(content), dl_url)
+        logger.info("Uploaded %d bytes to temporary media host", len(content))
         return dl_url
 
     async def download_media(

@@ -4029,7 +4029,9 @@ async def _download_catalog_image(
             response = await client.get(image_url)
             response.raise_for_status()
     except (httpx.HTTPError, httpx.TimeoutException) as exc:
-        logger.warning("Failed to download catalog image from %s: %s", image_url, exc)
+        logger.warning(
+            "Failed to download catalog image: error_type=%s", type(exc).__name__
+        )
         return None
 
     if not response.content:
@@ -4038,8 +4040,7 @@ async def _download_catalog_image(
     content_type = response.headers.get("content-type", "").split(";", 1)[0].strip()
     if not content_type.startswith("image/"):
         logger.warning(
-            "Skipping non-image catalog response for %s with content-type %s",
-            image_url,
+            "Skipping non-image catalog response with content-type %s",
             content_type or "<missing>",
         )
         return None

@@ -80,6 +80,7 @@ from src.llm.grounding_output import GroundingOutputAction
 from src.llm.order_quote_routes import (
     build_declared_static_response,
 )
+from src.llm.outbound_reply_guard import finalize_customer_reply_text
 from src.llm.pii import (
     mask_pii,
     unmask_pii,
@@ -806,6 +807,19 @@ async def _finalize_turn_response(
                 trace.counts.provider_failures,
                 trace.requires_handoff,
             )
+
+    state = response.repair_policy_state
+    language = (
+        state.language
+        if state is not None
+        else str(getattr(turn.deps.conversation, "language", "en") or "en")
+    )
+    response.text = finalize_customer_reply_text(response.text, language=language)
+    response.deferred_product_media = tuple(
+        item
+        for item in response.deferred_product_media
+        if _product_media_is_referenced(item, response.text)
+    )
 
     turn._record_reply_on_conversation(response.model, response.text)
     if AskKind.CUSTOMER_NAME in response.emitted_asks:

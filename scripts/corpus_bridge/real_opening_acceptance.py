@@ -647,9 +647,7 @@ async def apply_shipped_output_guards(
         current_message_customer_name=_inbound_customer_name(customer_message),
         anchor_line=anchor_line,
         anchor_has_limited_stock=anchor_has_limited_stock,
-        limited_stock_product_references=tuple(
-            dict.fromkeys(limited_stock_references)
-        ),
+        limited_stock_product_references=tuple(dict.fromkeys(limited_stock_references)),
         grounded_amounts=grounded_amounts,
     )
     rendered = render_reply(raw_content, state=state, provenance="model")
@@ -683,6 +681,10 @@ async def apply_shipped_output_guards(
         if fallback.flags:
             raise RuntimeError("repair manager handoff notice raised a removal flag")
         content = fallback.text
+
+    from src.llm.outbound_reply_guard import finalize_customer_reply_text
+
+    content = finalize_customer_reply_text(content, language=language)
 
     return ShippedOutputResult(
         content=content,
@@ -2164,9 +2166,7 @@ async def run_paid_round(
                         if isinstance(case.get("anchor_line"), str)
                         else None
                     ),
-                    anchor_has_limited_stock=bool(
-                        case.get("anchor_has_limited_stock")
-                    ),
+                    anchor_has_limited_stock=bool(case.get("anchor_has_limited_stock")),
                     catalog_evidence=case["catalog_evidence"],
                     customer_message=str(case["opening"]),
                     runner=_journaled_repair_runner(

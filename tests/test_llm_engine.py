@@ -5405,7 +5405,8 @@ async def test_process_message_first_turn_unknown_name_does_not_store_plain_gree
     # A bare greeting is the most common opening there is -- 34% of them -- and
     # it still earns what Treejar does rather than only a question back.
     assert "quote from our own catalog" in response.text
-    assert "What are you looking to furnish?" in response.text
+    assert "What are you looking to furnish" in response.text
+    assert response.text.count("?") == 1
     assert "name_gate_pending_request" not in (conv.metadata_ or {})
     mock_notify.assert_not_awaited()
     messaging.send_media.assert_not_called()
@@ -23766,7 +23767,8 @@ async def test_the_first_turn_keeps_its_own_folded_pair(
 
     assert response.text.startswith("Hello, I'm Noor from Treejar.")
     assert "quote from our own catalog" in response.text
-    assert "What are you furnishing?" in response.text
+    assert "What are you furnishing" in response.text
+    assert response.text.count("?") == 1
     assert "how should I address you" in response.text
     mock_notify.assert_not_awaited()
 
