@@ -2,9 +2,10 @@
 
 Updated: 2026-08-14
 Current branch: `main`
-Current stage id: `tj-l6pw-outbound-guard-repair`
+Current stage id: `tj-dak8-loosen-opening`
 Status: accepted, deployed, and ready for client handoff.
-Previous stage `tj-final27-client-handoff` stays accepted history.
+Previous stages `tj-final27-client-handoff` and
+`tj-l6pw-outbound-guard-repair` stay accepted history.
 
 Documentation: no external/versioned boundary - repository code and pinned
 protected evidence define this delivery.
@@ -48,37 +49,47 @@ protected evidence define this delivery.
 ## Accepted measurement
 
 - Protected path:
-  `.git/codex-orchestration/corpus-bridge/tj-08ve-round-20260814c`.
+  `.git/codex-orchestration/corpus-bridge/tj-loosen1-round-20260814e`.
 - Exactly 20 paid `openai/gpt-5.6-luna` generation calls; no repair, scoring
-  or second-reader calls. Actual cost $0.006586 under the $0.05 cap. Root read
-  all 20 blind and free.
-- Acceptance: 20/20 non-empty outputs, 20/20 valid readings, 20/20 replies in
-  the selected turn language, zero critical failures, and exactly one question
-  marker in every reply.
-- Raw mean 12.7; weighted mean 15.2. Against
-  `tj-final27.18-round-20260814b`, raw delta is -0.10 (95% -0.25 to 0.00)
-  and weighted delta is -0.14 (95% -0.35 to 0.00). Both lie inside the 2.0
-  reader gap and support no total-score quality claim.
-- Rule score / ceiling / delta: r1 2.00/2.00/0.00; r2 1.85/2.00/0.00; r3
-  2.00/2.00/0.00; r4 2.00/2.00/+0.05; r5 1.75/1.95/-0.05; r7
-  2.00/2.00/0.00; r8 1.67/2.00/-0.33 (n=6); r9 2.00/2.00/0.00 (n=6).
-- The client pack names new, gone and unchanged defect forms without carrying
-  protected request or reply bodies.
+  or second-reader calls. Actual cost $0.004955, plus roughly $0.003 on an
+  attempt aborted by a coverage check this stage then fixed. Both are inside
+  the $0.05 cap. Root read all 20 blind and free.
+- Acceptance: 20/20 replies in the selected turn language, zero critical
+  failures, and exactly one question marker in every reply.
+- Raw mean 12.8; weighted mean 15.4. Paired against
+  `tj-08ve-round-20260814c` the raw delta is +0.10, inside the 2.0 reader gap,
+  so no total-score quality claim is made.
+- Rule score / paired delta: r1 2.00/0.00; r2 1.90/+0.05; r3 2.00/0.00;
+  r4 2.00/0.00; r5 1.85/+0.10; r7 1.85/-0.15; r8 (n=6) 2.00/+0.33;
+  r9 (n=6) 2.00/0.00.
+- Gone: two discovery subjects stacked into one question on 442 and 819; role
+  discovery continuing after the recruitment redirect on 28; the dropped
+  assembly and delivery needs on 819.
+- New: the offer restated as a capability list on 293, 1022 and 875, which is
+  the accepted cost of removing the ban; an internal SKU string reaching the
+  customer on 1067.
+- The previous accepted round `tj-08ve-round-20260814c` stays valid history and
+  is what this one is paired against.
 
 ## Verification
 
 - Ruff check and format: passed.
 - Mypy: passed over 177 source files.
-- Full pytest: 3842 passed, 20 skipped, 0 failed. The +10 over the deployed
-  3832/20/0 is exactly the focused cases of `tj-l6pw-outbound-guard-repair`.
-  Skips are unchanged.
+- Full pytest: 3846 passed, 20 skipped, 0 failed. The +4 over the previous
+  3842/20/0 is exactly the focused cases of `tj-dak8-loosen-opening`. Skips are
+  unchanged.
 - Stored-round replay of the shipped output path over
   `tj-08ve-round-20260814c` with no paid calls: 18 of 20 replies byte-identical
   and dialogs 293 and 1291 each gaining one work-led question folded into the
   name ask. One question marker everywhere; no content and no language changed.
 - Process verification: passed.
-- Raw replay retained `1b425bd1…` against frozen `1fc87c04…`, exactly seven
-  expected differences only on dialogs 28, 875 and 1291.
+- Raw replay re-pinned. The 2026-08-14 loosening changes how every first turn
+  renders, so the 2026-08-11 `1fc87c04…` pin went to 55 differences of 60.
+  Under explicit owner authorization the raw convention was re-pinned to
+  `caaa8e44…` in
+  `.git/codex-orchestration/corpus-bridge/tj-wvuk-replay-baseline-20260814.json`,
+  and the replay is clean against it. Run it against that file from now on; the
+  `tj-t6ug` baseline is retained untouched as history.
 - Production safe scan found zero complete access URLs and zero query-bearing
   URLs. A synthetic deployed readback found one redacted marker, one question
   marker, and no second-language letters.
@@ -89,6 +100,7 @@ protected evidence define this delivery.
 - Parent `tj-final27` has 19/19 children complete and is closed.
 - `tj-l6pw`, `tj-yiiq`, `tj-lo92` and `tj-jgns` came out of the audit of that
   accepted stage and are closed by `tj-l6pw-outbound-guard-repair`.
+- `tj-dak8` closes the 2026-08-14 loosening of the first-turn opening rules.
 - Client pack: accepted for handoff; the language, logging-safety and
   double-question blockers are removed. Its deployed baseline names
   `d30b2d9…` and carries the audit repair beside the measured round.
@@ -110,12 +122,17 @@ without a fresh explicit owner request.
 
 ## Explicit defers
 
-- `tj-s6ah`, `tj-gwg1`, `tj-2f1u`, `tj-c58g` and `tj-q88k` carry the opening
-  defect forms that `tj-08ve-round-20260814c` named and nothing tracked: two
-  discovery subjects in one question on 442 and 819, a product outside the
-  customer's family on 436, catalog-category discovery on 420 and 1000,
-  internal machinery wording on 1067, and role discovery continuing after a
-  recruitment redirect on 28. None is a critical failure; none blocks handoff.
+- `tj-gwg1`, `tj-2f1u` and `tj-c58g` carry the opening defect forms that are
+  still present after the loosening: a product outside the customer's family on
+  436, catalog-category discovery on 420 and 1000, and internal catalog
+  machinery reaching the customer on 1067, now as a raw SKU string. `tj-s6ah`
+  and `tj-q88k` are closed by the loosening round. None is a critical failure;
+  none blocks handoff.
+- `tj-wvuk` (P3): the anchor now lands after the discovery question. The reply
+  is one WhatsApp message, so the question stays visible above it, and every
+  alternative ordering costs something else. Recorded, not fixed.
+- Rule 7's -0.15 is deliberately not chased: chasing it restores the ban the
+  loosening removed.
 - `tj-jlx4` is explicitly outside this task.
 - Reader-gap drift re-read remains tracked separately in `tj-4q79`; no second
   reader was authorized or used.

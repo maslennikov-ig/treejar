@@ -1,0 +1,64 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-dak8-loosen-opening",
+  "goal_id": "tj-dak8",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "accepted",
+  "sequence": 1,
+  "acceptance_boundary_id": "first-turn-opening-loosening",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "opening-response-policy",
+      "consultative-directive"
+    ],
+    "risk_models": [
+      "value-proposition-regression",
+      "paid-generation-calls"
+    ],
+    "test_environments": [
+      "focused-opening-tests",
+      "frozen-openings-20",
+      "protected-replay",
+      "repository-release-gates"
+    ],
+    "rollback_boundary": "one-line-revert-in-engine-plus-one-main-commit",
+    "acceptance_proofs": [
+      "model-authored-opening-kept",
+      "missing-introduction-still-supplied",
+      "paired-round-20-of-20-language-zero-critical",
+      "re-pinned-protected-replay-under-owner-authority",
+      "green-release-gates"
+    ]
+  },
+  "work_areas": [
+    "implementation",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-dak8",
+    "source_digest": "25ec4172f5ef6cee3871097dd87b725b2abe2acb71b35170a8cb13442b469eb0",
+    "criteria": [
+      {
+        "criterion_id": "AC-01",
+        "text": "The fixed opening becomes a fallback: a first turn that introduces us itself keeps its own words, one that does not still receives the fixed sentence, and a paired measured round shows 20/20 customer language with zero critical failures.",
+        "text_digest": "3159c8916db0175bb4962e4104a1f1bb3405b64fb101d7f2634bcb913c1a7b53"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-dak8/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "25ec4172f5ef6cee3871097dd87b725b2abe2acb71b35170a8cb13442b469eb0",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-dak8",
+      "stream_owner": "tj-dak8-loosen-opening-root",
+      "artifact_path": ".codex/stages/tj-dak8-loosen-opening/artifacts/tj-dak8.md"
+    }
+  ]
+}

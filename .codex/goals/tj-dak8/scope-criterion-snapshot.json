@@ -1,0 +1,14 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-dak8",
+  "source_kind": "beads",
+  "source_id": "tj-dak8",
+  "source_digest": "25ec4172f5ef6cee3871097dd87b725b2abe2acb71b35170a8cb13442b469eb0",
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "text": "The fixed opening becomes a fallback: a first turn that introduces us itself keeps its own words, one that does not still receives the fixed sentence, and a paired measured round shows 20/20 customer language with zero critical failures.",
+      "text_digest": "3159c8916db0175bb4962e4104a1f1bb3405b64fb101d7f2634bcb913c1a7b53"
+    }
+  ]
+}
