@@ -38,6 +38,8 @@ _EN_IDENTITY = "Hello, I'm Noor from Treejar."
 _EN_NAME_QUESTION = "And how should I address you?"
 _AR_IDENTITY = "مرحبًا، أنا Noor من Treejar."
 _AR_NAME_QUESTION = "وكيف أخاطبك؟"
+_EN_DISCOVERY_QUESTION = "What are you setting up?"
+_AR_DISCOVERY_QUESTION = "ما الذي تجهّزه؟"
 _EN_LIMITED_ANCHOR_STOCK = (
     "The items at these starting prices have limited stock; larger quantities "
     "may need different options and prices."
@@ -115,6 +117,23 @@ def canonical_name_question(language: str) -> str:
     """Return the exact first-turn name question appended by this guard."""
 
     return _AR_NAME_QUESTION if _is_arabic_language(language) else _EN_NAME_QUESTION
+
+
+def canonical_discovery_question(language: str) -> str:
+    """The one work-led question that replaces a discovery ask lost to a guard.
+
+    `tj-yiiq`. Removing a second-language sentence can take the only substantive
+    question with it, which is what happened on dialog 293: the reply kept the
+    name ask and nothing else. One subject only -- stacking a second one is the
+    defect `tj-b8px` closed -- and no product list, which is the defect
+    `tj-j62b` closed.
+    """
+
+    return (
+        _AR_DISCOVERY_QUESTION
+        if _is_arabic_language(language)
+        else _EN_DISCOVERY_QUESTION
+    )
 
 
 def _has_customer_name(customer_name: str | None) -> bool:

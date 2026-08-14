@@ -1,0 +1,14 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-l6pw",
+  "source_kind": "beads",
+  "source_id": "tj-l6pw",
+  "source_digest": "9a295c29f1be5f3df79dec4fdb498f50c195536270c243a36c2d4360ff6bac64",
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "text": "A legitimate customer reply is never replaced by a fixed sentence because it names our catalog in Latin script, and a first turn that loses its only question to a guard gets one back in the selected language.",
+      "text_digest": "16945ea8418bb6b9fe6e9cb8ff82eeba0832ff5592da538e1956c8ced4c9eb45"
+    }
+  ]
+}

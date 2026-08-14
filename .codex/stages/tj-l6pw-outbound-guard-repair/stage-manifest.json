@@ -1,0 +1,64 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-l6pw-outbound-guard-repair",
+  "goal_id": "tj-l6pw",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "in_progress",
+  "sequence": 1,
+  "acceptance_boundary_id": "outbound-reply-guard-repair",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "outbound-reply-guard",
+      "opening-response-policy"
+    ],
+    "risk_models": [
+      "customer-visible-content-loss",
+      "language-selection"
+    ],
+    "test_environments": [
+      "focused-outbound-guard-tests",
+      "stored-round-shipped-output-replay",
+      "repository-release-gates"
+    ],
+    "rollback_boundary": "one-main-delivery-commit",
+    "acceptance_proofs": [
+      "arabic-reply-naming-catalog-survives",
+      "wrong-language-reply-still-replaced",
+      "lost-first-turn-question-restored",
+      "stored-round-18-of-20-byte-identical",
+      "unchanged-protected-replay",
+      "green-release-gates"
+    ]
+  },
+  "work_areas": [
+    "implementation",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-l6pw",
+    "source_digest": "9a295c29f1be5f3df79dec4fdb498f50c195536270c243a36c2d4360ff6bac64",
+    "criteria": [
+      {
+        "criterion_id": "AC-01",
+        "text": "A legitimate customer reply is never replaced by a fixed sentence because it names our catalog in Latin script, and a first turn that loses its only question to a guard gets one back in the selected language.",
+        "text_digest": "16945ea8418bb6b9fe6e9cb8ff82eeba0832ff5592da538e1956c8ced4c9eb45"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-l6pw/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "9a295c29f1be5f3df79dec4fdb498f50c195536270c243a36c2d4360ff6bac64",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-l6pw",
+      "stream_owner": "tj-l6pw-outbound-guard-repair-root",
+      "artifact_path": ".codex/stages/tj-l6pw-outbound-guard-repair/artifacts/tj-l6pw.md"
+    }
+  ]
+}

@@ -2,8 +2,9 @@
 
 Updated: 2026-08-14
 Current branch: `main`
-Current stage id: `tj-final27-client-handoff`
-Status: accepted, deployed, and ready for client handoff.
+Current stage id: `tj-l6pw-outbound-guard-repair`
+Status: implemented and green locally; awaiting delivery authorization.
+Previous stage `tj-final27-client-handoff` stays accepted history.
 
 Documentation: no external/versioned boundary - repository code and pinned
 protected evidence define this delivery.
@@ -20,10 +21,19 @@ protected evidence define this delivery.
   `Chairs from AED 139, desks and workstations from AED 58.`; preflight is 19
   priced and one withheld.
 - Customer-facing output passes through one final deterministic boundary. It
-  stays in the language selected for the current turn and contains at most one
-  literal question marker. This covers two-character openings and bare
-  greetings without changing the model prompt, rubric, applicability map or
-  language threshold.
+  stays in the language selected for the current turn. It also folds the
+  canonical name question into an existing question, and the first turn is
+  rebuilt by the opening guard, so a first turn carries one question marker;
+  there is no general one-question guarantee on a later turn. This covers
+  two-character openings and bare greetings without changing the model prompt,
+  rubric, applicability map or language threshold.
+- That boundary decides language per side, not by a shared ratio. An Arabic
+  reply keeps the customer's language when it carries Arabic of its own, so
+  naming three Latin-script catalog products, quoting a price or carrying a
+  link no longer costs the customer the answer. An English reply still may not
+  carry Arabic script. When the removed sentence was the only place a first
+  turn asked anything, one work-led question is restored in the selected
+  language.
 - Application logs pass through a record-editing filter on every active
   handler. Every HTTP(S) URL is reduced to scheme and host plus a redacted
   marker, removing path, query and userinfo independently of logger or client.
@@ -57,9 +67,13 @@ protected evidence define this delivery.
 
 - Ruff check and format: passed.
 - Mypy: passed over 177 source files.
-- Full pytest: 3832 passed, 20 skipped, 0 failed. The +10 from the supplied
-  3822/20/0 baseline is exactly two logging tests, six outbound reply-guard
-  tests and two corpus/production-boundary tests. Skips are unchanged.
+- Full pytest: 3842 passed, 20 skipped, 0 failed. The +10 over the deployed
+  3832/20/0 is exactly the focused cases of `tj-l6pw-outbound-guard-repair`.
+  Skips are unchanged.
+- Stored-round replay of the shipped output path over
+  `tj-08ve-round-20260814c` with no paid calls: 18 of 20 replies byte-identical
+  and dialogs 293 and 1291 each gaining one work-led question folded into the
+  name ask. One question marker everywhere; no content and no language changed.
 - Process verification: passed.
 - Raw replay retained `1b425bd1…` against frozen `1fc87c04…`, exactly seven
   expected differences only on dialogs 28, 875 and 1291.
@@ -71,14 +85,18 @@ protected evidence define this delivery.
 
 - `tj-08ve`, `tj-final27.19` and `tj-final27.20` are closed.
 - Parent `tj-final27` has 19/19 children complete and is closed.
+- `tj-l6pw`, `tj-yiiq`, `tj-lo92` and `tj-jgns` came out of the audit of that
+  accepted stage and are closed by `tj-l6pw-outbound-guard-repair`.
 - Client pack: accepted for handoff; the language, logging-safety and
-  double-question blockers are removed.
+  double-question blockers are removed. Its deployed baseline still names
+  `f5be6a26…` and is refreshed when this repair is delivered.
 
 ## Next recommended
 
-Next stage id: not opened
-Recommended action: hand the accepted client package to the owner; open a new
-stage only for separately authorized work. Do not reopen this accepted stage.
+Next stage id: `tj-l6pw-outbound-guard-repair`
+Recommended action: deliver this repair to `main` under current owner
+authorization, read `/api/v1/health` back, then refresh the client pack
+baseline. Do not reopen the accepted `tj-final27-client-handoff`.
 
 ## Starter prompt for next orchestrator
 
@@ -89,6 +107,12 @@ without a fresh explicit owner request.
 
 ## Explicit defers
 
+- `tj-s6ah`, `tj-gwg1`, `tj-2f1u`, `tj-c58g` and `tj-q88k` carry the opening
+  defect forms that `tj-08ve-round-20260814c` named and nothing tracked: two
+  discovery subjects in one question on 442 and 819, a product outside the
+  customer's family on 436, catalog-category discovery on 420 and 1000,
+  internal machinery wording on 1067, and role discovery continuing after a
+  recruitment redirect on 28. None is a critical failure; none blocks handoff.
 - `tj-jlx4` is explicitly outside this task.
 - Reader-gap drift re-read remains tracked separately in `tj-4q79`; no second
   reader was authorized or used.
