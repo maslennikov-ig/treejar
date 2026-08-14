@@ -38,57 +38,57 @@ price.
 The protected preflight found 19 priced openings and one correctly withheld
 anchor. The blind root reading covered all 20 openings. No second reader was
 used. The rule result, with the attainable mean ceiling beside each score and
-the delta against `tj-399z`, was:
+the paired delta against `tj-final27.18-round-20260814b`, was:
 
 | Rule | New score / ceiling | Delta |
 |---|---:|---:|
 | 1 | 2.00 / 2.00 | 0.00 |
-| 2 | 1.85 / 2.00 | -0.10 |
+| 2 | 1.85 / 2.00 | 0.00 |
 | 3 | 2.00 / 2.00 | 0.00 |
-| 4 | 1.95 / 2.00 | 0.00 |
-| 5 | 1.80 / 1.95 | 0.00 |
-| 7 | 2.00 / 2.00 | +0.05 |
-| 8 (`n=6`) | 2.00 / 2.00 | +0.17 |
+| 4 | 2.00 / 2.00 | +0.05 |
+| 5 | 1.75 / 1.95 | -0.05 |
+| 7 | 2.00 / 2.00 | 0.00 |
+| 8 (`n=6`) | 1.67 / 2.00 | -0.33 |
 | 9 (`n=6`) | 2.00 / 2.00 | 0.00 |
 
-The raw paired delta was `0.00` per opening (95% interval `-0.25` to `+0.20`)
-and the weighted delta was `+0.10` (95% interval `-0.15` to `+0.36`). Both are
+The raw paired delta was `-0.10` per opening (95% interval `-0.25` to `0.00`)
+and the weighted delta was `-0.14` (95% interval `-0.35` to `0.00`). Both are
 inside the measured reader gap of 2.0 points per opening and are not presented
-as evidence of improvement. Fourteen of 20 openings reached their own ceiling,
-against 13 of 20 in `tj-399z`.
+as evidence of either improvement or regression. Twelve of 20 openings reached
+their own ceiling. The two ceiling bands were 9.6 for 14 openings (mean 9.2)
+and 30.0 for six openings (mean 29.1).
 
-The result is **not an accepted round**. Dialog 293 switched the substantive
-reply away from the customer's language and created one `wrong_language`
-critical failure; it is tracked as `tj-08ve`. The price anchor introduced no
-contradiction with quoted rows, and every reply that owed a low-stock warning
-carried it before asking the customer to continue.
+The result is an **accepted round**: all 20 responses were non-empty, all 20
+root readings were valid, all 20 customer-facing replies stayed in the language
+selected for that turn, and there were zero critical failures. Every delivered
+reply also contained exactly one literal question mark. The price anchor
+introduced no contradiction with quoted rows, and every reply that owed a
+low-stock warning carried it before asking the customer to continue.
 
 Named defect movement:
 
-- New: the language switch and generic need question on dialog 293; exposure
-  of an internal catalog-lookup step on dialog 1067.
-- Gone: repeated value-proposition copy on dialog 807; the product-led need
-  question on dialog 442; stacked clarification/name questions on dialog 1067.
-- Unchanged: wrong-family end-table wording on dialog 436; product-list
-  questions on 420 and 1000; the job-application rule-5 ceiling on 28; dropped
-  delivery timing on 819.
+- New: after removal of the second language, dialog 293 contains no substantive
+  need discovery beyond the name question; dialog 28 redirects recruitment and
+  then continues role discovery; dialogs 442 and 819 each stack two discovery
+  subjects into one grammatical question.
+- Gone: the English-turn Arabic narrative and its critical failure on dialog
+  293; the two-literal-question-mark greeting form; the missing delivery and
+  assembly acknowledgement on dialog 819.
+- Unchanged: wrong-family end-table wording on dialog 436; product-led
+  discovery on dialogs 420 and 1000; internal catalog machinery wording on
+  dialog 1067. The unresolved-referent cases on dialogs 366 and 815 remain
+  scored under the existing reading convention and are not adopted as defects.
 
 The protected artifact is
-`.git/codex-orchestration/corpus-bridge/tj-final27.18-round-20260814b`.
-Generation used 20 paid Luna calls for `$0.006569`; one triggered repair call
-cost `$0.000134`; total paid cost was `$0.006703`, below the authorized `$0.05`
-cap. The root reading was free.
-
-After those generations, the delivered code received one deterministic-only
-alignment: the rounded amount stored as grounding evidence now exactly matches
-the rounded customer line. It did not change generated reply text. A no-spend
-postfix preflight on the delivered code repeated AED 139 / 58 and 19 priced / 1
-withheld. The paid round was not rerun after its authorized calls were exhausted.
+`.git/codex-orchestration/corpus-bridge/tj-08ve-round-20260814c`.
+Generation used exactly 20 paid Luna calls for `$0.006586`, below the authorized
+`$0.05` cap. There were no repair or scoring calls. The blind root reading was
+free.
 
 ### Current deployment and controlled E2E
 
-GitHub Actions run `31798763684` deployed
-`main@68800f29a89f493af8585bc77423cef6bdb2182e`. Public API smoke passed 8/8,
+GitHub Actions run `31805222594` deployed
+`main@f5be6a26b292b81da1288ca3c394ceac21eb57a3`. Public API smoke passed 8/8,
 and `/api/v1/health` returned that exact release SHA.
 
 The production catalog is live data and currently yields a rounded opening
@@ -110,11 +110,22 @@ Controlled readback recorded only identifiers and digests, never message bodies:
 - Final aggregate: zero pending synthetic conversations and zero pending
   escalation rows. Two pre-fix synthetic escalation rows were resolved.
 
-The live anchor response also carried two literal question marks. This does not
-change the anchor or R04 criteria, but it is tracked as P2 `tj-final27.20`.
-Diagnostics also found that Telegram's HTTP client logs a credential-bearing
-request URL; P0 `tj-final27.19` blocks formal acceptance until future logging is
-safe and the credential is rotated under explicit owner authority.
+Post-deploy checks used synthetic values and recorded no customer message body.
+The shipped greeting guard returned one literal question mark and no
+second-language letters. The logging readback found zero complete access URLs,
+zero query-bearing URLs and one intentionally redacted URL marker.
+
+`tj-final27.19` is closed by a record-editing filter attached to every active
+application handler. It removes HTTP(S) paths, query strings and userinfo before
+any formatter writes a record, so the protection also covers a future HTTP
+client using a different logger. The audit additionally removed Wazzup upload
+URL logging and catalog image URL/exception logging because signed media URLs
+can carry access. Owner decision 2026-08-14: the Telegram token is not rotated;
+the observed copy never left standard output on the owner-controlled server,
+where the same value already exists in `.env`, and no external log collector,
+CI call, Git record, document or artifact contains it. `tj-final27.20` is also
+closed by the final outbound guard that folds the name question into the single
+substantive question.
 
 Historical refresh note, 2026-04-30: the snapshot was promoted into the repo
 after later narrow follow-ups were delivered. Production runtime at that time
@@ -151,7 +162,7 @@ Commercial and operational promises include:
 
 ## What Is Done
 
-Current deployed baseline is `main@68800f29a89f493af8585bc77423cef6bdb2182e`, delivered by GitHub Actions run `31798763684`, with runtime `.release-sha` matching and `/api/v1/health` OK. The approved historical `tj-final27.9` E2E evidence below was collected earlier on `main@090e318d06662eb4a4c4f2247eb01bd1ed317b94`.
+Current deployed baseline is `main@f5be6a26b292b81da1288ca3c394ceac21eb57a3`, delivered by GitHub Actions run `31805222594`, with runtime `.release-sha` matching and `/api/v1/health` OK. The approved historical `tj-final27.9` E2E evidence below was collected earlier on `main@090e318d06662eb4a4c4f2247eb01bd1ed317b94`.
 
 Delivered product and runtime evidence:
 
@@ -186,10 +197,11 @@ Confirmed production and local evidence already recorded:
 - `tj-final27.9`: approved controlled E2E subset passed on 2026-04-29 against runtime `090e318d06662eb4a4c4f2247eb01bd1ed317b94`. It covered customer discovery, SKU `00-07024023` exact price/stock, quotation approve/reject (`Fr3167`/`Fr3168`), Telegram private manager reply, active escalation fallback, outbound audit readback, phone filtering, and final pending count (`6` conversations, `0` pending).
 - `tj-final27.9` quality pass: approved bounded text-only synthetic quality scenarios covered consultative sales, price objection, retention, payment terms/discount request, Saudi Arabia delivery, Arabic sales request, off-catalog request, and large-order handoff. Final readback showed `6` `tj-final27-quality` conversations and `0` pending.
 - Later follow-ups: `tj-final27.11` sales fallback deployed on `ab897878e2f0ee339bd7626b63d5c6f3a9497042`, `tj-jy5i` commercial-offer routing deployed on `1cce2aa4bdbc82b9a11ce2f7ce117103e6a3e6f0`, and `tj-final27.13` payment-reminder provider reuse deployed on `354015280c8f8d39b538bbaba769e70d29d1c6b2`. Each had targeted verification and production health/readback evidence recorded in Beads or handoff.
-- 2026-08-14 refresh: `68800f2…` passed 3822 tests with 20 skips,
-  process verification, protected replay, stage closeout, public API smoke 8/8,
-  exact health-SHA readback, live anchor evidence and literal R04. Synthetic
-  pending conversations and escalation rows both ended at zero.
+- 2026-08-14 final refresh: `f5be6a2…` passed 3832 tests with 20 skips,
+  process verification, protected replay, public API smoke 8/8 and exact
+  health-SHA readback. The accepted protected round had 20/20 language matches,
+  zero critical failures and exactly one question marker in every reply.
+  Synthetic production readback confirmed the outbound and logging guards.
 
 What was not confirmed by the historical 2026-04-29 run:
 
@@ -220,34 +232,39 @@ Quality risks:
 
 These items are explicit boundaries of the current delivery:
 
-- Final live E2E approval: exact phone/channel, allowed synthetic suffix prefix, approved scenarios, and permitted media/voice/payment/referral branches.
-- Voice/audio: production hardening and live voice E2E remain open under `tj-final27.4`; no live voice test should run without explicit approval.
-- Post-delivery feedback: final dashboard/reporting/customer-flow acceptance remains open under `tj-final27.5`.
+- Future live E2E still requires an exact phone/channel, an approved synthetic
+  suffix prefix, named scenarios and explicit permission for any media, voice,
+  payment or referral branch.
+- Voice/audio production hardening is delivered under closed `tj-final27.4`;
+  no additional live voice test should run without explicit approval.
+- Post-delivery feedback acceptance is delivered under closed `tj-final27.5`.
 - Referrals are excluded by the approved wording above. The mechanics remain
   implemented and disabled; activation is a separate customer decision after
   acceptance.
-- QA/reporting: final owner-visible report/AI Quality Controls acceptance remains open under `tj-final27.7`; scheduled AI Quality Controls stay disabled unless explicitly enabled.
-- Nonfunctional readiness: fresh load/security/backup/SLA evidence remains open under `tj-final27.8`.
+- QA/reporting acceptance is delivered under closed `tj-final27.7`; scheduled
+  AI Quality Controls stay disabled unless explicitly enabled.
+- Nonfunctional readiness evidence is delivered under closed `tj-final27.8`;
+  future production load or security runs still require explicit scope.
 - Zoho UTM/source outbound mapping: exact Zoho CRM API field names and overwrite policy are still a client decision.
 - Payment reminders: template IDs/names, timing, copy/tone, stop conditions, and enablement policy are still client decisions. Default runtime sends zero reminders.
 - Support window: source documents mention at least 15 working days of startup support, but final start date, contact path, hours, and escalation rules should be confirmed in the client handoff.
-- Measured opening language: `tj-08ve` remains open because dialog 293 switched
-  the substantive reply away from the customer language. A fresh measured round
-  needs new paid-call authority; no second reader is authorized.
-- Security: `tj-final27.19` must stop credential-bearing Telegram request URLs
-  from entering logs and rotate the existing credential under explicit owner
-  authority.
-- Opening question count: `tj-final27.20` tracks one bare live greeting with two
-  question marks. The R04/R02 verified-opening acceptance is unaffected.
+- Measured opening language: resolved by a deterministic final outbound guard;
+  the accepted round is 20/20 on the turn language with zero critical failures.
+- Logging safety: resolved for Telegram, Wazzup signed upload URLs and catalog
+  image URLs. The existing Telegram token intentionally remains unchanged under
+  the recorded owner decision above.
+- Opening question count: resolved at the same final outbound boundary; the
+  accepted round and synthetic production check each contain one literal
+  question marker per reply.
 
 ## Acceptance Recommendation
 
 Use this pack for client review of the final delivery state. The project has fresh evidence for the core sales path, production runtime health, quotation approve/reject, manager handoff, auth guards, cost-control defaults, catalog/Zoho truth policy, CRM attribution storage, disabled-safe payment reminders, and the approved controlled E2E subset.
 
-The pack is ready for client evaluation: controlled E2E left zero pending
+The pack is accepted for client handoff: controlled E2E left zero pending
 synthetic state, release gates are green, the blind round is recorded with
-per-rule ceilings, and production health reports the delivered commit. Do not
-mark the overall stage formally accepted while P0 `tj-final27.19` and measured
-P1 `tj-08ve` remain open. Referral activation is not a condition because it is
-explicitly excluded above. The bounded pack/E2E task `tj-final27.9` is closed;
-that task closure does not override the parent-stage blockers.
+per-rule ceilings, and production health reports the delivered code commit.
+The language, logging-safety and double-question blockers are closed. Referral
+activation is not a condition because it is explicitly excluded above. The
+measurement boundary and remaining client-owned operating decisions above stay
+attached to this acceptance statement.

@@ -22,35 +22,35 @@ epic_id: tj-final27
 stage_id: tj-final27-client-handoff
 session_id: tj-final27
 milestone: client-handoff-code-measurement-e2e-delivery
-milestone_status: replan-required
+milestone_status: accepted
 agent_type: n/a
 subagent_model: n/a
 reasoning_effort: inherit_orchestrator
-model_reasoning_rationale: root owns implementation, blind reading, acceptance, and delivery
+model_reasoning_rationale: root owned implementation, blind reading, acceptance, and delivery
 repo: treejar
 branch: main
 base_branch: main
 base_commit: 40357200c052d14c84c2c282cc6625457ae2122b
 worktree: /home/me/code/treejar
 write_zone:
-  - src/llm
-  - scripts/corpus_bridge
+  - src
   - tests
   - docs/client
+  - .beads
   - .codex
 success_criteria:
   - pinned English anchor is exactly AED 139 / AED 58 and preflight is 19 priced / 1 withheld
-  - low-stock quoted rows are disclosed and realistic openings carry a verified row with at most one question
-  - referral exclusion is explicit and final pack states measurement reach plainly
-  - blind openings-20 round is paired per rule against tj-399z without a second reader
+  - customer-facing output deterministically stays in the selected turn language
+  - bare greetings deliver one literal question marker
+  - all application log handlers redact HTTP access paths, query strings, and userinfo
+  - blind openings-20 round is paired against the preceding round without a second reader
   - protected raw replay and release gates stay fixed
-  - controlled E2E leaves no pending synthetic conversations and production health reports the delivered SHA
+  - production health reports the delivered SHA
 selected_docs:
   - AGENTS.md
   - .codex/orchestrator.toml
   - .codex/handoff.md
   - docs/root-reading-convention.md
-  - docs/plans/2026-04-27-final-delivery-completion.md
 selected_skills:
   - orchestrator-stage
   - technical-premortem
@@ -64,18 +64,19 @@ catalog_candidates:
 parallel_group: n/a
 depends_on_streams:
   - none
-parallel_decision: local
-status: blocked
+parallel_decision: root acceptance and blind reading were non-delegable
+status: accepted
 delivery_method: manual integration
-accepted_by_orchestrator: no
-cleanup_status: not_applicable
-cleanup_notes: root used the authorized main worktree; no delegated workspace exists
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: root used the authorized main worktree; no delegated workspace or branch exists to remove
 risk_level: high
 verification_tier: release
 risk_tags:
   - state-transition
   - user-flow
   - rollback
+  - security
 affected_surfaces:
   - backend
   - user-flow
@@ -85,87 +86,74 @@ invariants:
   - test-matrix
 docs_impact: behavior
 docs_reviewed: updated
-docs_review_notes: handoff, client pack, reading convention, and stage evidence record behavior and measurement
+docs_review_notes: handoff, client pack, reading convention, and stage evidence record current behavior and measurement
 verification:
-  - pinned catalog anchor AED 139 / AED 58 and preflight 19 / 1: passed
-  - focused anchor guard and harness tests 119 passed: passed
-  - repeated R04 and R02 deterministic verified rows: passed
-  - blind root reading and pairing against tj-399z: passed with one critical language defect recorded
-  - protected raw replay current 1b425bd1 versus frozen 1fc87c04 with seven expected differences: passed
+  - preflight AED 139 / 58 and 19 priced / 1 withheld: passed
+  - blind root round 20/20 language and zero critical failures: passed
+  - every measured reply had one literal question marker: passed
+  - protected raw replay 1b425bd1 versus 1fc87c04 with seven expected differences: passed
+  - safe production log scan found zero complete access URLs and zero query URLs: passed
+  - synthetic deployed guard readback found one question and no second-language letters: passed
   - uv run ruff check src/ tests/: passed
   - uv run ruff format --check src/ tests/: passed
   - uv run mypy src/: passed
-  - uv run pytest tests/ -v --tb=short: passed 3822 passed 20 skipped
+  - uv run pytest tests/ -v --tb=short: passed 3832 passed 20 skipped
   - scripts/orchestration/run_process_verification.sh: passed
-  - run_stage_closeout corpus bridge acceptance: passed 71 passed 1 skipped
-  - post-deploy health returned exact release SHA and public API smoke passed 8/8
-  - controlled anchor and literal R04 readback passed with zero pending synthetic state
+  - first formal closeout exposed five documentation-maintenance failures; required handoff fields and the current-state traceability pin were updated
+  - GitHub Actions run 31805222594: passed
+  - production health returned f5be6a26b292b81da1288ca3c394ceac21eb57a3: passed
 changed_files:
   - .beads/issues.jsonl
-  - .codex/goals/tj-final27/scope-criterion-snapshot.json
   - .codex/handoff.md
-  - .codex/orchestrator.toml
-  - .codex/stages/tj-ee5f/traceability-manifest.json
   - .codex/stages/tj-final27-client-handoff/stage-manifest.json
   - .codex/stages/tj-final27-client-handoff/summary.md
   - .codex/stages/tj-final27-client-handoff/artifacts/tj-final27.9.md
+  - .codex/stages/tj-ee5f/traceability-manifest.json
   - docs/client/final-acceptance-pack-2026-04-29.md
-  - docs/root-reading-convention.md
-  - scripts/corpus_bridge/real_opening_acceptance.py
-  - src/llm/catalog_planning.py
-  - src/llm/deterministic_routes.py
+  - src/core/safe_logging.py
+  - src/integrations/messaging/wazzup.py
   - src/llm/engine.py
+  - src/llm/language_guard.py
   - src/llm/message_processor.py
   - src/llm/opening_guard.py
-  - src/llm/order_quote_routes.py
-  - src/llm/response_policy.py
-  - src/llm/sales_turn_guard.py
+  - src/llm/outbound_reply_guard.py
+  - src/main.py
+  - src/worker.py
   - tests/test_corpus_bridge_real_opening_acceptance.py
-  - tests/test_llm_catalog_anchor_line.py
-  - tests/test_llm_company_activity_cooldown.py
   - tests/test_llm_engine.py
-  - tests/test_llm_response_guard_declarations.py
-  - tests/test_llm_response_policy_guards.py
-  - tests/test_opening_guard.py
+  - tests/test_outbound_reply_guard.py
+  - tests/test_safe_logging.py
 explicit_defers:
-  - tj-08ve requires a deterministic language guard and fresh measured-round authority
-  - tj-final27.19 requires safe Telegram URL logging and credential rotation under fresh authority
-  - tj-final27.20 tracks two question marks in one bare-greeting live reply
+  - tj-jlx4 is excluded from this task by owner instruction
+  - reader-gap drift re-read remains separately tracked in tj-4q79; no second reader was authorized
 ---
 
 # Summary
 
-The requested anchor, low-stock disclosure, realistic-opening route, referral
-exclusion, final pack, blind measured round, deployment and controlled E2E are
-complete. The stage is not accepted because the round found one new critical
-language failure on dialog 293 (`tj-08ve`) and diagnostics found a
-credential-bearing Telegram request URL in logs (`tj-final27.19`).
+The final client-handoff stage is accepted. The logging, turn-language and
+double-question blockers are closed, the paid confirmation round met 20/20
+language with zero critical failures, release gates passed, and production
+health returned the delivered code SHA.
 
-# Scope / Routing
+The existing Telegram token was intentionally not rotated under the recorded
+owner decision: the observed log copy stayed on the owner-controlled server and
+was not exported, collected by CI, committed, documented, or placed in an
+artifact. Protection is preventive and generic: a record-editing filter redacts
+HTTP(S) paths, queries and userinfo on every active handler, independent of the
+HTTP client or logger name.
 
-Root-owned sequential delivery in the main worktree. No delegation, no second
-reader, and no external documentation boundary. The anchor family, non-furniture
-withholding and Arabic separator rules are unchanged.
+The protected round remains only under the git-common runtime directory. Tracked
+records contain ids, integers, scores and digests, never protected request or
+reply bodies.
 
 # Verification
 
-The pinned line is `Chairs from AED 139, desks and workstations from AED 58.`;
-preflight is 19 priced / 1 withheld. Full pytest is 3822 passed, 20 skipped,
-zero failed. Raw replay is unchanged. The measured-round detail, paid cost and
-defect movement are recorded in the handoff and client pack.
+The frontmatter lists the accepted round, replay, release gates, production
+health and safe synthetic readbacks. The root-owned release closeout is the
+final local acceptance boundary.
 
-# Delivery / Cleanup
+# Risks / Follow-ups
 
-Release `68800f29a89f493af8585bc77423cef6bdb2182e` was deployed by run
-`31798763684`; health returned the exact SHA and public API smoke passed 8/8.
-Controlled anchor and literal-R04 readback passed, and all postdeploy synthetic
-attempts ended with zero pending conversations and escalation rows. No delegated
-branch or worktree exists to clean.
-
-# Risks / Follow-ups / Explicit Defers
-
-P1 `tj-08ve` and P0 `tj-final27.19` block formal acceptance. The authorized 20
-generation calls are exhausted, so the language fix and confirming paired round
-need fresh owner authority; credential rotation also needs fresh authority.
-P2 `tj-final27.20` separately tracks one bare greeting with two question marks.
-No protected message or reply body is included in tracked evidence.
+No in-scope blocker remains. `tj-jlx4` is excluded by owner instruction, and
+reader-gap drift work remains independently tracked in `tj-4q79`; neither
+changes this stage's acceptance.

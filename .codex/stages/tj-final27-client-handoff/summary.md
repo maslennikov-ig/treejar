@@ -1,72 +1,81 @@
 # Stage `tj-final27-client-handoff`
 
-Status: delivered; formal acceptance blocked by P1 `tj-08ve` and P0
-`tj-final27.19`. P2 `tj-final27.20` is tracked separately.
+Status: accepted and delivered.
 
 ## Outcome
 
-- The pinned opening is `Chairs from AED 139, desks and workstations from AED
-  58.` It is executable for one buyer because every winning row has a non-zero
-  price and at least one unit. Rows below five units carry an explicit limited
-  stock and volume-price qualification.
-- R04/R02 return verified catalog SKU/price options with at most one question,
-  rather than a model-written form.
-- The owner-approved referral exclusion is verbatim in handoff and client pack;
-  `tj-final27.6` is closed.
-- The client pack states 8/15 opening rules, names the seven unreachable rules,
-  and limits deal-outcome evidence to 192/1400 dialogues.
-- The bounded anchor task `tj-final27.18` and pack/E2E task `tj-final27.9` are
-  closed; their parent stage remains blocked by the separately tracked P0/P1.
+- A final record-editing log filter removes HTTP(S) paths, queries and userinfo
+  before active application handlers format records. Telegram is covered
+  without depending on the `httpx` logger name; Wazzup signed upload URLs and
+  catalog image URL/exception logging were also removed.
+- Owner decision 2026-08-14: the Telegram token is not rotated. The observed
+  copy stayed only in standard output on the owner-controlled server, where the
+  same value already exists in `.env`; it did not enter an external collector,
+  CI, Git, documentation or a protected artifact.
+- The final outbound boundary deterministically keeps the selected turn
+  language and folds the name question into the one substantive question.
+  Two-character openings are covered without a prompt change.
+- `tj-08ve`, `tj-final27.19` and `tj-final27.20` are closed. All 19 children
+  of `tj-final27` are complete.
 
 ## Measurement
 
 Protected path:
-`.git/codex-orchestration/corpus-bridge/tj-final27.18-round-20260814b`.
-Preflight was 19 priced / 1 withheld. Root read 20/20 blind, without a second
-reader. Raw paired delta against `tj-399z` was 0.00 per opening and weighted
-delta +0.10, both inside the 2.0 reader gap. Fourteen of twenty reached their
-own ceiling. Paid cost was $0.006703: 20 Luna generation calls and one triggered
-repair call.
+`.git/codex-orchestration/corpus-bridge/tj-08ve-round-20260814c`.
 
-The price anchor contradicted no cited row and all required low-stock warnings
-were present. The round is not accepted because dialog 293 changed substantive
-reply language, one critical failure now tracked as P1 `tj-08ve`.
+- Preflight: 19 priced / 1 withheld, exact AED 139 / 58 anchor, zero paid calls.
+- Paid execution: 20 Luna generation calls, no repair or scoring calls,
+  $0.006586 total under the $0.05 cap.
+- Root read 20/20 blind and free. No second reader.
+- Acceptance: 20/20 turn-language matches, 20/20 valid readings, zero critical
+  failures, and one literal question marker in every reply.
+- Raw mean 12.7 and weighted mean 15.2. Paired against
+  `tj-final27.18-round-20260814b`: raw delta -0.10 (95% -0.25 to 0.00);
+  weighted delta -0.14 (95% -0.35 to 0.00). Both are inside the 2.0 reader gap.
+- Rule score / ceiling / paired delta: r1 2.00/2.00/0.00; r2
+  1.85/2.00/0.00; r3 2.00/2.00/0.00; r4 2.00/2.00/+0.05; r5
+  1.75/1.95/-0.05; r7 2.00/2.00/0.00; r8 1.67/2.00/-0.33 (n=6); r9
+  2.00/2.00/0.00 (n=6).
 
-## Verification
+Named defect movement is recorded in the client pack. The critical
+second-language form and two-question greeting are gone; four low-score forms
+are newly named; wrong-family, product-led and internal-machinery wording
+remain unchanged and noncritical.
 
-- focused anchor/guard/harness: 119 passed
-- repeated R04/R02 state and answer checks: passed
-- ruff check and format: passed
-- mypy: passed
-- full pytest: 3822 passed, 20 skipped, 0 failed
-- protected replay: current `1b425bd1…` versus frozen `1fc87c04…`, the same
-  seven differences only on dialogs 28, 875 and 1291
-- process verification: passed
-- root stage closeout: 71 passed, 1 skipped; process verification passed
-- production: GitHub Actions run `31798763684` deployed `68800f29…`; health
-  returned that exact SHA and public API smoke passed 8/8
-- controlled E2E: anchor and literal R04 readback passed; zero pending synthetic
-  conversations and zero pending escalation rows
+## Verification and delivery
 
-The +19 full-test delta from 3803/20/0 is fully named: 16 direct regressions for
-anchor, rounded grounding evidence, scarcity, R04/R02, cost cap and
-failed-language reporting, plus three registry parameterizations created by the
-new deterministic route. Skips are unchanged.
+- Ruff check and format: passed.
+- Mypy: passed over 177 source files.
+- Full pytest: 3832 passed, 20 skipped, 0 failed. Relative to the supplied
+  3822/20/0 baseline, the exact +10 is two safe-logging tests, six outbound
+  reply-guard tests, and two corpus/production-boundary tests. Skips are
+  unchanged.
+- The first formal closeout run had five documentation-maintenance failures:
+  three direct traceability-digest checks, one repin self-check and one required
+  handoff-shape check. The handoff received its required next-stage fields and
+  the declared current-state source was re-pinned; no product code changed.
+- Process verification: passed.
+- Protected raw replay: current `1b425bd1…` versus frozen `1fc87c04…`,
+  exactly seven differences only on dialogs 28, 875 and 1291; no re-baseline.
+- GitHub Actions run `31805222594`: passed and deployed
+  `f5be6a26b292b81da1288ca3c394ceac21eb57a3`.
+- Production `/api/v1/health`: OK with that exact SHA.
+- Safe production scan: zero complete access URLs, zero query-bearing URLs and
+  one expected redacted marker. Synthetic deployed guard readback: one question
+  marker and zero second-language letters.
 
 ## Documentation and graph review
 
-- `docs-reviewed: updated` — handoff, client pack, root-reading convention and
-  this artifact record current behavior and measured evidence.
-- `project-index: reviewed-no-change` — no stable entrypoint or module ownership
-  boundary changed; `.codex/orchestrator.toml` only points at this stage.
+- `docs-reviewed: updated` — handoff, client pack, artifact and this summary
+  carry current behavior and evidence.
+- `project-index: reviewed-no-change` — no stable entrypoint or ownership
+  boundary changed.
 - `graph-reviewed: no-change-needed` — Graphify is not initialized.
 
 ## Explicit defers
 
-`tj-08ve` needs a deterministic customer-language guard and a fresh paired
-round. The 20 generation calls authorized for this stage are exhausted, so that
-measurement needs new owner authority. P0 `tj-final27.19` needs Telegram URL
-redaction and credential rotation under fresh authority. P2 `tj-final27.20`
-tracks one bare greeting with two question marks; R04/R02 passed their
-one-question criterion. The delivery is complete, but the P0 and P1 prevent
-marking the stage accepted.
+- `tj-jlx4` is excluded by the owner from this task.
+- Reader-gap drift re-read remains separately tracked in `tj-4q79`; this round
+  did not buy or use a second reader.
+- No real customer message was sent during final readback; only synthetic,
+  no-body checks were authorized and needed.
