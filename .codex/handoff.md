@@ -45,11 +45,25 @@ fallback behavior.
   fresh access logs show zero logging or formatter errors.
 - No paid model call, real-user message, Zoho mutation, quotation/order action,
   or broad live E2E was performed.
-- Production host triage found a duplicate Noor logrotate owner, full but
-  currently inactive swap, a failed `relay.starec.ai` Certbot renewal, failed
-  neighboring Polska scheduled jobs, and fail-closed Wazzup channel warnings.
-- Bead `tj-7w8f` owns the active remediation stage. Its four child streams keep
-  Noor host maintenance, relay TLS, Polska jobs, and Wazzup filtering isolated.
+- The duplicate Noor logrotate owner was removed with a protected backup;
+  `logrotate.service` and its timer are green. Swap belongs mostly to the
+  neighboring Whisper container, but current pressure, OOM and Noor swap use
+  are zero, so no disruptive swap reset was performed.
+- The stale, unused local `relay.starec.ai` Certbot lineage was backed up and
+  retired. The live relay endpoint is hosted elsewhere and both relay and Noor
+  TLS are green.
+- Wazzup unexpected-channel warnings were proven to be correct fail-closed
+  filtering. The expected channel matches runtime configuration and all 532
+  linked production conversations, so accepted channel scope was not widened.
+- Staged Wazzup `crmKey` Bearer authentication is merged locally. Its security
+  review has no blocking findings; production deploy, provider key rotation,
+  observe proof and enforcement remain pending.
+- Polska remains blocked outside Treejar: the current CBOSA source endpoint
+  returns HTTP 403 and `/opt/polska/app` has no Git/release lineage. No canonical
+  Polska source repository was found locally or in accessible GitHub repos.
+- Bead `tj-7w8f` owns the active remediation stage. Five child streams isolate
+  Noor host maintenance, relay TLS, Polska jobs, Wazzup filtering and Wazzup
+  sender authentication.
 
 ## Accepted history
 
@@ -66,7 +80,7 @@ host and public API acceptance, then resume the owner's controlled testing.
 
 ## Starter prompt for next orchestrator
 
-Continue `$orchestrator-stage` for `tj-7w8f`. Treat
+Use $orchestrator-stage for `tj-7w8f`. Treat
 `tj-pk9v-pretest-health-glm53` and `tj-fmee` as accepted and deployed history at
 runtime SHA `7e21de2`. Keep production mutations reversible and sequential. Do
 not run the five-call paid verifier, send real messages, or mutate Zoho/order
