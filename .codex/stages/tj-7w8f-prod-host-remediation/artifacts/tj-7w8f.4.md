@@ -43,8 +43,12 @@ selected_docs:
   - .codex/handoff.md
   - .codex/stages/tj-7w8f-prod-host-remediation/summary.md
   - Beads tj-7w8f.4 and tj-ppid
+  - https://wazzup24.com/help/api-en/webhooks/ accessed 2026-08-27
+  - https://wazzup24.com/help/api/webhooks/ accessed 2026-08-27
+  - https://wazzup24.com/contact/ accessed 2026-08-27
 selected_skills:
   - orchestrator-stage
+  - task-router
   - systematic-debugging
 selected_agents:
   - built-in-security-auditor
@@ -80,12 +84,19 @@ verification:
   - privacy-safe production env container log and DB metadata inspection at release 7e21de2: passed
   - historical Beads tj-ppid identity and owner-decision comparison by hash: passed
   - uv run --extra dev pytest three focused webhook and worker channel-boundary tests -q --tb=short: passed, 3 passed
+  - orch-prompts docs-resolve Wazzup webhook source IP CIDR: blocked, non-package lockfile routing cannot resolve a version
+  - official Wazzup webhook documentation and support-page search for source IP CIDR: blocked, no exact ranges published
+  - production sudo nginx -T relevant Noor proxy directives and live compose nginx config inspection: passed, read-only
+  - production Uvicorn version command and installed ProxyHeadersMiddleware source inspection: passed, version 0.41.0
+  - local synthetic X-Forwarded-For extraction preflight: failed safely, trusted star selects attacker-controlled first entry
+  - uv run --extra dev pytest three focused origin-allowlist tests -q --tb=short: passed, 3 passed
   - python3 scripts/orchestration/validate_artifact.py artifact: passed
   - git diff --check: passed
 changed_files:
   - .codex/stages/tj-7w8f-prod-host-remediation/artifacts/tj-7w8f.4.md
 explicit_defers:
-  - tj-7w8f root must track and remediate the missing production Wazzup origin allowlist under explicit production-change authority and current official provider ranges
+  - tj-7w8f origin allowlist remediation is NO-GO until Wazzup supplies current exact source CIDRs through an official published page or attributable support response
+  - tj-7w8f proxy chain must overwrite untrusted X-Forwarded-For at the first hop and stop trusting every proxy before the app allowlist can authenticate sender IP
   - channel-specific provider-side webhook routing was not verified and must not be assumed as a safe warning-suppression mechanism
 ---
 
@@ -167,13 +178,134 @@ provider capabilities and intended channel ownership are confirmed.
 - **Prerequisites:** public route access plus the expected channel identifier
   and a valid payload shape. Confidence: high for the missing preventive
   control and code path; unknown for exploitation.
-- **Smallest mitigation:** after current official Wazzup source ranges are
-  independently verified, set the production allowlist to only those ranges,
-  validate origin parsing through the actual proxy chain, and restart only the
-  app under explicit production authority. Keep channel equality as the second
-  preventive layer. Until approved, do not expose the expected identifier and
-  monitor refusal/403 counts. This pass did not perform containment because
-  config edits and restarts were explicitly prohibited.
+- **Verdict:** **NO-GO for setting the application allowlist now.** Current
+  official Wazzup documentation does not publish source CIDRs, and the current
+  trusted-proxy chain lets a caller control the address selected by Uvicorn.
+  Applying repository example ranges would therefore combine an unverified
+  allowlist with a bypassable source-address extractor.
+- **Smallest safe mitigation sequence:** obtain current exact CIDRs from an
+  official Wazzup page or an attributable support response; enforce those
+  ranges at the host nginx TCP peer boundary; overwrite any client-supplied
+  forwarded chain; restrict Uvicorn to known proxy hops; prove the resulting
+  `request.client.host`; only then set the app allowlist and restart the app
+  under production authority. Keep channel equality as the second preventive
+  layer. Until those gates pass, do not expose the expected identifier and
+  monitor refusal counts. No containment was performed in either read-only
+  turn.
+
+# Read-only origin-allowlist preflight — 2026-08-27
+
+## Authoritative source result: blocked
+
+Repository-required `docs-resolve` was executed once for Wazzup webhook source
+IP/CIDR behavior. It returned `blocked` before lookup because Wazzup is not a
+versioned lockfile package. The permitted fallback then inspected only these
+official Wazzup sources on 2026-08-27:
+
+- `https://wazzup24.com/help/api-en/webhooks/` — official API v3 webhook
+  behavior;
+- `https://wazzup24.com/help/api/webhooks/` — official partner webhook
+  behavior and security checklist;
+- `https://wazzup24.com/contact/` — official support route for an attributable
+  range confirmation.
+
+The API v3 page states that Wazzup sends POST requests to the configured URI,
+may attach a Bearer header when a `crmKey` exists, expects HTTP 200, and sends a
+test POST when the callback is registered. The partner page requires HTTPS and
+documents retry/idempotency behavior. Neither official webhook page publishes
+source IP addresses or CIDR ranges. Exact authoritative ranges are therefore
+**unavailable**, not inferred. The two ranges present in `.env.example` have no
+matching official Wazzup source found in this review and must not be used as
+production authority.
+
+The only safe application configuration format, after official ranges exist,
+is one comma-separated environment value parsed by `src/api/v1/webhook.py`:
+
+```text
+WAZZUP_ALLOWED_IPS=<official-cidr-1>,<official-cidr-2>
+```
+
+Whitespace is trimmed and both IPv4 and IPv6 CIDR syntax are accepted by
+`ipaddress.ip_network(..., strict=False)`. Placeholder text above is a format
+example only; there are no approved values in this artifact.
+
+The official API v3 page's optional Bearer behavior is not sufficient evidence
+that this account sends a stable secret header. The current handler does not
+validate such a header. Header authentication may be evaluated separately only
+after the account-specific contract is confirmed; it is not a substitute
+assumed by this preflight.
+
+## Proxy-chain result: blocker confirmed
+
+The production chain is:
+
+```text
+internet -> host nginx :443 -> compose nginx :8002 -> app Uvicorn :8000
+```
+
+Read-only `sudo nginx -T` proved the Noor host location proxies the webhook to
+`127.0.0.1:8002`, sets `X-Real-IP` from `$remote_addr`, and **appends** to
+`X-Forwarded-For` with `$proxy_add_x_forwarded_for`. The live compose nginx does
+the same append before proxying to the app. Neither layer declares
+`real_ip_header`, `set_real_ip_from`, or `real_ip_recursive` in the reviewed
+Noor path.
+
+The production app runs Uvicorn 0.41.0 with `--proxy-headers` and
+`--forwarded-allow-ips="*"`. Its installed `ProxyHeadersMiddleware` treats every
+peer as trusted and selects the **first** `X-Forwarded-For` entry. A synthetic
+local preflight proved that a chain shaped as
+`attacker-supplied, real-client, host-proxy` resolves to `attacker-supplied`.
+With a bounded trusted-proxy set, the same implementation walks from the right
+and selects the first untrusted hop.
+
+Consequently, the current `request.client.host` used by
+`_verify_webhook_origin()` is not a trustworthy sender identity. A caller can
+prepend an allowed address before both nginx layers append their peers. The
+existing unit tests prove CIDR membership behavior after `request.client.host`
+is chosen; they do not prove the production proxy chain chooses it safely.
+
+## GO criteria for a future authorized change
+
+Verdict for this turn: **NO-GO**. A future production change becomes GO only
+when every item below is evidenced in one preflight:
+
+1. Wazzup's current exact webhook source CIDRs are supplied by an official
+   published page or an attributable Wazzup support response with date.
+2. The host nginx webhook location rejects non-Wazzup TCP peers using those
+   official ranges. This first-hop control must use the socket peer, not a
+   client-supplied forwarded header.
+3. Host nginx overwrites incoming `X-Forwarded-For` with `$remote_addr` for the
+   webhook path. Compose nginx passes that normalized value without admitting
+   a client prefix.
+4. Uvicorn no longer uses `--forwarded-allow-ips="*"`; it trusts only the
+   immediate, explicitly bounded proxy hop or network.
+5. An offline/local proxy test proves a spoofed prefix is rejected and the
+   known synthetic source is preserved through both proxy layers. No real
+   webhook is needed.
+6. `nginx -t`, a focused application config parse, the existing allowed and
+   disallowed-origin tests, and Noor public health all pass before/after the
+   authorized reload/restart.
+
+The preferred preventive ordering is host-nginx `allow`/`deny` at the public
+TCP boundary first, then a hardened forwarded chain plus application CIDR
+check as defense in depth. Do not set the app value against the current proxy
+chain merely to make the config non-empty.
+
+## Future rollback contract
+
+Before any authorized change, create mode-`0600` rollback copies of the exact
+host nginx Noor config and `/opt/noor/.env`, record their hashes and modes, and
+capture current release/health plus baseline webhook 2xx/403 counts without
+payloads or identifiers.
+
+Rollback triggers are: confirmed Wazzup deliveries receive 403 after the
+change, proxy extraction does not return the expected synthetic source,
+`nginx -t` fails, Noor health degrades, or app restarts unexpectedly. Restore
+both exact backups, run `nginx -t`, reload only host nginx, recreate only app if
+its environment/entrypoint changed, and recheck release identity, public
+health, process restart counts, and privacy-safe webhook status counts. A
+rollback may temporarily restore the known open-origin risk; it must never
+weaken the channel equality filter.
 
 # Verification
 
