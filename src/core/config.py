@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     wazzup_allowed_ips: str = (
         ""  # Comma-separated CIDRs, e.g. "94.242.232.0/22,172.241.70.0/22"
     )
+    wazzup_webhook_auth_mode: Literal["disabled", "observe", "enforce"] = "disabled"
+    wazzup_webhook_secret: str = ""
 
     # Zoho CRM
     zoho_crm_client_id: str = ""
@@ -158,6 +160,13 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> Settings:
+        if (
+            self.wazzup_webhook_auth_mode == "enforce"
+            and not self.wazzup_webhook_secret.strip()
+        ):
+            raise ValueError(
+                "wazzup_webhook_secret must be set when webhook auth is enforced"
+            )
         if self.is_production:
             if self.app_secret_key == "change-me-in-production":
                 raise ValueError("app_secret_key must be changed in production")

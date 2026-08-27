@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import secrets
 import time
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -22,6 +23,43 @@ logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter()
 _OUTBOUND_MESSAGE_STATUSES = frozenset({"sent", "delivered", "read", "error", "edited"})
+
+
+def _wazzup_webhook_auth_result(request: Request) -> str:
+    authorization = request.headers.get("Authorization")
+    if not authorization:
+        return "missing"
+
+    scheme, separator, provided_secret = authorization.partition(" ")
+    if (
+        not separator
+        or scheme.lower() != "bearer"
+        or not provided_secret
+        or any(character.isspace() for character in provided_secret)
+    ):
+        return "mismatch"
+
+    expected_secret = settings.wazzup_webhook_secret
+    if secrets.compare_digest(
+        provided_secret.encode("utf-8"),
+        expected_secret.encode("utf-8"),
+    ):
+        return "match"
+    return "mismatch"
+
+
+def _verify_wazzup_webhook_auth(request: Request) -> bool:
+    mode = settings.wazzup_webhook_auth_mode
+    if mode == "disabled":
+        return True
+
+    result = _wazzup_webhook_auth_result(request)
+    if result == "match":
+        logger.info("Wazzup webhook auth: match")
+    else:
+        logger.warning("Wazzup webhook auth: %s", result)
+
+    return mode == "observe" or result == "match"
 
 
 @lru_cache(maxsize=1)
@@ -165,6 +203,13 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
     - authorType='manager' (isEcho=true) → save as role='manager', no LLM
     - authorType='bot' → skip (echo of our own bot messages)
     """
+    if not _verify_wazzup_webhook_auth(request):
+        return JSONResponse(
+            {"error": "unauthorized"},
+            status_code=401,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     # CR-WA-08: Verify webhook origin (IP allowlist)
     if not _verify_webhook_origin(request):
         logger.warning(
