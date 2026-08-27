@@ -84,6 +84,9 @@ verification:
   - bash-n-current-sync-execstart: passed
   - existing-dry-run-or-offline-job-mode-audit: failed-no-safe-mode-exists
   - current-sync-process-read-only-snapshot: passed-active-and-untouched
+  - local-git-object-and-current-tree-provenance-search: passed-zero-matches
+  - authenticated-github-code-search-across-configured-account-and-orgs: passed-zero-matches
+  - deployment-release-marker-and-reference-search: passed-zero-provenance-markers
 changed_files:
   - .codex/stages/tj-7w8f-prod-host-remediation/artifacts/tj-7w8f.3.md
 explicit_defers:
@@ -99,6 +102,27 @@ owner at `/opt/polska/app` (system user `vic`), not in the Treejar runtime.
 The deployed directory has no `.git` metadata, and no canonical Polska source
 checkout or remote was found in accessible host or local paths. Production must
 not be edited until that source and rollback lineage are established.
+
+The follow-up provenance search remained negative and bounded. Both unique
+collector filenames and both unit names are absent from every reachable Git
+object and current tracked tree under `/home/me/code`. Authenticated GitHub code
+search returned `total_count=0` for `collect_cbosa`, `collect_eli_texts`,
+`polska-cbosa-night`, `polska-sync.service`, and `polska.starec.ai` across the
+configured account and its accessible organizations (78 user repositories, 9
+`aidevteam-labs` repositories, and 11 `rechkaai` repositories; the other
+configured organization exposed none). `/opt/polska` has no Git directory,
+release SHA, commit, revision, deployment manifest, or GitHub/deploy reference;
+only the single deployed copies of both collectors exist there. `/home/vic` is
+mode `0750`, so an owner-only checkout there cannot be ruled out by `noor-dev`.
+The canonical repository, commit, and deployment mechanism therefore remain a
+proved access/lineage blocker rather than an unidentified local candidate.
+
+Hashes that can later match an authoritative source or rollback package are:
+
+- `collect_cbosa.py`: `c32bc02bedb3dac37d4e24465a886622d4ab4bc0eb83f3e11fe5d1c3d35e7c06`
+- `collect_eli_texts.py`: `e7729e0f828f7323387dd58b4026d7e5c4402fcf11fa575ab6cfb13d4ea50968`
+- `polska-cbosa-night.service`: `5a13c89b4b397de59df0cbe882fa1b7c9d6e2f35cb0583b3dee01075e0cfd7db`
+- `polska-sync.service`: `f2fa8f3acbc3756e1eaf74c62ecad161e72e747da357b343548bf2ca6a430db9`
 
 `polska-cbosa-night.service` has a confirmed upstream-block failure. Its exact
 command is:
@@ -132,8 +156,11 @@ start timeout, rather than a captured child exit. The exact child active at
 that earlier timeout and its signal/status are unconfirmed: `noor-dev` cannot
 read the system journal, the initial snapshot retained only the final systemd
 failure line, and today's timer invocation overwrote the previous execution
-state. At 2026-08-27 06:03 UTC today's run was still active and untouched, 1h33m
-after start, inside `collect_eli_texts.py`. Confidence: high for the unit timeout,
+state. At the later 2026-08-27 06:11:10 UTC snapshot, today's natural run had
+not completed: `ActiveState=activating`, `SubState=start`, no exit timestamp,
+and it remained inside `collect_eli_texts.py` after 1h40m. Its provisional
+`Result=success`, `ExecMainCode=0`, and `ExecMainStatus=0` are not a completed
+success result. The process was untouched. Confidence: high for the unit timeout,
 low for which child consumed the remaining prior budget. The next diagnostic
 step is a bounded, sanitized journal read by an account already authorized for
 the journal after the current run finishes naturally.
@@ -159,6 +186,13 @@ Normal read-only path:
   July M0 report says CBOSA POST/GET worked then, so the current 403 is consistent
   with external behavior or host-policy drift; changing GET to POST remains a
   hypothesis, not a proven fix.
+- The repository search covered current local checkouts and all their reachable
+  Git objects, then authenticated GitHub code search for the unique filenames,
+  unit names, and product hostname across the configured user and organization
+  scope. All searches returned zero candidates. Deployment metadata searches
+  found no release/commit marker or repository reference. This is sufficient to
+  stop the search safely; scanning owner-private home contents or shell history
+  would cross the granted access and secret boundary.
 
 Failure path:
 
