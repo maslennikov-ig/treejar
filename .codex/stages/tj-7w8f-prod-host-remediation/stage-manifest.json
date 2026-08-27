@@ -14,14 +14,16 @@
       "noor-host-maintenance",
       "relay-tls-renewal",
       "polska-scheduled-jobs",
-      "wazzup-channel-boundary"
+      "wazzup-channel-boundary",
+      "wazzup-sender-authentication"
     ],
     "risk_models": [
       "production-runtime-regression",
       "shared-host-resource-pressure",
       "stale-certificate-ownership",
       "uncontrolled-external-job-execution",
-      "channel-scope-expansion"
+      "channel-scope-expansion",
+      "provider-registration-partial-update"
     ],
     "test_environments": [
       "read-only-host-diagnostics",
@@ -35,6 +37,7 @@
       "relay-renewal-ownership-resolved",
       "polska-units-safe-validation-green",
       "wazzup-filter-remains-fail-closed",
+      "wazzup-crmkey-observed-then-enforced",
       "noor-public-health-green"
     ]
   },
@@ -110,6 +113,11 @@
       "task_id": "tj-7w8f.4",
       "stream_owner": "prod-wazzup-boundary-worker",
       "artifact_path": ".codex/stages/tj-7w8f-prod-host-remediation/artifacts/tj-7w8f.4.md"
+    },
+    {
+      "task_id": "tj-7w8f.5",
+      "stream_owner": "prod-wazzup-crmkey-worker",
+      "artifact_path": ".codex/stages/tj-7w8f-prod-host-remediation/artifacts/tj-7w8f.5.md"
     }
   ]
 }
