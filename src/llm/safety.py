@@ -48,6 +48,9 @@ OPENROUTER_PROVIDER_NAME = "openrouter"
 LLM_USAGE_TELEMETRY_ATTR = "__treejar_llm_usage_telemetry__"
 _OPENROUTER_CACHE_CONTROL_SUPPORTED_MODEL_PREFIXES = ("anthropic/",)
 _OPENROUTER_REASONING_DISABLED_MODEL_IDS = frozenset({"deepseek/deepseek-v4-flash"})
+_OPENROUTER_LOW_REASONING_EFFORT_CORE_MODEL_IDS = frozenset(
+    {"z-ai/glm-5.3-flash"}
+)
 _OPENROUTER_RETRYABLE_ERROR_TYPES = frozenset(
     {
         "rate_limit_exceeded",
@@ -443,11 +446,26 @@ def openrouter_supports_prompt_cache_control(model_name: str) -> bool:
     return normalized.startswith(_OPENROUTER_CACHE_CONTROL_SUPPORTED_MODEL_PREFIXES)
 
 
+def _openrouter_core_reasoning_effort(
+    policy: LLMPathPolicy,
+    model_name: str | None,
+) -> Literal["low"] | None:
+    if (
+        policy.scope == "core"
+        and model_name is not None
+        and model_name.strip().lower()
+        in _OPENROUTER_LOW_REASONING_EFFORT_CORE_MODEL_IDS
+    ):
+        return "low"
+    return None
+
+
 def _openrouter_extra_body(
     *,
     model_name: str | None,
     cache_telemetry_enabled: bool,
     reasoning_enabled: bool | None = None,
+    reasoning_effort: Literal["low"] | None = None,
 ) -> dict[str, Any]:
     extra_body: dict[str, Any] = {}
     if cache_telemetry_enabled:
@@ -459,6 +477,8 @@ def _openrouter_extra_body(
         and model_name.strip().lower() in _OPENROUTER_REASONING_DISABLED_MODEL_IDS
     ):
         extra_body["reasoning"] = {"enabled": False}
+    elif reasoning_effort is not None:
+        extra_body["reasoning"] = {"effort": reasoning_effort}
     return extra_body
 
 
@@ -502,6 +522,7 @@ def model_settings_for_path(
             model_name=model_name,
             cache_telemetry_enabled=cache_telemetry_enabled,
             reasoning_enabled=policy.reasoning_enabled,
+            reasoning_effort=_openrouter_core_reasoning_effort(policy, model_name),
         )
         if extra_body:
             settings_payload["extra_body"] = extra_body
@@ -557,6 +578,7 @@ def _merge_model_settings(
         generated_extra_body = _openrouter_extra_body(
             model_name=model_name,
             cache_telemetry_enabled=cache_telemetry_enabled,
+            reasoning_effort=_openrouter_core_reasoning_effort(policy, model_name),
         )
         extra_body = _merge_extra_body(
             merged.get("extra_body"),

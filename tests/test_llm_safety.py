@@ -42,7 +42,7 @@ def test_llm_path_policy_sets_expected_provider_max_tokens(
     assert model_settings_for_path(path)["max_tokens"] == expected_max_tokens
 
 
-def test_default_model_routing_uses_glm52_for_core_and_v4_flash_for_helpers(
+def test_default_model_routing_uses_main_for_core_and_v4_flash_for_helpers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.core.config import settings
@@ -57,11 +57,12 @@ def test_default_model_routing_uses_glm52_for_core_and_v4_flash_for_helpers(
         PATH_QUALITY_MANAGER,
         PATH_QUALITY_RED_FLAGS,
         PATH_RESPONSE_ADAPTER,
+        PATH_RESPONSE_REPAIR_JUDGE,
         is_glm5_model_name,
         model_name_for_path,
     )
 
-    monkeypatch.setattr(settings, "openrouter_model_main", "z-ai/glm-5.2")
+    monkeypatch.setattr(settings, "openrouter_model_main", "z-ai/glm-5.3-flash")
     monkeypatch.setattr(
         settings,
         "openrouter_model_fast",
@@ -77,11 +78,79 @@ def test_default_model_routing_uses_glm52_for_core_and_v4_flash_for_helpers(
         PATH_CONVERSATION_SUMMARY,
         PATH_FACT_EXTRACTION,
         PATH_RESPONSE_ADAPTER,
+        PATH_RESPONSE_REPAIR_JUDGE,
         PATH_AUTO_FAQ_TRANSLATE,
         PATH_AUTO_FAQ_CANDIDATE,
     ):
         assert model_name_for_path(path) == "deepseek/deepseek-v4-flash"
         assert not is_glm5_model_name(model_name_for_path(path))
+
+
+@pytest.mark.parametrize("path", ["core_chat", "core_followup"])
+def test_glm53_flash_core_routes_bound_mandatory_reasoning_to_low(path: str) -> None:
+    """A max-effort default can consume the core route's customer reply budget."""
+    from src.llm.safety import model_settings_for_path
+
+    model_settings = model_settings_for_path(
+        path,
+        model_name="z-ai/glm-5.3-flash",
+    )
+
+    assert model_settings["extra_body"]["reasoning"] == {"effort": "low"}
+
+
+def test_glm53_reasoning_guard_does_not_change_other_models_or_non_core_paths() -> (
+    None
+):
+    from src.llm.safety import (
+        PATH_CORE_CHAT,
+        PATH_QUALITY_FINAL,
+        PATH_RESPONSE_REPAIR_JUDGE,
+        PATH_VOICE_TRANSCRIPTION,
+        model_settings_for_path,
+    )
+
+    luna_core = model_settings_for_path(
+        PATH_CORE_CHAT,
+        model_name="openai/gpt-5.6-luna",
+    )
+    glm_evaluator = model_settings_for_path(
+        PATH_QUALITY_FINAL,
+        model_name="z-ai/glm-5.3-flash",
+    )
+    repair = model_settings_for_path(
+        PATH_RESPONSE_REPAIR_JUDGE,
+        model_name="deepseek/deepseek-v4-flash",
+    )
+    transcription = model_settings_for_path(
+        PATH_VOICE_TRANSCRIPTION,
+        model_name="openai/gpt-4o-mini-transcribe",
+    )
+
+    assert "reasoning" not in luna_core["extra_body"]
+    assert "reasoning" not in glm_evaluator["extra_body"]
+    assert repair["extra_body"]["reasoning"] == {"enabled": False}
+    assert "reasoning" not in transcription["extra_body"]
+
+
+@pytest.mark.asyncio
+async def test_core_runtime_settings_keep_glm53_reasoning_low(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.llm import safety
+
+    monkeypatch.setattr(safety, "notify_llm_safety_event", AsyncMock())
+    agent = SimpleNamespace(run=AsyncMock(return_value=_FakeRunResult()))
+
+    await safety.run_agent_with_safety(
+        agent,
+        safety.PATH_CORE_CHAT,
+        "prompt",
+        model_name="z-ai/glm-5.3-flash",
+    )
+
+    model_settings = agent.run.await_args.kwargs["model_settings"]
+    assert model_settings["extra_body"]["reasoning"] == {"effort": "low"}
 
 
 def test_v4_flash_disables_reasoning_without_affecting_other_models_or_providers() -> (

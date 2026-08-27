@@ -23,7 +23,8 @@ def test_model_route_payloads_use_approved_models_and_safe_controls() -> None:
     sales_payload = build_sales_payload(MAIN_MODEL_ID, SALES_CASES[0])
     fast_payload = build_fast_payload(FAST_MODEL_ID)
 
-    assert sales_payload["model"] == "z-ai/glm-5.2"
+    assert sales_payload["model"] == "z-ai/glm-5.3-flash"
+    assert sales_payload["reasoning"] == {"effort": "low"}
     assert sales_payload["tool_choice"]["function"]["name"] == (
         "submit_grounded_answer"
     )
@@ -45,9 +46,12 @@ def test_sales_payload_uses_the_runtime_prompt_tail_invariant() -> None:
     assert system_prompt.rstrip().endswith(EVIDENCE_GROUNDING_POLICY)
 
 
-def test_catalog_preflight_requires_route_specific_capabilities() -> None:
+@pytest.mark.parametrize("model", [MAIN_MODEL_ID, FAST_MODEL_ID])
+def test_catalog_preflight_requires_route_specific_reasoning(model: str) -> None:
     catalog = {
-        MAIN_MODEL_ID: {"supported_parameters": ["tools", "tool_choice"]},
+        MAIN_MODEL_ID: {
+            "supported_parameters": ["tools", "tool_choice", "reasoning"]
+        },
         FAST_MODEL_ID: {
             "supported_parameters": [
                 "tools",
@@ -61,7 +65,7 @@ def test_catalog_preflight_requires_route_specific_capabilities() -> None:
 
     assert_model_capabilities(catalog, MAIN_MODEL_ID, FAST_MODEL_ID)
 
-    catalog[FAST_MODEL_ID]["supported_parameters"].remove("reasoning")
+    catalog[model]["supported_parameters"].remove("reasoning")
     with pytest.raises(RuntimeError, match="reasoning"):
         assert_model_capabilities(catalog, MAIN_MODEL_ID, FAST_MODEL_ID)
 
