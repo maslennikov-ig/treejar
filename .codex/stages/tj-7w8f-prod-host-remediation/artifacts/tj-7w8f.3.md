@@ -20,7 +20,7 @@ epic_id: tj-7w8f
 stage_id: tj-7w8f-prod-host-remediation
 session_id: prod-polska-jobs-diagnosis
 milestone: polska-job-root-cause-and-safe-remediation
-milestone_status: replan-required
+milestone_status: scope-excluded
 agent_type: custom
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
@@ -54,10 +54,10 @@ depends_on_streams:
   - none
 parallel_decision: parallel
 status: returned
-delivery_method: not accepted
-accepted_by_orchestrator: no
-cleanup_status: pending
-cleanup_notes: Dedicated worktree and branch remain for root review; production was not changed.
+delivery_method: manual integration
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: read-only evidence accepted; dedicated worktree and merged local branch removed by the stage cleanup entrypoint
 risk_level: high
 verification_tier: inner
 risk_tags:
@@ -92,9 +92,7 @@ verification:
 changed_files:
   - .codex/stages/tj-7w8f-prod-host-remediation/artifacts/tj-7w8f.3.md
 explicit_defers:
-  - canonical-polska-source-repository-and-release-lineage-are-unresolved
-  - prior-polska-sync-child-at-timeout-is-unconfirmed-because-journal-is-inaccessible-and-systemd-state-was-overwritten-by-current-run
-  - live-source-probes-job-execution-database-validation-paid-calls-and-production-mutation-require-separate-authority
+  - none-for-treejar-owner-confirmed-polska-is-a-separate-client-product
 ---
 
 # Summary
@@ -118,6 +116,10 @@ only the single deployed copies of both collectors exist there. `/home/vic` is
 mode `0750`, so an owner-only checkout there cannot be ruled out by `noor-dev`.
 The canonical repository, commit, and deployment mechanism therefore remain a
 proved access/lineage blocker rather than an unidentified local candidate.
+
+The product owner confirmed on 2026-08-27 that Polska is a separate client
+product sharing the host and is outside Treejar scope. This stream is therefore
+accepted as a read-only boundary finding and closed without any Polska mutation.
 
 Hashes that can later match an authoritative source or rollback package are:
 

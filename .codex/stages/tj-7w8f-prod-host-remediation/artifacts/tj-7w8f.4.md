@@ -20,7 +20,7 @@ epic_id: tj-7w8f
 stage_id: tj-7w8f-prod-host-remediation
 session_id: tj-7w8f-prod-wazzup-boundary
 milestone: production-wazzup-channel-boundary-diagnosis
-milestone_status: n/a
+milestone_status: accepted
 agent_type: custom
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
@@ -62,9 +62,9 @@ depends_on_streams:
 parallel_decision: parallel
 status: returned
 delivery_method: merge
-accepted_by_orchestrator: no
-cleanup_status: pending
-cleanup_notes: root acceptance and branch cleanup remain with the orchestrator
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: dedicated worktree and merged local branch removed by the stage cleanup entrypoint
 risk_level: high
 verification_tier: delta
 risk_tags:
@@ -99,10 +99,7 @@ verification:
 changed_files:
   - .codex/stages/tj-7w8f-prod-host-remediation/artifacts/tj-7w8f.4.md
 explicit_defers:
-  - tj-7w8f origin allowlist remediation is NO-GO until Wazzup supplies current exact source CIDRs through an official published page or attributable support response
-  - tj-7w8f proxy chain must overwrite untrusted X-Forwarded-For at the first hop and stop trusting every proxy before the app allowlist can authenticate sender IP
-  - tj-7w8f current provider callback hash differs from the canonical Noor callback; exact URI ownership and rollback snapshot require protected operator review before PATCH
-  - tj-7w8f account-specific crmKey delivery is unproven and the present webhook secret is not validated by application code
+  - tj-7w8f.5 owns the owner-approved long-term sender-authentication backlog including provider Bearer binding, trustworthy proxy handling, and a verified source-IP policy
   - channel-specific provider-side webhook routing was not verified and must not be assumed as a safe warning-suppression mechanism
 ---
 
@@ -437,19 +434,26 @@ container environments and creation timestamps, app/worker logs, release SHA,
 and aggregate DB metadata. It did not call Wazzup, send a message, invoke a paid
 provider, mutate DB/Redis/config, restart services, or deploy.
 
+Root outcome supersession (2026-08-27): later work deployed the application
+Bearer path in non-blocking `observe` and proved that the current audit relay
+preserves Authorization. Provider binding, trustworthy proxy handling, and a
+verified source-IP policy remain together in deferred Bead `tj-7w8f.5`.
+`observe` does not authenticate senders. The channel filter itself remains
+accepted and fail closed.
+
 # Delivery / Cleanup
 
-This branch contains only this artifact. The root orchestrator owns validation,
-acceptance, merge, any Beads update, and cleanup. No production delivery action
-is part of this stream.
+This worker branch contained only this artifact. The root orchestrator accepted
+the channel-boundary evidence, merged it, and removed the local branch and
+worktree. Later Wazzup sender-auth work is tracked separately.
 
 # Risks / Follow-ups / Explicit Defers
 
 1. Do not change channel configuration for `tj-7w8f.4`; the warnings prove the
    existing scope guard is active.
-2. Track the missing production origin allowlist as a must-fix authorization
-   follow-up. Runtime/proxy verification and the config/restart need explicit
-   production authority.
+2. The owner postponed sender-authentication hardening as Bead `tj-7w8f.5`.
+   It includes the missing origin policy and trusted-proxy correction; until
+   then, do not describe source identity as authenticated.
 3. If warning volume becomes operationally noisy, first verify whether Wazzup
    supports channel-scoped webhook delivery and whether the owner still wants
    the second channel excluded. Do not suppress or reroute based on an

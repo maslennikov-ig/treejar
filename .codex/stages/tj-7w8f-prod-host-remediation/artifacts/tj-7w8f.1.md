@@ -17,7 +17,7 @@ epic_id: tj-7w8f
 stage_id: tj-7w8f-prod-host-remediation
 session_id: n/a
 milestone: production-host-maintenance-health
-milestone_status: in_progress
+milestone_status: accepted
 agent_type: custom
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
@@ -55,9 +55,9 @@ depends_on_streams:
 parallel_decision: parallel
 status: returned
 delivery_method: cherry-pick
-accepted_by_orchestrator: no
-cleanup_status: pending
-cleanup_notes: dedicated worktree and branch remain for root review and integration; production was not changed
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: dedicated worktree and merged local branch removed by the stage cleanup entrypoint
 risk_level: high
 verification_tier: slice_acceptance
 risk_tags:
@@ -82,7 +82,6 @@ verification:
 changed_files:
   - .codex/stages/tj-7w8f-prod-host-remediation/artifacts/tj-7w8f.1.md
 explicit_defers:
-  - root owner must perform the proposed logrotate backup, removal, privileged debug, service validation, and rollback if needed
   - swap reset is explicitly not recommended on current evidence; investigate custdev-whisper memory lifecycle separately only if sustained pressure appears
 ---
 
@@ -110,6 +109,12 @@ incident on the shared production host `noor-hetzner`.
 
 Verdict: **GO WITH CONDITIONS** for the logrotate-only root-owned repair below;
 **NO-GO** for `swapoff` or workload restarts on current evidence.
+
+Root outcome supersession (2026-08-27): the guarded logrotate repair was later
+completed with a protected rollback copy. Privileged validation, a successful
+`logrotate.service` run, active timer readback, and unchanged Noor health all
+passed. The runbook below is retained as historical worker evidence, not pending
+current work.
 
 # Scope / Routing
 
@@ -265,22 +270,13 @@ do not attempt to rename log generations during rollback.
 
 # Delivery / Cleanup
 
-This stream changed only this tracked artifact and performed no production
-mutation. The root orchestrator owns review, cherry-pick, authorization for the
-root-only runbook, final host/public acceptance, Beads truth, and worktree
-cleanup.
+This worker stream changed only this tracked artifact. The root orchestrator
+later performed and verified the production repair, accepted the evidence, and
+removed the merged local branch and worktree.
 
 # Risks / Follow-ups / Explicit Defers
 
-- **Required root action:** execute the guarded logrotate-only repair and focused
-  validation. Current `noor-dev` sudo policy cannot perform the file change or
-  privileged debug.
-- **Residual operational risk:** logrotate remains failed until that action, but
-  the generic block is still rotating Noor paths and disk has 120 GiB available;
-  this is important maintenance debt, not an active Noor outage.
 - **Explicit defer:** do not reset swap. Current evidence says it would widen the
   blast radius without improving health. If pressure later becomes sustained,
   investigate and right-size the neighboring `custdev-whisper-1` process in its
   own ownership/rollback boundary.
-- **Live verification still required:** privileged logrotate debug, one normal
-  `logrotate.service` start, resulting journal/status, and unchanged Noor health.

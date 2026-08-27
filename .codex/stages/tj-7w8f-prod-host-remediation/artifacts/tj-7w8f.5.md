@@ -20,7 +20,7 @@ epic_id: tj-7w8f
 stage_id: tj-7w8f-prod-host-remediation
 session_id: tj-7w8f-prod-wazzup-crmkey
 milestone: staged-wazzup-crmkey-authentication
-milestone_status: blocked_external_contract
+milestone_status: deferred_long_term
 agent_type: backend_developer
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
@@ -65,8 +65,8 @@ parallel_decision: sequential
 status: returned
 delivery_method: merge
 accepted_by_orchestrator: yes
-cleanup_status: pending
-cleanup_notes: code was merged and deployed; branch cleanup waits for stage closeout
+cleanup_status: cleaned
+cleanup_notes: code was merged and deployed; dedicated worktree and merged local branch removed by the stage cleanup entrypoint
 risk_level: high
 verification_tier: delta
 risk_tags:
@@ -82,7 +82,7 @@ invariants:
   - test-matrix
 docs_impact: ops-deploy
 docs_reviewed: updated
-docs_review_notes: updated - production observe state, WAuth blocker, Polska ownership blocker, and superseded webhook-PATCH path are aligned without secrets
+docs_review_notes: updated - production observe state, owner-excluded Polska scope, detached long-term Wazzup hardening, and superseded webhook-PATCH path are aligned without secrets
 verification:
   - focused TDD RED with 10 collected cases: failed as expected with 9 failed and 1 permissive-path pass
   - focused TDD GREEN with the same 10 cases: passed with 10 passed
@@ -100,7 +100,7 @@ changed_files:
   - .env.example
   - .codex/stages/tj-7w8f-prod-host-remediation/artifacts/tj-7w8f.5.md
 explicit_defers:
-  - production enforcement is blocked because crmKey cannot be configured through PATCH /v3/webhooks and no WAuth connection authority is available
+  - production enforcement is a long-term backlog item by owner decision; observe stays non-blocking until a supported WAuth binding is intentionally scheduled
 ---
 
 # Summary
@@ -208,16 +208,16 @@ supported callback-authentication mechanism before changing enforcement.
 
 # Delivery / Cleanup
 
-The implementation branch was reviewed, merged, pushed, and deployed. Cleanup
-remains root-owned because the parent stage is blocked on external Polska and
-Wazzup ownership facts.
+The implementation branch was reviewed, merged, pushed, and deployed. The root
+orchestrator accepted the stage, detached the long-term Wazzup hardening backlog,
+and removed the merged local branch and worktree.
 
 # Risks / Follow-ups / Explicit Defers
 
 - Production WAuth ownership and the connection values required by
   `POST /v3/connect` are unknown; webhook PATCH cannot supply them.
-- The separate source-IP control still depends on trustworthy proxy/CIDR
-  evidence from `tj-7w8f.4`; this change neither weakens nor claims to repair it.
+- The same long-term Bead owns the separate source-IP control and trustworthy
+  proxy/CIDR evidence from `tj-7w8f.4`; `observe` does not authenticate senders.
 - The two accepted PATCH calls changed no documented owner field. Their HTTP
   200 responses are not evidence that an unknown `crmKey` field was stored.
 - Enforcement remains deliberately deferred until provider-side binding is

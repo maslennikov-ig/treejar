@@ -3,9 +3,8 @@
 Updated: 2026-08-27
 Current branch: `main`
 Current stage id: `tj-7w8f-prod-host-remediation`
-Status: blocked on two external ownership facts. Completed Noor repairs are
-healthy; Polska source lineage and Wazzup WAuth connection ownership are still
-required before the stage can close.
+Status: accepted and ready for controlled product testing on production. There
+are no current Treejar health blockers.
 
 Documentation: current OpenRouter catalog and reasoning documentation establish
 the external model capability boundary. Repository code defines routing and
@@ -58,18 +57,22 @@ fallback behavior.
   linked production conversations, so accepted channel scope was not widened.
 - Staged Wazzup Bearer authentication is deployed in non-blocking `observe`
   with a new strong protected secret. App code and the existing audit relay
-  successfully match a bounded synthetic Bearer probe.
-- Production enforcement is blocked at the provider boundary. Official
+  successfully match a bounded synthetic Bearer probe. `observe` does not
+  authenticate or reject senders.
+- Production enforcement is intentionally postponed as a long-term task.
+  Official
   `PATCH /v3/webhooks` does not accept `crmKey`; two same-key PATCH test POSTs
   arrived without a matching Bearer while preserving the exact callback and
   subscriptions. `crmKey` requires an owner-controlled WAuth
-  `POST /v3/connect` context, which is not available in the repository or host.
-- Polska remains blocked outside Treejar: the current CBOSA source endpoint
-  returns HTTP 403 and `/opt/polska/app` has no Git/release lineage. No canonical
-  Polska source repository was found locally or in accessible GitHub repos.
-- Bead `tj-7w8f` owns the active remediation stage. Five child streams isolate
-  Noor host maintenance, relay TLS, Polska jobs, Wazzup filtering and Wazzup
-  sender authentication.
+  `POST /v3/connect` context or another provider-supported path. Production
+  remains compatible and non-blocking in `observe` until that work is scheduled.
+  The same long-term task owns trustworthy proxy handling and a verified
+  source-IP policy; the current empty allowlist is not an authentication proof.
+- The owner confirmed that Polska is a separate client product sharing the host,
+  not part of Treejar. Its service state is excluded from Treejar health and no
+  Polska mutation was made.
+- Bead `tj-7w8f` and its remediation stage are accepted. The Wazzup sender-auth
+  hardening remains detached as a low-priority long-term backlog item.
 
 ## Accepted history
 
@@ -81,30 +84,29 @@ fallback behavior.
 ## Next recommended
 
 Next stage id: not opened
-Recommended action: obtain the canonical Polska source repository/owner and
-confirm whether the Wazzup account has an existing WAuth connection with a
-supported reconnect path. Keep Wazzup in `observe`; do not repeat webhook PATCH
-or enable `enforce` before provider binding is proven.
+Recommended action: begin controlled Treejar product testing on production.
+Keep Wazzup in `observe`; do not repeat webhook PATCH or enable `enforce` before
+the postponed provider-binding work is deliberately scheduled and proven.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for `tj-7w8f`. Treat
-`tj-pk9v-pretest-health-glm53` and `tj-fmee` as accepted and deployed history at
-runtime SHA `43d6430`. Treat logrotate, relay TLS and channel filtering as
-completed. Keep Wazzup in `observe`; do not use `PATCH /v3/webhooks` for
-`crmKey`. Resume Polska only from its canonical source/owner. Do not run the
-five-call paid verifier, send real messages, or mutate Zoho/order data without
-fresh explicit authority.
+Use $orchestrator-stage for the next material defect found during production
+testing. Treat `tj-7w8f`, `tj-pk9v-pretest-health-glm53`, and `tj-fmee` as
+accepted and deployed history at runtime SHA `43d6430`. Begin from any defect
+found during controlled production testing. Polska is outside Treejar scope. Keep Wazzup in
+`observe`; do not use `PATCH /v3/webhooks` for `crmKey`. Do not run the five-call
+paid verifier, send real messages, or mutate Zoho/order data without fresh
+explicit authority.
 
 ## Explicit defers
 
 - The five-call paid live route verifier remains deferred and requires separate
   explicit authority; configuration and startup readback prove activation, not
   a paid inference round.
-- Polska CBOSA repair is blocked by upstream HTTP 403 and missing canonical
-  source/release lineage. Do not disable its timer or mask exit status as green.
-- Wazzup Bearer enforcement is blocked until the owner supplies a valid WAuth
-  reconnect context or Wazzup confirms another supported callback-auth path.
+- Wazzup sender-authentication hardening is a low-priority long-term backlog
+  item by owner decision. It includes provider Bearer binding, trustworthy proxy
+  handling, and a verified source-IP policy. Production remains compatible and
+  non-blocking in `observe`, which does not authenticate senders.
 - Existing product defects remain tracked and unresolved: `tj-gwg1`,
   `tj-2f1u`, `tj-c58g`, `tj-wvuk` and `tj-jlx4`.
 - Referral activation remains an excluded client decision.

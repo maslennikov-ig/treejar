@@ -19,7 +19,7 @@ epic_id: tj-7w8f
 stage_id: tj-7w8f-prod-host-remediation
 session_id: n/a
 milestone: production-host-maintenance-health
-milestone_status: in_progress
+milestone_status: accepted
 agent_type: custom
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
@@ -53,10 +53,10 @@ depends_on_streams:
   - none
 parallel_decision: parallel
 status: returned
-delivery_method: n/a
-accepted_by_orchestrator: no
-cleanup_status: pending
-cleanup_notes: root-orchestrator-owns-integration-and-safe-worktree-cleanup
+delivery_method: manual integration
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: dedicated worktree and merged local branch removed by the stage cleanup entrypoint
 risk_level: high
 verification_tier: inner
 risk_tags:
@@ -83,8 +83,7 @@ verification:
 changed_files:
   - .codex/stages/tj-7w8f-prod-host-remediation/artifacts/tj-7w8f.2.md
 explicit_defers:
-  - production-retirement-is-not-executed-and-remains-root-owned-sequential-work
-  - post-retirement-natural-certbot-timer-result-requires-runtime-observation
+  - remote-relay-host-certificate-renewal-automation-remains-owned-outside-treejar
 ---
 
 # Summary
@@ -97,6 +96,12 @@ explicit_defers:
 
 Production не менялся: DNS, nginx, Certbot config/lineage, сертификаты, firewall
 и systemd state не редактировались; renew, dry-run и issuance не запускались.
+
+Root outcome supersession (2026-08-27): the stale unused local lineage was later
+backed up and retired. Local filesystem readback, Noor health/fingerprint, public
+relay TLS, and a successful active Certbot service/timer state passed. The
+worker-phase non-mutation statement and runbook below are retained as history,
+not pending current work.
 
 # Scope / Routing
 
@@ -286,8 +291,9 @@ provider call.
 
 # Delivery / Cleanup
 
-Artifact-only handoff to the root orchestrator. No production remediation,
-merge, Beads mutation or worktree cleanup was performed by this stream.
+This worker produced an artifact-only handoff. The root orchestrator later
+completed and verified the retirement, accepted the evidence, and removed the
+merged local branch and worktree.
 
 # Risks / Follow-ups / Explicit Defers
 
@@ -295,14 +301,10 @@ merge, Beads mutation or worktree cleanup was performed by this stream.
   remote wildcard certificate remains valid through 2026-10-05. Do not stop the
   shared Certbot timer; that would weaken renewal coverage for eight valid local
   lineages.
-- **Root action:** perform the backed-up stale-lineage retirement sequentially,
-  then run the proposed local/noor checks and observe one natural timer result.
 - **Remote-owner follow-up:** the owner of `95.213.143.228` must independently
   retain renewal responsibility for the served wildcard certificate. Static
   review of Noor cannot verify its renewal configuration.
 - **Residual risk:** public relay depends entirely on the remote host and its
   wildcard renewal. We proved current DNS/TLS/challenge behavior, not the remote
   host's certificate automation or rollback.
-- **Runtime verification still needed:** post-retirement filesystem absence,
-  unchanged Noor fingerprint/health and next natural Certbot timer success.
 - No full security assurance is claimed from this bounded read-only review.

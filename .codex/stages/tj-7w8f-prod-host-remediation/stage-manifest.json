@@ -3,17 +3,16 @@
   "stage_id": "tj-7w8f-prod-host-remediation",
   "goal_id": "tj-7w8f",
   "profile_at_creation": "balanced-v2.19",
-  "status": "in_progress",
+  "status": "accepted",
   "sequence": 9,
   "acceptance_boundary_id": "production-host-maintenance-health",
   "acceptance_owner": "root-orchestrator",
-  "stage_shape": "cohesive_vertical_slice",
-  "stage_boundary_reason": "shared_acceptance_boundary",
+  "stage_shape": "material_boundary_override",
+  "stage_boundary_reason": "hard_dependency",
   "boundary": {
     "subsystems": [
       "noor-host-maintenance",
       "relay-tls-renewal",
-      "polska-scheduled-jobs",
       "wazzup-channel-boundary",
       "wazzup-sender-authentication"
     ],
@@ -21,7 +20,6 @@
       "production-runtime-regression",
       "shared-host-resource-pressure",
       "stale-certificate-ownership",
-      "uncontrolled-external-job-execution",
       "channel-scope-expansion",
       "provider-registration-partial-update"
     ],
@@ -35,9 +33,8 @@
       "logrotate-validation-green",
       "no-active-memory-pressure-or-oom",
       "relay-renewal-ownership-resolved",
-      "polska-units-safe-validation-green",
       "wazzup-filter-remains-fail-closed",
-      "wazzup-crmkey-observed-then-enforced",
+      "wazzup-auth-observe-deployed-enforcement-deferred",
       "noor-public-health-green"
     ]
   },
@@ -92,7 +89,7 @@
   },
   "scope_anchor": ".codex/goals/tj-7w8f/scope-criterion-snapshot.json",
   "scope_anchor_digest": "2bf01d71baf265fbdae2fa2036882bdc3ede9d9ad496e7516b0f26caf97d5941",
-  "scope_ledger": "none",
+  "scope_ledger": ".codex/stages/tj-7w8f-prod-host-remediation/scope-preservation-ledger.json",
   "stream_artifacts": [
     {
       "task_id": "tj-7w8f.1",
