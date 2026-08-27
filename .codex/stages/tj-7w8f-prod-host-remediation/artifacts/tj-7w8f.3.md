@@ -87,6 +87,8 @@ verification:
   - local-git-object-and-current-tree-provenance-search: passed-zero-matches
   - authenticated-github-code-search-across-configured-account-and-orgs: passed-zero-matches
   - deployment-release-marker-and-reference-search: passed-zero-provenance-markers
+  - bounded-live-cbosa-get-with-current-request-construction: confirmed-403-text-html-blocked
+  - bounded-live-cbosa-post-comparison: not-run-required-stop-after-get-403
 changed_files:
   - .codex/stages/tj-7w8f-prod-host-remediation/artifacts/tj-7w8f.3.md
 explicit_defers:
@@ -138,7 +140,19 @@ totalling 3,345 seconds, `Cbosa.get()` raises an uncaught `RuntimeError` at line
 source/IP policy block and amplifies it with repeated traffic. Confidence:
 high. A disconfirming test would be an explicitly authorized, single bounded
 comparison of the required request method/session from an approved source path;
-no such request was made.
+no such request was made during the initial diagnosis.
+
+A later explicitly authorized bounded live diagnostic from the same production
+host confirmed the source boundary without crawling. It created the current
+collector's exact Session/User-Agent and search fields for one representative
+2026-08 monthly window, disabled application-level retries, and issued one GET
+to the official `/cbo/search` endpoint. The only recorded response facts were
+`status=403`, `content-type=text/html`, `classification=blocked`; no body,
+cookies, URL, result count, or identifiers were output. The diagnostic stopped
+immediately as required. No POST was sent, so whether POST changes the outcome
+is intentionally unknown. Verdict: the live evidence confirms the production
+source block and does not confirm a GET-to-POST code fix. Production code/unit
+mutation remains NO-GO until source access and canonical ownership are resolved.
 
 `polska-sync.service` is a separate duration and observability defect. Its
 single `ExecStart=/bin/bash -c` chains these commands with semicolons:
@@ -156,9 +170,9 @@ start timeout, rather than a captured child exit. The exact child active at
 that earlier timeout and its signal/status are unconfirmed: `noor-dev` cannot
 read the system journal, the initial snapshot retained only the final systemd
 failure line, and today's timer invocation overwrote the previous execution
-state. At the later 2026-08-27 06:11:10 UTC snapshot, today's natural run had
+state. At the latest 2026-08-27 06:28:29 UTC snapshot, today's natural run had
 not completed: `ActiveState=activating`, `SubState=start`, no exit timestamp,
-and it remained inside `collect_eli_texts.py` after 1h40m. Its provisional
+and it remained inside `collect_eli_texts.py` after 1h58m. Its provisional
 `Result=success`, `ExecMainCode=0`, and `ExecMainStatus=0` are not a completed
 success result. The process was untouched. Confidence: high for the unit timeout,
 low for which child consumed the remaining prior budget. The next diagnostic
@@ -198,6 +212,10 @@ Failure path:
 
 - The CBOSA log proves repeated 403/disconnect handling reaches an uncaught
   exception and status 1 after almost exactly the retry sleep budget.
+- One later bounded request from the production host independently reproduced
+  `403 text/html` with the current GET construction and no retry. The required
+  stop prevented a POST comparison. This confirms recurrence and rejects any
+  claim that changing only the method is already proven to restore collection.
 - The sync schedule plus failure timestamp and `TimeoutStartSec=6h` prove the
   six-hour failure boundary. The unavailable prior journal prevents claiming a
   specific child or signal as confirmed.
@@ -237,6 +255,9 @@ signalled or otherwise interfered with.
   56-minute runs, but does not restore collection. Resolve source access through
   an approved endpoint/allowlist or an evidence-backed request/session change;
   do not guess headers, bypass CAPTCHA, or silently map the block to success.
+  Confirmed fix verdict: **no restoring fix is validated yet**. The circuit
+  change is a high-value failure-containment fix only; source restoration needs
+  an owner-approved access path and a separately bounded acceptance request.
 - **Must-fix, P1, high confidence — sync scheduling:** replace the inline
   semicolon chain with a versioned, fail-fast owner script or separate units.
   Give each step an explicit budget and status. Bound text and translation work
