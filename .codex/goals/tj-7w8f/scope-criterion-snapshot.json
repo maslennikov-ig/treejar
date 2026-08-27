@@ -1,0 +1,44 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-7w8f",
+  "source_kind": "beads",
+  "source_id": "tj-7w8f",
+  "source_digest": "2bf01d71baf265fbdae2fa2036882bdc3ede9d9ad496e7516b0f26caf97d5941",
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "text": "Noor remains healthy at the deployed release throughout remediation.",
+      "text_digest": "dc5bc5b452ed0ec080911e539ef839f6195fae4e7460c3cfa709a5c74e0dd792"
+    },
+    {
+      "criterion_id": "AC-02",
+      "text": "Log rotation validates and runs without duplicate entries, with one explicit rotation owner for Noor logs.",
+      "text_digest": "45ca8579bc90640b11521c9f0cd0f1823144e1ce64aa5c437ecf269120cba6de"
+    },
+    {
+      "criterion_id": "AC-03",
+      "text": "Swap pressure is addressed without OOM events, service restarts, or avoidable production latency.",
+      "text_digest": "3b7897e09e9dd94a534432c02ca7b7e64f2ce08f6668338411b8ac910273c2d9"
+    },
+    {
+      "criterion_id": "AC-04",
+      "text": "relay.starec.ai certificate renewal is restored or stale renewal ownership is safely retired with evidence and rollback.",
+      "text_digest": "d347067a44540d1cda9664e40b55dbebb68f40be38d0e2f5bf850ee08fa0117c"
+    },
+    {
+      "criterion_id": "AC-05",
+      "text": "Failed Polska scheduled jobs are repaired and safely validated without uncontrolled external collection.",
+      "text_digest": "86a320d9f410597a5a63dc126f7b0fc0288ab13f10bfb34dc31264f6702ac35c"
+    },
+    {
+      "criterion_id": "AC-06",
+      "text": "Wazzup unexpected-channel warnings are resolved or proven to be correct fail-closed protective filtering without sending real messages.",
+      "text_digest": "9d7888b0ce13131e7d67845d00bbb2b824442dcb6cdf9ad91a9ccda989b1ebf5"
+    },
+    {
+      "criterion_id": "AC-07",
+      "text": "One root-owned final host and public API acceptance is green, and all remaining limits are explicit.",
+      "text_digest": "9e81dbe900a5a0863aa152811a453c6e3bfa4fb868cca190d7bc8e46f4c54fce"
+    }
+  ]
+}

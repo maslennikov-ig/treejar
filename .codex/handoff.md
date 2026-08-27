@@ -2,9 +2,9 @@
 
 Updated: 2026-08-27
 Current branch: `main`
-Current stage id: `tj-pk9v-pretest-health-glm53`
-Status: accepted, delivered, deployed, production-smoked, and ready for
-owner-directed production testing.
+Current stage id: `tj-7w8f-prod-host-remediation`
+Status: in progress. The deployed Noor runtime remains healthy while confirmed
+host-maintenance failures are remediated through reversible production changes.
 
 Documentation: current OpenRouter catalog and reasoning documentation establish
 the external model capability boundary. Repository code defines routing and
@@ -45,6 +45,11 @@ fallback behavior.
   fresh access logs show zero logging or formatter errors.
 - No paid model call, real-user message, Zoho mutation, quotation/order action,
   or broad live E2E was performed.
+- Production host triage found a duplicate Noor logrotate owner, full but
+  currently inactive swap, a failed `relay.starec.ai` Certbot renewal, failed
+  neighboring Polska scheduled jobs, and fail-closed Wazzup channel warnings.
+- Bead `tj-7w8f` owns the active remediation stage. Its four child streams keep
+  Noor host maintenance, relay TLS, Polska jobs, and Wazzup filtering isolated.
 
 ## Accepted history
 
@@ -56,16 +61,16 @@ fallback behavior.
 ## Next recommended
 
 Next stage id: not opened
-Recommended action: begin the owner's controlled production testing against
-`https://noor.starec.ai`, keeping real-customer messaging and business-data
-mutations inside the owner's intended test plan.
+Recommended action: finish `tj-7w8f-prod-host-remediation`, run one production
+host and public API acceptance, then resume the owner's controlled testing.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage only for a new production-testing or remediation goal.
-Treat `tj-pk9v-pretest-health-glm53` and `tj-fmee` as accepted and deployed
-history at runtime SHA `7e21de2`. Do not run the five-call paid verifier, send
-real messages, or mutate Zoho/order data without fresh explicit authority.
+Continue `$orchestrator-stage` for `tj-7w8f`. Treat
+`tj-pk9v-pretest-health-glm53` and `tj-fmee` as accepted and deployed history at
+runtime SHA `7e21de2`. Keep production mutations reversible and sequential. Do
+not run the five-call paid verifier, send real messages, or mutate Zoho/order
+data without fresh explicit authority.
 
 ## Explicit defers
 
