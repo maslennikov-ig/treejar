@@ -41,12 +41,26 @@ class SensitiveUrlFilter(logging.Filter):
     """Edit the record before any configured handler can serialize it."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        try:
-            message = record.getMessage()
-        except Exception:
-            message = str(record.msg)
-        record.msg = redact_urls(message)
-        record.args = ()
+        if (
+            record.name == "uvicorn.access"
+            and isinstance(record.args, tuple)
+            and len(record.args) == 5
+        ):
+            # Uvicorn's AccessFormatter unpacks this five-item tuple after
+            # handler filters run. Preserve the formatter contract while
+            # redacting any absolute URL carried by a structured argument.
+            record.msg = redact_urls(record.msg)
+            record.args = tuple(
+                redact_urls(value) if isinstance(value, str) else value
+                for value in record.args
+            )
+        else:
+            try:
+                message = record.getMessage()
+            except Exception:
+                message = str(record.msg)
+            record.msg = redact_urls(message)
+            record.args = ()
 
         if record.exc_info is not None:
             exception_text = logging.Formatter().formatException(record.exc_info)

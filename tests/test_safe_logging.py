@@ -8,6 +8,38 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 
+def test_sensitive_url_filter_preserves_uvicorn_access_formatter_contract() -> None:
+    from uvicorn.logging import AccessFormatter
+
+    from src.core.safe_logging import SensitiveUrlFilter
+
+    record = logging.LogRecord(
+        name="uvicorn.access",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg='%s - "%s %s HTTP/%s" %d',
+        args=(
+            "127.0.0.1:12345",
+            "GET",
+            "https://example.test/private/path?token=unit-test-token",
+            "1.1",
+            200,
+        ),
+        exc_info=None,
+    )
+
+    assert SensitiveUrlFilter().filter(record) is True
+
+    output = AccessFormatter(
+        '%(client_addr)s - "%(request_line)s" %(status_code)s',
+        use_colors=False,
+    ).format(record)
+    assert "unit-test-token" not in output
+    assert "private/path" not in output
+    assert "https://example.test/[redacted-url]" in output
+
+
 def _capture_root_logging(monkeypatch: pytest.MonkeyPatch) -> io.StringIO:
     stream = io.StringIO()
     handler = logging.StreamHandler(stream)
