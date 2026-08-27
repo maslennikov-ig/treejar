@@ -30,11 +30,11 @@ from src.llm.grounding_output import (
     visible_grounding_text,
 )
 
-MAIN_MODEL_ID = "z-ai/glm-5.2"
+MAIN_MODEL_ID = "z-ai/glm-5.3-flash"
 FAST_MODEL_ID = "deepseek/deepseek-v4-flash"
 MAX_PAID_CALLS = 5
 
-MAIN_REQUIRED_PARAMETERS = frozenset({"tools", "tool_choice"})
+MAIN_REQUIRED_PARAMETERS = frozenset({"tools", "tool_choice", "reasoning"})
 FAST_REQUIRED_PARAMETERS = frozenset(
     {
         "tools",
@@ -218,6 +218,7 @@ def build_sales_payload(model: str, case: SalesSmokeCase) -> dict[str, Any]:
         ],
         "temperature": 0.0,
         "max_tokens": 400,
+        "reasoning": {"effort": "low"},
         "tools": [_ANSWER_TOOL],
         "tool_choice": {
             "type": "function",

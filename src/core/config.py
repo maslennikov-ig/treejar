@@ -39,12 +39,11 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_model_fast: str = "deepseek/deepseek-v4-flash"
-    # The customer-facing model. `system_configs.openrouter_model_main` overrides
-    # this at runtime and has held `openai/gpt-5.6-luna` since 2026-08-05 17:50
-    # UTC, when core-r4 selected it. This default said `z-ai/glm-5.2` for three
-    # days after that: shadowed, so nothing misbehaved, and every reader of the
-    # config was told the wrong thing. The default now names what actually runs.
-    openrouter_model_main: str = "openai/gpt-5.6-luna"
+    # Repository fallback for the customer-facing model. A present
+    # `system_configs.openrouter_model_main` value overrides it for DB-backed
+    # turns; a missing or failed lookup uses this value. It does not claim what
+    # value a deployed database currently holds.
+    openrouter_model_main: str = "z-ai/glm-5.3-flash"
     llm_non_core_budget_blocked: bool = False
     voice_transcription_model: str = Field(
         default=DEFAULT_VOICE_TRANSCRIPTION_MODEL,

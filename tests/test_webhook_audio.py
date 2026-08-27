@@ -64,15 +64,14 @@ class TestVoxtralConfig:
         assert configured.voxtral_model == configured.voice_transcription_model
 
     def test_default_openrouter_models_use_approved_routes(self) -> None:
-        """The defaults must name the models that actually run.
+        """The defaults must name the repository routes used without DB overrides.
 
-        `system_configs.openrouter_model_main` overrides this at runtime, so a
-        stale default is shadowed rather than broken -- which is exactly why it
-        went unnoticed for three days and misled everyone who read the config.
+        `system_configs.openrouter_model_main` may override the main model at
+        runtime, but an absent or failed lookup falls back to this value.
         """
         defaults = Settings(_env_file=None)
 
-        assert defaults.openrouter_model_main == "openai/gpt-5.6-luna"
+        assert defaults.openrouter_model_main == "z-ai/glm-5.3-flash"
         assert defaults.openrouter_model_fast == "deepseek/deepseek-v4-flash"
 
 
