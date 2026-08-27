@@ -3,7 +3,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
-from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -75,7 +81,7 @@ class Settings(BaseSettings):
         ""  # Comma-separated CIDRs, e.g. "94.242.232.0/22,172.241.70.0/22"
     )
     wazzup_webhook_auth_mode: Literal["disabled", "observe", "enforce"] = "disabled"
-    wazzup_webhook_secret: str = ""
+    wazzup_webhook_secret: SecretStr = SecretStr("")
 
     # Zoho CRM
     zoho_crm_client_id: str = ""
@@ -160,12 +166,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> Settings:
-        if (
-            self.wazzup_webhook_auth_mode == "enforce"
-            and not self.wazzup_webhook_secret.strip()
+        webhook_secret = self.wazzup_webhook_secret.get_secret_value()
+        if self.wazzup_webhook_auth_mode in {"observe", "enforce"} and (
+            len(webhook_secret.encode("utf-8")) < 32
+            or any(character.isspace() for character in webhook_secret)
         ):
             raise ValueError(
-                "wazzup_webhook_secret must be set when webhook auth is enforced"
+                "wazzup_webhook_secret must be at least 32 UTF-8 bytes "
+                "without whitespace when webhook auth is observe or enforce"
             )
         if self.is_production:
             if self.app_secret_key == "change-me-in-production":

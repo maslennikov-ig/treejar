@@ -7,7 +7,7 @@ orchestration_level: slice_acceptance
 scope_kind: product_slice
 immediate_consumer: root-orchestrator
 public_facade: /api/v1/webhook/wazzup
-bounded_acceptance: local staged Bearer crmKey authentication with fail-closed enforce startup and pre-side-effect rejection
+bounded_acceptance: local staged Bearer crmKey authentication with masked strong secrets and pre-side-effect rejection
 non_goals:
   - production-or-provider-mutation
   - callback-url-or-subscription-change
@@ -39,9 +39,10 @@ write_zone:
   - .codex/stages/tj-7w8f-prod-host-remediation/artifacts/tj-7w8f.5.md
 success_criteria:
   - disabled mode preserves the existing unauthenticated default
-  - observe mode logs only missing mismatch or match and never blocks the existing handler
+  - observe mode logs match at INFO and missing or mismatch at DEBUG without blocking the existing handler
   - enforce mode rejects missing malformed or wrong Bearer before persistence queues models CRM or outbound work
-  - enforce mode cannot start with a missing or empty secret
+  - observe and enforce cannot start with a whitespace or sub-32-byte secret
+  - settings representations and JSON serialization mask the crmKey
   - IP allowlisting and channel equality remain separate unchanged controls
 selected_docs:
   - AGENTS.md
@@ -86,6 +87,9 @@ verification:
   - focused TDD RED with 10 collected cases: failed as expected with 9 failed and 1 permissive-path pass
   - focused TDD GREEN with the same 10 cases: passed with 10 passed
   - focused affected auth default IP and channel tests: passed with 14 passed
+  - review-fix focused TDD RED with 17 collected cases: failed as expected with 10 failed and 7 existing-guard passes
+  - review-fix focused TDD GREEN with the same 17 cases: passed with 17 passed
+  - final focused affected auth default IP and channel tests: passed with 23 passed
   - python3 scripts/orchestration/validate_artifact.py artifact: passed
   - git diff --check: passed
 changed_files:
@@ -102,17 +106,22 @@ explicit_defers:
 # Summary
 
 Added a staged inbound Wazzup Bearer boundary. `disabled` is the backward-
-compatible default. `observe` performs a constant-time comparison, emits one
-privacy-safe result (`missing`, `mismatch`, or `match`), and continues.
+compatible default. `observe` performs a constant-time comparison and
+continues. A match emits the privacy-safe INFO signal `match`; missing and
+mismatch signals are DEBUG-only so public traffic cannot flood warning logs.
 `enforce` returns HTTP 401 with a Bearer challenge before JSON parsing, the IP
 check, database sessions, Redis, ARQ, models, CRM, or outbound work unless the
-secret matches. Settings validation refuses `enforce` when
-`WAZZUP_WEBHOOK_SECRET` is empty or whitespace.
+secret matches.
+
+`WAZZUP_WEBHOOK_SECRET` is a Pydantic `SecretStr`. Its raw value is absent from
+Settings repr and JSON serialization. Both `observe` and `enforce` refuse to
+start unless the value has at least 32 UTF-8 bytes and contains no whitespace.
 
 The implementation does not alter the callback route, Wazzup provider
-registration, subscription flags, `WAZZUP_ALLOWED_IPS`, or exact channel
-equality. `WAZZUP_API_KEY` remains the outbound/account API credential and is
-not reused as the inbound crmKey.
+registration, subscription flags, IP-check semantics, or exact channel
+equality. `.env.example` now leaves `WAZZUP_ALLOWED_IPS` empty until official
+current ranges and a trustworthy proxy chain exist. `WAZZUP_API_KEY` remains
+the outbound/account API credential and is never reused as the inbound crmKey.
 
 # Scope / Routing
 
@@ -122,12 +131,14 @@ Existing persistence and queue effects remain in the handler after the new
 gate. No shared helper, database model, worker, provider client, route, or
 channel filter changed.
 
-The technical premortem verdict was **GO WITH CONDITIONS**. Retained failure
-shapes were a permissive default regression, enforcement after a side effect,
-startup with no secret, secret-bearing logs, and a provider PATCH that silently
-changes owner configuration. The tests and implementation cover the first four;
-the production runbook below makes exact callback/subscription preservation a
-hard precondition for the fifth.
+The revised technical premortem verdict was **GO WITH CONDITIONS**. Retained
+failure shapes were a permissive default regression, enforcement after a side
+effect, weak or serialized secrets, public warning floods, auth accidentally
+bypassing IP/channel controls, and a provider PATCH that silently changes owner
+configuration. Tests cover the application risks. Exact callback/subscription
+equality is a hard operator precondition. crmKey replacement is explicitly an
+irreversible rotation because the prior hidden provider value cannot be read or
+restored.
 
 # Verification
 
@@ -148,6 +159,19 @@ focused command added the existing normal webhook, disallowed-IP, refused-
 channel, and signature cases and passed 14/14. No full suite, provider request,
 production request, database/Redis operation, real message, or paid call ran.
 
+Review-fix RED command:
+
+```text
+uv run --extra dev pytest tests/test_webhook.py::test_wazzup_webhook_observe_auth_logs_result_without_blocking_or_exposing_secrets tests/test_webhook.py::test_wazzup_webhook_enforce_auth_rejects_before_persistence_or_queue_work tests/test_webhook.py::test_wazzup_webhook_matching_bearer_still_requires_allowed_ip tests/test_webhook.py::test_wazzup_webhook_matching_bearer_still_rejects_wrong_channel tests/test_security.py::test_wazzup_webhook_rollout_auth_requires_strong_secret tests/test_security.py::test_wazzup_webhook_secret_is_masked_in_settings_output tests/test_security.py::test_wazzup_webhook_secret_minimum_uses_utf8_bytes -q --tb=short
+```
+
+Result before the review implementation: exit 1, 17 collected, 10 failed and
+7 passed. Expected failures proved that missing/mismatch were still WARNING,
+weak observe/enforce secrets were accepted, and the raw setting was a plain
+string. The seven already-passing cases characterized the existing early 401
+and the independent IP/channel layers. The identical target after the minimal
+fix passed 17/17.
+
 # Exact production observe / enforce / rollback runbook
 
 All steps below are root/operator-owned and require the existing production
@@ -155,7 +179,7 @@ authority. Values stay in the protected operator channel; never place either
 credential, the Authorization header, or the saved provider JSON in logs,
 shell tracing, a command argument, the artifact, or Git.
 
-## Preconditions and immutable snapshot
+## Preconditions, strong key generation, and immutable snapshot
 
 1. Record the current release SHA and public health result. Create a mode-`0600`
    backup of `/opt/noor/.env` outside the replaceable release tree.
@@ -163,13 +187,22 @@ shell tracing, a command argument, the artifact, or Git.
    registration once into a separate mode-`0600` file. Preserve the exact
    `webhooksUri` and the complete subscription object as owner configuration.
    Record only a SHA-256 digest of that protected file in the operator receipt.
-3. Build the proposed provider payload from that protected snapshot. The only
-   semantic delta may be adding/replacing `crmKey`; `webhooksUri`, every
-   subscription key, and every subscription value must compare equal before
-   sending. Abort on any other delta or concurrent drift.
-4. Put the same crmKey in the protected `/opt/noor/.env` as
-   `WAZZUP_WEBHOOK_SECRET`; keep file mode `0600`. Do not reuse
-   `WAZZUP_API_KEY` and do not print either value.
+3. Generate one new key with Python `secrets.token_urlsafe(32)` directly into a
+   mode-`0600` operator-owned secret file; the generation command must not print
+   it. This produces a fresh URL-safe value above the 32-byte application
+   minimum. Never reuse the existing nine-character value, `WAZZUP_API_KEY`, or
+   any other account credential.
+4. Build the desired provider payload from the protected registration snapshot
+   and that one new key. The only semantic delta may be replacing `crmKey`;
+   `webhooksUri`, every subscription key, and every subscription value must
+   compare equal before sending. Abort on any other delta or concurrent drift.
+5. Put the same new key in the protected `/opt/noor/.env` as
+   `WAZZUP_WEBHOOK_SECRET`; keep file mode `0600`. Transfer it from the protected
+   file without stdout, shell tracing, command arguments, logs, or clipboard
+   history. Keep the protected source until production acceptance.
+
+The provider PATCH is an explicit irreversible credential rotation. The old
+hidden crmKey cannot be read back and must not be described as restorable.
 
 ## Observe
 
@@ -180,13 +213,14 @@ shell tracing, a command argument, the artifact, or Git.
 2. PATCH the provider once with the preflighted payload. This necessarily
    triggers Wazzup's registration test POST. Do not change the callback URL or
    any subscription flag.
-3. In the bounded app-log window, accept only the privacy-safe signal
+3. In the bounded app-log window, accept only the privacy-safe INFO signal
    `Wazzup webhook auth: match` for that test POST. The log line contains no
    header, credential, URL, payload, channel, chat, or customer identifier.
-   `missing` or `mismatch` means do not enforce; follow rollback below.
+   Missing/mismatch are DEBUG-only; absence of the bounded `match` proof means
+   do not enforce and follow recovery below.
 4. Read the provider registration once after PATCH and compare the returned
    callback and complete subscription object to the protected snapshot. Abort
-   and roll back on any difference. A missing returned crmKey is not evidence
+   and recover on any difference. A missing returned crmKey is not evidence
    of failure because the provider read contract may omit secrets; the test POST
    `match` is the activation proof.
 
@@ -194,35 +228,44 @@ shell tracing, a command argument, the artifact, or Git.
 
 1. Change only `WAZZUP_WEBHOOK_AUTH_MODE` from `observe` to `enforce` in the
    protected env and recreate only `app`. Startup must fail closed if the secret
-   is absent or empty; do not bypass this validator.
+   contains whitespace or is shorter than 32 UTF-8 bytes; do not bypass this
+   validator.
 2. Verify sanitized mode readback equals `enforce` and public health remains
    green. A bounded synthetic `{"test":true}` request with missing, malformed,
    or wrong Bearer must return 401; the matching protected Bearer must return
    200. Do not use a customer message payload.
-3. Confirm those rejected requests produced no database, Redis, ARQ, LLM, CRM,
-   or outbound activity and that logs contain only `missing`, `mismatch`, or
-   `match`. Preserve `WAZZUP_ALLOWED_IPS` and `WAZZUP_CHANNEL_ID` unchanged.
+3. Confirm those rejected requests produced no JSON parse, database, Redis,
+   ARQ, LLM, CRM, or outbound activity. At default INFO, only a successful
+   `match` is logged; missing/mismatch remain DEBUG. Preserve the production
+   `WAZZUP_ALLOWED_IPS` and `WAZZUP_CHANNEL_ID` values unchanged.
 
-## Rollback
+## Recovery and application rollback
 
-Rollback triggers are provider test `missing`/`mismatch`, any callback or
-subscription delta, app startup failure, unexpected 401 for the provider,
-public-health degradation, or restart instability.
+Recovery triggers are absence of the provider test `match`, any callback or
+subscription delta, app startup failure, unexpected provider 401, public-health
+degradation, or restart instability.
 
-1. If already enforcing, first restore `WAZZUP_WEBHOOK_AUTH_MODE=observe` and
-   recreate only `app`; this lets the provider's compensating test POST reach
-   the old handler regardless of Bearer state.
-2. PATCH the exact protected pre-change provider registration, omitting the new
-   crmKey exactly as in the owner snapshot. Confirm callback and all subscription
-   fields equal the snapshot. This is compensating rollback, not a claim of
-   provider atomicity.
-3. Restore the mode-`0600` pre-change `/opt/noor/.env`, recreate only `app`, and
-   verify auth mode is the prior value, public health is green, and webhook
-   status counts have returned to baseline without inspecting payloads.
-4. If the release itself is implicated, use the existing Noor deployment
-   rollback archive/process to restore the recorded predecessor release and
-   recheck release identity, app health, process restarts, and sanitized webhook
-   status counts. Retain the protected snapshots until root acceptance.
+1. If already enforcing, first set `WAZZUP_WEBHOOK_AUTH_MODE=observe` while
+   retaining the same new `WAZZUP_WEBHOOK_SECRET`, then recreate only `app`.
+   Observe accepts the provider test regardless of match while preserving the
+   bounded `match` proof when configuration is correct.
+2. Repeat the exact desired provider PATCH with the **same new strong crmKey**,
+   exact owner callback, and exact complete subscription object. Never omit the
+   key, generate a second key, or claim to restore the old hidden value. Confirm
+   callback and every subscription field equal the protected snapshot; use the
+   repeated test POST `match` as key-binding proof.
+3. If the current release is healthy in observe mode, leave the provider on the
+   new strong key and keep the app in observe until the cause is fixed. Public
+   health and sanitized restart/status counts must return to baseline.
+4. If the release itself is implicated, restore the recorded predecessor
+   release through the existing Noor deployment rollback process **without
+   rotating the provider again**. The predecessor ignores the Authorization
+   header, so it remains compatible with the provider's new key. Preserve the
+   new key in the protected operator store and production env for roll-forward;
+   do not blindly restore a pre-rotation env that would lose it.
+5. Recheck release identity, public health, process restarts, callback equality,
+   complete subscription equality, and privacy-safe webhook status counts.
+   Retain protected snapshots and the new key until root acceptance.
 
 # Delivery / Cleanup
 
@@ -236,7 +279,8 @@ worktree/branch cleanup. This worker performed no external delivery action.
   provider test POST in observe mode can prove the configured crmKey matches.
 - The separate source-IP control still depends on trustworthy proxy/CIDR
   evidence from `tj-7w8f.4`; this change neither weakens nor claims to repair it.
-- The provider PATCH has no proven compare-and-swap or atomic rollback. Exact
-  before/after equality checks and the compensating PATCH are mandatory.
+- The provider PATCH has no proven compare-and-swap or atomic rollback. It is an
+  irreversible key rotation: recovery repeats the exact desired registration
+  with the same new strong key; it never removes or restores a hidden old key.
 - Final production health, observe evidence, enforce rejection proof, provider
   state readback, and rollback readiness remain root-owned acceptance work.

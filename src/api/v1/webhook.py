@@ -39,7 +39,7 @@ def _wazzup_webhook_auth_result(request: Request) -> str:
     ):
         return "mismatch"
 
-    expected_secret = settings.wazzup_webhook_secret
+    expected_secret = settings.wazzup_webhook_secret.get_secret_value()
     if secrets.compare_digest(
         provided_secret.encode("utf-8"),
         expected_secret.encode("utf-8"),
@@ -57,7 +57,7 @@ def _verify_wazzup_webhook_auth(request: Request) -> bool:
     if result == "match":
         logger.info("Wazzup webhook auth: match")
     else:
-        logger.warning("Wazzup webhook auth: %s", result)
+        logger.debug("Wazzup webhook auth: %s", result)
 
     return mode == "observe" or result == "match"
 
