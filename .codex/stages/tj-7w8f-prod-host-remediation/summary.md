@@ -1,6 +1,6 @@
 # Stage tj-7w8f-prod-host-remediation
 
-Status: in progress.
+Status: blocked on external ownership.
 
 ## Goal
 
@@ -35,31 +35,57 @@ Verdict: GO WITH CONDITIONS.
 - `tj-7w8f.4`: production Wazzup channel filtering.
 - `tj-7w8f.5`: staged Wazzup `crmKey` sender authentication.
 
-## Wazzup sender-authentication replan
+## Wazzup sender-authentication result
 
-Verdict: GO WITH CONDITIONS after the read-only provider contract lookup.
+Verdict: BLOCKED ON WAuth CONNECTION OWNERSHIP after the production observe
+probe corrected the earlier provider-contract assumption.
 
-Given the existing provider callback and four subscription flags are the owner
-configuration, when sender authentication is added, the rollout preserves those
-exact values and changes only `crmKey`; it does not redirect or expand delivery.
+The two diagnostic webhook PATCHes preserved the existing callback and all four
+subscription flags. Any future provider-side authentication rotation must use a
+confirmed WAuth reconnect or support-assisted path with its connection-owned
+values; webhook PATCH must not be used for `crmKey`.
 
-- Deploy authentication code first in `observe` mode with a newly generated
-  high-entropy secret. Observe mode records only `missing`, `mismatch`, or
-  `match`; it never logs the header or secret and preserves existing handling.
-- Back up the exact provider GET response and production `.env` as mode `0600`.
-  The provider PATCH must use the unchanged callback and subscription flags plus
-  the new `crmKey`.
-- PATCH necessarily emits one Wazzup test POST. Enforcement is blocked until the
-  Noor app records a matching Bearer for that test through the existing callback
-  path. No match means immediate provider rollback and no enforcement.
-- Enable `enforce` only after the matching observation. Missing or wrong Bearer
-  must be rejected before Redis, ARQ, database, LLM, CRM, or outbound work.
-- Rollback order is app mode back to `observe`, provider registration back to
-  the saved response, then code/config release rollback if required. Noor health,
-  callback/subscription equality, queue state, and privacy-safe auth counts are
-  checked at each boundary.
+- Authentication code was independently security-reviewed, merged and deployed
+  at `43d6430`. Production now runs in non-blocking `observe` with a fresh
+  high-entropy secret; Noor health, the GLM 5.3 Flash model route, restart count
+  and OOM state remain green.
+- Exact provider registration and `.env` snapshots are protected with mode
+  `0600`. Two same-key `PATCH /v3/webhooks` requests returned 200 and preserved
+  the callback and all subscription flags, but their test POSTs had no matching
+  Bearer.
+- Official contract re-check established that webhook PATCH accepts only
+  `webhooksUri` and `subscriptions`. `crmKey` is stored only by WAuth
+  `POST /v3/connect`; the unknown PATCH field was ignored.
+- A bounded synthetic POST through the current audit relay preserved the same
+  Authorization header and produced `match`, so the relay and Noor auth code are
+  working. Provider-side WAuth binding is the remaining boundary.
+- No further webhook PATCH is allowed and `enforce` remains blocked until the
+  owner supplies the existing WAuth connection context or Wazzup confirms a
+  supported callback-authentication path.
+
+## Completed production repairs
+
+- Removed the duplicate Noor nginx logrotate owner and restored a green
+  `logrotate.service` plus timer. The exact prior file has a protected backup.
+- Retired the stale unused local `relay.starec.ai` Certbot lineage after proving
+  DNS and the live relay endpoint belong to another host; relay and Noor TLS are
+  green.
+- Left swap unchanged after measuring zero current pressure, zero Noor swap,
+  zero OOM events and sufficient available RAM.
+- Proved Wazzup unexpected-channel warnings are correct fail-closed filtering;
+  production channel scope was not widened.
+
+## Remaining external blocker
+
+Polska CBOSA currently receives HTTP 403 from its upstream source. The deployed
+`/opt/polska/app` has no Git or release lineage, and no canonical source repo was
+found on the host, under `/home/me/code`, or in accessible GitHub repositories.
+Changing the timer or masking its failure would hide data loss, so no such
+containment was applied.
 
 ## Acceptance
 
-Pending delegated root-cause artifacts, sequential production remediation, and
-one root-owned host plus public Noor verification.
+Pending the canonical Polska source/owner decision and Wazzup WAuth connection
+ownership. Completed Noor repairs and the deployed observe path remain healthy;
+the stage must not be described as fully accepted while those two external
+boundaries remain unresolved.

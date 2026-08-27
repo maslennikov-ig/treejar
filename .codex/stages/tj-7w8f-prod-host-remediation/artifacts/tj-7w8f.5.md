@@ -20,7 +20,7 @@ epic_id: tj-7w8f
 stage_id: tj-7w8f-prod-host-remediation
 session_id: tj-7w8f-prod-wazzup-crmkey
 milestone: staged-wazzup-crmkey-authentication
-milestone_status: in_progress
+milestone_status: blocked_external_contract
 agent_type: backend_developer
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
@@ -64,9 +64,9 @@ depends_on_streams:
 parallel_decision: sequential
 status: returned
 delivery_method: merge
-accepted_by_orchestrator: no
+accepted_by_orchestrator: yes
 cleanup_status: pending
-cleanup_notes: root owns acceptance merge production rollout and branch cleanup
+cleanup_notes: code was merged and deployed; branch cleanup waits for stage closeout
 risk_level: high
 verification_tier: delta
 risk_tags:
@@ -82,7 +82,7 @@ invariants:
   - test-matrix
 docs_impact: ops-deploy
 docs_reviewed: updated
-docs_review_notes: .env.example and this artifact document the staged mode and production sequence without secret values
+docs_review_notes: updated - production observe state, WAuth blocker, Polska ownership blocker, and superseded webhook-PATCH path are aligned without secrets
 verification:
   - focused TDD RED with 10 collected cases: failed as expected with 9 failed and 1 permissive-path pass
   - focused TDD GREEN with the same 10 cases: passed with 10 passed
@@ -100,7 +100,7 @@ changed_files:
   - .env.example
   - .codex/stages/tj-7w8f-prod-host-remediation/artifacts/tj-7w8f.5.md
 explicit_defers:
-  - root-owned production deploy provider PATCH observe proof enforce switch public health acceptance and rollback drill were not performed in this no-production stream
+  - production enforcement is blocked because crmKey cannot be configured through PATCH /v3/webhooks and no WAuth connection authority is available
 ---
 
 # Summary
@@ -131,14 +131,13 @@ Existing persistence and queue effects remain in the handler after the new
 gate. No shared helper, database model, worker, provider client, route, or
 channel filter changed.
 
-The revised technical premortem verdict was **GO WITH CONDITIONS**. Retained
-failure shapes were a permissive default regression, enforcement after a side
-effect, weak or serialized secrets, public warning floods, auth accidentally
-bypassing IP/channel controls, and a provider PATCH that silently changes owner
-configuration. Tests cover the application risks. Exact callback/subscription
-equality is a hard operator precondition. crmKey replacement is explicitly an
-irreversible rotation because the prior hidden provider value cannot be read or
-restored.
+The delegated technical premortem verdict was **GO WITH CONDITIONS** for the
+application code. It covered permissive defaults, enforcement after a side
+effect, weak or serialized secrets, public warning floods, auth bypassing the
+IP/channel controls, and unexpected callback/subscription changes. Production
+evidence later corrected its provider assumption: webhook PATCH does not support
+`crmKey`, so no provider-side crmKey replacement or rotation was proven. The
+application controls remain valid for a future supported WAuth binding.
 
 # Verification
 
@@ -154,10 +153,12 @@ and no startup refusal. The matching-Bearer case passed only because the old
 handler was fully permissive; it became meaningful together with the failing
 negative branches.
 
-The same command after the minimal implementation passed 10/10. The final
-focused command added the existing normal webhook, disallowed-IP, refused-
-channel, and signature cases and passed 14/14. No full suite, provider request,
-production request, database/Redis operation, real message, or paid call ran.
+The same command after the minimal implementation passed 10/10. During the
+delegated local verification phase, the final focused command added the existing
+normal webhook, disallowed-IP, refused-channel, and signature cases and passed
+14/14; that phase made no provider or production request, database/Redis
+operation, real message, or paid call. The later root-owned production outcome
+is recorded below.
 
 Review-fix RED command:
 
@@ -172,115 +173,52 @@ string. The seven already-passing cases characterized the existing early 401
 and the independent IP/channel layers. The identical target after the minimal
 fix passed 17/17.
 
-# Exact production observe / enforce / rollback runbook
+# Production rollout outcome and supported continuation
 
-All steps below are root/operator-owned and require the existing production
-authority. Values stay in the protected operator channel; never place either
-credential, the Authorization header, or the saved provider JSON in logs,
-shell tracing, a command argument, the artifact, or Git.
+Root deployed commit `43d6430` through GitHub Actions run `33047773974` after
+Ruff, Mypy, 3891 pytest cases, and the semantic retrieval gate passed. The app
+was then moved to `observe` with a new `secrets.token_urlsafe(32)` value. The
+protected production snapshot, key, request/response bodies, and receipts are
+mode `0600`; no credential or callback value was logged or committed.
 
-## Preconditions, strong key generation, and immutable snapshot
+The original runbook assumption was wrong and is superseded by this result:
 
-1. Record the current release SHA and public health result. Create a mode-`0600`
-   backup of `/opt/noor/.env` outside the replaceable release tree.
-2. With the existing Wazzup account API credential, read the current webhook
-   registration once into a separate mode-`0600` file. Preserve the exact
-   `webhooksUri` and the complete subscription object as owner configuration.
-   Record only a SHA-256 digest of that protected file in the operator receipt.
-3. Generate one new key with Python `secrets.token_urlsafe(32)` directly into a
-   mode-`0600` operator-owned secret file; the generation command must not print
-   it. This produces a fresh URL-safe value above the 32-byte application
-   minimum. Never reuse the existing nine-character value, `WAZZUP_API_KEY`, or
-   any other account credential.
-4. Build the desired provider payload from the protected registration snapshot
-   and that one new key. The only semantic delta may be replacing `crmKey`;
-   `webhooksUri`, every subscription key, and every subscription value must
-   compare equal before sending. Abort on any other delta or concurrent drift.
-5. Put the same new key in the protected `/opt/noor/.env` as
-   `WAZZUP_WEBHOOK_SECRET`; keep file mode `0600`. Transfer it from the protected
-   file without stdout, shell tracing, command arguments, logs, or clipboard
-   history. Keep the protected source until production acceptance.
+- Official `PATCH /v3/webhooks` accepts only `webhooksUri` and
+  `subscriptions`. It does not configure `crmKey`.
+- Official WAuth stores `crmKey` only during `POST /v3/connect`, together with
+  connection-owned `state`, `secret`, and `name` values.
+- Two same-key webhook PATCH attempts returned HTTP 200 and preserved the exact
+  callback and all four subscription flags, but both provider test POSTs reached
+  Noor without a matching Bearer. The unknown `crmKey` field was ignored.
+- A bounded synthetic `{"test":true}` POST through the protected current
+  `audit.starec.ai` relay with the same Bearer reached Noor and produced one
+  privacy-safe `match`. The relay therefore preserves Authorization; it is not
+  the missing binding.
+- Enforcement was correctly stopped. Production remains in non-blocking
+  `observe`; public and local health are HTTP 200, the app has zero restarts and
+  zero OOM events, and the main model remains `z-ai/glm-5.3-flash`.
 
-The provider PATCH is an explicit irreversible credential rotation. The old
-hidden crmKey cannot be read back and must not be described as restorable.
-
-## Observe
-
-1. Deploy this release with `WAZZUP_WEBHOOK_AUTH_MODE=observe`, then recreate
-   only the `app` service so the webhook process reads the new environment.
-   Verify the app is running, the configured mode readback is exactly
-   `observe`, and public health is green without printing the secret.
-2. PATCH the provider once with the preflighted payload. This necessarily
-   triggers Wazzup's registration test POST. Do not change the callback URL or
-   any subscription flag.
-3. In the bounded app-log window, accept only the privacy-safe INFO signal
-   `Wazzup webhook auth: match` for that test POST. The log line contains no
-   header, credential, URL, payload, channel, chat, or customer identifier.
-   Missing/mismatch are DEBUG-only; absence of the bounded `match` proof means
-   do not enforce and follow recovery below.
-4. Read the provider registration once after PATCH and compare the returned
-   callback and complete subscription object to the protected snapshot. Abort
-   and recover on any difference. A missing returned crmKey is not evidence
-   of failure because the provider read contract may omit secrets; the test POST
-   `match` is the activation proof.
-
-## Enforce
-
-1. Change only `WAZZUP_WEBHOOK_AUTH_MODE` from `observe` to `enforce` in the
-   protected env and recreate only `app`. Startup must fail closed if the secret
-   contains whitespace or is shorter than 32 UTF-8 bytes; do not bypass this
-   validator.
-2. Verify sanitized mode readback equals `enforce` and public health remains
-   green. A bounded synthetic `{"test":true}` request with missing, malformed,
-   or wrong Bearer must return 401; the matching protected Bearer must return
-   200. Do not use a customer message payload.
-3. Confirm those rejected requests produced no JSON parse, database, Redis,
-   ARQ, LLM, CRM, or outbound activity. At default INFO, only a successful
-   `match` is logged; missing/mismatch remain DEBUG. Preserve the production
-   `WAZZUP_ALLOWED_IPS` and `WAZZUP_CHANNEL_ID` values unchanged.
-
-## Recovery and application rollback
-
-Recovery triggers are absence of the provider test `match`, any callback or
-subscription delta, app startup failure, unexpected provider 401, public-health
-degradation, or restart instability.
-
-1. If already enforcing, first set `WAZZUP_WEBHOOK_AUTH_MODE=observe` while
-   retaining the same new `WAZZUP_WEBHOOK_SECRET`, then recreate only `app`.
-   Observe accepts the provider test regardless of match while preserving the
-   bounded `match` proof when configuration is correct.
-2. Repeat the exact desired provider PATCH with the **same new strong crmKey**,
-   exact owner callback, and exact complete subscription object. Never omit the
-   key, generate a second key, or claim to restore the old hidden value. Confirm
-   callback and every subscription field equal the protected snapshot; use the
-   repeated test POST `match` as key-binding proof.
-3. If the current release is healthy in observe mode, leave the provider on the
-   new strong key and keep the app in observe until the cause is fixed. Public
-   health and sanitized restart/status counts must return to baseline.
-4. If the release itself is implicated, restore the recorded predecessor
-   release through the existing Noor deployment rollback process **without
-   rotating the provider again**. The predecessor ignores the Authorization
-   header, so it remains compatible with the provider's new key. Preserve the
-   new key in the protected operator store and production env for roll-forward;
-   do not blindly restore a pre-rotation env that would lose it.
-5. Recheck release identity, public health, process restarts, callback equality,
-   complete subscription equality, and privacy-safe webhook status counts.
-   Retain protected snapshots and the new key until root acceptance.
+Do not repeat `PATCH /v3/webhooks` with `crmKey` and do not enable `enforce`.
+The supported continuation requires proof that this account is connected by
+WAuth and the owner-controlled WAuth connection values. If that connection
+exists, rotate through the documented reconnect/`POST /v3/connect` path or with
+Wazzup support, keeping the app in `observe` until a natural/provider-authorized
+event produces `match`. If no WAuth connection exists, obtain from Wazzup a
+supported callback-authentication mechanism before changing enforcement.
 
 # Delivery / Cleanup
 
-The branch is prepared for root review and merge. The root owns stage
-acceptance, production rollout, completion-inbox handling, and eventual
-worktree/branch cleanup. This worker performed no external delivery action.
+The implementation branch was reviewed, merged, pushed, and deployed. Cleanup
+remains root-owned because the parent stage is blocked on external Polska and
+Wazzup ownership facts.
 
 # Risks / Follow-ups / Explicit Defers
 
-- Production account binding is not proven locally; only the root-owned
-  provider test POST in observe mode can prove the configured crmKey matches.
+- Production WAuth ownership and the connection values required by
+  `POST /v3/connect` are unknown; webhook PATCH cannot supply them.
 - The separate source-IP control still depends on trustworthy proxy/CIDR
   evidence from `tj-7w8f.4`; this change neither weakens nor claims to repair it.
-- The provider PATCH has no proven compare-and-swap or atomic rollback. It is an
-  irreversible key rotation: recovery repeats the exact desired registration
-  with the same new strong key; it never removes or restores a hidden old key.
-- Final production health, observe evidence, enforce rejection proof, provider
-  state readback, and rollback readiness remain root-owned acceptance work.
+- The two accepted PATCH calls changed no documented owner field. Their HTTP
+  200 responses are not evidence that an unknown `crmKey` field was stored.
+- Enforcement remains deliberately deferred until provider-side binding is
+  proven by a matching real or provider-authorized event.

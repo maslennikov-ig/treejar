@@ -3,8 +3,9 @@
 Updated: 2026-08-27
 Current branch: `main`
 Current stage id: `tj-7w8f-prod-host-remediation`
-Status: in progress. The deployed Noor runtime remains healthy while confirmed
-host-maintenance failures are remediated through reversible production changes.
+Status: blocked on two external ownership facts. Completed Noor repairs are
+healthy; Polska source lineage and Wazzup WAuth connection ownership are still
+required before the stage can close.
 
 Documentation: current OpenRouter catalog and reasoning documentation establish
 the external model capability boundary. Repository code defines routing and
@@ -39,10 +40,10 @@ fallback behavior.
 - Production smoke exposed and closed `tj-fmee`, a Uvicorn access-log formatter
   failure caused by the URL-redaction filter. Hotfix `7e21de2` passed 3852
   tests with 20 skips and was deployed by run `33042943557`.
-- Production `/api/v1/health` reports exact SHA
-  `7e21de2b04611065e75936d0281e7aed55e0b2f3`, Redis and PostgreSQL are healthy,
-  the API smoke passed 8/8, app/worker have zero restarts or OOM events, and
-  fresh access logs show zero logging or formatter errors.
+- Remediation release `43d6430` passed Ruff, format, Mypy, 3891 tests with 20
+  skips, and the semantic retrieval gate, then deployed through GitHub Actions
+  run `33047773974`. Production health reports that exact SHA; Redis and
+  PostgreSQL are healthy, and app/worker have zero restarts or OOM events.
 - No paid model call, real-user message, Zoho mutation, quotation/order action,
   or broad live E2E was performed.
 - The duplicate Noor logrotate owner was removed with a protected backup;
@@ -55,9 +56,14 @@ fallback behavior.
 - Wazzup unexpected-channel warnings were proven to be correct fail-closed
   filtering. The expected channel matches runtime configuration and all 532
   linked production conversations, so accepted channel scope was not widened.
-- Staged Wazzup `crmKey` Bearer authentication is merged locally. Its security
-  review has no blocking findings; production deploy, provider key rotation,
-  observe proof and enforcement remain pending.
+- Staged Wazzup Bearer authentication is deployed in non-blocking `observe`
+  with a new strong protected secret. App code and the existing audit relay
+  successfully match a bounded synthetic Bearer probe.
+- Production enforcement is blocked at the provider boundary. Official
+  `PATCH /v3/webhooks` does not accept `crmKey`; two same-key PATCH test POSTs
+  arrived without a matching Bearer while preserving the exact callback and
+  subscriptions. `crmKey` requires an owner-controlled WAuth
+  `POST /v3/connect` context, which is not available in the repository or host.
 - Polska remains blocked outside Treejar: the current CBOSA source endpoint
   returns HTTP 403 and `/opt/polska/app` has no Git/release lineage. No canonical
   Polska source repository was found locally or in accessible GitHub repos.
@@ -75,22 +81,30 @@ fallback behavior.
 ## Next recommended
 
 Next stage id: not opened
-Recommended action: finish `tj-7w8f-prod-host-remediation`, run one production
-host and public API acceptance, then resume the owner's controlled testing.
+Recommended action: obtain the canonical Polska source repository/owner and
+confirm whether the Wazzup account has an existing WAuth connection with a
+supported reconnect path. Keep Wazzup in `observe`; do not repeat webhook PATCH
+or enable `enforce` before provider binding is proven.
 
 ## Starter prompt for next orchestrator
 
 Use $orchestrator-stage for `tj-7w8f`. Treat
 `tj-pk9v-pretest-health-glm53` and `tj-fmee` as accepted and deployed history at
-runtime SHA `7e21de2`. Keep production mutations reversible and sequential. Do
-not run the five-call paid verifier, send real messages, or mutate Zoho/order
-data without fresh explicit authority.
+runtime SHA `43d6430`. Treat logrotate, relay TLS and channel filtering as
+completed. Keep Wazzup in `observe`; do not use `PATCH /v3/webhooks` for
+`crmKey`. Resume Polska only from its canonical source/owner. Do not run the
+five-call paid verifier, send real messages, or mutate Zoho/order data without
+fresh explicit authority.
 
 ## Explicit defers
 
 - The five-call paid live route verifier remains deferred and requires separate
   explicit authority; configuration and startup readback prove activation, not
   a paid inference round.
+- Polska CBOSA repair is blocked by upstream HTTP 403 and missing canonical
+  source/release lineage. Do not disable its timer or mask exit status as green.
+- Wazzup Bearer enforcement is blocked until the owner supplies a valid WAuth
+  reconnect context or Wazzup confirms another supported callback-auth path.
 - Existing product defects remain tracked and unresolved: `tj-gwg1`,
   `tj-2f1u`, `tj-c58g`, `tj-wvuk` and `tj-jlx4`.
 - Referral activation remains an excluded client decision.
