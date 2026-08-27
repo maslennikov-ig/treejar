@@ -44,6 +44,8 @@ selected_docs:
   - .codex/stages/tj-7w8f-prod-host-remediation/summary.md
   - Beads tj-7w8f.4 and tj-ppid
   - https://wazzup24.com/help/api-en/webhooks/ accessed 2026-08-27
+  - https://wazzup24.com/help/api-en/authorization/ accessed 2026-08-27
+  - https://wazzup24.com/help/api-en/wauth/ accessed 2026-08-27
   - https://wazzup24.com/help/api/webhooks/ accessed 2026-08-27
   - https://wazzup24.com/contact/ accessed 2026-08-27
 selected_skills:
@@ -90,6 +92,8 @@ verification:
   - production Uvicorn version command and installed ProxyHeadersMiddleware source inspection: passed, version 0.41.0
   - local synthetic X-Forwarded-For extraction preflight: failed safely, trusted star selects attacker-controlled first entry
   - uv run --extra dev pytest three focused origin-allowlist tests -q --tb=short: passed, 3 passed
+  - production Wazzup API credential and separate webhook-secret presence equality and length inspection: passed, read-only and sanitized
+  - one production authenticated GET https://api.wazzup24.com/v3/webhooks with redirects disabled: passed, HTTP 200 and sanitized registration metadata only
   - python3 scripts/orchestration/validate_artifact.py artifact: passed
   - git diff --check: passed
 changed_files:
@@ -97,6 +101,8 @@ changed_files:
 explicit_defers:
   - tj-7w8f origin allowlist remediation is NO-GO until Wazzup supplies current exact source CIDRs through an official published page or attributable support response
   - tj-7w8f proxy chain must overwrite untrusted X-Forwarded-For at the first hop and stop trusting every proxy before the app allowlist can authenticate sender IP
+  - tj-7w8f current provider callback hash differs from the canonical Noor callback; exact URI ownership and rollback snapshot require protected operator review before PATCH
+  - tj-7w8f account-specific crmKey delivery is unproven and the present webhook secret is not validated by application code
   - channel-specific provider-side webhook routing was not verified and must not be assumed as a safe warning-suppression mechanism
 ---
 
@@ -306,6 +312,109 @@ its environment/entrypoint changed, and recheck release identity, public
 health, process restart counts, and privacy-safe webhook status counts. A
 rollback may temporarily restore the known open-origin risk; it must never
 weaken the channel equality filter.
+
+# Read-only callback-registration lookup — 2026-08-27
+
+## Official API contract
+
+The official API v3 sources establish three distinct credentials and actions:
+
+- `https://wazzup24.com/help/api-en/authorization/` documents that requests to
+  Wazzup use an account API key in `Authorization: Bearer <api-key>`.
+- `https://wazzup24.com/help/api-en/webhooks/` documents exactly one read path
+  for the current API v3 callback registration:
+  `GET https://api.wazzup24.com/v3/webhooks`. The response contains
+  `webhooksUri` plus four subscription booleans.
+- The same webhook page documents a full `PATCH /v3/webhooks` replacement with
+  `webhooksUri` and the subscription object. Wazzup sends `{test: true}` to the
+  proposed callback and accepts the update only when it receives HTTP 200;
+  otherwise it reports `testPostNotPassed`.
+- `https://wazzup24.com/help/api-en/wauth/` documents `crmKey` as a separate,
+  partner-generated value supplied during WAuth connection. When Wazzup has
+  that value, it sends it to the CRM callback as an Authorization Bearer
+  header. It is not the API key used to call Wazzup.
+
+The documentation describes PATCH as one request, but it does not promise
+transactionality, ETag/compare-and-swap protection, preservation of the prior
+registration on every failure mode, or a rollback endpoint. A second PATCH of
+the protected prior configuration is the only described restoration shape,
+and it also triggers a test POST. Therefore "single request" must not be
+reported as "atomic rollback".
+
+## One allowed production GET
+
+Production contained a non-empty 32-character Wazzup API credential. Its value
+was used only inside the app container for exactly one authenticated GET to the
+documented endpoint, with redirects disabled. No token, response payload,
+callback URI, query, channel identifier, or customer identifier was printed or
+stored in the artifact.
+
+Sanitized result:
+
+- transport succeeded; HTTP status `200`; no redirect;
+- response was a JSON object with two top-level fields;
+- callback registration exists, uses HTTPS, and has no query string;
+- callback one-way hash does **not** equal the canonical
+  `https://noor.starec.ai/api/v1/webhook/wazzup` hash;
+- all observed live Wazzup POSTs still use exactly that canonical request path,
+  so delivery currently reaches Noor, but the protected callback URI or its
+  hostname/route intermediary cannot be reconstructed from this sanitized
+  result;
+- four boolean subscription settings were returned; two are enabled:
+  `messagesAndStatuses` and `channelsUpdates`; contact/deal creation and
+  template-status subscriptions are disabled;
+- no `crmKey` field was returned.
+
+The callback mismatch is a **bounded blocker**, not authority to PATCH. A
+future operator must inspect and protect the exact existing URI through an
+authorized secret-safe channel, establish why it reaches the canonical Noor
+path, and retain the complete prior registration for rollback before proposing
+any replacement. Repeating the GET was intentionally avoided.
+
+## Account-specific Bearer verdict
+
+Production also contains a separate non-empty webhook-secret value. It is nine
+characters long and differs from the Wazzup API credential. Presence in `.env`
+does not prove that the provider account stores the same value as WAuth
+`crmKey`.
+
+Repository search found no setting, header comparison, middleware, or webhook
+handler use for that secret. The public callback accepts a valid payload
+without Authorization whenever the origin allowlist is empty, as the existing
+focused test proves. Provider response metadata does not expose `crmKey`, and
+request headers are not safely retained in current logs. Thus:
+
+- Wazzup supports account-specific Bearer delivery through WAuth in general;
+- whether this production account is configured with that exact `crmKey` is
+  **unproven**;
+- even if Wazzup sends it, Noor currently does not validate it, so it provides
+  no preventive control;
+- the observed nine-character secret must not be assumed sufficiently random,
+  active, or safe for rollout without a protected value/ownership check and,
+  if adopted, a coordinated rotation.
+
+## Remediation-path verdict
+
+The final verdict remains **NO-GO** for provider or production mutation.
+Current evidence supports this future sequence only:
+
+1. obtain official current source CIDRs or choose a separately confirmed
+   account-specific Bearer contract;
+2. resolve the callback hash mismatch and securely snapshot the exact current
+   URI plus all four subscription booleans;
+3. harden the nginx/Uvicorn trusted-proxy chain before relying on application
+   IP allowlisting;
+4. implement and locally test constant-time Bearer validation only if the
+   provider-side `crmKey` binding and rotation procedure are confirmed;
+5. treat any PATCH as an externally visible operation because it necessarily
+   causes a Wazzup test POST; request explicit authority for both PATCH and the
+   test callback;
+6. retain the protected prior registration for a compensating PATCH rollback,
+   without claiming provider-guaranteed atomicity.
+
+This final lookup made no PATCH/POST, sent no webhook or message, changed no
+provider, environment, database, proxy, container, or service, and performed
+no additional provider read after the one authorized GET.
 
 # Verification
 
