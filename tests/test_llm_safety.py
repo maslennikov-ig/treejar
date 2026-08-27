@@ -99,9 +99,7 @@ def test_glm53_flash_core_routes_bound_mandatory_reasoning_to_low(path: str) -> 
     assert model_settings["extra_body"]["reasoning"] == {"effort": "low"}
 
 
-def test_glm53_reasoning_guard_does_not_change_other_models_or_non_core_paths() -> (
-    None
-):
+def test_glm53_reasoning_guard_does_not_change_other_models_or_non_core_paths() -> None:
     from src.llm.safety import (
         PATH_CORE_CHAT,
         PATH_QUALITY_FINAL,

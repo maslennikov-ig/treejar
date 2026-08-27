@@ -49,9 +49,7 @@ def test_sales_payload_uses_the_runtime_prompt_tail_invariant() -> None:
 @pytest.mark.parametrize("model", [MAIN_MODEL_ID, FAST_MODEL_ID])
 def test_catalog_preflight_requires_route_specific_reasoning(model: str) -> None:
     catalog = {
-        MAIN_MODEL_ID: {
-            "supported_parameters": ["tools", "tool_choice", "reasoning"]
-        },
+        MAIN_MODEL_ID: {"supported_parameters": ["tools", "tool_choice", "reasoning"]},
         FAST_MODEL_ID: {
             "supported_parameters": [
                 "tools",

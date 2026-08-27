@@ -21,7 +21,7 @@ epic_id: n/a
 stage_id: tj-pk9v-pretest-health-glm53
 session_id: tj-pk9v-model-health-worker
 milestone: glm53-flash-repository-default-and-local-health
-milestone_status: in_progress
+milestone_status: accepted
 agent_type: worker
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
@@ -63,11 +63,11 @@ parallel_group: n/a
 depends_on_streams:
   - none
 parallel_decision: local
-status: returned
-delivery_method: n/a
-accepted_by_orchestrator: no
-cleanup_status: pending
-cleanup_notes: Root owns review, integration, and safe cleanup of this dedicated branch and worktree.
+status: accepted
+delivery_method: merge
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: Root reviewed and merged the stream, removed the clean dedicated worktree, and deleted the merged local worker branch.
 risk_level: medium
 verification_tier: inner
 risk_tags:
@@ -137,9 +137,11 @@ single final acceptance boundary.
 
 # Delivery / Cleanup
 
-Returned on `codex/pretest-health-glm53-flash-impl` for root review and
-integration. No merge, push, deploy, production mutation, or cleanup was
-performed. Cleanup remains pending with the root orchestrator.
+Root reviewed and merged `codex/pretest-health-glm53-flash-impl` into the
+stage branch. The clean dedicated worktree and merged local worker branch were
+then removed. Root release and process acceptance subsequently passed on the
+integrated tree. No push, deploy, production mutation, or paid call was
+performed.
 
 # Risks / Follow-ups / Explicit Defers
 
@@ -152,5 +154,5 @@ performed. Cleanup remains pending with the root orchestrator.
   last-resort fallback aliases `settings.openrouter_model_main`, so that fallback
   follows the new main repository default; this is an indirect consequence of
   the existing fallback design, not a primary fast-route change.
-- Root-owned release and process verification remain required before stage
-  acceptance. There is no worker-owned explicit defer.
+- Root-owned release and process verification passed before stage acceptance.
+  There is no worker-owned explicit defer.

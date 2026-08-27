@@ -3,7 +3,7 @@
   "stage_id": "tj-pk9v-pretest-health-glm53",
   "goal_id": "tj-pk9v",
   "profile_at_creation": "balanced-v2.19",
-  "status": "in_progress",
+  "status": "accepted",
   "sequence": 8,
   "acceptance_boundary_id": "pretest-health-and-primary-sales-model",
   "acceptance_owner": "root-orchestrator",

@@ -48,9 +48,7 @@ OPENROUTER_PROVIDER_NAME = "openrouter"
 LLM_USAGE_TELEMETRY_ATTR = "__treejar_llm_usage_telemetry__"
 _OPENROUTER_CACHE_CONTROL_SUPPORTED_MODEL_PREFIXES = ("anthropic/",)
 _OPENROUTER_REASONING_DISABLED_MODEL_IDS = frozenset({"deepseek/deepseek-v4-flash"})
-_OPENROUTER_LOW_REASONING_EFFORT_CORE_MODEL_IDS = frozenset(
-    {"z-ai/glm-5.3-flash"}
-)
+_OPENROUTER_LOW_REASONING_EFFORT_CORE_MODEL_IDS = frozenset({"z-ai/glm-5.3-flash"})
 _OPENROUTER_RETRYABLE_ERROR_TYPES = frozenset(
     {
         "rate_limit_exceeded",
