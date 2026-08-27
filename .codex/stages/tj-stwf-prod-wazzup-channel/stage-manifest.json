@@ -1,0 +1,73 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-stwf-prod-wazzup-channel",
+  "goal_id": "tj-stwf",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "in_progress",
+  "sequence": 10,
+  "acceptance_boundary_id": "production-wazzup-channel-routing",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "production-runtime-configuration",
+      "wazzup-inbound-routing",
+      "wazzup-outbound-routing"
+    ],
+    "risk_models": [
+      "wrong-channel-message-loss",
+      "partial-app-worker-rollout",
+      "unintended-message-replay"
+    ],
+    "test_environments": [
+      "provider-channel-readback",
+      "production-health-smoke",
+      "fresh-tester-message-observation"
+    ],
+    "rollback_boundary": "protected-env-backup-and-app-worker-recreate-only",
+    "acceptance_proofs": [
+      "active-channel-readback",
+      "app-worker-config-match",
+      "unchanged-release-health",
+      "fresh-message-normal-path"
+    ]
+  },
+  "work_areas": [
+    "runtime-configuration",
+    "production-proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-stwf",
+    "source_digest": "be52ac654f412a5b8cb66277e86dff7c3f6ef4967a69fa7fc270870235bb8bb0",
+    "criteria": [
+      {
+        "criterion_id": "AC-01",
+        "text": "Production app and worker use the owner-approved active Treejar Trading Wazzup channel, with a protected rollback copy of the prior environment.",
+        "text_digest": "535fc8e85851f262ababb50d08de844fb57590bd9c3ef594965ef55e5f5173de"
+      },
+      {
+        "criterion_id": "AC-02",
+        "text": "Only app and worker are recreated; public health reports the unchanged release SHA with healthy Redis and PostgreSQL, and container restart and OOM state remain green.",
+        "text_digest": "f27abab15837ee6d339aee896db8e10da4fb8cb9215499b7193f0c519d25aeec"
+      },
+      {
+        "criterion_id": "AC-03",
+        "text": "A fresh tester message from the active channel is accepted into the normal queue and reply path; previously dropped messages are neither replayed nor manually answered.",
+        "text_digest": "f98f3095663d4db8bbf426276c3b6c45c78cc00df7a4548a7637ad97b4b96718"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-stwf/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "be52ac654f412a5b8cb66277e86dff7c3f6ef4967a69fa7fc270870235bb8bb0",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-stwf",
+      "stream_owner": "prod-wazzup-channel-worker",
+      "artifact_path": ".codex/stages/tj-stwf-prod-wazzup-channel/artifacts/tj-stwf.md"
+    }
+  ]
+}

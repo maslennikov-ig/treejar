@@ -1,0 +1,24 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-stwf",
+  "source_kind": "beads",
+  "source_id": "tj-stwf",
+  "source_digest": "be52ac654f412a5b8cb66277e86dff7c3f6ef4967a69fa7fc270870235bb8bb0",
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "text": "Production app and worker use the owner-approved active Treejar Trading Wazzup channel, with a protected rollback copy of the prior environment.",
+      "text_digest": "535fc8e85851f262ababb50d08de844fb57590bd9c3ef594965ef55e5f5173de"
+    },
+    {
+      "criterion_id": "AC-02",
+      "text": "Only app and worker are recreated; public health reports the unchanged release SHA with healthy Redis and PostgreSQL, and container restart and OOM state remain green.",
+      "text_digest": "f27abab15837ee6d339aee896db8e10da4fb8cb9215499b7193f0c519d25aeec"
+    },
+    {
+      "criterion_id": "AC-03",
+      "text": "A fresh tester message from the active channel is accepted into the normal queue and reply path; previously dropped messages are neither replayed nor manually answered.",
+      "text_digest": "f98f3095663d4db8bbf426276c3b6c45c78cc00df7a4548a7637ad97b4b96718"
+    }
+  ]
+}

@@ -2,15 +2,20 @@
 
 Updated: 2026-08-27
 Current branch: `main`
-Current stage id: `tj-7w8f-prod-host-remediation`
-Status: accepted and ready for controlled product testing on production. There
-are no current Treejar health blockers.
+Current stage id: `tj-stwf-prod-wazzup-channel`
+Status: production Wazzup channel-routing incident in progress. The owner
+authorized switching app and worker to the active Treejar Trading channel.
 
 Documentation: current OpenRouter catalog and reasoning documentation establish
 the external model capability boundary. Repository code defines routing and
 fallback behavior.
 
 ## Current truth
+
+- Incident `tj-stwf`: tester messages reached Noor but were rejected before the
+  queue because production expected a disconnected Wazzup channel. The approved
+  runtime switch targets the active Treejar Trading channel, with no replay or
+  manual answer of previously dropped messages.
 
 - The repository and `.env.example` now default the customer-facing sales
   model to `z-ai/glm-5.3-flash`.
