@@ -1,6 +1,6 @@
 # Stage tj-stwf-prod-wazzup-channel
 
-Status: in progress.
+Status: production switch complete; awaiting one fresh tester message.
 
 ## Incident
 
@@ -27,3 +27,15 @@ Verdict: GO WITH CONDITIONS.
 ## Explicit defers
 
 - Fresh-message acceptance waits for a new tester message after the switch.
+
+## Runtime result
+
+- Production `app` and `worker` now use the active Treejar Trading channel.
+- Only the `WAZZUP_CHANNEL_ID` line changed; two exact mode-`0600` backups exist.
+- Only app and worker were recreated. Database, Redis, nginx, and neighboring
+  products were not restarted.
+- Public health is `ok` at unchanged release `43d6430`; Redis and PostgreSQL are
+  healthy, and both recreated containers have restart `0` and OOM `false`.
+- Previously dropped events were not replayed or manually answered.
+- No fresh tester message arrived during the bounded post-switch observation,
+  so end-to-end reply proof remains pending.

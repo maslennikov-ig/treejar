@@ -3,8 +3,8 @@
 Updated: 2026-08-27
 Current branch: `main`
 Current stage id: `tj-stwf-prod-wazzup-channel`
-Status: production Wazzup channel-routing incident in progress. The owner
-authorized switching app and worker to the active Treejar Trading channel.
+Status: production Wazzup channel switch complete and healthy; one fresh tester
+message is still required for end-to-end reply acceptance.
 
 Documentation: current OpenRouter catalog and reasoning documentation establish
 the external model capability boundary. Repository code defines routing and
@@ -13,9 +13,11 @@ fallback behavior.
 ## Current truth
 
 - Incident `tj-stwf`: tester messages reached Noor but were rejected before the
-  queue because production expected a disconnected Wazzup channel. The approved
-  runtime switch targets the active Treejar Trading channel, with no replay or
-  manual answer of previously dropped messages.
+  queue because production expected a disconnected Wazzup channel. Production
+  app and worker now use the active Treejar Trading channel. Health is green at
+  unchanged release `43d6430`; old events were not replayed or manually answered.
+  No fresh post-switch message has arrived yet, so the final reply-path proof is
+  pending.
 
 - The repository and `.env.example` now default the customer-facing sales
   model to `z-ai/glm-5.3-flash`.
@@ -89,9 +91,9 @@ fallback behavior.
 ## Next recommended
 
 Next stage id: not opened
-Recommended action: begin controlled Treejar product testing on production.
-Keep Wazzup in `observe`; do not repeat webhook PATCH or enable `enforce` before
-the postponed provider-binding work is deliberately scheduled and proven.
+Recommended action: ask the tester to send one new message to Treejar Trading,
+then correlate accepted webhook, worker processing, and outbound delivery. Keep
+Wazzup auth in `observe`; do not replay old events or manually message the tester.
 
 ## Starter prompt for next orchestrator
 
