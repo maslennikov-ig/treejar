@@ -4,8 +4,11 @@ import uuid
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
+import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 
+from src.core.config import Settings
 from src.main import app
 from src.models.conversation import Conversation
 from src.services.inbound_batch import inbound_chat_reference, inbound_queue_key
@@ -13,10 +16,207 @@ from src.services.proposal_followup import record_proposal_sent
 
 client = TestClient(app)
 EXPECTED_CHANNEL_ID = "b49b1b9d-757f-4104-b56d-8f43d62cc515"
+STRONG_WEBHOOK_SECRET = "expected-secret-value-with-32-bytes"
+WRONG_WEBHOOK_SECRET = "wrong-secret-value-with-at-least-32-bytes"
 
 
 def _dt(value: str) -> datetime.datetime:
     return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+@pytest.mark.parametrize(
+    ("headers", "expected_signal", "expected_level"),
+    [
+        ({}, "missing", logging.DEBUG),
+        (
+            {"Authorization": f"Bearer {WRONG_WEBHOOK_SECRET}"},
+            "mismatch",
+            logging.DEBUG,
+        ),
+        (
+            {"Authorization": f"Bearer {STRONG_WEBHOOK_SECRET}"},
+            "match",
+            logging.INFO,
+        ),
+    ],
+)
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_observe_auth_logs_result_without_blocking_or_exposing_secrets(
+    mock_networks: Any,
+    headers: dict[str, str],
+    expected_signal: str,
+    expected_level: int,
+    caplog: Any,
+) -> None:
+    auth_settings = Settings(
+        _env_file=None,
+        wazzup_webhook_auth_mode="observe",
+        wazzup_webhook_secret=STRONG_WEBHOOK_SECRET,
+    )
+
+    with (
+        patch("src.api.v1.webhook.settings", auth_settings),
+        caplog.at_level(logging.DEBUG, logger="uvicorn.error"),
+    ):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={"test": True},
+            headers=headers,
+        )
+
+    auth_records = [
+        record
+        for record in caplog.records
+        if record.getMessage().startswith("Wazzup webhook auth: ")
+    ]
+    assert response.status_code == 200
+    assert [record.getMessage() for record in auth_records] == [
+        f"Wazzup webhook auth: {expected_signal}"
+    ]
+    assert [record.levelno for record in auth_records] == [expected_level]
+    assert STRONG_WEBHOOK_SECRET not in caplog.text
+    assert WRONG_WEBHOOK_SECRET not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "authorization",
+    [None, "Basic credentials", "Bearer", f"Bearer {WRONG_WEBHOOK_SECRET}"],
+    ids=["missing", "wrong-scheme", "missing-token", "wrong-token"],
+)
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_enforce_auth_rejects_before_persistence_or_queue_work(
+    mock_networks: Any,
+    authorization: str | None,
+) -> None:
+    app.state.redis = AsyncMock()
+    app.state.arq_pool = AsyncMock()
+    auth_settings = Settings(
+        _env_file=None,
+        wazzup_webhook_auth_mode="enforce",
+        wazzup_webhook_secret=STRONG_WEBHOOK_SECRET,
+    )
+    headers = {"Authorization": authorization} if authorization else {}
+
+    with (
+        patch("src.api.v1.webhook.settings", auth_settings),
+        patch("src.api.v1.webhook.async_session_factory") as session_factory,
+        patch.object(
+            Request,
+            "json",
+            new_callable=AsyncMock,
+            return_value={"test": True},
+        ) as request_json,
+    ):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={
+                "statuses": [
+                    {
+                        "messageId": "provider-msg-1",
+                        "status": "delivered",
+                    }
+                ]
+            },
+            headers=headers,
+        )
+
+    assert response.status_code == 401
+    assert response.json() == {"error": "unauthorized"}
+    assert response.headers["www-authenticate"] == "Bearer"
+    request_json.assert_not_awaited()
+    session_factory.assert_not_called()
+    app.state.redis.rpush.assert_not_called()
+    app.state.arq_pool.enqueue_job.assert_not_called()
+
+
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_enforce_auth_accepts_matching_bearer(
+    mock_networks: Any,
+) -> None:
+    auth_settings = Settings(
+        _env_file=None,
+        wazzup_webhook_auth_mode="enforce",
+        wazzup_webhook_secret=STRONG_WEBHOOK_SECRET,
+    )
+
+    with patch("src.api.v1.webhook.settings", auth_settings):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={"test": True},
+            headers={"Authorization": f"Bearer {STRONG_WEBHOOK_SECRET}"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+
+def test_wazzup_webhook_matching_bearer_still_requires_allowed_ip() -> None:
+    import ipaddress
+
+    auth_settings = Settings(
+        _env_file=None,
+        wazzup_webhook_auth_mode="enforce",
+        wazzup_webhook_secret=STRONG_WEBHOOK_SECRET,
+    )
+    networks = [ipaddress.ip_network("10.0.0.0/8")]
+
+    with (
+        patch("src.api.v1.webhook.settings", auth_settings),
+        patch("src.api.v1.webhook._parse_allowed_networks", return_value=networks),
+    ):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={"test": True},
+            headers={"Authorization": f"Bearer {STRONG_WEBHOOK_SECRET}"},
+        )
+
+    assert response.status_code == 403
+    assert response.json() == {"error": "forbidden"}
+
+
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_matching_bearer_still_rejects_wrong_channel(
+    mock_networks: Any,
+    caplog: Any,
+) -> None:
+    app.state.redis = AsyncMock()
+    app.state.arq_pool = AsyncMock()
+    other_channel = "13c71a7f-cf9d-4df2-8b27-11ea67e6b0d9"
+    auth_settings = Settings(
+        _env_file=None,
+        wazzup_webhook_auth_mode="enforce",
+        wazzup_webhook_secret=STRONG_WEBHOOK_SECRET,
+        wazzup_channel_id=EXPECTED_CHANNEL_ID,
+    )
+
+    with (
+        patch("src.api.v1.webhook.settings", auth_settings),
+        caplog.at_level(logging.INFO, logger="uvicorn.error"),
+    ):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={
+                "messages": [
+                    {
+                        "messageId": "ch-auth-1",
+                        "chatId": "79991234567",
+                        "chatType": "whatsapp",
+                        "text": "Hello bot!",
+                        "type": "text",
+                        "channelId": other_channel,
+                        "timestamp": 1234567890,
+                    }
+                ]
+            },
+            headers={"Authorization": f"Bearer {STRONG_WEBHOOK_SECRET}"},
+        )
+
+    assert response.status_code == 200
+    assert other_channel in caplog.text
+    assert EXPECTED_CHANNEL_ID in caplog.text
+    assert STRONG_WEBHOOK_SECRET not in caplog.text
+    app.state.redis.rpush.assert_not_called()
+    app.state.arq_pool.enqueue_job.assert_not_called()
 
 
 class _ScalarResult:
