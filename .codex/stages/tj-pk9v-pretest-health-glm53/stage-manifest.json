@@ -1,0 +1,80 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-pk9v-pretest-health-glm53",
+  "goal_id": "tj-pk9v",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "in_progress",
+  "sequence": 8,
+  "acceptance_boundary_id": "pretest-health-and-primary-sales-model",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "runtime-configuration",
+      "customer-facing-llm-route",
+      "repository-readiness"
+    ],
+    "risk_models": [
+      "runtime-override-drift",
+      "model-capability-compatibility",
+      "local-readiness-false-positive"
+    ],
+    "test_environments": [
+      "focused-model-route-tests",
+      "repository-release-gates",
+      "orchestration-process-verification"
+    ],
+    "rollback_boundary": "one-local-feature-branch-with-no-production-mutation",
+    "acceptance_proofs": [
+      "exact-default-model-id",
+      "non-core-routes-unchanged",
+      "green-release-verification",
+      "green-process-verification"
+    ]
+  },
+  "work_areas": [
+    "contract",
+    "implementation",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-pk9v",
+    "source_digest": "890b9c2ee0ab5182e2ced21b98b6c64e58ad270b9a9ab4f93f7b427c205b82cb",
+    "criteria": [
+      {
+        "criterion_id": "AC-01",
+        "text": "Repository defaults and the development environment example name z-ai/glm-5.3-flash as the customer-facing sales model, while the database override remains explicit.",
+        "text_digest": "7197a540cbc96d932866bd3cce7549d532abd61d0ca266ebef4980f5dff40315"
+      },
+      {
+        "criterion_id": "AC-02",
+        "text": "The core customer-facing route resolves z-ai/glm-5.3-flash without changing the fast, repair-judge, evaluator, or speech-to-text routes.",
+        "text_digest": "1cbd43dd31024d34f5c47dda40156496353987677b3034790bc6b00ea49964b0"
+      },
+      {
+        "criterion_id": "AC-03",
+        "text": "One root-owned release verification and process verification complete without blocking failures on the changed tree.",
+        "text_digest": "80f3b61c275c979fb584080ca65b0fbd1ec94239142afae951ba072d044687e5"
+      },
+      {
+        "criterion_id": "AC-04",
+        "text": "The final readiness report separates locally verified behavior from unverified production state and records every known non-blocking defect relevant to testing.",
+        "text_digest": "f4ac2a6011591375b8beec0ffef68b94e9407a9b0d0c8ff8dd27c9072d811034"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-pk9v/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "890b9c2ee0ab5182e2ced21b98b6c64e58ad270b9a9ab4f93f7b427c205b82cb",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-pk9v",
+      "stream_owner": "tj-pk9v-model-health-worker",
+      "artifact_path": ".codex/stages/tj-pk9v-pretest-health-glm53/artifacts/tj-pk9v.md"
+    }
+  ]
+}
