@@ -162,6 +162,33 @@ crontab -l
 Restoring a crontab does not restore Docker data already pruned. Docker cleanup
 is therefore approval-gated and intentionally conservative.
 
+## Worker activation after a CI deploy
+
+CI stops any existing `worker` before replacing the runtime tree, then deploys
+the exact release and starts only `app`. This leaves `worker` stopped until an
+operator has verified the live `release_sha`, the intended environment, and any
+retained Redis work that must not execute.
+
+For a single-channel recovery, set `TEST_CHANNEL_RESTORE_MODE=true` before the
+CI deploy. In this mode app startup skips Telegram synchronization and rejects
+Telegram webhooks; the worker registers only `process_incoming_batch`, with no
+cron jobs or embedding warmup. Keep the mode enabled through the one authorized
+fresh-message proof. Returning to the normal worker is a separate operator
+decision after retained work has an explicit disposition.
+
+After those checks, create the worker from the same deployed tree without
+restarting DB, Redis, nginx, or the application:
+
+```bash
+cd /opt/noor
+docker compose --project-name noor -f docker-compose.yml \
+  up -d --build --force-recreate --no-deps worker
+```
+
+Read back the worker image, environment scope, restart/OOM state, and logs
+before enabling any external side effect. A successful CI health check proves
+the application and its dependencies only; it does not prove the worker.
+
 ## Controlled deployment rollback/restore drill
 
 Copy the currently deployed operator script outside the replaceable runtime

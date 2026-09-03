@@ -149,3 +149,126 @@ def test_vps_deploy_requires_existing_env_file(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "Missing" in result.stderr
+
+
+def test_vps_deploy_app_only_starts_no_worker(tmp_path: Path) -> None:
+    release_root = tmp_path / "release"
+    release_root.mkdir()
+    (release_root / "docker-compose.yml").write_text("services: {}\n")
+    archive_path = tmp_path / "release.tar.gz"
+    _build_release_archive(release_root, archive_path)
+
+    target_dir = tmp_path / "noor"
+    target_dir.mkdir()
+    (target_dir / ".env").write_text("SECRET=1\n")
+    (target_dir / "docker-compose.yml").write_text("services: {}\n")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    docker_log = tmp_path / "docker.log"
+    _write_executable(
+        bin_dir / "docker",
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                "set -euo pipefail",
+                f"printf '%s\\n' \"$*\" >> '{docker_log}'",
+            ]
+        )
+        + "\n",
+    )
+    _write_executable(
+        bin_dir / "curl",
+        '#!/usr/bin/env bash\nset -euo pipefail\nprintf \'{"status": "ok"}\\n\'\n',
+    )
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    result = subprocess.run(
+        [
+            "bash",
+            str(SCRIPT_PATH),
+            "--archive",
+            str(archive_path),
+            "--target-dir",
+            str(target_dir),
+            "--app-only",
+        ],
+        capture_output=True,
+        check=False,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert docker_log.read_text().splitlines() == [
+        f"compose --project-name noor -f {target_dir}/docker-compose.yml stop worker",
+        "compose --project-name noor -f "
+        f"{target_dir}/docker-compose.yml ps --status running --quiet worker",
+        "compose --project-name noor -f docker-compose.yml up -d --build --no-deps app",
+    ]
+
+
+def test_ci_deploy_uses_app_only_gate() -> None:
+    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
+
+    assert "--app-only" in workflow
+
+
+def test_vps_deploy_app_only_aborts_when_worker_remains_running(
+    tmp_path: Path,
+) -> None:
+    release_root = tmp_path / "release"
+    release_root.mkdir()
+    (release_root / "docker-compose.yml").write_text("services: {}\n")
+    archive_path = tmp_path / "release.tar.gz"
+    _build_release_archive(release_root, archive_path)
+
+    target_dir = tmp_path / "noor"
+    target_dir.mkdir()
+    (target_dir / ".env").write_text("SECRET=1\n")
+    (target_dir / "docker-compose.yml").write_text("services: {}\n")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    docker_log = tmp_path / "docker.log"
+    _write_executable(
+        bin_dir / "docker",
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                "set -euo pipefail",
+                f"printf '%s\\n' \"$*\" >> '{docker_log}'",
+                "if [[ \"$*\" == *'ps --status running --quiet worker' ]]; then",
+                "  printf 'still-running\\n'",
+                "fi",
+            ]
+        )
+        + "\n",
+    )
+    _write_executable(
+        bin_dir / "curl",
+        "#!/usr/bin/env bash\nset -euo pipefail\nexit 0\n",
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(SCRIPT_PATH),
+            "--archive",
+            str(archive_path),
+            "--target-dir",
+            str(target_dir),
+            "--app-only",
+        ],
+        capture_output=True,
+        check=False,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "Worker is still running" in result.stderr
+    assert all(" up " not in call for call in docker_log.read_text().splitlines())

@@ -1,6 +1,7 @@
 import datetime
 import uuid
-from unittest.mock import AsyncMock, Mock
+from collections.abc import Iterator
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -17,6 +18,16 @@ from src.services.proposal_followup import (
     record_proposal_read,
     record_proposal_sent,
 )
+
+
+@pytest.fixture(autouse=True)
+def authorized_proposal_followup_unit_fixture() -> Iterator[None]:
+    """Proposal cadence/audit doubles do not model authorization database reads.
+
+    The real permission/transport boundary is covered in test_wazzup_outbound_safety.
+    """
+    with patch("src.services.outbound_safety._SendScope.check", new_callable=AsyncMock):
+        yield
 
 
 def _dt(value: str) -> datetime.datetime:

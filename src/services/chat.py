@@ -1299,10 +1299,15 @@ async def _process_batch_inner(
             logger.info("Bot is globally disabled: batch_ref=%s", batch_ref)
             return
 
-        # 1. Get or create conversation
+        # 1. Keep channel ownership immutable for retained conversation IDs.
+        # A matching phone is not proof that its history/order belongs to this
+        # inbound channel. Foreign or unattributed rows get a separate dialogue.
         stmt = (
             select(Conversation)
-            .where(Conversation.phone == chat_id)
+            .where(
+                Conversation.phone == chat_id,
+                Conversation.metadata_["inbound_channel_id"].as_string() == channel_id,
+            )
             .order_by(Conversation.updated_at.desc(), Conversation.created_at.desc())
         )
         result = await db.execute(stmt)

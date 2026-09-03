@@ -125,3 +125,32 @@ async def test_api_lifespan_installs_the_same_record_filter_before_http_calls(
     assert "unit-test-signature" not in output
     assert "unit-test-query-token" not in output
     assert "https://api.telegram.org/[redacted-url]" in output
+
+
+@pytest.mark.asyncio
+async def test_restore_mode_lifespan_skips_telegram_sync() -> None:
+    from types import SimpleNamespace
+
+    from src import main
+
+    pool = AsyncMock()
+    app = SimpleNamespace(state=SimpleNamespace())
+    telegram_sync = AsyncMock(return_value=True)
+
+    with (
+        patch("src.main.create_pool", new=AsyncMock(return_value=pool)),
+        patch("src.main.sync_telegram_webhook", new=telegram_sync),
+        patch("src.main.redis_client", new=AsyncMock()),
+        patch("src.main.engine", new=AsyncMock()),
+        patch(
+            "src.main.settings",
+            new=SimpleNamespace(
+                test_channel_restore_mode=True,
+                redis_url="redis://localhost:6379/0",
+            ),
+        ),
+    ):
+        async with main.lifespan(app):
+            pass
+
+    telegram_sync.assert_not_awaited()

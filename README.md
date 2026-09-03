@@ -39,6 +39,23 @@ curl http://localhost:8000/api/v1/health
 - Admin panel: http://localhost:8000/admin/
 - Admin dashboard: http://localhost:8000/dashboard/ (analytics + operator center)
 
+### WhatsApp outbound safety
+
+Starting the app does not authorize outgoing WhatsApp messages. Outbound sends
+are blocked by default. To enable an approved sender, set
+`WAZZUP_OUTBOUND_ALLOWED_CHANNEL_ID` to the same owner-approved channel UUID as
+`WAZZUP_CHANNEL_ID`, and enable `bot_enabled` in the database. Every send also
+requires the conversation's stored `inbound_channel_id` to match that channel.
+This applies to bot replies, follow-ups, media, templates and manager replies.
+Missing or mismatched settings or conversation metadata block sending.
+
+Changing the sender is not a way to migrate old conversations. Do not replay
+their messages or start containers that retain a previous sender environment.
+After a configuration change, controlled recovery requires newly created
+containers and a fresh message to the approved channel. For the current test-only
+incident, follow the hold and recovery conditions in
+[the handoff](.codex/handoff.md) before starting services.
+
 ## Development
 
 ```bash

@@ -1,10 +1,13 @@
 # Orchestrator Handoff
 
-Updated: 2026-08-27
-Current branch: `main`
-Current stage id: `tj-stwf-prod-wazzup-channel`
-Status: production Wazzup channel switch complete and healthy; one fresh tester
-message is still required for end-to-end reply acceptance.
+Updated: 2026-09-01
+Current branch: `codex/test-channel-safety`
+Current stage id: `tj-stwf-test-only-restore`
+Status: SAFE RESTORATION IN PROGRESS. Only test WhatsApp ending0665 is
+authorized. Owner QR reconnection is complete. Nine retained inbound lists are
+held outside runtime names, `bot_enabled=false`, and the protected environment
+is configured for test0665 restore mode. App and worker remain stopped with
+automatic restart disabled; do not start old containers.
 
 Documentation: current OpenRouter catalog and reasoning documentation establish
 the external model capability boundary. Repository code defines routing and
@@ -12,12 +15,66 @@ fallback behavior.
 
 ## Current truth
 
-- Incident `tj-stwf`: tester messages reached Noor but were rejected before the
-  queue because production expected a disconnected Wazzup channel. Production
-  app and worker now use the active Treejar Trading channel. Health is green at
-  unchanged release `43d6430`; old events were not replayed or manually answered.
-  No fresh post-switch message has arrived yet, so the final reply-path proof is
-  pending.
+- Incident `tj-stwf`: the owner clarified that only the test number ending 0665
+  may be used. The earlier attribution of nearby working-channel traffic to the
+  tester was unproven, and switching to Treejar Trading ending 9235 was wrong.
+  The previous stage's frozen evidence is historical, not current authority.
+- At 2026-08-28 16:45:11 UTC, with fresh owner approval, only `noor-app-1` and
+  `noor-worker-1` were stopped with zero grace; restart policy changed from
+  `unless-stopped` to `no`. DB, Redis and nginx container IDs/start times were
+  unchanged. The API/panel being unavailable is intentional containment.
+- At 16:48:01 UTC, `/opt/noor/.env` was restored to test channel
+  `b49b1b9d-757f-4104-b56d-8f43d62cc515`. Only `WAZZUP_CHANNEL_ID` changed,
+  verified by byte comparison excluding that line. The mode-0600 backup is
+  `/opt/noor/.codex-backups/tj-stwf-before-test-only-20260828T164801Z.env`.
+  Stopped containers still retain the old 9235 environment: never `docker start`
+  or unpause them. Safe recovery requires corrected code and new containers.
+- Provider readback at 17:00:25 UTC for test 0665 is `qridle`; its WhatsApp owner
+  must reconnect it through the Wazzup QR flow. No provider registration,
+  manual message, old-message replay, or neighboring-product change is allowed.
+- Incident impact: since the mistaken switch, 33 `bot_reply` audits across
+  12 conversations and 12 `product_media` audits across 2 conversations were
+  recorded as `sent`. These counts are not delivery proof; media audit counts
+  are not a count of separately delivered attachments. Audit rows do not bind
+  the historical sender channel independently of mutable runtime state.
+- Production logs confirmed 39 status-persistence failures in the observed
+  24-hour window: aware PostgreSQL timestamps were compared with naive parsed
+  timestamps. This is our defect; missing delivered/read is not proof of a
+  current provider failure. Correct it before using statuses for acceptance.
+- Safety preparation is verified locally, not deployed. A shared outbound guard
+  covers chat, background jobs and Telegram callbacks, requiring enabled state,
+  explicit allowed sender and conversation channel/recipient before HTTP/media
+  uploads and retries. The new allow setting remains absent in production.
+- Conversation lookup now includes the inbound channel. Old foreign or
+  unattributed IDs retain their history/order and remain forbidden to send;
+  a fresh test-channel message gets a separate dialogue when needed.
+- Root correction acceptance: 130 passed, Ruff/format passed, Mypy passed for
+  178 files, and independent security re-review found no blocking issues.
+  Seven real local PostgreSQL cases passed with rollback-only schemas; all
+  HTTP/model/Zoho calls in those tests were local doubles. Evidence is in
+  `artifacts/tj-stwf-test-only-safety.md` within the current stage.
+- Read-only post-containment DB count: zero outbound audits after 16:45:12 UTC.
+  No merge, deploy, restart, replay, provider mutation or manual message followed.
+- On 2026-09-01 the test0665 provider state was re-read as active. All nine
+  retained `wazzup_msgs` lists, including one from forbidden9235, were matched
+  to the frozen privacy-safe fingerprints and atomically renamed under
+  `hold:tj-stwf:20260901T104616Z:`. Source lists and ARQ jobs are now zero; no
+  payload was printed, deleted or replayed.
+- Production `bot_enabled` is temporarily false. A new mode-0600 environment
+  backup exists at
+  `/opt/noor/.hotfix-backups/env-20260901T104712Z-before-test0665-restore`.
+  Disk configuration binds current and outbound-allowed channel only to active
+  test0665 and enables `TEST_CHANNEL_RESTORE_MODE=true`; stopped old containers
+  remain unchanged and forbidden.
+- The current candidate makes CI deploy app only. Restore mode skips Telegram
+  startup and inbound, and registers an inbound-only worker with no cron jobs or
+  embedding warmup. Focused coverage for these new gates passed 34 tests.
+- Final production-risk review found one P1: the app-only path did not stop an
+  already-running worker. It now stops worker before replacing files, verifies
+  the worker is not running, and aborts if that proof fails. Five deploy tests
+  pass; the reviewer found no other issues in the reviewed safety paths.
+
+## Prior release evidence (historical, before containment)
 
 - The repository and `.env.example` now default the customer-facing sales
   model to `z-ai/glm-5.3-flash`.
@@ -50,8 +107,10 @@ fallback behavior.
   skips, and the semantic retrieval gate, then deployed through GitHub Actions
   run `33047773974`. Production health reports that exact SHA; Redis and
   PostgreSQL are healthy, and app/worker have zero restarts or OOM events.
-- No paid model call, real-user message, Zoho mutation, quotation/order action,
-  or broad live E2E was performed.
+- The earlier release verification itself made no paid model call, manual
+  real-user message, Zoho mutation, quotation/order action, or broad live E2E.
+  Later automatic production replies during the routing incident are counted
+  above; do not interpret the earlier statement as zero incident side effects.
 - The duplicate Noor logrotate owner was removed with a protected backup;
   `logrotate.service` and its timer are green. Swap belongs mostly to the
   neighboring Whisper container, but current pressure, OOM and Noor swap use
@@ -59,9 +118,8 @@ fallback behavior.
 - The stale, unused local `relay.starec.ai` Certbot lineage was backed up and
   retired. The live relay endpoint is hosted elsewhere and both relay and Noor
   TLS are green.
-- Wazzup unexpected-channel warnings were proven to be correct fail-closed
-  filtering. The expected channel matches runtime configuration and all 532
-  linked production conversations, so accepted channel scope was not widened.
+- The original guard against the non-test channel was correct. Current owner
+  authority is only test 0665; an active channel is not automatically authorized.
 - Staged Wazzup Bearer authentication is deployed in non-blocking `observe`
   with a new strong protected secret. App code and the existing audit relay
   successfully match a bounded synthetic Bearer probe. `observe` does not
@@ -90,23 +148,28 @@ fallback behavior.
 
 ## Next recommended
 
-Next stage id: not opened
-Recommended action: ask the tester to send one new message to Treejar Trading,
-then correlate accepted webhook, worker processing, and outbound delivery. Keep
-Wazzup auth in `observe`; do not replay old events or manually message the tester.
+Current stage: `tj-stwf-test-only-restore`
+Next stage id: `tj-stwf-test-only-restore` (continue the active release stage)
+Recommended action: complete release and retained-work preflight, deploy one
+accepted SHA through the app-only CI path, verify exact app/env/health, then
+create the inbound-only worker. Use only one fresh owner-sent test message for
+eventual reply proof; never test on Treejar Trading or replay old messages.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for the next material defect found during production
-testing. Treat `tj-7w8f`, `tj-pk9v-pretest-health-glm53`, and `tj-fmee` as
-accepted and deployed history at runtime SHA `43d6430`. Begin from any defect
-found during controlled production testing. Polska is outside Treejar scope. Keep Wazzup in
-`observe`; do not use `PATCH /v3/webhooks` for `crmKey`. Do not run the five-call
-paid verifier, send real messages, or mutate Zoho/order data without fresh
-explicit authority.
+Use $orchestrator-stage to continue the active production restore stage.
+Continue `tj-stwf` from `codex/test-channel-safety`. Only test 0665 is allowed.
+Read the current containment note and scope ledger before any production action.
+Do not start old containers, merge to auto-deploying main, change shared provider
+registration, replay queues or message real customers. Preserve DB/Redis and
+neighboring products. Keep Wazzup auth in `observe`; that deferred work is not
+part of this incident. Historical release `43d6430` is stopped, not healthy live.
 
 ## Explicit defers
 
+- `tj-stwf`: local outbound isolation is verified, but live restoration and
+  fresh-message acceptance wait for phone-owner QR reconnection and a controlled
+  safe startup. Hold remains; this is not accepted end-to-end operation.
 - The five-call paid live route verifier remains deferred and requires separate
   explicit authority; configuration and startup readback prove activation, not
   a paid inference round.

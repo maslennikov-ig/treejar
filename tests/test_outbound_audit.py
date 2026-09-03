@@ -3,10 +3,21 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def authorized_audit_unit_fixture():
+    """This module tests audit persistence; real authorization has its own tests.
+
+    The existing DB doubles model audit rows only, not conversation/config reads.
+    No production path or tests/test_wazzup_outbound_safety.py uses this fixture.
+    """
+    with patch("src.services.outbound_safety._SendScope.check", new_callable=AsyncMock):
+        yield
 
 
 class _ScalarResult:
@@ -719,9 +730,7 @@ async def test_update_wazzup_statuses_updates_matching_audit_and_ignores_unknown
 
     assert updated == 1
     assert matching.status == "delivered"
-    assert matching.status_updated_at == datetime(
-        2026, 4, 26, 12, 0, tzinfo=UTC
-    ).replace(tzinfo=None)
+    assert matching.status_updated_at == datetime(2026, 4, 26, 12, 0, tzinfo=UTC)
     assert matching.error_details is None
 
 
@@ -803,7 +812,5 @@ async def test_update_wazzup_statuses_skips_bad_timestamp_and_keeps_batch() -> N
 
     assert updated == 1
     assert matching.status == "delivered"
-    assert matching.status_updated_at == datetime(
-        2026, 7, 30, 10, 2, tzinfo=UTC
-    ).replace(tzinfo=None)
+    assert matching.status_updated_at == datetime(2026, 7, 30, 10, 2, tzinfo=UTC)
     db.flush.assert_awaited_once()

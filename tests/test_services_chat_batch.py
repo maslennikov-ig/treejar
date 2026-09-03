@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Iterator
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -27,6 +28,16 @@ from src.services.inbound_batch import (
 )
 from src.services.proposal_followup import record_proposal_sent
 from src.services.runtime_monitoring import ZOHO_OAUTH_FAILURES_KEY
+
+
+@pytest.fixture(autouse=True)
+def authorized_chat_batch_unit_fixture() -> Iterator[None]:
+    """Batch routing doubles model business queries, not egress authorization.
+
+    The real permission/transport boundary is covered in test_wazzup_outbound_safety.
+    """
+    with patch("src.services.outbound_safety._SendScope.check", new_callable=AsyncMock):
+        yield
 
 
 class MockResult:
@@ -731,7 +742,7 @@ async def test_process_incoming_batch_keeps_batch_successful_when_bot_reply_send
     existing_conv.id = "conv-send-fail"
     existing_conv.phone = "1234567890"
     existing_conv.escalation_status = "none"
-    existing_conv.metadata_ = {}
+    existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
         MockResult(None),  # bot_enabled
@@ -819,7 +830,7 @@ async def test_process_incoming_batch_sends_deferred_product_media_after_bot_rep
     existing_conv.id = "conv-deferred-media"
     existing_conv.phone = "1234567890"
     existing_conv.escalation_status = "none"
-    existing_conv.metadata_ = {}
+    existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
         MockResult(None),  # bot_enabled
@@ -931,7 +942,7 @@ async def test_process_incoming_batch_refreshes_typing_while_llm_runs(
     existing_conv.id = "conv-typing"
     existing_conv.phone = "1234567890"
     existing_conv.escalation_status = "none"
-    existing_conv.metadata_ = {}
+    existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
         MockResult(None),  # bot_enabled
@@ -1019,7 +1030,7 @@ async def test_process_incoming_batch_ignores_typing_failures(
     existing_conv.id = "conv-typing-failure"
     existing_conv.phone = "1234567890"
     existing_conv.escalation_status = "none"
-    existing_conv.metadata_ = {}
+    existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
         MockResult(None),  # bot_enabled
@@ -1098,7 +1109,7 @@ async def test_process_incoming_batch_skips_typing_loop_when_provider_unsupporte
     existing_conv.id = "conv-no-typing-support"
     existing_conv.phone = "1234567890"
     existing_conv.escalation_status = "none"
-    existing_conv.metadata_ = {}
+    existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
         MockResult(None),  # bot_enabled
@@ -1178,7 +1189,7 @@ async def test_process_incoming_batch_stops_proposal_followup_on_customer_reply(
     existing_conv.id = "conv-proposal-followup"
     existing_conv.phone = "1234567890"
     existing_conv.escalation_status = "none"
-    existing_conv.metadata_ = {}
+    existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
     record_proposal_sent(
         existing_conv,
         sent_at=datetime.fromisoformat("2026-05-04T08:00:00+00:00"),
@@ -1263,7 +1274,7 @@ async def test_process_incoming_batch_typing_failure_does_not_block_timeout_fall
     existing_conv.phone = "1234567890"
     existing_conv.escalation_status = "none"
     existing_conv.language = "en"
-    existing_conv.metadata_ = {}
+    existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
         MockResult(None),  # bot_enabled
@@ -1341,11 +1352,13 @@ async def test_process_incoming_batch_prefers_non_empty_conversation_when_duplic
     duplicate_empty.id = "conv-empty"
     duplicate_empty.phone = "1234567890"
     duplicate_empty.escalation_status = "none"
+    duplicate_empty.metadata_ = {"inbound_channel_id": "chan-1"}
 
     populated_conv = MagicMock()
     populated_conv.id = "conv-live"
     populated_conv.phone = "1234567890"
     populated_conv.escalation_status = "none"
+    populated_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
         MockResult(None),  # bot_enabled
@@ -1525,7 +1538,7 @@ async def test_process_incoming_batch_persists_inbound_channel_metadata(
     existing_conv.id = "conv-with-inbound"
     existing_conv.phone = "1234567890"
     existing_conv.escalation_status = "none"
-    existing_conv.metadata_ = {}
+    existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
         MockResult(None),  # bot_enabled

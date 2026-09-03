@@ -61,6 +61,12 @@ async def startup(ctx: dict[str, Any]) -> None:
         settings.app_log_level,
     )
 
+    if settings.test_channel_restore_mode:
+        logger.warning(
+            "Test-channel restore mode active: embedding warmup and cron jobs disabled"
+        )
+        return
+
     try:
         await EmbeddingEngine().warmup_async()
         logger.info("Embedding model warmed up successfully.")
@@ -77,11 +83,15 @@ async def shutdown(ctx: dict[str, Any]) -> None:
     logger.info("ARQ worker shutting down.")
 
 
-class WorkerSettings:
-    functions: list[Any] = [
+def build_worker_functions() -> list[Any]:
+    """Build the ARQ function allowlist for the selected runtime mode."""
+    inbound = func(process_incoming_batch, max_tries=INBOUND_BATCH_MAX_TRIES)
+    if settings.test_channel_restore_mode:
+        return [inbound]
+    return [
         sync_products_from_treejar_catalog,
         sync_products_from_zoho,
-        func(process_incoming_batch, max_tries=INBOUND_BATCH_MAX_TRIES),
+        inbound,
         refresh_conversation_summary,
         run_automatic_followups,
         run_proposal_followups,
@@ -95,7 +105,13 @@ class WorkerSettings:
         run_weekly_report,
         run_runtime_monitoring,
     ]
-    cron_jobs = [
+
+
+def build_worker_cron_jobs() -> list[Any]:
+    """Build scheduled work, leaving recovery mode strictly inbound-only."""
+    if settings.test_channel_restore_mode:
+        return []
+    return [
         cron(
             sync_products_from_treejar_catalog,
             hour={0, 6, 12, 18},
@@ -139,6 +155,11 @@ class WorkerSettings:
             run_at_startup=False,
         ),
     ]
+
+
+class WorkerSettings:
+    functions: list[Any] = build_worker_functions()
+    cron_jobs: list[Any] = build_worker_cron_jobs()
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url)

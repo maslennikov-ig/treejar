@@ -1,0 +1,29 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-stwf.1",
+  "source_kind": "beads",
+  "source_id": "tj-stwf.1",
+  "source_digest": "79afc9bfd9319390a3f2a55e8054803b85d19d226c1b4a471db746ec48388c95",
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "text": "Release candidate passes repository release gates and independent authorization review.",
+      "text_digest": "7719d43332c06e1dc1f9772795209ac5f229ab7b53f2ada79a5b2728a4f722d1"
+    },
+    {
+      "criterion_id": "AC-02",
+      "text": "Retained inbound and ARQ work is preserved but cannot execute before a fresh post-recovery message.",
+      "text_digest": "0dddf6539ae00a1dd9dda3f1c8c892caf195ba33d624ab44e98cd5bd2ed39cb6"
+    },
+    {
+      "criterion_id": "AC-03",
+      "text": "Production app and worker run newly created containers from the exact release SHA with WAZZUP_CHANNEL_ID and WAZZUP_OUTBOUND_ALLOWED_CHANNEL_ID both bound only to test channel ending0665; DB, Redis, nginx and neighboring products are preserved.",
+      "text_digest": "1c3ec057a50b1d0a5615f1d088124690034950b2e81b951540470b5bf1833ca3"
+    },
+    {
+      "criterion_id": "AC-04",
+      "text": "Public health, dependencies, restart/OOM state and zero foreign egress are verified; only a fresh owner-sent message to0665 may prove the correlated reply path.",
+      "text_digest": "831df9c4fcc9e7ec46e02874c5daf75a7acce01843ee065c9c59c81e8370ef5b"
+    }
+  ]
+}

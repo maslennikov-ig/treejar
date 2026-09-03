@@ -16,6 +16,7 @@ Options:
   --compose-file <path>    Compose file relative to target dir. Default: docker-compose.yml
   --project-name <name>    Docker Compose project name. Default: basename of target dir.
   --health-url <url>       URL checked after deploy. Default: http://127.0.0.1:8002/api/v1/health
+  --app-only               Build and start only app; leave worker stopped for an operator gate.
   -h, --help               Show this help.
 
 The release archive should contain the tracked repository files plus optional
@@ -36,6 +37,7 @@ TARGET_DIR="/opt/noor"
 COMPOSE_FILE="docker-compose.yml"
 PROJECT_NAME=""
 HEALTH_URL="http://127.0.0.1:8002/api/v1/health"
+APP_ONLY=false
 KEEP_PATHS=(
     ".agent"
     ".beads"
@@ -75,6 +77,10 @@ while [ "$#" -gt 0 ]; do
         --health-url)
             HEALTH_URL="$2"
             shift 2
+            ;;
+        --app-only)
+            APP_ONLY=true
+            shift
             ;;
         -h|--help)
             usage
@@ -120,6 +126,22 @@ cleanup() {
 }
 trap cleanup EXIT
 
+if [ "$APP_ONLY" = true ] && [ -f "$TARGET_DIR/$COMPOSE_FILE" ]; then
+    # The app-only gate must also contain an already-running worker. Stop it
+    # before replacing the runtime tree or building the new application.
+    docker compose --project-name "$PROJECT_NAME" \
+        -f "$TARGET_DIR/$COMPOSE_FILE" stop worker
+    RUNNING_WORKER_ID="$(
+        docker compose --project-name "$PROJECT_NAME" \
+            -f "$TARGET_DIR/$COMPOSE_FILE" \
+            ps --status running --quiet worker
+    )"
+    if [ -n "$RUNNING_WORKER_ID" ]; then
+        echo "Error: Worker is still running after the app-only stop gate." >&2
+        exit 1
+    fi
+fi
+
 if [ -f "$TARGET_DIR/.release-sha" ]; then
     CURRENT_RELEASE_SHA="$(tr -d ' \n' < "$TARGET_DIR/.release-sha")"
 fi
@@ -164,7 +186,12 @@ rsync "${RSYNC_ARGS[@]}" "$STAGING_DIR"/ "$TARGET_DIR"/
 mkdir -p "$TARGET_DIR/logs/maintenance"
 
 cd "$TARGET_DIR"
-docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build
+if [ "$APP_ONLY" = true ]; then
+    docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" \
+        up -d --build --no-deps app
+else
+    docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build
+fi
 
 MAX_ATTEMPTS=20
 ATTEMPT=1

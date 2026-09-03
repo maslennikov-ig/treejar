@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -16,6 +17,16 @@ from src.services.chat import (
     _voice_fallback_crm_message_id,
     process_incoming_batch,
 )
+
+
+@pytest.fixture(autouse=True)
+def authorized_chat_unit_fixture() -> Iterator[None]:
+    """Isolate egress permission from chat routing and audit-row DB doubles.
+
+    The real permission/transport boundary is covered in test_wazzup_outbound_safety.
+    """
+    with patch("src.services.outbound_safety._SendScope.check", new_callable=AsyncMock):
+        yield
 
 
 class MockResult:
@@ -208,7 +219,7 @@ async def test_process_incoming_batch_success(
     mock_conv.id = "conv-uuid-123"
     mock_conv.phone = "79991234567"
     mock_conv.escalation_status = "none"
-    mock_conv.metadata_ = {}
+    mock_conv.metadata_ = {"inbound_channel_id": "ch1"}
 
     # Simulate: no bot_enabled config, existing conversation found, empty message dedup
     mock_db.execute.side_effect = [
@@ -422,7 +433,7 @@ async def test_audio_transcription_metadata_is_persisted_for_user_message(
     mock_conv.phone = chat_id
     mock_conv.escalation_status = "none"
     mock_conv.language = "en"
-    mock_conv.metadata_ = {"existing": "preserved"}
+    mock_conv.metadata_ = {"existing": "preserved", "inbound_channel_id": "ch1"}
     mock_db.execute.side_effect = [
         MockResult(None),  # bot_enabled config lookup
         MockResult(mock_conv),  # conversation lookup
@@ -570,7 +581,7 @@ async def test_audio_only_oversized_message_sends_safe_fallback_without_llm(
     mock_conv.phone = chat_id
     mock_conv.escalation_status = "none"
     mock_conv.language = "en"
-    mock_conv.metadata_ = {}
+    mock_conv.metadata_ = {"inbound_channel_id": "ch1"}
     mock_db.execute.side_effect = [
         MockResult(None),  # bot_enabled config lookup
         MockResult(mock_conv),  # conversation lookup
@@ -655,7 +666,7 @@ async def test_audio_only_transcription_error_sends_safe_fallback_without_llm(
     mock_conv.phone = chat_id
     mock_conv.escalation_status = "none"
     mock_conv.language = "en"
-    mock_conv.metadata_ = {}
+    mock_conv.metadata_ = {"inbound_channel_id": "ch1"}
     mock_db.execute.side_effect = [
         MockResult(None),  # bot_enabled config lookup
         MockResult(mock_conv),  # conversation lookup

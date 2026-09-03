@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     app_port: int = 8000
     app_log_level: str = "INFO"
     app_secret_key: str = "change-me-in-production"
+    # Emergency recovery gate: app accepts only Wazzup inbound and the worker
+    # registers only process_incoming_batch, with no cron or embedding warmup.
+    test_channel_restore_mode: bool = False
 
     # Database (Supabase Cloud)
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/treejar"
@@ -77,6 +80,8 @@ class Settings(BaseSettings):
     wazzup_api_key: str = ""
     wazzup_api_url: str = "https://api.wazzup24.com/v3"
     wazzup_channel_id: str = ""  # UUID of the WhatsApp channel in Wazzup
+    # Independent outbound allow decision. Empty means no customer sends.
+    wazzup_outbound_allowed_channel_id: str = ""
     wazzup_allowed_ips: str = (
         ""  # Comma-separated CIDRs, e.g. "94.242.232.0/22,172.241.70.0/22"
     )

@@ -273,6 +273,7 @@ jobs:
             '$DEPLOY_DIR/scripts/vps-deploy.sh' \
               --archive '$DEPLOY_DIR/treejar-release.tar.gz' \
               --target-dir '/opt/noor' \
-              --health-url 'http://127.0.0.1:8002/api/v1/health' &&
+              --health-url 'http://127.0.0.1:8002/api/v1/health' \
+              --app-only &&
             rm -rf '$DEPLOY_DIR'
           "

@@ -2,7 +2,7 @@ import pytest
 from arq.worker import Function
 
 from src.services.chat import INBOUND_BATCH_LOCK_TTL_SECONDS
-from src.worker import WorkerSettings
+from src.worker import WorkerSettings, build_worker_cron_jobs, build_worker_functions
 
 
 def _function_name(function: object) -> str:
@@ -37,6 +37,21 @@ def test_arq_worker_settings_configured() -> None:
     assert "evaluate_realtime_red_flags" in cron_names
     assert "evaluate_mature_conversations_quality" in cron_names
     assert "run_runtime_monitoring" in cron_names
+
+
+def test_restore_mode_registers_only_inbound_without_cron() -> None:
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    restore_settings = SimpleNamespace(test_channel_restore_mode=True)
+    with patch("src.worker.settings", restore_settings):
+        functions = build_worker_functions()
+        cron_jobs = build_worker_cron_jobs()
+
+    assert [_function_name(function) for function in functions] == [
+        "process_incoming_batch"
+    ]
+    assert cron_jobs == []
 
 
 def test_inbound_batch_job_has_bounded_retries() -> None:
@@ -90,6 +105,27 @@ async def test_worker_startup_warms_embedding_model() -> None:
         await WorkerSettings.on_startup(ctx)
 
     mock_engine.warmup_async.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_restore_mode_worker_startup_skips_embedding_warmup() -> None:
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    restore_settings = SimpleNamespace(
+        test_channel_restore_mode=True,
+        app_log_level="INFO",
+        wazzup_channel_id="test-channel",
+        openrouter_api_key="configured",
+        openrouter_model_main="z-ai/glm-5.3-flash",
+    )
+    with (
+        patch("src.worker.settings", restore_settings),
+        patch("src.worker.EmbeddingEngine") as mock_engine,
+    ):
+        await WorkerSettings.on_startup({"redis": None})
+
+    mock_engine.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.outbound_message import OutboundMessageAudit
+from src.services.outbound_safety import guarded_wazzup_send
 
 _ACTIVE_AUDIT_STATUSES = {
     "pending",
@@ -59,15 +60,18 @@ def deterministic_crm_message_id(*parts: object) -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
+    return datetime.now(UTC)
+
+
+def _as_utc(value: datetime) -> datetime:
+    # Legacy naive values were UTC; PostgreSQL returns timezone-aware values.
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 def _parse_status_timestamp(value: object) -> datetime:
     if isinstance(value, str) and value.strip():
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        if parsed.tzinfo is not None:
-            return parsed.astimezone(UTC).replace(tzinfo=None)
-        return parsed
+        return _as_utc(parsed)
     return _now()
 
 
@@ -146,6 +150,7 @@ def _is_repeated_crm_message_id(exc: httpx.HTTPStatusError) -> bool:
     return error in {"repeatedcrmmessageid", "repeated_crm_message_id"}
 
 
+@guarded_wazzup_send
 async def send_wazzup_text_with_audit(
     db: AsyncSession,
     *,
@@ -225,6 +230,7 @@ async def send_wazzup_text_with_audit(
     return AuditedSendResult(audit=audit, provider_message_id=normalized_message_id)
 
 
+@guarded_wazzup_send
 async def send_wazzup_template_with_audit(
     db: AsyncSession,
     *,
@@ -304,6 +310,7 @@ async def send_wazzup_template_with_audit(
     return AuditedSendResult(audit=audit, provider_message_id=normalized_message_id)
 
 
+@guarded_wazzup_send
 async def send_wazzup_media_with_audit(
     db: AsyncSession,
     *,
@@ -636,9 +643,8 @@ async def update_wazzup_statuses(
         audit = result.scalar_one_or_none()
         if not isinstance(audit, OutboundMessageAudit):
             continue
-        if (
-            audit.status_updated_at is not None
-            and status_updated_at < audit.status_updated_at
+        if audit.status_updated_at is not None and status_updated_at < _as_utc(
+            audit.status_updated_at
         ):
             continue
         if not _status_can_advance(str(audit.status), status):

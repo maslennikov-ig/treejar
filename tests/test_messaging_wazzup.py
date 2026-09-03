@@ -10,6 +10,18 @@ from src.integrations.messaging.wazzup import (
 )
 
 
+@pytest.fixture(autouse=True)
+def authorized_transport_unit_fixture():
+    """Payload/retry unit tests isolate permission from their HTTP doubles.
+
+    Real audited scope + transport enforcement lives in test_wazzup_outbound_safety.
+    """
+    with patch(
+        "src.integrations.messaging.wazzup.require_wazzup_send", new_callable=AsyncMock
+    ):
+        yield
+
+
 @pytest.fixture
 def wazzup_provider() -> WazzupProvider:
     settings.wazzup_api_key = "fake-key"

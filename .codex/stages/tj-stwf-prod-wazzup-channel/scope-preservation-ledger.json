@@ -1,0 +1,45 @@
+{
+  "schema_version": "scope-preservation-ledger/v1",
+  "goal_id": "tj-stwf",
+  "source_snapshot_digest": "be52ac654f412a5b8cb66277e86dff7c3f6ef4967a69fa7fc270870235bb8bb0",
+  "current_replan": {
+    "reason": "Owner corrected test identity to 0665 and prohibited all other channels. The historical 9235 criterion is not accepted or rewritten.",
+    "current_contract": ".codex/stages/tj-stwf-prod-wazzup-channel/containment-2026-08-28.md",
+    "runtime_state": "app-and-worker-stopped-no-auto-restart",
+    "local_preparation_branch": "codex/test-channel-safety"
+  },
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "criterion_text_digest": "535fc8e85851f262ababb50d08de844fb57590bd9c3ef594965ef55e5f5173de",
+      "disposition": "gate",
+      "target": "owner-test-only-0665-authorization",
+      "gate_kind": "external_authorization",
+      "boundary_reason": "external_authorization",
+      "boundary_id": "test-only-whatsapp-authority",
+      "evidence_path": ".codex/stages/tj-stwf-prod-wazzup-channel/containment-2026-08-28.md",
+      "evidence_digest": "e1e488b0e80731c3abcb8085e6aec97d6c264f5d3de9ccf40927bb41c53b2fa2",
+      "resolution": "Historical 9235 authorization withdrawn; only 0665 may be used. Original criterion is not fulfilled."
+    },
+    {
+      "criterion_id": "AC-02",
+      "criterion_text_digest": "f27abab15837ee6d339aee896db8e10da4fb8cb9215499b7193f0c519d25aeec",
+      "disposition": "gate",
+      "target": "safe-test-only-startup",
+      "gate_kind": "external_authorization",
+      "boundary_reason": "external_authorization",
+      "boundary_id": "test-only-whatsapp-authority",
+      "resolution": "Current owner-approved state is stopped, with DB/Redis/nginx preserved. Healthy running release proof waits for safe controlled startup."
+    },
+    {
+      "criterion_id": "AC-03",
+      "criterion_text_digest": "f98f3095663d4db8bbf426276c3b6c45c78cc00df7a4548a7637ad97b4b96718",
+      "disposition": "gate",
+      "target": "phone-owner-qr-and-fresh-test-message",
+      "gate_kind": "external_authorization",
+      "boundary_reason": "external_authorization",
+      "boundary_id": "test-only-whatsapp-authority",
+      "resolution": "Fresh-message proof is pending for the correct test channel only. No replay or manual message is allowed."
+    }
+  ]
+}

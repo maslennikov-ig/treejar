@@ -151,6 +151,12 @@ async def telegram_webhook(
     x_telegram_bot_api_secret_token: str | None = Header(None),
 ) -> dict[str, str]:
     """Handle incoming Telegram updates (callback queries and messages)."""
+    if settings.test_channel_restore_mode:
+        raise HTTPException(
+            status_code=503,
+            detail="Telegram disabled during restore mode",
+        )
+
     # Validate webhook secret (prevents forged requests)
     expected = expected_telegram_webhook_secret()
     if x_telegram_bot_api_secret_token != expected:

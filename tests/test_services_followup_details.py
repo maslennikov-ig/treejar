@@ -1,5 +1,6 @@
 import datetime
 import uuid
+from collections.abc import Iterator
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -14,6 +15,16 @@ from src.services.followup import (
     _process_payment_reminder_for_conversation,
     _send_feedback_request,
 )
+
+
+@pytest.fixture(autouse=True)
+def authorized_followup_unit_fixture() -> Iterator[None]:
+    """Keep follow-up scheduling/persistence tests independent of permission reads.
+
+    Real allowed/denied feedback delivery is covered in test_wazzup_outbound_safety.
+    """
+    with patch("src.services.outbound_safety._SendScope.check", new_callable=AsyncMock):
+        yield
 
 
 class _FakeAgentResult:

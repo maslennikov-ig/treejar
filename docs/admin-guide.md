@@ -239,6 +239,12 @@ If the summary stops arriving, check the worker logs.
 Production restarts and rebuilds are operational mutations and require current
 approval. A service restart does not establish a new release identity; use the
 artifact deployment workflow when code or configuration must be released.
+CI intentionally stops `worker`, then deploys and health-checks `app` first.
+The worker remains an
+operator-owned activation gate; verify its release SHA and environment before
+starting it. During an approved single-channel recovery,
+`TEST_CHANNEL_RESTORE_MODE=true` also disables Telegram startup/inbound and all
+worker cron jobs. See the operations runbook for the exact activation order.
 
 ```bash
 # Restart a single service

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Iterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,6 +15,29 @@ from src.services.auto_faq_types import AutoFAQCandidate
 
 client = TestClient(app)
 EXPECTED_CHANNEL_ID = "b49b1b9d-757f-4104-b56d-8f43d62cc515"
+
+
+def test_restore_mode_rejects_telegram_webhook_before_body_processing() -> None:
+    from types import SimpleNamespace
+
+    with patch(
+        "src.api.telegram_webhook.settings",
+        new=SimpleNamespace(test_channel_restore_mode=True),
+    ):
+        response = client.post("/api/v1/webhook/telegram", json={})
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Telegram disabled during restore mode"}
+
+
+@pytest.fixture(autouse=True)
+def authorized_manager_reply_unit_fixture() -> Iterator[None]:
+    """Isolate egress permission from manager routing/persistence DB doubles.
+
+    Upstream manager access checks remain real; egress has dedicated safety tests.
+    """
+    with patch("src.services.outbound_safety._SendScope.check", new_callable=AsyncMock):
+        yield
 
 
 @pytest.fixture(autouse=True)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -18,6 +19,8 @@ from src.integrations.notifications.telegram_webhook import sync_telegram_webhoo
 from src.services.admin_audit import log_admin_action
 from src.services.telegram_admin_login import consume_telegram_admin_login_token
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -25,7 +28,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     install_sensitive_url_filter()
     app.state.arq_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     app.state.redis = redis_client
-    await sync_telegram_webhook()
+    if settings.test_channel_restore_mode:
+        logger.warning("Telegram startup sync disabled during test-channel restore")
+    else:
+        await sync_telegram_webhook()
     yield
     # Shutdown
     await app.state.arq_pool.aclose()

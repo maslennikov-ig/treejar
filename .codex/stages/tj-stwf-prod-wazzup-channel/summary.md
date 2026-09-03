@@ -1,15 +1,35 @@
 # Stage tj-stwf-prod-wazzup-channel
 
-Status: production switch complete; awaiting one fresh tester message.
+Status: REPLAN REQUIRED. The owner confirmed on 2026-08-28 that only test
+WhatsApp ending 0665 may be used. The earlier switch to 9235 was based on an
+incorrect identity assumption and is not accepted. See
+`containment-2026-08-28.md`; the older observations below are historical.
 
-## Incident
+## Current local preparation
 
-At 13:09-13:11 UTC, eight tester-time inbound messages reached Noor through the
+The safety candidate is in `codex/test-channel-safety`, not deployed. Shared
+outbound denial, channel-scoped conversations and UTC status handling passed
+130 root-owned affected tests, Ruff, formatting and Mypy. Independent security
+re-review found no blocking issues after correcting old-conversation rebinding.
+See `artifacts/tj-stwf-test-only-safety.md` for exact scope and evidence.
+
+Production app/worker remain stopped with auto-restart disabled. Disk config
+targets only test0665; old stopped containers must never be started. Provider
+readback at 17:00:25 UTC still requires the owner to reconnect0665 via QR.
+Stage and live reply acceptance remain open. No release or stage close occurred.
+
+docs-reviewed: updated - README, current handoff, containment and safety evidence.
+graph-reviewed: no-change-needed - no graph in this worktree; no extraction.
+
+## Historical incident (superseded channel assumption)
+
+At 13:09-13:11 UTC, eight incident-adjacent inbound messages reached Noor through the
 active `Treejar Trading` Wazzup channel but were rejected before Redis, ARQ, the
 database, or the model because production expected the disconnected `Treejar`
 channel. Twenty-one messages were rejected by the same guard over two hours.
+Their attribution to the tester was never proven and has been withdrawn.
 
-## Technical premortem
+## Historical technical premortem (not current authority)
 
 Verdict: GO WITH CONDITIONS.
 
@@ -24,11 +44,11 @@ Verdict: GO WITH CONDITIONS.
 - Do not replay the dropped events or send a real-user message. A fresh tester
   message is the only allowed end-to-end proof.
 
-## Explicit defers
+## Historical defer
 
 - Fresh-message acceptance waits for a new tester message after the switch.
 
-## Runtime result
+## Historical runtime result (before containment)
 
 - Production `app` and `worker` now use the active Treejar Trading channel.
 - Only the `WAZZUP_CHANNEL_ID` line changed; two exact mode-`0600` backups exist.

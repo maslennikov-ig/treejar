@@ -14,6 +14,7 @@ import httpx
 from src.core.config import settings
 from src.integrations.messaging.base import MessagingProvider
 from src.services.inbound_channels import normalize_channel_phone
+from src.services.outbound_safety import require_wazzup_send
 
 logger = logging.getLogger(__name__)
 
@@ -95,11 +96,13 @@ class WazzupProvider(MessagingProvider):
         """Initialize the Wazzup API client.
 
         Args:
-            channel_id: Default channelId for messages. Can be overridden per request.
+            channel_id: Sender channel; omitted uses WAZZUP_CHANNEL_ID.
         """
         self.base_url = settings.wazzup_api_url
         self.api_key = settings.wazzup_api_key
-        self.channel_id = channel_id
+        self.channel_id = (
+            settings.wazzup_channel_id if channel_id is None else channel_id
+        )
 
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
@@ -117,6 +120,14 @@ class WazzupProvider(MessagingProvider):
         max_retries = 3
 
         for attempt in range(1, max_retries + 1):
+            # Public read-only channel discovery does not need send permission.
+            # All other requests fail closed, including direct _request callers.
+            if not (method.upper() == "GET" and path == "/channels"):
+                await require_wazzup_send(
+                    self,
+                    chat_id=(json or {}).get("chatId"),
+                    channel_id=(json or {}).get("channelId"),
+                )
             try:
                 response = await self.client.request(
                     method=method,
@@ -313,6 +324,11 @@ class WazzupProvider(MessagingProvider):
         If both a file and a caption are provided, two messages are sent:
         first the file, then the caption text.
         """
+        await require_wazzup_send(
+            self,
+            chat_id=self._outbound_chat_id(chat_id),
+            channel_id=self.channel_id,
+        )
         # Resolve the public URL for the file
         content_uri: str | None = url
         if content and not content_uri:
