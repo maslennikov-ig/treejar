@@ -14,6 +14,8 @@ from src.llm.engine import (
 )
 from src.models.conversation import Conversation
 
+pytestmark = pytest.mark.usefixtures("authorized_outbound_unit_path")
+
 
 def _quote_metadata(
     *,

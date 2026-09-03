@@ -39,6 +39,8 @@ from src.models.conversation import Conversation
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.common import SalesStage
 
+pytestmark = pytest.mark.usefixtures("authorized_outbound_unit_path")
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

@@ -69,14 +69,11 @@ cleanup_notes: Branch and worktree remain required until production acceptance a
 risk_level: high
 verification_tier: release
 risk_tags:
-  - production
   - privacy
   - rollback
   - state-transition
 affected_surfaces:
   - backend
-  - worker
-  - production-runtime
 invariants:
   - exact-test-channel-authorization
   - no-historical-replay
@@ -94,6 +91,7 @@ verification:
   - app-only-and-restore-mode-focused-tests: passed-34-tests
   - final-independent-production-risk-review: one-p1-fixed-no-other-findings
   - worker-stop-postcondition-regression: passed-5-tests
+  - legacy-downstream-test-fixtures-and-current-state-pins: passed-32-tests
   - exact-merged-release-gates: pending
   - production-release-and-content-free-smoke: pending
   - fresh-owner-message-correlated-reply: pending
@@ -125,6 +123,15 @@ changed_files:
   - src/services/outbound_safety.py
   - src/worker.py
   - tests/test_messaging_wazzup.py
+  - tests/conftest.py
+  - tests/test_chat_escalation.py
+  - tests/test_dialog_scenarios.py
+  - tests/test_e2e_tools.py
+  - tests/test_escalation_fallback.py
+  - tests/test_llm_engine.py
+  - tests/test_llm_quotation.py
+  - tests/test_order_review_flow.py
+  - tests/test_product_images.py
   - tests/test_outbound_audit.py
   - tests/test_proposal_followup.py
   - tests/test_scripts_vps_deploy.py

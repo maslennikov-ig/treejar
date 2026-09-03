@@ -29,6 +29,21 @@ from src.core.config import settings
 from src.main import app
 
 
+@pytest.fixture
+def authorized_outbound_unit_path() -> Generator[None, None, None]:
+    """Let downstream unit tests exercise their mocked messaging provider.
+
+    The production egress gate has dedicated fail-closed coverage. Tests that
+    opt into this fixture are checking the behavior after that gate and use
+    provider/DB doubles that cannot establish real channel provenance.
+    """
+
+    from unittest.mock import AsyncMock, patch
+
+    with patch("src.services.outbound_safety._SendScope.check", new_callable=AsyncMock):
+        yield
+
+
 def _is_db_available() -> bool:
     """Check if PostgreSQL is reachable with valid credentials."""
     try:

@@ -21,6 +21,8 @@ import pytest
 
 from src.schemas.common import EscalationType
 
+pytestmark = pytest.mark.usefixtures("authorized_outbound_unit_path")
+
 # =============================================================================
 # Redis key constants (must match implementation)
 # =============================================================================

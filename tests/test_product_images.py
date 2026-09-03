@@ -11,7 +11,10 @@ from src.llm.engine import SalesDeps, search_products
 from src.models.conversation import Conversation
 from src.schemas.product import ProductRead
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [
+    pytest.mark.asyncio,
+    pytest.mark.usefixtures("authorized_outbound_unit_path"),
+]
 
 
 @pytest.fixture

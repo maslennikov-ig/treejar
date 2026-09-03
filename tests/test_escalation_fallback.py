@@ -14,6 +14,8 @@ from uuid import uuid4
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("authorized_outbound_unit_path")
+
 
 @pytest.mark.asyncio
 async def test_escalation_fallback_sends_message_en() -> None:

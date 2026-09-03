@@ -60,6 +60,8 @@ from src.schemas.common import SalesStage
 from src.schemas.product import ProductRead
 from src.services.proposal_followup import record_proposal_sent
 
+pytestmark = pytest.mark.usefixtures("authorized_outbound_unit_path")
+
 
 def test_order_quote_route_adapter_is_in_dedicated_module() -> None:
     route_module = importlib.import_module("src.llm.order_quote_routes")

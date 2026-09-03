@@ -18,6 +18,8 @@ from src.llm import LLMResponse
 from src.schemas.webhook import WazzupIncomingMessage
 from src.services.chat import _determine_role, process_incoming_batch
 
+pytestmark = pytest.mark.usefixtures("authorized_outbound_unit_path")
+
 # ---------------------------------------------------------------------------
 # _determine_role tests
 # ---------------------------------------------------------------------------
