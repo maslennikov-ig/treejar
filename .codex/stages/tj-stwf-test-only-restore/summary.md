@@ -1,56 +1,38 @@
 # Stage tj-stwf-test-only-restore
 
-Status: IN PROGRESS. Restore production only for test WhatsApp ending0665.
-The superseded9235 stage and frozen criteria remain historical and unaccepted.
+Status: ACCEPTED. Production testing is restored only for WhatsApp ending0665.
+The superseded9235 stage remains historical and unauthorized.
 
-## Current evidence
+## Accepted evidence
 
-- Owner reconnected test0665; read-only User API v3 returned `active` at
-  2026-09-01 10:08:21 UTC.
-- Production app and worker remain exited with restart policy `no`; DB, Redis
-  and nginx remain running.
-- Candidate safety code passed the prior focused local acceptance and independent
-  authorization re-review. Release acceptance and delivery are pending here.
-- At 2026-09-01 10:46:16 UTC, all nine retained `wazzup_msgs` lists were
-  atomically renamed into `hold:tj-stwf:20260901T104616Z:` after exact key and
-  DUMP fingerprint validation. Live retained keys and ARQ jobs are zero; the
-  held manifest SHA-256 is
-  `3c4b14e106525adcd4c40c48b82f1d11ae870ef85f5c14f5d0d7635ea1442585`.
-- Production `bot_enabled` is temporarily `false`. The mode-0600 environment
-  backup is
+- Release `af93ebd5a07d50e1689df76a28d465ddbbec2c17` passed root closeout:
+  Ruff, format, Mypy, 3,925 tests with 20 skips, all risk groups and process
+  verification.
+- GitHub Actions run `33759923277` passed and completed the app-only deploy.
+- Public health reports the exact release; PostgreSQL and Redis are healthy.
+- App `7b36af77e0c5` and worker `5dc6ccec0c99` are running from the exact
+  release with zero restarts and no OOM event.
+- Both Wazzup channel settings authorize only test0665. Restore mode registers
+  only fresh inbound processing and disables Telegram, cron jobs and embedding
+  warmup.
+- One fresh owner-authored message produced one user row and one assistant row.
+  The assistant used `z-ai/glm-5.3-flash|verified-policy-clarify`; Wazzup
+  recorded one sent message on test0665 with a provider message id and zero
+  foreign egress.
+- Live inbound and ARQ queues are empty. All nine historical lists remain
+  preserved under `hold:tj-stwf:20260901T104616Z:`.
+- PostgreSQL `43ccb64efb9d`, Redis `1b9c9a5c99d0` and nginx
+  `0cdbce63c5db` were preserved with zero restarts and no OOM event.
+- The protected pre-restore environment backup remains at
   `/opt/noor/.hotfix-backups/env-20260901T104712Z-before-test0665-restore`.
-  Both Wazzup channel variables now match the active WhatsApp channel ending
-  0665, and `TEST_CHANNEL_RESTORE_MODE=true`; app and worker are still stopped.
-- The deploy candidate now adds an app-only CI gate plus restore mode: Telegram
-  startup/inbound is disabled, and worker registers only fresh inbound handling
-  with no cron jobs or embedding warmup. Its focused additions passed 34 tests.
-- Final independent review found one P1 in the general app-only contract: an
-  already-running worker was not explicitly stopped. The deployer now stops it
-  before replacing files and aborts unless a readback proves no worker remains.
-  Five focused deploy tests pass; review found no other issues.
+- The accepted candidate worktree and its merged local branch were removed;
+  production runtime and the rollback backup were untouched.
 
-## Technical premortem
+## Operating boundary
 
-Verdict: GO WITH CONDITIONS.
+The worker remains running for production testing on test0665. Do not replay
+held messages or enable Telegram, cron jobs, embedding warmup or any other
+channel as part of this accepted stage.
 
-- Never start the old containers: their environment contains prohibited9235.
-- Deployment must create new containers from one exact accepted release SHA.
-- Preserve retained Redis/ARQ data but prevent it from executing. Do not replay,
-  delete or inspect customer message bodies.
-- Set both Wazzup sender variables to the exact test0665 UUID only after a
-  protected environment backup. Missing/mismatched outbound authorization must
-  fail closed.
-- App may start before worker for content-free health. Worker starts only after
-  retained-work isolation and exact environment/image readback.
-- Only an owner-sent fresh message after recovery may prove reply delivery.
-- Roll back by stopping app/worker, restoring the protected release/environment
-  and retained-work namespace, then recreating only app/worker. DB/Redis/nginx
-  and neighboring products are never restarted.
-
-## Explicit defers
-
-- Fresh-message proof waits until the exact release is healthy and root asks the
-  owner for one new message. No manual send or historical replay is permitted.
-
-docs-reviewed: updated - new current stage records recovery and rollback scope.
+docs-reviewed: updated - current evidence and operating boundary recorded.
 graph-reviewed: no-change-needed - no graph is available in this worktree.

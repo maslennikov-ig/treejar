@@ -3,7 +3,7 @@
   "stage_id": "tj-stwf-test-only-restore",
   "goal_id": "tj-stwf.1",
   "profile_at_creation": "balanced-v2.19",
-  "status": "in_progress",
+  "status": "accepted",
   "sequence": 1,
   "acceptance_boundary_id": "test-only-wazzup-safe-production-restore",
   "acceptance_owner": "root-orchestrator",

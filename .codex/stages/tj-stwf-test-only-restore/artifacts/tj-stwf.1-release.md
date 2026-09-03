@@ -21,13 +21,13 @@ epic_id: tj-stwf
 stage_id: tj-stwf-test-only-restore
 session_id: root-release-integration
 milestone: test-only-wazzup-production-restoration
-milestone_status: in-progress
+milestone_status: accepted
 agent_type: root
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
 model_reasoning_rationale: Root owns the single release acceptance and production delivery boundary.
 repo: treejar
-branch: codex/test-channel-safety
+branch: main
 base_branch: main
 base_commit: b3655501eb3ac71d2bb45086c7761a966784f403
 worktree: /home/me/code/treejar/.worktrees/test-channel-safety
@@ -61,11 +61,11 @@ depends_on_streams:
   - tj-stwf.1-preflight
   - tj-stwf.1-queue
 parallel_decision: fan-in-before-delivery
-status: returned
-delivery_method: not accepted
-accepted_by_orchestrator: no
-cleanup_status: pending
-cleanup_notes: Branch and worktree remain required until production acceptance and rollback window complete.
+status: accepted
+delivery_method: merge
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: Accepted candidate worktree and merged local branch were removed; production runtime and rollback backup were untouched.
 risk_level: high
 verification_tier: release
 risk_tags:
@@ -93,8 +93,9 @@ verification:
   - worker-stop-postcondition-regression: passed-5-tests
   - legacy-downstream-test-fixtures-and-current-state-pins: passed-32-tests
   - exact-merged-release-gates: passed-3925-tests-20-skipped-plus-risk-groups
-  - production-release-and-content-free-smoke: pending
-  - fresh-owner-message-correlated-reply: pending
+  - github-ci-33759923277-and-app-only-deploy: passed
+  - production-release-and-content-free-smoke: passed-release-af93ebd
+  - fresh-owner-message-correlated-reply: passed-one-allowed-zero-foreign
 changed_files:
   - .codex/goals/tj-stwf.1/scope-criterion-snapshot.json
   - .codex/handoff.md
@@ -143,36 +144,36 @@ changed_files:
   - tests/test_webhook_manager.py
   - tests/test_worker.py
 explicit_defers:
-  - fresh-message-proof-must-wait-for-owner-sent-post-recovery-message-to-test-0665
+  - normal-cron-jobs-telegram-and-all-non-test-channels-remain-disabled
 ---
 
 # Summary
 
-The fail-closed test-channel release is prepared but not yet accepted or
-delivered. Production application and worker processes remain stopped while
-retained Redis work is inventoried and moved to a reversible hold namespace.
+The fail-closed test-channel release is accepted, merged and deployed.
+Production app and the fresh-inbound-only worker run release
+`af93ebd5a07d50e1689df76a28d465ddbbec2c17`. Both Wazzup channel settings
+authorize only test0665, and the main model is
+`z-ai/glm-5.3-flash`.
 
-The final production-risk review found one P1: app-only deploy did not stop an
-already-running worker. The deployer now stops worker before replacing files,
-verifies that no running worker remains, and aborts before app deployment on a
-failed postcondition. Five focused deploy tests pass; the reviewer reported no
-other findings in restore-mode, Telegram, worker or Wazzup outbound paths.
-
-The exact merged release passed ruff, format, mypy, 3,925 tests with 20 explicit
-skips, and the repository's concurrency, security, database, integration and
-process-verification groups.
+The exact merged release passed Ruff, format, Mypy, 3,925 tests with 20 explicit
+skips, all repository risk groups and process verification. GitHub Actions run
+`33759923277` passed and deployed only the app. The worker was then recreated
+from the same release in restore mode.
 
 # Verification
 
-The final release gate must run once on the exact merged release. Production
-acceptance must then confirm the release SHA, new container identities, exact
-test-channel environment, preserved DB/Redis/nginx instances, healthy public
-dependencies, zero restart/OOM events and zero foreign-channel egress.
+Production health reports the exact release with healthy PostgreSQL and Redis.
+App and worker have zero restarts and no OOM event. A fresh owner-authored
+message produced one user row and one assistant row using
+`z-ai/glm-5.3-flash|verified-policy-clarify`; the outbound audit records one
+sent Wazzup message on test0665 with a provider message id and zero foreign
+egress. Live inbound and ARQ queues returned to zero, while all nine historical
+lists remain held under `hold:tj-stwf:20260901T104616Z:`.
 
 # Risks / Follow-ups
 
-Do not start the old application or worker containers. Do not enable outbound
-delivery until all retained `wazzup_msgs` keys are isolated without deletion,
-both channel environment values match test0665, and the new runtime has passed
-content-free checks. A fresh owner-authored message is the only permitted final
-reply proof.
+The worker remains running for production testing only on test0665. Restore
+mode intentionally keeps Telegram, cron jobs, embedding warmup and every
+non-test channel disabled. Historical held messages must not be replayed,
+deleted or inspected. Moving to normal multi-channel operation is a separate
+future release boundary.
