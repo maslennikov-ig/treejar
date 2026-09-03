@@ -92,7 +92,7 @@ verification:
   - final-independent-production-risk-review: one-p1-fixed-no-other-findings
   - worker-stop-postcondition-regression: passed-5-tests
   - legacy-downstream-test-fixtures-and-current-state-pins: passed-32-tests
-  - exact-merged-release-gates: pending
+  - exact-merged-release-gates: passed-3925-tests-20-skipped-plus-risk-groups
   - production-release-and-content-free-smoke: pending
   - fresh-owner-message-correlated-reply: pending
 changed_files:
@@ -157,6 +157,10 @@ already-running worker. The deployer now stops worker before replacing files,
 verifies that no running worker remains, and aborts before app deployment on a
 failed postcondition. Five focused deploy tests pass; the reviewer reported no
 other findings in restore-mode, Telegram, worker or Wazzup outbound paths.
+
+The exact merged release passed ruff, format, mypy, 3,925 tests with 20 explicit
+skips, and the repository's concurrency, security, database, integration and
+process-verification groups.
 
 # Verification
 
