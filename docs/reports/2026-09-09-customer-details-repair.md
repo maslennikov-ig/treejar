@@ -22,8 +22,8 @@ customer-detail fields.
 
 ## Risk review (technical-premortem)
 
-Verdict: GO WITH CONDITIONS for the targeted repair; code release requires owner
-approval. Capture flows into customer facts, profile projections, quotation
+Verdict: GO WITH CONDITIONS for the targeted repair. The owner subsequently
+authorized code deployment and immediate verification. Capture flows into customer facts, profile projections, quotation
 metadata, and eventually CRM/PDF/provider actions.
 
 - Confirmed false-positive facts: reject question/label collisions and verify
@@ -58,9 +58,8 @@ conversation snapshot is kept outside Git. Final acceptance passed on the byte-i
 - `git diff --check`: passed.
 - Changed source/test files were compared byte-for-byte with the acceptance
   clone before commit. No live model/provider call or customer message was
-  used as synthetic proof. Production
-repair and code deployment are separate outcomes; no deployment has been
-performed.
+  used as synthetic proof. Production repair and code deployment were verified
+  separately.
 
 Docs reviewed: this incident note records the durable behavior and repair scope.
 Project index: no new runtime module or public entrypoint is planned.
@@ -72,3 +71,31 @@ Graph reviewed: no graph is present; no refresh needed for this bounded change.
 common directory is under the linked worktree's `.git` path. No privacy gate was
 weakened. Acceptance runs in an isolated normal local clone with the exact source
 snapshot, an explicit `PYTHONPATH`, and reused local Python/Node dependencies.
+
+## Production release verification
+
+Owner-authorized release `e071bb683e1fcc876efd40ca16b28ed6d2486241` deployed
+on 2026-09-09 through GitHub Actions run `34333335661` (success).
+CI: 3,963 passed, 27 skipped; lint and type checks passed. Initial run
+`34332793963` stopped before deployment due to current-state handoff digest
+maintenance; the repository helper updated only mutable source pins.
+
+The application and worker use identical image
+`sha256:158974224c54e390b344967cc13f8afc74fd05eb878dfdcabf631f30e38e0be2`.
+Worker startup confirms the test-channel mode. Both have zero restarts and no
+OOM event. Public health reports the exact release and healthy database/Redis.
+The environment file is unchanged; database, Redis and nginx containers were
+preserved. Held messages were not accessed.
+
+Read-only live data checks confirmed the corrected quotation name/address and
+sole accepted canonical address fact. Deployed-code checks used the original
+question, full address and repeated address with an in-memory conversation:
+complete address and name preserved, no missing quotation fields. Adjacent
+question/company/invoice negatives passed. Both runtime source files matched
+the accepted local SHA-256 hashes. No model calls, outbound messages or database
+writes occurred in this verification. A fresh WhatsApp exchange with the tester
+is outside this evidence; testing may resume on test0665.
+
+Rollback archive:
+`/opt/noor/.hotfix-backups/deploy-20260909T091436Z-from-af93ebd5a07d50e1689df76a28d465ddbbec2c17.tar.gz`.
+Local smoke receipt: `/home/me/.local/state/treejar/repairs/tj-d27h-live-smoke.log`.
