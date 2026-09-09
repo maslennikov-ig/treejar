@@ -1,10 +1,10 @@
 # Orchestrator Handoff
 
 Updated: 2026-09-09
-Current branch: `codex/address-capture-fix` (local candidate)
+Current branch: `main`
 Current stage id: `tj-stwf-test-only-restore`
-Status: Customer-detail fix `tj-d27h` passed local acceptance; deployment
-needs owner approval. Previously accepted production testing remains limited
+Status: Customer-detail fix `tj-d27h` passed local acceptance; the owner authorized
+deployment and verification. Publication is in progress. Production testing remains limited
 to WhatsApp ending0665.
 
 ## Active repair: tj-d27h
@@ -17,7 +17,11 @@ to WhatsApp ending0665.
   post-commit read. No customer messages were changed or sent.
 - Standalone single-commit delivery; no new stage manifest. Root acceptance: 3,970 passed, 20 skipped; Ruff/format and Mypy passed.
   Independent review has no remaining blocking findings.
-- No push, merge, or deployment performed; keep the test0665-only boundary.
+- Code commit `9d2fb662aa91b9c02fc1672ee3677bd7d7be33a4` merged and pushed.
+- CI run `34332793963` blocked deployment on a current-state handoff digest
+  mismatch; runtime tests passed. Mutable source pins are maintained with
+  the repository helper; frozen acceptance sources remain unchanged.
+- Keep the test0665-only boundary during the authorized deployment.
 
 ## Current truth
 
