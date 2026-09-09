@@ -4,12 +4,17 @@ import pytest
 
 from src.core.config import settings
 from src.llm.fact_extractor import (
+    FAST_EXTRACTOR_INSTRUCTIONS,
     CustomerFactExtractionResult,
     ExtractedCustomerFact,
     FastCustomerFactExtractionOutput,
     FastCustomerFactExtractionRequest,
     extract_customer_facts,
+    extract_delivery_address,
+    is_customer_phone_detail,
+    is_specific_delivery_address,
 )
+from src.llm.pii import PHONE_PATTERN
 
 
 def _fact_by_key(
@@ -94,6 +99,197 @@ async def test_deterministic_extracts_labeled_company_and_delivery_address() -> 
     assert address.value == "2 Business Bay"
     assert address.scope == "current_order"
     assert address.confidence == "high"
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "8, Street 42B, Sample District, Example City, Emirate of Dubai",
+        "12, Cedar Road, Al Nahda, Sharjah",
+    ],
+)
+def test_extract_delivery_address_preserves_full_comma_address(address: str) -> None:
+    assert extract_delivery_address(address) == address
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        (
+            "Delivery address: Office 1204, Test Tower, Business Bay, Dubai, UAE. "
+            "Please quote exactly 4 x CH 616 NEW black.",
+            "Office 1204, Test Tower, Business Bay, Dubai, UAE",
+        ),
+        (
+            "Delivery address: Office 42, Test Tower, Dubai, UAE. "
+            "Proceed with the requested order.",
+            "Office 42, Test Tower, Dubai, UAE",
+        ),
+    ],
+)
+def test_extract_delivery_address_stops_before_followup_instruction(
+    text: str,
+    expected: str,
+) -> None:
+    assert extract_delivery_address(text) == expected
+
+
+@pytest.mark.asyncio
+async def test_deterministic_extracts_multiline_customer_details_and_full_address() -> (
+    None
+):
+    address = "8, Street 42B, Sample District, Example City, Emirate of Dubai"
+    result = await extract_customer_facts(
+        f"Individual\n{address}\nEmail: lili@example.com",
+        use_fast_model=False,
+    )
+
+    assert _fact_by_key(result, "customer.type").value == "individual"
+    assert _fact_by_key(result, "delivery.address").value == address
+    assert _fact_by_key(result, "customer.email").value == "lili@example.com"
+
+
+@pytest.mark.asyncio
+async def test_labeled_address_keeps_commas_and_stops_before_other_details() -> None:
+    result = await extract_customer_facts(
+        "Victor, individual, delivery address Office 1905, JLT Dubai, "
+        "email victor@example.com, phone +971501112233",
+        use_fast_model=False,
+    )
+
+    assert _fact_by_key(result, "delivery.address").value == "Office 1905, JLT Dubai"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text",
+    [
+        "What cities do you deliver to?",
+        "What is your delivery address?",
+        "Do you deliver to all emirates?",
+    ],
+)
+async def test_deterministic_rejects_address_questions(text: str) -> None:
+    result = await extract_customer_facts(text, use_fast_model=False)
+
+    assert extract_delivery_address(text) is None
+    assert _facts_by_key(result, "delivery.address") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text",
+    [
+        "What is your company name?",
+        "Do you offer company discounts?",
+    ],
+)
+async def test_deterministic_rejects_company_questions(text: str) -> None:
+    result = await extract_customer_facts(text, use_fast_model=False)
+
+    assert _facts_by_key(result, "customer.company") == []
+
+
+@pytest.mark.asyncio
+async def test_deterministic_rejects_punctuation_only_company() -> None:
+    result = await extract_customer_facts("Company: ?", use_fast_model=False)
+
+    assert _facts_by_key(result, "customer.company") == []
+
+
+@pytest.mark.asyncio
+async def test_company_name_label_is_not_also_a_customer_name() -> None:
+    result = await extract_customer_facts(
+        "Company name: Acme LLC",
+        use_fast_model=False,
+    )
+
+    assert _fact_by_key(result, "customer.company").value == "Acme LLC"
+    assert _facts_by_key(result, "customer.name") == []
+
+
+@pytest.mark.asyncio
+async def test_spaced_company_name_label_is_not_also_a_customer_name() -> None:
+    result = await extract_customer_facts(
+        "Company  name: Acme LLC",
+        use_fast_model=False,
+    )
+
+    assert _fact_by_key(result, "customer.company").value == "Acme LLC"
+    assert _facts_by_key(result, "customer.name") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Office 5, Dubai, name: Arina",
+        "Address: Office 5, Dubai, name: Arina",
+    ],
+)
+async def test_address_stops_before_standalone_name_label(text: str) -> None:
+    result = await extract_customer_facts(text, use_fast_model=False)
+
+    assert _fact_by_key(result, "delivery.address").value == "Office 5, Dubai"
+    assert _fact_by_key(result, "customer.name").value == "Arina"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text, contact_key",
+    [
+        (
+            "Can you deliver to Business Bay, email arina@example.com?",
+            "customer.email",
+        ),
+        (
+            "Do you deliver to Business Bay, phone +971501234567?",
+            "customer.phone",
+        ),
+    ],
+)
+async def test_delivery_question_with_contact_does_not_create_address_or_name(
+    text: str,
+    contact_key: str,
+) -> None:
+    result = await extract_customer_facts(text, use_fast_model=False)
+
+    assert _facts_by_key(result, "delivery.address") == []
+    assert _facts_by_key(result, "customer.name") == []
+    assert _facts_by_key(result, contact_key)
+
+
+def test_address_assertion_survives_separate_followup_question() -> None:
+    text = "My address is Office 5. Can you deliver tomorrow?"
+
+    assert extract_delivery_address(text) == "Office 5"
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("Office 5", True),
+        ("Business Bay", True),
+        ("Dubai", False),
+        ("?", False),
+        (None, False),
+    ],
+)
+def test_specific_delivery_address_contract(
+    value: str | None,
+    expected: bool,
+) -> None:
+    assert is_specific_delivery_address(value) is expected
+
+
+@pytest.mark.asyncio
+async def test_invoice_number_is_not_a_customer_phone() -> None:
+    text = "The invoice number is 1234567890"
+    match = next(iter(PHONE_PATTERN.finditer(text)))
+
+    assert is_customer_phone_detail(text, match) is False
+    result = await extract_customer_facts(text, use_fast_model=False)
+    assert _facts_by_key(result, "customer.phone") == []
 
 
 @pytest.mark.asyncio
@@ -512,6 +708,73 @@ async def test_fast_extractor_drops_authoritative_order_items() -> None:
 
 
 @pytest.mark.asyncio
+async def test_fast_extractor_normalizes_explicit_profile_and_address_aliases() -> None:
+    address = "8, Street 42B, Sample District, Example City, Emirate of Dubai"
+
+    async def fake_fast_extractor(
+        request: FastCustomerFactExtractionRequest,
+    ) -> FastCustomerFactExtractionOutput:
+        return FastCustomerFactExtractionOutput(
+            facts=[
+                ExtractedCustomerFact(
+                    scope="persistent_profile",
+                    key="delivery_address",
+                    value=f"{address}; confidence=high",
+                    confidence="high",
+                    source="fast_model",
+                    evidence="parsed delivery_address",
+                ),
+                ExtractedCustomerFact(
+                    scope="current_order",
+                    key="customer.display_name",
+                    value="Lili",
+                    confidence="high",
+                    source="fast_model",
+                    evidence="Lili",
+                ),
+                ExtractedCustomerFact(
+                    scope="current_order",
+                    key="customer.primary_email",
+                    value="lili@example.com",
+                    confidence="high",
+                    source="fast_model",
+                    evidence="lili@example.com",
+                ),
+                ExtractedCustomerFact(
+                    scope="current_order",
+                    key="order.delivery_window",
+                    value="morning",
+                    confidence="medium",
+                    source="fast_model",
+                    evidence="morning delivery",
+                ),
+            ]
+        )
+
+    result = await extract_customer_facts(
+        f"Lili, individual, {address}, lili@example.com, morning delivery",
+        fast_extractor=fake_fast_extractor,
+    )
+
+    assert _fact_by_key(result, "delivery.address").value == address
+    name = _fact_by_key(result, "customer.name")
+    assert name.scope == "persistent_profile"
+    assert name.value == "Lili"
+    email = _fact_by_key(result, "customer.email")
+    assert email.scope == "persistent_profile"
+    assert email.value == "lili@example.com"
+    dynamic = _fact_by_key(result, "order.delivery_window")
+    assert dynamic.scope == "current_order"
+    assert dynamic.value == "morning"
+
+
+def test_fast_extractor_instructions_name_canonical_keys() -> None:
+    assert "delivery.address" in FAST_EXTRACTOR_INSTRUCTIONS
+    assert "customer.name" in FAST_EXTRACTOR_INSTRUCTIONS
+    assert "customer.email" in FAST_EXTRACTOR_INSTRUCTIONS
+
+
+@pytest.mark.asyncio
 async def test_fast_extractor_failure_returns_deterministic_facts_and_bounded_trace() -> (
     None
 ):
@@ -562,3 +825,21 @@ async def test_no_fast_model_call_when_disabled() -> None:
 
     assert _fact_by_key(result, "customer.email").value == "lili@example.com"
     assert result.trace.fast_model_called is False
+
+
+@pytest.mark.asyncio
+async def test_bare_delivery_coverage_question_is_not_name_or_address() -> None:
+    result = await extract_customer_facts(
+        "Is Business Bay covered, email arina@example.com?", use_fast_model=False
+    )
+    assert not _facts_by_key(result, "delivery.address")
+    assert not _facts_by_key(result, "customer.name")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", ["Will Smith", "May West"])
+async def test_compact_customer_names_are_not_question_auxiliaries(name: str) -> None:
+    result = await extract_customer_facts(
+        f"{name}, individual, 1 Dubai", use_fast_model=False
+    )
+    assert _fact_by_key(result, "customer.name").value == name

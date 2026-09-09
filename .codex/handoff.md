@@ -1,10 +1,23 @@
 # Orchestrator Handoff
 
-Updated: 2026-09-03
-Current branch: `main`
+Updated: 2026-09-09
+Current branch: `codex/address-capture-fix` (local candidate)
 Current stage id: `tj-stwf-test-only-restore`
-Status: ACCEPTED AND DEPLOYED. Production testing is enabled only for WhatsApp
-ending0665.
+Status: Customer-detail fix `tj-d27h` passed local acceptance; deployment
+needs owner approval. Previously accepted production testing remains limited
+to WhatsApp ending0665.
+
+## Active repair: tj-d27h
+
+- Fixed complete address capture, question/label collisions, invoice-as-phone
+  capture, and known customer-fact alias loss. Details:
+  `docs/reports/2026-09-09-customer-details-repair.md`.
+- The diagnosed conversation's name/address and three address facts were
+  repaired with a backup, exact-state fingerprint, row locks, and a separate
+  post-commit read. No customer messages were changed or sent.
+- Standalone single-commit delivery; no new stage manifest. Root acceptance: 3,970 passed, 20 skipped; Ruff/format and Mypy passed.
+  Independent review has no remaining blocking findings.
+- No push, merge, or deployment performed; keep the test0665-only boundary.
 
 ## Current truth
 
@@ -49,6 +62,9 @@ intentionally disables Telegram, cron jobs, embedding warmup and every
 non-test channel. Normal multi-channel operation requires a separate release.
 
 ## Explicit defers
+
+- `tj-bgwu`: existing corpus isolation test assumes a normal `.git` directory;
+  linked-worktree acceptance uses an isolated normal clone until this test is fixed.
 
 - Wazzup sender authentication enforcement remains a long-term backlog task.
 - The paid five-call route verifier and paid second reader were not used.

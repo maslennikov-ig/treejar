@@ -146,6 +146,12 @@ from src.llm.fact_extractor import (
     CustomerFactExtractionResult,
     ExtractedCustomerFact,
     extract_customer_facts,
+    extract_delivery_address,
+    is_question_clause,
+    is_specific_delivery_address,
+)
+from src.llm.fact_extractor import (
+    is_customer_phone_detail as _is_customer_phone_detail,
 )
 from src.llm.grounding_output import GroundingOutputAction
 from src.llm.money import (
@@ -5787,19 +5793,6 @@ async def _consume_name_gate_pending_request(
     return pending_text
 
 
-def _is_customer_phone_detail(text: str, match: re.Match[str]) -> bool:
-    raw_phone = match.group(0).strip()
-    if raw_phone.startswith("+"):
-        return True
-    prefix = text[max(0, match.start() - 40) : match.start()].casefold()
-    return bool(
-        re.search(
-            r"(?:phone|mobile|tel|whatsapp)\s*[:：=-]?\s*$",
-            prefix,
-        )
-    )
-
-
 def _looks_like_natural_delivery_address(value: str) -> bool:
     normalized = _normalize_text(value)
     if not normalized:
@@ -5846,7 +5839,7 @@ def _extract_natural_delivery_address(text: str) -> str:
         re.IGNORECASE | re.S,
     )
     match = pattern.search(text)
-    if not match:
+    if not match or is_question_clause(text, match.start()):
         return ""
     value = " ".join(match.group("value").split()).strip(" \t,;.")
     if not _looks_like_natural_delivery_address(value):
@@ -5856,6 +5849,7 @@ def _extract_natural_delivery_address(text: str) -> str:
 
 def _extract_quote_customer_details(text: str) -> dict[str, str]:
     details: dict[str, str] = {}
+    captured_address = extract_delivery_address(text)
 
     email_match = EMAIL_PATTERN.search(text)
     if email_match:
@@ -5928,6 +5922,16 @@ def _extract_quote_customer_details(text: str) -> dict[str, str]:
     )
     if individual_customer_signal is not None and individual_product_descriptor is None:
         details["customer_type"] = "individual"
+
+    if captured_address:
+        details["address"] = captured_address
+
+    for key in ("name", "company", "address"):
+        detail_value = details.get(key)
+        if detail_value and (
+            "?" in detail_value or not re.search(r"[^\W\d_]", detail_value)
+        ):
+            details.pop(key)
 
     return details
 
@@ -6224,6 +6228,19 @@ def _extract_terse_quote_customer_details(text: str) -> dict[str, str]:
     # clause came back as the customer's name.
     if not stripped or len(stripped) > 220 or "?" in unpunctuated:
         return {}
+    # Capture an address as a unit before commas can turn its district into a name.
+    address = extract_delivery_address(raw)
+    if address:
+        address_pattern = r"\s+".join(re.escape(part) for part in address.split())
+        remainder, removed = re.subn(address_pattern, "", raw, count=1)
+        if removed:
+            remainder_details = _extract_terse_quote_customer_details(remainder)
+            remainder_details.update(_extract_quote_customer_details(remainder))
+            name = _extract_bare_name_gate_reply(remainder.strip(" \t\r\n,;/"))
+            if name and not remainder_details:
+                remainder_details["name"] = name
+            return {**remainder_details, "address": address}
+
     if re.search(
         r"\b(?:full name|name|customer name|company name|company|email|"
         r"phone|delivery address|address|location)\s*(?::|：|=|\bis\b)",
@@ -6620,9 +6637,9 @@ def _quote_details_from_customer_facts(
         if not value:
             continue
         if scope == "persistent_profile":
-            if key == "customer.name":
+            if key in {"customer.name", "customer.display_name"}:
                 details["name"] = value
-            elif key == "customer.email":
+            elif key in {"customer.email", "customer.primary_email"}:
                 details["email"] = value
             elif key == "customer.phone":
                 details["phone"] = value
@@ -7233,28 +7250,7 @@ def _is_explicit_individual_customer(details: Mapping[str, str]) -> bool:
     )
 
 
-def _is_specific_delivery_address(address: str | None) -> bool:
-    value = _string_value(address)
-    if not value:
-        return False
-    normalized = re.sub(r"[\W_]+", " ", value.casefold()).strip()
-    generic_addresses = {
-        "uae",
-        "u a e",
-        "united arab emirates",
-        "emirates",
-        "dubai",
-        "abu dhabi",
-        "sharjah",
-        "ajman",
-        "ras al khaimah",
-        "fujairah",
-        "umm al quwain",
-    }
-    if normalized in generic_addresses:
-        return False
-    tokens = [token for token in normalized.split() if token]
-    return len(tokens) >= 2 or bool(re.search(r"\d", value))
+_is_specific_delivery_address = is_specific_delivery_address
 
 
 def _quote_missing_required_details(
@@ -7379,7 +7375,11 @@ async def _store_extracted_quote_customer_details(
     if extracted_company and not _is_individual_detail_value(extracted_company):
         extracted_details.pop("customer_type", None)
     extracted_address = _string_value(extracted_details.get("address"))
-    if extracted_address and _looks_like_budget_address_artifact(extracted_address):
+    if extracted_address and (
+        "?" in extracted_address
+        or not re.search(r"[^\W\d_]", extracted_address)
+        or _looks_like_budget_address_artifact(extracted_address)
+    ):
         extracted_details.pop("address", None)
     existing_company = existing.get("company")
     if (

@@ -36,7 +36,7 @@ CustomerFactSource = Literal["deterministic", "fast_model"]
 MAX_EVIDENCE_CHARS = 160
 _COMPANY_PATTERN = re.compile(
     r"\b(?:company\s+name|company|account|organization|organisation)"
-    r"\s*(?:is|:|-)?\s*(?P<value>[^,.;\n]+)",
+    r"\s*(?:is|:|-)\s*(?P<value>[^,.;\n]+)",
     re.IGNORECASE,
 )
 _LABELED_NAME_PATTERN = re.compile(
@@ -53,9 +53,39 @@ _FROM_NAME_PATTERN = re.compile(
     r"^\s*(?P<value>[A-Za-z][A-Za-z .'-]{1,60})\s+from\s+",
     re.IGNORECASE,
 )
-_ADDRESS_PATTERN = re.compile(
-    r"\b(?:delivery\s+address|address|deliver\s+to|ship\s+to)"
-    r"\s*(?:is|:|-)?\s*(?P<value>[^,.;\n]+)",
+_ADDRESS_LABEL_PATTERN = re.compile(
+    r"\b(?:delivery\s+address|(?<!email\s)(?<!billing\s)address|"
+    r"delivered\s+to|deliver\s+to|delivery\s+to|with\s+delivery\s+to|"
+    r"ship\s+to|shipped\s+to|shipping\s+to|send\s+to)\b"
+    r"\s*(?:is|:|-)?\s*",
+    re.IGNORECASE,
+)
+_ADDRESS_DETAIL_BOUNDARY_PATTERN = re.compile(
+    r"(?:[,;/]|\n|\.\s+)\s*"
+    r"(?=(?:email|e-mail|phone|mobile|whatsapp|tel|full\s+name|my\s+name|"
+    r"name|customer(?:\s+name)?|company(?:\s+name)?|account|organization|"
+    r"organisation|individual|private\s+customer|corporate|budget|color|"
+    r"colour|assembly|i\s+am|i'm|we\s+are|i\s+need|we\s+need|need|want|"
+    r"please|proceed|can|could|would|will|do|does|did|what|which|where|"
+    r"when|how|is|are|was|were|may)\b|"
+    rf"{EMAIL_PATTERN.pattern}|\+\d)",
+    re.IGNORECASE,
+)
+_ADDRESS_SEGMENT_PATTERN = re.compile(r"[^,;\n/]+")
+_ADDRESS_TERM_PATTERN = re.compile(
+    r"\b(?:street|st|road|rd|avenue|ave|villa|office|building|tower|suite|"
+    r"unit|floor|apartment|apt|plot|warehouse|zone)\b",
+    re.IGNORECASE,
+)
+_ADDRESS_DISTRICT_PATTERN = re.compile(
+    r"\b(?:business\s+bay|dubai\s+marina|jlt|difc)\b",
+    re.IGNORECASE,
+)
+_DETAIL_SEGMENT_PATTERN = re.compile(
+    r"^(?:email|e-mail|phone|mobile|whatsapp|tel|full\s+name|my\s+name|"
+    r"name|customer(?:\s+name)?|company(?:\s+name)?|account|organization|"
+    r"organisation|individual|private\s+customer|corporate|budget|color|"
+    r"colour|assembly)\b",
     re.IGNORECASE,
 )
 _GENERIC_SPACED_SKU_PATTERN = re.compile(r"\b[A-Z]{1,4}\s*[- ]\s*\d{2,8}\b")
@@ -129,11 +159,28 @@ _PRODUCT_OR_REQUEST_ADDRESS_BLOCKER_PATTERN = re.compile(
     r"assembly|installation)\b",
     re.IGNORECASE,
 )
-_ADDRESS_REDACTION_PATTERN = re.compile(
-    r"\b(?:delivery\s+address|address|deliver\s+to|ship\s+to)"
-    r"\s*(?:is|:|-)?\s*(?P<value>[^,.;\n/]+)",
-    re.IGNORECASE,
-)
+_FAST_FACT_KEY_ALIASES: dict[str, tuple[CustomerFactScope, str]] = {
+    "delivery_address": ("current_order", "delivery.address"),
+    "customer.display_name": ("persistent_profile", "customer.name"),
+    "customer.primary_email": ("persistent_profile", "customer.email"),
+}
+_CANONICAL_FACT_SCOPES: dict[str, CustomerFactScope] = {
+    "customer.name": "persistent_profile",
+    "customer.email": "persistent_profile",
+    "customer.phone": "persistent_profile",
+    "customer.company": "persistent_profile",
+    "customer.language": "persistent_profile",
+    "customer.type": "current_order",
+    "delivery.address": "current_order",
+    "order.delivery_required": "current_order",
+    "order.assembly_required": "current_order",
+    "order.color_preference": "current_order",
+    "order.budget": "current_order",
+    "quote.status": "current_order",
+    "quote.objection": "current_order",
+    "past_order.query": "past_order_reference",
+    "past_order.reuse_request": "past_order_reference",
+}
 _QUOTE_ACCEPTANCE_PATTERNS = (
     re.compile(
         r"\b(?:i\s+agree|agreed|agree|accepted|approve|approved|go\s+ahead"
@@ -213,10 +260,15 @@ Extract sales-relevant customer facts from one inbound WhatsApp message.
 
 Return only structured facts matching the output schema. Keep evidence short.
 Use scopes exactly:
-- persistent_profile: stable customer name, email, phone, company, language.
-- current_order: current quote/order facts, selected items, delivery address,
-  delivery/assembly/color/budget preferences, quote status.
-- past_order_reference: questions or requests about previous orders.
+- persistent_profile: customer.name, customer.email, customer.phone,
+  customer.company, customer.language.
+- current_order: customer.type, delivery.address, order.delivery_required,
+  order.assembly_required, order.color_preference, order.budget, quote.status,
+  quote.objection.
+- past_order_reference: past_order.query, past_order.reuse_request.
+
+Use these canonical dotted keys exactly. Other legitimate sales-relevant facts
+may use a stable dotted key in the appropriate scope.
 
 Do not invent facts. Mark past-order reuse as needs_confirmation=true.
 """
@@ -318,6 +370,7 @@ async def extract_customer_facts(
     facts.extend(
         _normalize_fast_facts(
             fast_output.facts,
+            message_text=message_text,
             source_message_id=source_message_id,
         )
     )
@@ -367,6 +420,8 @@ def _extract_phone_facts(
 ) -> list[ExtractedCustomerFact]:
     facts: list[ExtractedCustomerFact] = []
     for match in PHONE_PATTERN.finditer(message_text):
+        if not is_customer_phone_detail(message_text, match):
+            continue
         raw_phone = match.group(0)
         digits = re.sub(r"\D", "", raw_phone)
         if len(digits) < 7:
@@ -383,6 +438,21 @@ def _extract_phone_facts(
             )
         )
     return facts
+
+
+def is_customer_phone_detail(text: str, match: re.Match[str]) -> bool:
+    """Return whether a broad phone-pattern match is customer contact data."""
+
+    raw_phone = match.group(0).strip()
+    if raw_phone.startswith("+"):
+        return True
+    prefix = text[max(0, match.start() - 40) : match.start()].casefold()
+    return bool(
+        re.search(
+            r"(?:phone|mobile|tel|whatsapp)\s*[:：=-]?\s*$",
+            prefix,
+        )
+    )
 
 
 def _extract_name_facts(
@@ -405,6 +475,9 @@ def _extract_name_facts(
             )
 
     for match in _LABELED_NAME_PATTERN.finditer(message_text):
+        prefix = message_text[max(0, match.start() - 24) : match.start()]
+        if re.search(r"\bcompany\s*$", prefix, re.IGNORECASE):
+            continue
         name = _clean_person_name(match.group("value"))
         if name:
             facts.append(
@@ -456,7 +529,15 @@ def _extract_company_facts(
     facts: list[ExtractedCustomerFact] = []
     for match in _COMPANY_PATTERN.finditer(message_text):
         company = _clean_value(match.group("value"))
-        if company:
+        if (
+            company
+            and "?" not in company
+            and re.search(
+                r"[^\W\d_]",
+                company,
+                re.UNICODE,
+            )
+        ):
             facts.append(
                 _fact(
                     scope="persistent_profile",
@@ -507,35 +588,20 @@ def _extract_address_facts(
     message_text: str,
     source_message_id: str | None,
 ) -> list[ExtractedCustomerFact]:
-    facts: list[ExtractedCustomerFact] = []
-    for match in _ADDRESS_PATTERN.finditer(message_text):
-        address = _clean_value(match.group("value"))
-        if address:
-            facts.append(
-                _fact(
-                    scope="current_order",
-                    key="delivery.address",
-                    value=address,
-                    confidence="high",
-                    evidence=match.group(0),
-                    source_message_id=source_message_id,
-                )
-            )
-
-    compact_address = _compact_address_candidate(message_text)
-    if compact_address:
-        facts.append(
-            _fact(
-                scope="current_order",
-                key="delivery.address",
-                value=compact_address,
-                confidence="medium",
-                evidence=compact_address,
-                source_message_id=source_message_id,
-            )
+    candidate = _delivery_address_candidate(message_text)
+    if candidate is None:
+        return []
+    address, evidence, labeled = candidate
+    return [
+        _fact(
+            scope="current_order",
+            key="delivery.address",
+            value=_clean_value(address),
+            confidence="high" if labeled else "medium",
+            evidence=evidence,
+            source_message_id=source_message_id,
         )
-
-    return facts
+    ]
 
 
 def _extract_order_item_facts(
@@ -772,11 +838,15 @@ def _compact_name_part_candidate(value: str) -> str | None:
     candidates = [segment.strip() for segment in re.split(r"[.!?]", value)]
     candidates.append(value.strip())
     for candidate in reversed(candidates):
+        if is_question_clause(candidate, len(candidate)):
+            continue
         if _GREETING_ONLY_PATTERN.fullmatch(candidate):
             continue
         if _ASSISTANT_GREETING_PATTERN.fullmatch(candidate):
             continue
         if _LABELED_NAME_PATTERN.search(candidate):
+            continue
+        if _ADDRESS_LABEL_PATTERN.search(candidate):
             continue
         name = _clean_person_name(candidate)
         if name and _looks_like_person_name(name):
@@ -784,14 +854,117 @@ def _compact_name_part_candidate(value: str) -> str | None:
     return None
 
 
-def _compact_address_candidate(message_text: str) -> str | None:
-    if _ADDRESS_PATTERN.search(message_text):
-        return None
-    for part in _detail_parts(message_text):
-        candidate = _clean_value(part)
-        if _looks_like_address(candidate):
-            return candidate
+def extract_delivery_address(text: str) -> str | None:
+    """Extract one specific delivery address without adjacent customer details."""
+
+    candidate = _delivery_address_candidate(text)
+    return candidate[0] if candidate else None
+
+
+def _delivery_address_candidate(text: str) -> tuple[str, str, bool] | None:
+    for label_match in _ADDRESS_LABEL_PATTERN.finditer(text):
+        if is_question_clause(text, label_match.start()):
+            continue
+        raw_value = _address_before_next_detail(text[label_match.end() :])
+        if not _looks_like_address(raw_value):
+            continue
+        evidence_end = label_match.end() + len(raw_value)
+        evidence = text[label_match.start() : evidence_end].strip()
+        return raw_value, evidence, True
+
+    segments = list(_ADDRESS_SEGMENT_PATTERN.finditer(text))
+    for index, segment_match in enumerate(segments):
+        segment = segment_match.group(0).strip()
+        embedded_label = _ADDRESS_LABEL_PATTERN.search(segment)
+        if embedded_label and is_question_clause(
+            text,
+            segment_match.start() + embedded_label.start(),
+        ):
+            continue
+        next_segment = (
+            segments[index + 1].group(0).strip() if index + 1 < len(segments) else None
+        )
+        if not _is_address_start_segment(segment, next_segment):
+            continue
+
+        start = (
+            segment_match.start()
+            + len(segment_match.group(0))
+            - len(segment_match.group(0).lstrip())
+        )
+        end = segment_match.end()
+        for following in segments[index + 1 :]:
+            following_value = following.group(0).strip()
+            if _is_adjacent_customer_detail(text, following, following_value):
+                break
+            end = following.end()
+
+        raw_value = text[start:end].strip(" \t\r\n,;/").rstrip(".")
+        if _looks_like_address(raw_value):
+            return raw_value, raw_value, False
     return None
+
+
+def is_question_clause(text: str, offset: int) -> bool:
+    """Return whether the sentence before ``offset`` starts as a question."""
+
+    offset = max(0, min(offset, len(text)))
+    sentence_starts = [0]
+    for boundary in ("\n", ". ", "!", "?"):
+        position = text.rfind(boundary, 0, offset)
+        if position >= 0:
+            sentence_starts.append(position + len(boundary))
+    prefix = text[max(sentence_starts) : offset].strip()
+    return bool(
+        re.match(
+            r"(?:(?:can|could|would|do|does|did|what|which|where|when|how|"
+            r"is|are|was|were)\b|(?:will|may)\s+"
+            r"(?:i|you|we|they|he|she|it|there|the|this|that|our|your|delivery)\b)",
+            prefix,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _address_before_next_detail(tail: str) -> str:
+    boundary = _ADDRESS_DETAIL_BOUNDARY_PATTERN.search(tail)
+    raw_value = tail[: boundary.start()] if boundary else tail
+    return raw_value.strip(" \t\r\n,;/").rstrip(".")
+
+
+def _is_address_start_segment(segment: str, next_segment: str | None) -> bool:
+    if not segment or "?" in segment:
+        return False
+    if _ADDRESS_DISTRICT_PATTERN.search(segment):
+        return True
+    if _ADDRESS_TERM_PATTERN.search(segment) and re.search(r"\d", segment):
+        return True
+    if re.search(r"\b\d+[A-Za-z]?\s+[A-Za-z]", segment):
+        return True
+    return bool(
+        re.fullmatch(r"\d+[A-Za-z]?", segment)
+        and next_segment
+        and _ADDRESS_TERM_PATTERN.search(next_segment)
+    )
+
+
+def _is_adjacent_customer_detail(
+    text: str,
+    match: re.Match[str],
+    value: str,
+) -> bool:
+    if not value:
+        return False
+    if EMAIL_PATTERN.search(value) or _DETAIL_SEGMENT_PATTERN.search(value):
+        return True
+    return any(
+        is_customer_phone_detail(text, phone_match)
+        for phone_match in PHONE_PATTERN.finditer(
+            text,
+            match.start(),
+            match.end(),
+        )
+    )
 
 
 def _extract_compact_slash_quote_facts(
@@ -877,6 +1050,10 @@ def _clean_person_name(value: str) -> str | None:
 
 
 def _looks_like_address(value: str) -> bool:
+    if not value or "?" in value:
+        return False
+    if is_question_clause(value, len(value)):
+        return False
     lowered = value.lower()
     if EMAIL_PATTERN.search(value) or PHONE_PATTERN.search(value):
         return False
@@ -885,13 +1062,49 @@ def _looks_like_address(value: str) -> bool:
     if _PRODUCT_OR_REQUEST_ADDRESS_BLOCKER_PATTERN.search(value):
         return False
     normalized = re.sub(r"[\W_]+", " ", lowered).strip()
-    if normalized in {"dubai", "uae", "united arab emirates"}:
+    if normalized in {
+        "abu dhabi",
+        "ajman",
+        "dubai",
+        "emirates",
+        "sharjah",
+        "uae",
+        "united arab emirates",
+    }:
         return False
     return bool(
         re.search(r"\b\d+[A-Za-z]?\s+[A-Za-z]", value)
-        or "dubai marina" in lowered
-        or "business bay" in lowered
+        or (_ADDRESS_TERM_PATTERN.search(value) and re.search(r"\d", value))
+        or _ADDRESS_DISTRICT_PATTERN.search(value)
     )
+
+
+def is_specific_delivery_address(address: str | None) -> bool:
+    """Return whether an address is more specific than a city or country."""
+
+    value = address.strip() if isinstance(address, str) else ""
+    if not value:
+        return False
+    if "?" in value or not re.search(r"[^\W\d_]", value):
+        return False
+    normalized = re.sub(r"[\W_]+", " ", value.casefold()).strip()
+    generic_addresses = {
+        "uae",
+        "u a e",
+        "united arab emirates",
+        "emirates",
+        "dubai",
+        "abu dhabi",
+        "sharjah",
+        "ajman",
+        "ras al khaimah",
+        "fujairah",
+        "umm al quwain",
+    }
+    if normalized in generic_addresses:
+        return False
+    tokens = [token for token in normalized.split() if token]
+    return len(tokens) >= 2 or bool(re.search(r"\d", value))
 
 
 def _clean_value(value: str) -> str:
@@ -956,26 +1169,60 @@ def _should_call_default_fast_model(
 def _normalize_fast_facts(
     facts: list[ExtractedCustomerFact],
     *,
+    message_text: str,
     source_message_id: str | None,
 ) -> list[ExtractedCustomerFact]:
     normalized: list[ExtractedCustomerFact] = []
     for fact in facts:
-        if fact.scope == "current_order" and fact.key in {"order.item", "order.items"}:
+        raw_key = fact.key.strip()
+        alias = _FAST_FACT_KEY_ALIASES.get(raw_key.casefold())
+        key = alias[1] if alias else raw_key
+        scope = alias[0] if alias else _CANONICAL_FACT_SCOPES.get(key, fact.scope)
+        if scope == "current_order" and key in {"order.item", "order.items"}:
             continue
+
+        value = fact.value
+        evidence = _bound_text(fact.evidence) or key
+        if key == "delivery.address":
+            grounded_address = extract_delivery_address(message_text)
+            if grounded_address is None:
+                if not isinstance(value, str) or not _source_contains_value(
+                    message_text,
+                    value,
+                ):
+                    continue
+                grounded_address = value
+            if not _looks_like_address(grounded_address):
+                continue
+            value = _clean_value(grounded_address)
+            evidence = _bound_text(grounded_address) or key
+        elif alias and key in {"customer.name", "customer.email"}:
+            if not isinstance(value, str) or not _source_contains_value(
+                message_text,
+                value,
+            ):
+                continue
+
         normalized.append(
             ExtractedCustomerFact(
-                scope=fact.scope,
-                key=fact.key,
-                value=fact.value,
+                scope=scope,
+                key=key,
+                value=value,
                 confidence=fact.confidence,
                 source="fast_model",
-                evidence=_bound_text(fact.evidence) or fact.key,
+                evidence=evidence,
                 source_message_id=fact.source_message_id or source_message_id,
                 needs_confirmation=fact.needs_confirmation,
                 conflicts_with=fact.conflicts_with,
             )
         )
     return normalized
+
+
+def _source_contains_value(source: str, value: str) -> bool:
+    normalized_source = re.sub(r"\s+", " ", source).casefold()
+    normalized_value = re.sub(r"\s+", " ", value).strip().casefold()
+    return bool(normalized_value and normalized_value in normalized_source)
 
 
 def _sanitize_fact_for_fast_model(fact: ExtractedCustomerFact) -> ExtractedCustomerFact:
@@ -1008,21 +1255,16 @@ def _redact_fast_model_text(text: str) -> str:
     redacted = EMAIL_PATTERN.sub("[REDACTED_EMAIL]", text)
 
     def redact_phone(match: re.Match[str]) -> str:
-        raw = match.group(0)
-        prefix = redacted[max(0, match.start() - 24) : match.start()].casefold()
-        if raw.strip().startswith("+") or re.search(
-            r"\b(?:phone|mobile|whatsapp|tel)\b\s*[:：=-]?\s*$",
-            prefix,
-        ):
+        if is_customer_phone_detail(redacted, match):
             return "[REDACTED_PHONE]"
-        return raw
+        return match.group(0)
 
     redacted = PHONE_PATTERN.sub(redact_phone, redacted)
 
-    def redact_address(match: re.Match[str]) -> str:
-        return match.group(0).replace(match.group("value"), "[REDACTED_ADDRESS]")
-
-    return _ADDRESS_REDACTION_PATTERN.sub(redact_address, redacted)
+    address = extract_delivery_address(redacted)
+    if address:
+        redacted = redacted.replace(address, "[REDACTED_ADDRESS]", 1)
+    return redacted
 
 
 def _dedupe_facts(
