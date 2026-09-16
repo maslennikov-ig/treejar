@@ -1,28 +1,27 @@
 # Orchestrator Handoff
 
-Updated: 2026-09-09
-Current branch: `main`
+Updated: 2026-09-16
+Current branch: `codex/tj-0pht-telegram-reset`
 Current stage id: `tj-stwf-test-only-restore`
-Status: Customer-detail fix `tj-d27h` deployed and verified with owner approval.
+Status: Owner-authorized Telegram reset hotfix and target-number reset verified.
 Production testing remains limited to WhatsApp ending0665.
 
 ## Current truth
 
-- Release `e071bb683e1fcc876efd40ca16b28ed6d2486241` is live.
-  Code fix: `9d2fb662aa91b9c02fc1672ee3677bd7d7be33a4`.
-- GitHub Actions run `34333335661` passed tests and deployed the application.
-- App `154bc9721adf` and worker `f4ab6dd8b4ef` run the same image
-  `sha256:158974224c54e390b344967cc13f8afc74fd05eb878dfdcabf631f30e38e0be2`,
-  with zero restarts and no OOM event at verification.
-- Worker startup confirmed `process_incoming_batch` and test-channel restore mode.
-- Public health reports the exact release with healthy PostgreSQL and Redis.
-- `WAZZUP_CHANNEL_ID` and `WAZZUP_OUTBOUND_ALLOWED_CHANNEL_ID` both resolve
-  only to test0665. `bot_enabled=true`, `TEST_CHANNEL_RESTORE_MODE=true`.
-- Production model remains `z-ai/glm-5.3-flash`; the environment file is unchanged.
-- PostgreSQL `43ccb64efb9d`, Redis `1b9c9a5c99d0` and nginx `0cdbce63c5db`
-  were preserved with zero restarts and no OOM event.
-- Historical messages under `hold:tj-stwf:20260901T104616Z:` were untouched;
-  do not replay, delete or inspect them. No current queue-depth claim is made.
+- Owner-authorized reset repair `tj-0pht` is live as code release
+  `82299519ac26eee8bcfbfaf2e69a47ec2af98747`, image `noor-reset:tj-0pht`.
+- Exact source overlay on the prior image; app and worker recreated only.
+  Health 200, Redis and database healthy. Environment is unchanged.
+- TEST_CHANNEL_RESTORE_MODE remains true. Authenticated admin Telegram `/reset`
+  plus confirmation/cancellation now work; unrelated Telegram updates are ignored.
+- Test WhatsApp ending0665 remains the only allowed channel. Cron and embedding
+  warmup remain off. Held messages were not inspected or changed.
+- Owner-requested reset completed at 2026-09-16T17:18:44Z. New conversation
+  `58f25771-f608-48e1-9586-6e22c503eec3`: greeting, no name, zero messages.
+  Old conversation/profile archived; all 38 messages retained.
+- Focused acceptance: 32 passed, Ruff/Mypy passed. Production authentication
+  smoke passed and Telegram pending updates fell from 1 to 0.
+- Source, risk, backup and recovery: `docs/reports/2026-09-16-telegram-reset-restore.md`.
 
 ## Completed repair: tj-d27h
 
@@ -54,10 +53,13 @@ Production testing remains limited to WhatsApp ending0665.
 ## Operating boundary
 
 The worker remains running for testing on test0665. Restore mode disables
-Telegram, cron jobs, embedding warmup and every non-test channel. Broader
+non-reset Telegram actions, cron jobs, embedding warmup and every non-test channel. Broader
 operation requires a separately authorized release.
 
 ## Explicit defers
+
+- Integrate `codex/tj-0pht-telegram-reset` before the next standard deployment.
+  Main CI uses app-only deployment and stops worker; preserve test continuity.
 
 - `tj-bgwu`: existing corpus isolation test assumes a normal `.git` directory;
   linked-worktree acceptance uses an isolated normal clone until it is fixed.
