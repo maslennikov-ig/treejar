@@ -151,18 +151,32 @@ async def telegram_webhook(
     x_telegram_bot_api_secret_token: str | None = Header(None),
 ) -> dict[str, str]:
     """Handle incoming Telegram updates (callback queries and messages)."""
-    if settings.test_channel_restore_mode:
-        raise HTTPException(
-            status_code=503,
-            detail="Telegram disabled during restore mode",
-        )
-
     # Validate webhook secret (prevents forged requests)
     expected = expected_telegram_webhook_secret()
     if x_telegram_bot_api_secret_token != expected:
         raise HTTPException(status_code=403, detail="Invalid webhook secret")
 
     data: dict[str, Any] = await request.json()
+
+    if settings.test_channel_restore_mode:
+        # Authenticate first; only reset administration is available in restore mode.
+        # Acknowledge other updates so Telegram does not retry them indefinitely.
+        callback = data.get("callback_query")
+        if isinstance(callback, dict):
+            action = str(callback.get("data") or "").split(":", 1)[0]
+            chat_id = (callback.get("message") or {}).get("chat", {}).get("id")
+            if action in (
+                "reset_confirm",
+                "reset_cancel",
+            ) and _is_configured_admin_chat(chat_id):
+                await _handle_callback_query(callback)
+                return {"status": "ok"}
+        message = data.get("message")
+        if isinstance(message, dict) and await _handle_reset_command_if_present(
+            message
+        ):
+            return {"status": "ok"}
+        return {"status": "ignored"}
 
     # Handle callback_query (button press from escalation alert)
     callback_query = data.get("callback_query")

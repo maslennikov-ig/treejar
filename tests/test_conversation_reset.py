@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.models.conversation import Conversation
+from src.models.customer_memory import CustomerProfile
 from src.models.escalation import Escalation
 
 
@@ -95,11 +96,15 @@ async def test_reset_archives_conversations_and_creates_blank_active_conversatio
         reason="manager",
         status="in_progress",
     )
+    profile = CustomerProfile(
+        id=uuid.uuid4(), canonical_phone="15550001111", display_name="Old Name"
+    )
     db = AsyncMock()
     db.add = MagicMock()
     db.execute.side_effect = [
         _ScalarResult([latest, older]),
         _ScalarResult([pending, in_progress]),
+        _ScalarResult([profile]),
     ]
 
     result = await execute_conversation_reset(
@@ -108,6 +113,9 @@ async def test_reset_archives_conversations_and_creates_blank_active_conversatio
         requested_by_telegram_user_id=12345,
     )
 
+    assert profile.canonical_phone.startswith("15550001111#reset-")
+    assert profile.display_name == "Old Name"
+    assert profile.metadata_["original_phone"] == "15550001111"
     assert result.archived_count == 2
     assert result.new_conversation.phone == "+15550001111"
     assert result.new_conversation.sales_stage == "greeting"
