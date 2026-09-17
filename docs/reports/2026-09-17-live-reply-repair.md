@@ -2,7 +2,9 @@
 
 Tasks: tj-15bc (runtime failures), tj-a1bi (main delivery).
 Owner explicitly authorized Push, Merge, Deploy on 2026-09-17.
-Status: local acceptance complete, authorized main deployment pending.
+Status: merged into main and deployed.
+Release: `4abe8355d6dbb074d1d8e66e963457e054a481c2`.
+CI: https://github.com/maslennikov-ig/treejar/actions/runs/35223521584 (success).
 
 ## Verified causes
 
@@ -62,3 +64,20 @@ therefore leaves CI unchanged and makes the existing --app-only script invocatio
 preserve verified running test-only workers automatically. The same 11 deployment
 tests pass for that exact invocation. No permission expansion was requested.
 Runtime src/ is byte-identical to the fully checked implementation branch.
+
+## Final live evidence
+
+Deployment completed 2026-09-17 at approximately 12:55 UTC. CI passed
+4,059 tests, skipped 27; lint and type-check succeeded. Standard deployment
+completed with app and worker running, zero restarts, public health200 with exact
+release SHA and healthy database/Redis. All14changed source-file hashes match
+accepted local code in BOTH containers. Environment fingerprint unchanged.
+Worker registers only process_incoming_batch; restore mode remains true, cron
+and embedding warmup disabled. Telegram reset source hashes also match.
+
+App image: `sha256:700bb57c11522a1fa8ecac920dde9255d8aa0a3d4f3a6455964bbb16d9bbe27b`.
+Worker image: `sha256:0f10dc981d7c72de23436275a34f9f93b891e9730e7fc5e5e1d0636ef38a1e5f`.
+The standard build creates separate service image identities with matching source.
+No synthetic outbound messages, additional paid probes, DB repairs or resets.
+The previous isolated probe's limitations remain documented in the prior report;
+this release adds actual local multi-request agent regression evidence.
