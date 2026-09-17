@@ -56,6 +56,16 @@ containers and a fresh message to the approved channel. For the current test-onl
 incident, follow the hold and recovery conditions in
 [the handoff](.codex/handoff.md) before starting services.
 
+## Customer intent and tools
+
+The main sales model reads the customer message and history and chooses the
+next action. Keyword classifiers do not preempt it with service, quotation,
+selection or handoff responses. `record_customer_intent` records evidence-backed
+consent and customer details; quotation creation and manager notification are
+separate tool calls. Search constraints are explicit model tool parameters.
+Code retains consent, required-data, catalog-grounding and outbound safeguards.
+See [the intent cutover report](docs/reports/2026-09-17-model-owned-intent.md).
+
 ## Development
 
 ```bash

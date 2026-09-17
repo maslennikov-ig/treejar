@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime
 import logging
-import re
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -45,29 +44,6 @@ MAX_READ_STATUS_SCAN = 500
 WAZZUP_PROVIDER = "wazzup"
 
 logger = logging.getLogger(__name__)
-
-_AUTOREPLY_MARKERS = (
-    "auto-reply",
-    "autoreply",
-    "automatic reply",
-    "out of office",
-    "out of the office",
-    "away from office",
-    "away from the office",
-    "annual leave",
-    "vacation",
-)
-_REJECTION_MARKERS = (
-    "not interested",
-    "no longer interested",
-    "do not need",
-    "don't need",
-    "we don't need",
-    "decline",
-    "reject",
-    "cancel this",
-    "cancel the proposal",
-)
 
 
 @dataclass(frozen=True)
@@ -638,56 +614,6 @@ def next_due_followup_step(
     return None
 
 
-def _normalized_text(text: str) -> str:
-    return " ".join(text.casefold().split())
-
-
-def _contains_marker(text: str, markers: tuple[str, ...]) -> bool:
-    return any(marker in text for marker in markers)
-
-
-def _is_autoreply(text: str) -> bool:
-    return _contains_marker(text, _AUTOREPLY_MARKERS)
-
-
-def _is_rejection(text: str) -> bool:
-    return _contains_marker(text, _REJECTION_MARKERS)
-
-
-def _return_date_from_autoreply(text: str) -> datetime.date | None:
-    iso_match = re.search(r"\b(20\d{2})-(\d{1,2})-(\d{1,2})\b", text)
-    if iso_match:
-        year, month, day = (int(part) for part in iso_match.groups())
-        try:
-            return datetime.date(year, month, day)
-        except ValueError:
-            return None
-
-    slash_match = re.search(r"\b(\d{1,2})[./](\d{1,2})[./](20\d{2})\b", text)
-    if slash_match:
-        day, month, year = (int(part) for part in slash_match.groups())
-        try:
-            return datetime.date(year, month, day)
-        except ValueError:
-            return None
-
-    return None
-
-
-def _pause_until_return_date(
-    return_date: datetime.date,
-    *,
-    timezone_name: str,
-) -> datetime.datetime:
-    timezone = _business_timezone(timezone_name)
-    local_midnight_next_day = datetime.datetime.combine(
-        return_date + datetime.timedelta(days=1),
-        datetime.time.min,
-        tzinfo=timezone,
-    )
-    return local_midnight_next_day.astimezone(datetime.UTC)
-
-
 def _stop_chain(
     state: dict[str, Any],
     *,
@@ -715,42 +641,9 @@ def record_customer_reply(
         )
 
     received_at_utc = _as_aware_utc(received_at)
-    normalized = _normalized_text(text)
+    normalized = text.strip()
 
-    if _is_rejection(normalized):
-        _stop_chain(state, reason="explicit_rejection", received_at=received_at_utc)
-        _mark_explicit_rejection(
-            conversation,
-            state,
-            decided_at=received_at_utc,
-            customer_text=text,
-        )
-        return ProposalFollowupReplyDecision(
-            action="stop",
-            reason="explicit_rejection",
-            recommended_deal_status="rejected",
-        )
-
-    if _is_autoreply(normalized):
-        return_date = _return_date_from_autoreply(normalized)
-        pause_until = (
-            _pause_until_return_date(return_date, timezone_name=timezone_name)
-            if return_date is not None
-            else received_at_utc + datetime.timedelta(days=3)
-        )
-        state["pause_until"] = _iso_utc(pause_until)
-        state["pause_reason"] = (
-            "autoreply_with_date" if return_date is not None else "autoreply"
-        )
-        state["last_customer_reply_at"] = _iso_utc(received_at_utc)
-        _set_state(conversation, state)
-        return ProposalFollowupReplyDecision(
-            action="pause",
-            reason=state["pause_reason"],
-            pause_until=pause_until,
-        )
-
-    if normalized:
+    if normalized and not state.get("chain_stopped"):
         _stop_chain(
             state,
             reason="customer_reply",
@@ -764,7 +657,80 @@ def record_customer_reply(
 
     state["last_customer_reply_at"] = _iso_utc(received_at_utc)
     _set_state(conversation, state)
-    return ProposalFollowupReplyDecision(action="ignore", reason="empty_reply")
+    return ProposalFollowupReplyDecision(
+        action="ignore", reason="already_stopped" if normalized else "empty_reply"
+    )
+
+
+def record_model_proposal_response(
+    conversation: Conversation,
+    *,
+    decision: Literal["rejected", "pause"],
+    evidence: str,
+    decided_at: datetime.datetime,
+    pause_until: datetime.datetime | None = None,
+    source_message_id: str | None = None,
+) -> ProposalFollowupReplyDecision:
+    """Apply an explicit model decision; never interpret the evidence text."""
+    metadata = _metadata(conversation)
+    state = _state(conversation)
+    saved_decision = metadata.get("quotation_decision")
+    status = (
+        saved_decision.get("status") if isinstance(saved_decision, Mapping) else None
+    ) or metadata.get("quotation_decision_status")
+    if (
+        state is None
+        or not state.get("sent_at")
+        or not state.get("kp_message_id")
+        or status not in {None, "", "pending"}
+    ):
+        raise ValueError("No sent quotation is awaiting a decision.")
+    if state.get("chain_stopped") and state.get("stop_reason") != "customer_reply":
+        raise ValueError("A previously stopped proposal cannot be resumed or changed.")
+    now = _as_aware_utc(decided_at)
+    if decision == "pause":
+        if pause_until is not None and pause_until.tzinfo is None:
+            raise ValueError("pause_until must include a timezone.")
+        until = (
+            _as_aware_utc(pause_until)
+            if pause_until is not None
+            else now + datetime.timedelta(days=3)
+        )
+        if until <= now:
+            raise ValueError("pause_until must be in the future.")
+        state["chain_stopped"] = False
+        state.pop("stop_reason", None)
+        state.pop("stopped_at", None)
+        state["pause_until"] = _iso_utc(until)
+        state["pause_reason"] = "model_customer_pause"
+        state["last_customer_reply_at"] = _iso_utc(now)
+        _set_state(conversation, state)
+        result = ProposalFollowupReplyDecision(
+            action="pause", reason="model_customer_pause", pause_until=until
+        )
+    elif decision == "rejected":
+        if pause_until is not None:
+            raise ValueError("pause_until applies only to a pause decision.")
+        _stop_chain(state, reason="explicit_rejection", received_at=now)
+        _mark_explicit_rejection(
+            conversation, state, decided_at=now, customer_text=evidence
+        )
+        result = ProposalFollowupReplyDecision(
+            action="stop",
+            reason="explicit_rejection",
+            recommended_deal_status="rejected",
+        )
+    else:
+        raise ValueError("Unsupported proposal decision.")
+    metadata = _metadata(conversation)
+    metadata["model_proposal_response"] = {
+        "decision": decision,
+        "evidence": evidence[:2000],
+        "source_message_id": source_message_id,
+        "decided_at": _iso_utc(now),
+    }
+    conversation.metadata_ = metadata
+    return result
 
 
 def build_followup_send_plan(

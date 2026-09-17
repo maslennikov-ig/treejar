@@ -59,6 +59,109 @@ class CustomerFactsContext:
         return "\n".join(rendered)
 
 
+async def load_existing_customer_context(
+    db: Any, *, conversation: Conversation, max_past_orders: int
+) -> str:
+    """Read historical facts without interpreting or persisting the inbound turn."""
+    profile = await _fetch_profile_by_phone(db, conversation.phone.strip())
+    if profile is None:
+        return ""
+    order = await _fetch_active_order(db, profile=profile, conversation=conversation)
+    if order is not None:
+        context = await build_customer_facts_context(
+            db,
+            profile=profile,
+            active_order=order,
+            max_past_orders=max_past_orders,
+        )
+    else:
+        profile_facts = await _fetch_context_profile_facts(db, profile=profile)
+        past_orders = await _fetch_past_orders(
+            db, profile=profile, limit=max_past_orders
+        )
+        context = CustomerFactsContext(
+            profile_lines=_profile_lines(profile, profile_facts),
+            current_order_lines=[],
+            past_order_lines=[_past_order_line(order) for order in past_orders],
+            missing_quote_fields=[],
+        )
+    return context.render()
+
+
+async def persist_model_customer_details(
+    db: Any,
+    *,
+    conversation: Conversation,
+    details: dict[str, str],
+    evidence: dict[str, str],
+    source_message_id: str | None,
+    accept_sent_quotation: bool = False,
+    reject_sent_quotation: bool = False,
+) -> None:
+    """Persist evidence-validated model facts without interpreting customer text.
+
+    Called only after the tool validates the current-message evidence and actual
+    quotation state. Supersede previous values, preserving their audit history.
+    """
+    if not details and not accept_sent_quotation and not reject_sent_quotation:
+        return
+    profile = await get_or_create_customer_profile(
+        db,
+        phone=conversation.phone,
+        conversation=conversation,
+    )
+    order = await get_or_create_active_order(
+        db, profile=profile, conversation=conversation
+    )
+    fields = {
+        "name": ("persistent_profile", "customer.name"),
+        "company": ("persistent_profile", "customer.company"),
+        "email": ("persistent_profile", "customer.email"),
+        "phone": ("persistent_profile", "customer.phone"),
+        "customer_type": ("current_order", "customer.type"),
+        "address": ("current_order", "delivery.address"),
+    }
+    for field_name, value in details.items():
+        scope, key = fields[field_name]
+        scoped_order = order if scope == "current_order" else None
+        existing = await _fetch_accepted_fact(
+            db,
+            profile=profile,
+            order=scoped_order,
+            scope=scope,
+            key=key,
+        )
+        if existing is not None:
+            if existing.value == value:
+                continue
+            existing.status = "superseded"
+            existing.superseded_at = _now()
+        fact = CustomerFact(
+            profile=profile,
+            customer_profile_id=profile.id,
+            order_memory=scoped_order,
+            order_memory_id=scoped_order.id if scoped_order else None,
+            conversation_id=conversation.id,
+            scope=scope,
+            key=key,
+            value=value,
+            confidence="high",
+            status="accepted",
+            source="main_model",
+            source_message_id=source_message_id,
+            source_excerpt=evidence[field_name],
+        )
+        db.add(fact)
+        _apply_profile_projection(profile, fact)
+    if accept_sent_quotation or reject_sent_quotation:
+        await close_order(
+            db,
+            order=order,
+            status="accepted" if accept_sent_quotation else "closed_refused",
+        )
+    await db.flush()
+
+
 async def get_or_create_customer_profile(
     db: Any,
     *,

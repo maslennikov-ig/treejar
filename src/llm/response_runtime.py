@@ -59,16 +59,18 @@ async def _customer_facts_write_scope(db: Any) -> AsyncIterator[None]:
         return
 
     transaction = begin_nested()
+    # SQLAlchemy AsyncSessionTransaction is both awaitable and an async context
+    # manager. Enter it before considering coroutine-only test doubles.
+    if hasattr(transaction, "__aenter__") and hasattr(transaction, "__aexit__"):
+        async with transaction:
+            yield
+        return
+
     if inspect.isawaitable(transaction):
         close = getattr(transaction, "close", None)
         if callable(close):
             close()
         yield
-        return
-
-    if hasattr(transaction, "__aenter__") and hasattr(transaction, "__aexit__"):
-        async with transaction:
-            yield
         return
 
     yield

@@ -19,7 +19,7 @@ Stable navigation map for this repository. Keep operational state in
 - `README.md` - product/runtime overview and developer quick start.
 - `src/main.py` - FastAPI application wiring.
 - `src/api/v1/router.py` and `src/api/telegram_webhook.py` - public API and Telegram callback surfaces.
-- `src/llm/engine.py`, `src/llm/message_processor.py`, `src/llm/catalog_planning.py`, `src/llm/order_quote_routes.py`, `src/llm/response_policy.py`, and `src/llm/response_runtime.py` - sales-agent tools, message orchestration, catalog planning/materialization, deterministic order/quote routing, the single customer-text policy, and response transport.
+- `src/llm/engine.py`, `src/llm/message_processor.py`, `src/llm/catalog_planning.py`, `src/llm/order_quote_routes.py`, `src/llm/response_policy.py`, and `src/llm/response_runtime.py` - sales-agent tools, message orchestration, catalog evidence/materialization, legacy order adapters (not called by incoming chat), the single customer-text policy, and response transport.
 - `src/dialogue/` - LangGraph dialogue-state kernel, side-effect-free typed order-state runtime, slot state, trace reducer, expected-answer frame matcher, and catalog reference parsing.
 - `src/services/customer_memory.py` and `src/models/customer_memory.py` - durable customer profile facts, current-order memory, past-order history, and compact prompt context.
 - `scripts/orchestration/run_process_verification.sh` - process-contract verification entrypoint.
@@ -29,8 +29,8 @@ Stable navigation map for this repository. Keep operational state in
 - `src/api/` - FastAPI routes, webhook handlers, admin/dashboard API boundaries.
 - `src/core/` - settings, database, Redis, security, cache, discount helpers.
 - `src/models/` and `src/schemas/` - SQLAlchemy persistence and Pydantic contracts.
-- `src/llm/` - PydanticAI agent, split message orchestration, catalog planning, one response-policy chain, response transport, deterministic order/quote routing, safety, verified answers, and order handoff.
-- `src/dialogue/` - explicit dialogue state kernel plus typed product/quantity extraction contract; rollout modes are dialogue-kernel owned, while order runtime feeds engine/facts/memory adapters.
+- `src/llm/` - PydanticAI agent, split message orchestration, model-owned customer intent and tool calls, catalog evidence, one response-policy chain, response transport and safety. Legacy semantic routers are not called before the model.
+- `src/dialogue/` - explicit dialogue state kernel plus typed product/quantity extraction contract; the incoming chat path reads persisted state as context and leaves semantic decisions to the main model.
 - `src/rag/` - knowledge/product search and embedding pipeline.
 - `src/integrations/` - Wazzup messaging, Zoho CRM, Zoho Inventory, Telegram notification clients.
 - `src/services/` - business services for chat, durable inbound batching,
@@ -89,3 +89,5 @@ Stable navigation map for this repository. Keep operational state in
 - Do not deploy, mutate production config, or send live WhatsApp/media/voice tests without explicit approval.
 - Update this index when stable entrypoints, routes, subsystem ownership, integrations, or verification commands change.
 - Do not add stage history, current blockers, deployment logs, or temporary task notes to this file.
+
+- `docs/reports/2026-09-17-model-owned-intent.md` — model-owned intent cutover, audit map and local acceptance.

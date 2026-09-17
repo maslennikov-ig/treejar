@@ -85,7 +85,9 @@ def format_permitted_asks_prompt(permitted: frozenset[AskKind]) -> str:
         lines.append(f"- {ask.value}: {status}")
     lines.append(
         "Ask only types marked allowed. Phrase an allowed ask naturally; "
-        "do not add a forbidden ask."
+        "do not add a forbidden ask. This is the initial state: if "
+        "record_customer_intent records granted quotation consent during this "
+        "turn, you may then ask for missing quotation details."
     )
     return "\n".join(lines)
 

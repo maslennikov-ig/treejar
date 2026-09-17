@@ -1,10 +1,23 @@
 # Orchestrator Handoff
 
-Updated: 2026-09-16
-Current branch: `codex/tj-0pht-telegram-reset`
+Updated: 2026-09-17
+Current branch: `codex/model-owned-intent` (local worktree)
 Current stage id: `tj-stwf-test-only-restore`
-Status: Owner-authorized Telegram reset hotfix and target-number reset verified.
+Status: `tj-r703` implemented and verified locally; not deployed.
 Production testing remains limited to WhatsApp ending0665.
+
+## Local delivery: tj-r703
+
+- Main model owns customer intent, search constraints, consent and proposal
+  decisions. Removed pre-model semantic routes and followup keyword rejection.
+- Source remains on `codex/model-owned-intent` in
+  `/home/me/code/treejar-model-intent`, based on `377a99a` (includes reset hotfix).
+- Acceptance: 1,128 affected tests passed; Ruff check/format and Mypy passed.
+  Controlled offline model/tool verification, not fresh live-model acceptance.
+- Audit, preserved safety boundaries and rollback:
+  `docs/reports/2026-09-17-model-owned-intent.md`.
+- No new orchestration stage was created; the stage ID below records the last
+  operational stage. Deployment and live messages require owner authorization.
 
 ## Current truth
 
@@ -72,7 +85,8 @@ operation requires a separately authorized release.
 ## Next recommended
 
 Next stage id: `none` (accepted stage is complete)
-Recommended action: resume tester-owned testing on test0665.
+Recommended action: review local tj-r703 delivery; obtain owner authority
+before deployment, preserving the existing test0665-only boundary.
 
 ## Starter prompt for next orchestrator
 
@@ -80,5 +94,5 @@ Use $orchestrator-stage only for a newly authorized change. Preserve the
 test0665-only boundary and held-message namespace. Obtain fresh authority
 before another deploy or broader channel activation.
 
-docs-reviewed: updated - release, repair, verification and recovery recorded.
+docs-reviewed: updated - model-owned intent, local acceptance and live boundary recorded.
 graph-reviewed: no-change-needed - no graph is available in this worktree.
