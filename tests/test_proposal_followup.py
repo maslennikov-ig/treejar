@@ -15,6 +15,7 @@ from src.services.proposal_followup import (
     process_due_proposal_followup,
     record_customer_reply,
     record_followup_step_sent,
+    record_model_proposal_response,
     record_proposal_read,
     record_proposal_sent,
 )
@@ -273,71 +274,119 @@ def test_short_customer_reply_stops_chain() -> None:
     assert state["stop_reason"] == "customer_reply"
 
 
-def test_explicit_rejection_stops_chain_and_recommends_rejected_status() -> None:
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Not interested in assembly; I approve the quotation.",
+        "Our automatic reply text is wrong; please send the chairs.",
+        "Thanks, but we are not interested anymore.",
+    ],
+)
+def test_inbound_text_never_decides_rejection_or_pause(text: str) -> None:
     conv = _conversation()
     record_proposal_sent(
-        conv,
-        sent_at=_dt("2026-05-04T08:00:00Z"),
-        kp_message_id="kp-msg-1",
+        conv, sent_at=_dt("2026-05-04T08:00:00Z"), kp_message_id="kp-msg-1"
     )
-
     decision = record_customer_reply(
-        conv,
-        text="Thanks, but we are not interested anymore.",
-        received_at=_dt("2026-05-04T12:00:00Z"),
+        conv, text=text, received_at=_dt("2026-05-04T12:00:00Z")
     )
+    assert decision.reason == "customer_reply"
+    assert conv.metadata_["quotation_decision_status"] == "pending"
+    assert _proposal_state(conv)["pause_until"] is None
 
-    state = _proposal_state(conv)
-    assert decision.action == "stop"
+
+def test_model_explicit_rejection_stops_chain() -> None:
+    conv = _conversation()
+    record_proposal_sent(
+        conv, sent_at=_dt("2026-05-04T08:00:00Z"), kp_message_id="kp-msg-1"
+    )
+    decision = record_model_proposal_response(
+        conv,
+        decision="rejected",
+        evidence="We decline",
+        decided_at=_dt("2026-05-04T12:00:00Z"),
+        source_message_id="inbound-1",
+    )
     assert decision.recommended_deal_status == "rejected"
-    assert state["chain_stopped"] is True
-    assert state["stop_reason"] == "explicit_rejection"
     assert conv.metadata_["quotation_decision_status"] == "rejected"
-    assert conv.metadata_["quotation_decision"]["reason"] == "explicit_rejection"
-    assert conv.metadata_["quotation_decision"]["active"] is False
     assert conv.metadata_["zoho_sale_order_active"] is False
+    assert conv.metadata_["model_proposal_response"]["source_message_id"] == "inbound-1"
 
 
-def test_autoreply_with_date_pauses_until_next_day_without_stopping_chain() -> None:
+@pytest.mark.parametrize(
+    "until,expected",
+    [
+        (None, "2026-05-07T12:00:00Z"),
+        (_dt("2026-05-20T20:00:00Z"), "2026-05-20T20:00:00Z"),
+    ],
+)
+def test_model_pause_undoes_only_neutral_reply_stop(
+    until: datetime.datetime | None, expected: str
+) -> None:
     conv = _conversation()
     record_proposal_sent(
-        conv,
-        sent_at=_dt("2026-05-04T08:00:00Z"),
-        kp_message_id="kp-msg-1",
+        conv, sent_at=_dt("2026-05-04T08:00:00Z"), kp_message_id="kp-msg-1"
     )
-
-    decision = record_customer_reply(
-        conv,
-        text="Automatic reply: I am out of office until 2026-05-20.",
-        received_at=_dt("2026-05-04T12:00:00Z"),
+    record_customer_reply(
+        conv, text="Please wait", received_at=_dt("2026-05-04T12:00:00Z")
     )
+    decision = record_model_proposal_response(
+        conv,
+        decision="pause",
+        evidence="Please wait",
+        decided_at=_dt("2026-05-04T12:00:00Z"),
+        pause_until=until,
+    )
+    assert decision.pause_until == _dt(expected)
+    assert _proposal_state(conv)["chain_stopped"] is False
+    assert conv.metadata_["quotation_decision_status"] == "pending"
 
-    state = _proposal_state(conv)
-    assert decision.action == "pause"
-    assert decision.pause_until == _dt("2026-05-20T20:00:00Z")
-    assert state["pause_until"] == "2026-05-20T20:00:00+00:00"
-    assert state["chain_stopped"] is False
 
-
-def test_autoreply_without_date_pauses_for_three_days() -> None:
+@pytest.mark.parametrize(
+    "stop_reason", ["explicit_rejection", "human_handoff", "quotation_accepted"]
+)
+def test_inbound_reply_and_model_pause_preserve_prior_terminal_stop(
+    stop_reason: str,
+) -> None:
     conv = _conversation()
     record_proposal_sent(
-        conv,
-        sent_at=_dt("2026-05-04T08:00:00Z"),
-        kp_message_id="kp-msg-1",
+        conv, sent_at=_dt("2026-05-04T08:00:00Z"), kp_message_id="kp-msg-1"
     )
-
-    decision = record_customer_reply(
-        conv,
-        text="Auto-reply: I am away from office.",
-        received_at=_dt("2026-05-04T12:00:00Z"),
-    )
-
     state = _proposal_state(conv)
-    assert decision.action == "pause"
-    assert decision.pause_until == _dt("2026-05-07T12:00:00Z")
-    assert state["pause_until"] == "2026-05-07T12:00:00+00:00"
-    assert state["chain_stopped"] is False
+    state.update(chain_stopped=True, stop_reason=stop_reason)
+    conv.metadata_["proposal_followup"] = state
+    record_customer_reply(
+        conv, text="Please wait", received_at=_dt("2026-05-04T12:00:00Z")
+    )
+    with pytest.raises(ValueError):
+        record_model_proposal_response(
+            conv,
+            decision="pause",
+            evidence="Please wait",
+            decided_at=_dt("2026-05-04T12:00:00Z"),
+        )
+    assert _proposal_state(conv)["stop_reason"] == stop_reason
+
+
+@pytest.mark.parametrize(
+    "until", [_dt("2026-05-04T11:00:00Z"), datetime.datetime(2026, 5, 20)]
+)
+def test_model_pause_requires_future_timezone_aware_date(
+    until: datetime.datetime,
+) -> None:
+    conv = _conversation()
+    record_proposal_sent(
+        conv, sent_at=_dt("2026-05-04T08:00:00Z"), kp_message_id="kp-msg-1"
+    )
+    with pytest.raises(ValueError):
+        record_model_proposal_response(
+            conv,
+            decision="pause",
+            evidence="Wait",
+            decided_at=_dt("2026-05-04T12:00:00Z"),
+            pause_until=until,
+        )
+    assert _proposal_state(conv)["pause_until"] is None
 
 
 def test_send_plan_is_disabled_by_default_and_requires_safe_message_mode() -> None:

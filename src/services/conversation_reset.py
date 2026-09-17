@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.conversation import Conversation
+from src.models.customer_memory import CustomerProfile
 from src.models.escalation import Escalation
 from src.models.message import Message
 from src.schemas.common import EscalationStatus, SalesStage
@@ -174,6 +175,23 @@ async def execute_conversation_reset(
     )
     for escalation in escalation_result.scalars().all():
         escalation.status = EscalationStatus.RESOLVED.value
+
+    # Keep historical facts/orders attached to the archived identity, never to
+    # the fresh test conversation. No CRM records or historical facts are deleted.
+    profiles = await db.execute(
+        select(CustomerProfile)
+        .where(CustomerProfile.canonical_phone.in_(phone_reset_variants(normalized)))
+        .with_for_update()
+    )
+    for profile in profiles.scalars().all():
+        original_phone = profile.canonical_phone
+        profile.canonical_phone = f"{original_phone}#reset-{profile.id}"
+        profile.metadata_ = {
+            **(profile.metadata_ or {}),
+            "original_phone": original_phone,
+            "reset_at": reset_at_text,
+            "reset_source": source,
+        }
 
     new_metadata: dict[str, object] = {
         "reset_source": source,

@@ -376,6 +376,20 @@ def _content_words(text: str) -> list[str]:
     return kept
 
 
+def empty_list_item_lines(text: str) -> tuple[str, ...]:
+    """Report bare list markers outside code blocks, without interpreting intent."""
+    empty = []
+    in_code = False
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            in_code = not in_code
+            continue
+        normalized = line.replace("\u2060", "").replace("\u200b", "").strip()
+        if not in_code and re.fullmatch(r"(?:\d+[.)]|[-*•])", normalized):
+            empty.append(line)
+    return tuple(empty)
+
+
 def only_asks_were_dropped(text: str, candidate: str) -> bool:
     """Whether the fold took surplus asks and nothing else.
 
@@ -393,6 +407,8 @@ def only_asks_were_dropped(text: str, candidate: str) -> bool:
     deterministic rule turns out to be wrong about a particular reply.
     """
 
+    if empty_list_item_lines(candidate):
+        return False
     available = _words(candidate)
     if not _appear_in_order(available, _words(text)):
         return False

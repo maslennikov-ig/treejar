@@ -694,7 +694,7 @@ class TestScenario7OrderHandoffGuard:
         "src.integrations.notifications.escalation.notify_manager_escalation",
         new_callable=AsyncMock,
     )
-    async def test_concrete_order_gets_second_pass_order_handoff(
+    async def test_concrete_order_does_not_force_a_second_pass_or_handoff(
         self,
         mock_notify: AsyncMock,
         mock_openai_model: MagicMock,
@@ -776,13 +776,16 @@ class TestScenario7OrderHandoffGuard:
 
         _assert_first_turn_opening(
             response.text,
-            "I've notified our manager to confirm your order details shortly.",
+            "Thanks. Could you confirm whether you need installation too?",
         )
-        assert conv.escalation_status == "pending"
-        assert mock_notify.await_count == 1
-        assert model_calls == 3
-        assert tool_names_by_step[0] == {"escalate_to_manager", "update_language"}
-        assert tool_names_by_step[1] == {"escalate_to_manager", "update_language"}
+        assert conv.escalation_status == "none"
+        mock_notify.assert_not_awaited()
+        assert model_calls == 1
+        assert {
+            "search_products",
+            "record_customer_intent",
+            "escalate_to_manager",
+        } <= tool_names_by_step[0]
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
@@ -1133,3 +1136,87 @@ class TestScenario7OrderHandoffGuard:
             for contract in fallback_contracts
         )
         assert "closest alternatives" in result.output.lower()
+
+
+@pytest.mark.asyncio
+async def test_model_can_record_consent_then_observe_quotation_data_gate() -> None:
+    """Exercise real tool dispatch across model rounds, with all services mocked."""
+    from src.dialogue.order_state import QuoteConsent, quote_workflow_from_metadata
+
+    conv = _mock_conversation(SalesStage.QUALIFYING, customer_name="Nadia")
+    conv.metadata_ = {}
+    deps = _mock_deps(conv)
+    deps.user_query = "sure"
+    step = 0
+
+    def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        nonlocal step
+        step += 1
+        tools = {t.name for t in info.function_tools}
+        if step == 1:
+            assert "record_customer_intent" in tools
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "record_customer_intent",
+                        {
+                            "evidence": "sure",
+                            "quotation_consent": "granted",
+                        },
+                    )
+                ]
+            )
+        if step == 2:
+            assert (
+                quote_workflow_from_metadata(conv.metadata_).consent
+                is QuoteConsent.GRANTED
+            )
+            assert "create_quotation" in tools
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "create_quotation",
+                        {
+                            "items": [{"sku": "CH-616", "quantity": 2}],
+                        },
+                    )
+                ]
+            )
+        assert step == 3
+        returned = [
+            str(p.content)
+            for m in messages
+            if isinstance(m, ModelRequest)
+            for p in m.parts
+            if isinstance(p, ToolReturnPart)
+        ]
+        assert any(
+            "company" in text.lower() and "address" in text.lower() for text in returned
+        )
+        return ModelResponse(
+            parts=[
+                TextPart(
+                    "Please provide your company and delivery address for the quotation."
+                )
+            ]
+        )
+
+    with (
+        patch(
+            "src.llm.engine.build_system_prompt",
+            AsyncMock(return_value="Help with furniture; use tools."),
+        ),
+        sales_agent.override(model=FunctionModel(model_fn)),
+    ):
+        result = await sales_agent.run(
+            "sure",
+            deps=deps,
+            message_history=[
+                ModelRequest(parts=[UserPromptPart(content="I need two chairs.")]),
+                ModelResponse(parts=[TextPart("Would you like a formal quotation?")]),
+            ],
+        )
+    assert step == 3
+    assert "delivery address" in result.output
+    deps.zoho_inventory.get_stock_bulk.assert_not_awaited()
+    assert not deps.quotation_created

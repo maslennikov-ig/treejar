@@ -17,17 +17,89 @@ client = TestClient(app)
 EXPECTED_CHANNEL_ID = "b49b1b9d-757f-4104-b56d-8f43d62cc515"
 
 
-def test_restore_mode_rejects_telegram_webhook_before_body_processing() -> None:
-    from types import SimpleNamespace
-
-    with patch(
-        "src.api.telegram_webhook.settings",
-        new=SimpleNamespace(test_channel_restore_mode=True),
+@pytest.mark.parametrize("authorized", [False, True])
+def test_restore_mode_authenticates_and_ignores_non_reset_updates(
+    authorized: bool,
+) -> None:
+    with (
+        patch("src.api.telegram_webhook.settings.test_channel_restore_mode", True),
+        patch(
+            "src.api.telegram_webhook.expected_telegram_webhook_secret",
+            return_value="test-secret",
+        ),
+        patch(
+            "src.api.telegram_webhook._handle_manager_reply", new_callable=AsyncMock
+        ) as manager,
+        patch(
+            "src.api.telegram_webhook._handle_callback_query", new_callable=AsyncMock
+        ) as callback,
     ):
-        response = client.post("/api/v1/webhook/telegram", json={})
+        response = client.post(
+            "/api/v1/webhook/telegram",
+            json={"callback_query": {"data": "order_confirm:any"}},
+            headers={
+                "X-Telegram-Bot-Api-Secret-Token": "test-secret"
+                if authorized
+                else "wrong"
+            },
+        )
+    assert response.status_code == (200 if authorized else 403)
+    manager.assert_not_awaited()
+    callback.assert_not_awaited()
 
-    assert response.status_code == 503
-    assert response.json() == {"detail": "Telegram disabled during restore mode"}
+
+@pytest.mark.parametrize("action", ["reset_confirm", "reset_cancel"])
+@pytest.mark.parametrize("admin", [True, False])
+def test_restore_mode_only_routes_admin_reset_callbacks(
+    action: str, admin: bool
+) -> None:
+    payload = {
+        "callback_query": {"data": f"{action}:token", "message": {"chat": {"id": 123}}}
+    }
+    with (
+        patch("src.api.telegram_webhook.settings.test_channel_restore_mode", True),
+        patch(
+            "src.api.telegram_webhook.expected_telegram_webhook_secret",
+            return_value="test-secret",
+        ),
+        patch("src.api.telegram_webhook._is_configured_admin_chat", return_value=admin),
+        patch(
+            "src.api.telegram_webhook._handle_callback_query", new_callable=AsyncMock
+        ) as callback,
+    ):
+        response = client.post(
+            "/api/v1/webhook/telegram",
+            json=payload,
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+        )
+    assert response.status_code == 200
+    assert callback.await_count == int(admin)
+
+
+def test_restore_mode_routes_reset_command_without_manager_reply() -> None:
+    message = {"text": "/reset +15550001111", "chat": {"id": 123}}
+    with (
+        patch("src.api.telegram_webhook.settings.test_channel_restore_mode", True),
+        patch(
+            "src.api.telegram_webhook.expected_telegram_webhook_secret",
+            return_value="test-secret",
+        ),
+        patch(
+            "src.api.telegram_webhook._handle_reset_command_if_present",
+            new=AsyncMock(return_value=True),
+        ) as reset,
+        patch(
+            "src.api.telegram_webhook._handle_manager_reply", new_callable=AsyncMock
+        ) as manager,
+    ):
+        response = client.post(
+            "/api/v1/webhook/telegram",
+            json={"message": message},
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+        )
+    assert response.status_code == 200
+    reset.assert_awaited_once_with(message)
+    manager.assert_not_awaited()
 
 
 @pytest.fixture(autouse=True)

@@ -358,6 +358,7 @@ class ZohoInventoryClient(InventoryProvider):
 
         # Retry mechanism (3 attempts with backoff)
         max_retries = 3
+        retry_read = method.upper() in {"GET", "HEAD", "OPTIONS"}
 
         for attempt in range(1, max_retries + 1):
             token = await self._ensure_token()
@@ -383,13 +384,17 @@ class ZohoInventoryClient(InventoryProvider):
 
             except httpx.HTTPStatusError as e:
                 # Zoho sometimes returns 429 Too Many Requests
-                if e.response.status_code == 429 and attempt < max_retries:
+                if (
+                    retry_read
+                    and e.response.status_code == 429
+                    and attempt < max_retries
+                ):
                     await asyncio.sleep(2**attempt)  # 2s, 4s...
                     continue
                 raise
 
             except (httpx.TimeoutException, httpx.NetworkError):
-                if attempt < max_retries:
+                if retry_read and attempt < max_retries:
                     await asyncio.sleep(2**attempt)
                     continue
                 raise

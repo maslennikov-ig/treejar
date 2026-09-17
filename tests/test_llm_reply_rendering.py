@@ -40,11 +40,39 @@ def test_render_reply_classifies_grounding_without_editing_any_provenance(
     assert "assess your used desks" not in rendered.flags[0].candidate.casefold()
 
 
-def test_render_reply_turns_a_deferral_into_an_explicit_commitment() -> None:
+def test_render_reply_leaves_followup_commitment_to_model() -> None:
     rendered = render_reply(
         "Assembly remains unconfirmed.",
         state=ReplyPolicyState(language="en"),
         provenance="deterministic_static",
     )
 
-    assert "I'll confirm assembly with our team" in rendered.text
+    assert rendered.text == "Assembly remains unconfirmed."
+
+
+def test_numbered_question_reduction_cannot_leave_an_orphan_marker() -> None:
+    text = (
+        "To issue a formal quotation, I just need to confirm a few details:\n\n"
+        "1. Items: 1 × LUMA workstation — correct?\n"
+        "2. Delivery address in Dubai for the quotation\n"
+        "3. What company name should I use?\n\n"
+        "Just share those three and I will prepare the quotation."
+    )
+    rendered = render_reply(
+        text,
+        state=ReplyPolicyState(language="en", quote_consent_granted=True),
+        provenance="model",
+    )
+    assert "3. What company name should I use?" in rendered.text
+    assert any(flag.guard_name == "question_form" for flag in rendered.flags)
+    assert "\n3.\n" not in rendered.text
+
+
+def test_empty_model_list_is_flagged_for_coherent_model_repair() -> None:
+    text = "Please confirm:\n1. Desk\n2. Address\n3.\n\nShare those three."
+    rendered = render_reply(
+        text,
+        state=ReplyPolicyState(language="en", quote_consent_granted=True),
+        provenance="model",
+    )
+    assert any(flag.guard_name == "empty_list_items" for flag in rendered.flags)

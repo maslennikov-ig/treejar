@@ -7,7 +7,6 @@ from pydantic_ai import RunContext
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
-    SystemPromptPart,
     TextPart,
     UserPromptPart,
 )
@@ -19,7 +18,6 @@ from src.llm.engine import SalesDeps, inject_system_prompt, process_message
 from src.models.conversation import Conversation
 from src.models.customer_memory import CustomerOrderMemory, CustomerProfile
 from src.schemas.common import SalesStage
-from src.services.customer_memory import CustomerFactsContext
 
 
 class _FakeAgentResult:
@@ -139,93 +137,77 @@ async def test_inject_system_prompt_includes_customer_facts_memory(
 
 
 @pytest.mark.asyncio
-@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
-@patch("src.core.config.get_system_config", new_callable=AsyncMock)
-@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
-@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_customer_facts_enforce_persists_and_injects_context(
-    mock_run: AsyncMock,
-    mock_build_history: AsyncMock,
-    mock_get_system_config: AsyncMock,
-    mock_search_knowledge: AsyncMock,
-) -> None:
-    db, conv, embedding, zoho, redis, messaging, crm = _deps()
-    profile = CustomerProfile(canonical_phone=conv.phone, display_name="Lili")
-    profile.id = uuid.uuid4()
-    order = CustomerOrderMemory(
-        customer_profile_id=profile.id,
-        conversation_id=conv.id,
-        status="active",
-    )
-    order.id = uuid.uuid4()
-    context = CustomerFactsContext(
-        profile_lines=["- Name: Lili"],
-        current_order_lines=["- Delivery address: 1 Dubai"],
-        past_order_lines=[],
-        missing_quote_fields=["- company name or explicit individual status"],
-    )
-
-    async def apply_side_effect(
-        _db: object,
-        *,
-        profile: CustomerProfile,
-        order: CustomerOrderMemory,
-        message: object,
-        facts: list[object],
-    ) -> object:
-        return SimpleNamespace(
-            accepted=list(facts),
-            proposed=[],
-            conflicts=[],
-            confirmation_required=[],
-        )
-
-    mock_build_history.return_value = [
-        ModelRequest(parts=[SystemPromptPart(content="summary")]),
-        ModelResponse(parts=[TextPart(content="Here are chair options.")]),
-        ModelRequest(
-            parts=[
-                UserPromptPart(
-                    content=(
-                        "Please recommend ergonomic chairs. "
-                        "Lili, individual, 1 Dubai, lili@example.com"
-                    )
-                )
-            ]
+@pytest.mark.parametrize(
+    "customer_text,pending",
+    [
+        (
+            "Please recommend ergonomic chairs. Lili, individual, 1 Dubai, lili@example.com",
+            False,
         ),
-    ]
-    mock_get_system_config.side_effect = _config
-    mock_search_knowledge.return_value = []
-    mock_run.return_value = _FakeAgentResult("Thanks, I saved those details.")
-
+        ("Victor Memory Test, individual, Office 1905, JLT Dubai", True),
+        ("What did I order last time?", False),
+    ],
+)
+async def test_customer_memory_is_data_for_model_not_a_semantic_interceptor(
+    customer_text: str,
+    pending: bool,
+) -> None:
+    db, conv, embedding, zoho, redis, messaging, crm = _unknown_name_deps()
+    if pending:
+        conv.metadata_ = {
+            engine_module.NAME_GATE_PENDING_REQUEST_KEY: {
+                "text": "Please recommend ergonomic chairs.",
+                "source": "first_turn_name_gate",
+            }
+        }
+    original_metadata = dict(conv.metadata_)
+    memory = "Known customer profile: Lili\nPast orders: 4 x CH 616, accepted"
     with (
+        patch.object(engine_module.settings, "pii_masking_enabled", True),
+        patch.object(
+            engine_module, "search_behavior_rules", AsyncMock(return_value=[])
+        ),
+        patch("src.rag.pipeline.search_knowledge", AsyncMock(return_value=[])),
+        patch("src.core.config.get_system_config", AsyncMock(side_effect=_config)),
         patch.object(
             engine_module,
-            "get_or_create_customer_profile",
-            AsyncMock(return_value=profile),
-        ) as mock_profile,
+            "build_message_history",
+            AsyncMock(
+                return_value=[
+                    ModelRequest(
+                        parts=[
+                            UserPromptPart(content="Please recommend ergonomic chairs.")
+                        ]
+                    ),
+                    ModelResponse(
+                        parts=[TextPart(content="What would you like to know?")]
+                    ),
+                ]
+            ),
+        ),
+        patch.object(
+            engine_module.sales_agent,
+            "run",
+            AsyncMock(return_value=_FakeAgentResult("Here is the model's answer.")),
+        ) as run,
+        patch(
+            "src.services.customer_memory.load_existing_customer_context",
+            AsyncMock(return_value=memory),
+        ) as load,
         patch.object(
             engine_module,
-            "get_or_create_active_order",
-            AsyncMock(return_value=order),
-        ) as mock_order,
+            "_run_customer_facts_layer",
+            AsyncMock(side_effect=AssertionError("No pre-model extraction")),
+        ) as extract,
         patch.object(
-            engine_module,
-            "apply_extracted_facts",
-            AsyncMock(side_effect=apply_side_effect),
-        ) as mock_apply,
-        patch.object(
-            engine_module,
-            "build_customer_facts_context",
-            AsyncMock(return_value=context),
-        ) as mock_context,
+            engine_module, "get_or_create_customer_profile", AsyncMock()
+        ) as create_profile,
+        patch.object(engine_module, "apply_extracted_facts", AsyncMock()) as apply,
     ):
         response = await process_message(
             conversation_id=conv.id,
-            combined_text=(
-                "Please recommend ergonomic chairs. "
-                "Lili, individual, 1 Dubai, lili@example.com"
-            ),
+            combined_text=customer_text,
+            source_message_id="msg-source-1",
             db=db,
             redis=redis,
             embedding_engine=embedding,
@@ -233,18 +215,25 @@ async def test_process_message_customer_facts_enforce_persists_and_injects_conte
             messaging_client=messaging,
             crm_client=crm,
         )
-
-    assert response.text == "Thanks, I saved those details."
-    mock_profile.assert_awaited_once()
-    mock_order.assert_awaited_once()
-    mock_apply.assert_awaited_once()
-    mock_context.assert_awaited_once()
-    call_deps = mock_run.await_args.kwargs["deps"]
-    assert "Known customer profile:" in call_deps.customer_facts_context
-    assert conv.metadata_["quote_customer_details"] == {"name": "Lili"}
-    trace = conv.metadata_["customer_facts"]["traces"][-1]
-    assert trace["mode"] == "enforce"
-    assert trace["accepted_count"] >= 4
+    assert response.text == "Here is the model's answer."
+    run.assert_awaited_once()
+    load.assert_awaited_once_with(db, conversation=conv, max_past_orders=2)
+    extract.assert_not_awaited()
+    create_profile.assert_not_awaited()
+    apply.assert_not_awaited()
+    deps = run.await_args.kwargs["deps"]
+    assert deps.customer_facts_context == memory
+    assert deps.source_message_id == "msg-source-1"
+    assert conv.customer_name is None
+    assert "quote_customer_details" not in conv.metadata_
+    if pending:
+        assert (
+            conv.metadata_[engine_module.NAME_GATE_PENDING_REQUEST_KEY]
+            == original_metadata[engine_module.NAME_GATE_PENDING_REQUEST_KEY]
+        )
+    if "lili@example.com" in customer_text:
+        assert "lili@example.com" not in deps.user_query
+        assert "lili@example.com" in deps.pii_map.values()
 
 
 @pytest.mark.asyncio
@@ -282,279 +271,6 @@ async def test_customer_facts_syncs_quote_only_fields_after_canonical_consent() 
         "address": "1 Dubai",
         "customer_type": "individual",
     }
-
-
-@pytest.mark.asyncio
-@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
-@patch("src.core.config.get_system_config", new_callable=AsyncMock)
-@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
-@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_customer_facts_name_gate_details_reply_resumes_pending_request(
-    mock_run: AsyncMock,
-    mock_build_history: AsyncMock,
-    mock_get_system_config: AsyncMock,
-    mock_search_knowledge: AsyncMock,
-) -> None:
-    db, conv, embedding, zoho, redis, messaging, crm = _unknown_name_deps()
-    conv.metadata_ = {
-        engine_module.NAME_GATE_PENDING_REQUEST_KEY: {
-            "text": "Please recommend ergonomic chairs.",
-            "source": "first_turn_name_gate",
-        }
-    }
-    profile = CustomerProfile(canonical_phone=conv.phone)
-    profile.id = uuid.uuid4()
-    order = CustomerOrderMemory(
-        customer_profile_id=profile.id,
-        conversation_id=conv.id,
-        status="active",
-    )
-    order.id = uuid.uuid4()
-    context = CustomerFactsContext(
-        profile_lines=["- Name: Victor Memory Test"],
-        current_order_lines=[
-            "- Delivery address: Office 1905, JLT Dubai",
-            "- Customer type: individual",
-        ],
-        past_order_lines=[],
-        missing_quote_fields=[],
-    )
-
-    async def apply_side_effect(
-        _db: object,
-        *,
-        profile: CustomerProfile,
-        order: CustomerOrderMemory,
-        message: object,
-        facts: list[object],
-    ) -> object:
-        return SimpleNamespace(
-            accepted=list(facts),
-            proposed=[],
-            conflicts=[],
-            confirmation_required=[],
-        )
-
-    mock_build_history.return_value = [
-        ModelRequest(
-            parts=[UserPromptPart(content="Please recommend ergonomic chairs.")]
-        ),
-        ModelResponse(
-            parts=[
-                TextPart(
-                    content=(
-                        "Hello, I'm Noor from Treejar. May I know your name so I "
-                        "can address you properly?"
-                    )
-                )
-            ]
-        ),
-    ]
-    mock_get_system_config.side_effect = _config
-    mock_search_knowledge.return_value = []
-    mock_run.return_value = _FakeAgentResult("Continuing the chair request.")
-
-    with (
-        patch.object(
-            engine_module,
-            "get_or_create_customer_profile",
-            AsyncMock(return_value=profile),
-        ),
-        patch.object(
-            engine_module,
-            "get_or_create_active_order",
-            AsyncMock(return_value=order),
-        ),
-        patch.object(
-            engine_module,
-            "apply_extracted_facts",
-            AsyncMock(side_effect=apply_side_effect),
-        ),
-        patch.object(
-            engine_module,
-            "build_customer_facts_context",
-            AsyncMock(return_value=context),
-        ),
-    ):
-        response = await process_message(
-            conversation_id=conv.id,
-            combined_text=(
-                "Victor Memory Test, individual, delivery address Office 1905, "
-                "JLT Dubai, email victor.memory.e2e@example.com, phone +15550001111."
-            ),
-            db=db,
-            redis=redis,
-            embedding_engine=embedding,
-            zoho_client=zoho,
-            messaging_client=messaging,
-            crm_client=crm,
-        )
-
-    assert response.text == "Continuing the chair request."
-    assert response.model != "detail-capture"
-    assert conv.customer_name == "Victor Memory Test"
-    assert engine_module.NAME_GATE_PENDING_REQUEST_KEY not in conv.metadata_
-    mock_run.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
-@patch("src.core.config.get_system_config", new_callable=AsyncMock)
-@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
-@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_customer_facts_passes_source_message_id(
-    mock_run: AsyncMock,
-    mock_build_history: AsyncMock,
-    mock_get_system_config: AsyncMock,
-    mock_search_knowledge: AsyncMock,
-) -> None:
-    db, conv, embedding, zoho, redis, messaging, crm = _deps()
-    profile = CustomerProfile(canonical_phone=conv.phone, display_name="Lili")
-    profile.id = uuid.uuid4()
-    order = CustomerOrderMemory(
-        customer_profile_id=profile.id,
-        conversation_id=conv.id,
-        status="active",
-    )
-    order.id = uuid.uuid4()
-    context = CustomerFactsContext(
-        profile_lines=["- Name: Lili"],
-        current_order_lines=["- Quote status: active"],
-        past_order_lines=[],
-        missing_quote_fields=[],
-    )
-    mock_build_history.return_value = [
-        ModelRequest(parts=[UserPromptPart(content="Lili, individual, 1 Dubai")])
-    ]
-    mock_get_system_config.side_effect = _config
-    mock_search_knowledge.return_value = []
-    mock_run.return_value = _FakeAgentResult("Saved.")
-
-    with (
-        patch.object(
-            engine_module,
-            "get_or_create_customer_profile",
-            AsyncMock(return_value=profile),
-        ),
-        patch.object(
-            engine_module,
-            "get_or_create_active_order",
-            AsyncMock(return_value=order),
-        ),
-        patch.object(
-            engine_module,
-            "apply_extracted_facts",
-            AsyncMock(
-                return_value=SimpleNamespace(
-                    accepted=[],
-                    proposed=[],
-                    conflicts=[],
-                    confirmation_required=[],
-                )
-            ),
-        ) as mock_apply,
-        patch.object(
-            engine_module,
-            "build_customer_facts_context",
-            AsyncMock(return_value=context),
-        ),
-    ):
-        await process_message(
-            conversation_id=conv.id,
-            combined_text="Lili, individual, 1 Dubai",
-            source_message_id="msg-source-1",
-            db=db,
-            redis=redis,
-            embedding_engine=embedding,
-            zoho_client=zoho,
-            messaging_client=messaging,
-            crm_client=crm,
-        )
-
-    facts = mock_apply.await_args.kwargs["facts"]
-    assert facts
-    assert {fact.source_message_id for fact in facts} == {"msg-source-1"}
-
-
-@pytest.mark.asyncio
-@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
-@patch("src.core.config.get_system_config", new_callable=AsyncMock)
-@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
-@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_customer_facts_answers_past_order_query(
-    mock_run: AsyncMock,
-    mock_build_history: AsyncMock,
-    mock_get_system_config: AsyncMock,
-    mock_search_knowledge: AsyncMock,
-) -> None:
-    db, conv, embedding, zoho, redis, messaging, crm = _deps()
-    profile = CustomerProfile(canonical_phone=conv.phone, display_name="Lili")
-    profile.id = uuid.uuid4()
-    order = CustomerOrderMemory(
-        customer_profile_id=profile.id,
-        conversation_id=conv.id,
-        status="active",
-    )
-    order.id = uuid.uuid4()
-    context = CustomerFactsContext(
-        profile_lines=["- Name: Lili"],
-        current_order_lines=["- Quote status: active"],
-        past_order_lines=[
-            "- Last closed order: 2026-05-22, 4 x CH 616, status accepted"
-        ],
-        missing_quote_fields=[],
-    )
-    mock_build_history.return_value = [
-        ModelRequest(parts=[SystemPromptPart(content="summary")]),
-        ModelRequest(parts=[UserPromptPart(content="What did I order last time?")]),
-    ]
-    mock_get_system_config.side_effect = _config
-    mock_search_knowledge.return_value = []
-
-    with (
-        patch.object(
-            engine_module,
-            "get_or_create_customer_profile",
-            AsyncMock(return_value=profile),
-        ),
-        patch.object(
-            engine_module,
-            "get_or_create_active_order",
-            AsyncMock(return_value=order),
-        ),
-        patch.object(
-            engine_module,
-            "apply_extracted_facts",
-            AsyncMock(
-                return_value=SimpleNamespace(
-                    accepted=[],
-                    proposed=[],
-                    conflicts=[],
-                    confirmation_required=[],
-                )
-            ),
-        ),
-        patch.object(
-            engine_module,
-            "build_customer_facts_context",
-            AsyncMock(return_value=context),
-        ),
-    ):
-        response = await process_message(
-            conversation_id=conv.id,
-            combined_text="What did I order last time?",
-            db=db,
-            redis=redis,
-            embedding_engine=embedding,
-            zoho_client=zoho,
-            messaging_client=messaging,
-            crm_client=crm,
-        )
-
-    assert "previous completed order" in response.text
-    assert "4 x CH 616" in response.text
-    assert "previous completed order" in response.text.lower()
-    mock_run.assert_not_awaited()
 
 
 class _Savepoint:

@@ -1,0 +1,6384 @@
+[
+  {
+    "id": "test_process_message_post_quotation_acceptance_hands_off_to_manager",
+    "user_text": "ok",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please send the quotation."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Quotation SO-ACCEPTED-1 has been sent. Please let me know if the quotation works for you."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "ok"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "zoho_sale_order_id": "so-accepted-1",
+      "zoho_sale_order_active": true,
+      "proposal_followup": {
+        "sent_at": "2026-05-04T08:00:00+00:00",
+        "kp_message_id": "quotation-media-1",
+        "kp_read": false,
+        "kp_read_at": null,
+        "chain_stopped": false,
+        "pause_until": null,
+        "steps": {
+          "1": {
+            "label": "FU1",
+            "status": "pending",
+            "scheduled_at": "2026-05-05T07:00:00+00:00",
+            "sent_at": null,
+            "provider_message_id": null
+          },
+          "2": {
+            "label": "FU2",
+            "status": "pending",
+            "scheduled_at": "2026-05-07T08:00:00+00:00",
+            "sent_at": null,
+            "provider_message_id": null
+          },
+          "3": {
+            "label": "FU3",
+            "status": "pending",
+            "scheduled_at": "2026-05-11T08:00:00+00:00",
+            "sent_at": null,
+            "provider_message_id": null
+          }
+        }
+      },
+      "quotation_decision_status": "pending",
+      "zoho_sale_order_number": "SO-ACCEPTED-1",
+      "quotation_quote_number": "SO-ACCEPTED-1",
+      "quotation_decision": {
+        "status": "pending",
+        "active": true,
+        "sent_at": "2026-05-04T08:00:00+00:00",
+        "quote_number": "SO-ACCEPTED-1",
+        "zoho_sale_order_id": "so-accepted-1"
+      }
+    },
+    "customer_name": "Test User",
+    "language": "ru",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_post_quotation_generic_ok_after_non_approval_answer_does_not_handoff",
+    "user_text": "ok",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "When can you deliver it?"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Delivery usually takes 3-5 days."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "ok"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "zoho_sale_order_id": "so-pending-1",
+      "zoho_sale_order_active": true,
+      "proposal_followup": {
+        "sent_at": "2026-05-04T08:00:00+00:00",
+        "kp_message_id": "quotation-media-1",
+        "kp_read": false,
+        "kp_read_at": null,
+        "chain_stopped": false,
+        "pause_until": null,
+        "steps": {
+          "1": {
+            "label": "FU1",
+            "status": "pending",
+            "scheduled_at": "2026-05-05T07:00:00+00:00",
+            "sent_at": null,
+            "provider_message_id": null
+          },
+          "2": {
+            "label": "FU2",
+            "status": "pending",
+            "scheduled_at": "2026-05-07T08:00:00+00:00",
+            "sent_at": null,
+            "provider_message_id": null
+          },
+          "3": {
+            "label": "FU3",
+            "status": "pending",
+            "scheduled_at": "2026-05-11T08:00:00+00:00",
+            "sent_at": null,
+            "provider_message_id": null
+          }
+        }
+      },
+      "quotation_decision_status": "pending",
+      "zoho_sale_order_number": "SO-PENDING-1",
+      "quotation_quote_number": "SO-PENDING-1",
+      "quotation_decision": {
+        "status": "pending",
+        "active": true,
+        "sent_at": "2026-05-04T08:00:00+00:00",
+        "quote_number": "SO-PENDING-1",
+        "zoho_sale_order_id": "so-pending-1"
+      }
+    },
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_post_quotation_acceptance_runs_before_dialogue_kernel_enforce",
+    "user_text": "ok",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Quotation SO-ACCEPTED-2 has been sent. Please let me know if the quotation works for you."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "ok"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "zoho_sale_order_id": "so-accepted-2",
+      "zoho_sale_order_active": true,
+      "proposal_followup": {
+        "sent_at": "2026-05-04T08:00:00+00:00",
+        "kp_message_id": "quotation-media-2",
+        "kp_read": false,
+        "kp_read_at": null,
+        "chain_stopped": false,
+        "pause_until": null,
+        "steps": {
+          "1": {
+            "label": "FU1",
+            "status": "pending",
+            "scheduled_at": "2026-05-05T07:00:00+00:00",
+            "sent_at": null,
+            "provider_message_id": null
+          },
+          "2": {
+            "label": "FU2",
+            "status": "pending",
+            "scheduled_at": "2026-05-07T08:00:00+00:00",
+            "sent_at": null,
+            "provider_message_id": null
+          },
+          "3": {
+            "label": "FU3",
+            "status": "pending",
+            "scheduled_at": "2026-05-11T08:00:00+00:00",
+            "sent_at": null,
+            "provider_message_id": null
+          }
+        }
+      },
+      "quotation_decision_status": "pending",
+      "zoho_sale_order_number": "SO-ACCEPTED-2",
+      "quotation_quote_number": "SO-ACCEPTED-2",
+      "quotation_decision": {
+        "status": "pending",
+        "active": true,
+        "sent_at": "2026-05-04T08:00:00+00:00",
+        "quote_number": "SO-ACCEPTED-2",
+        "zoho_sale_order_id": "so-accepted-2"
+      }
+    },
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_dialogue_kernel_shadow_records_trace_and_uses_legacy",
+    "user_text": "I need SKYLAND NOVO 2400 and CH 616",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need SKYLAND NOVO 2400 and CH 616"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_dialogue_kernel_shadow_fail_open_uses_legacy",
+    "user_text": "I need workstation options",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hello"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Hello, how can I help?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need workstation options"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_dialogue_kernel_shadow_records_verified_policy_handoff_route",
+    "user_text": "Can you guarantee installation tomorrow outside UAE?",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hello"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Hello, how can I help?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Can you guarantee installation tomorrow outside UAE?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_delivery_assembly_interruption_in_expected_frame_answers_without_handoff",
+    "user_text": "Can delivery and assembly be arranged in Dubai?",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need workstation options for a 6 person team."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Would you prefer a more private workspace with individual drawer pedestals (LUMA), or is a more open, collaborative setup with privacy panels (NOVO) better for your team?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Can delivery and assembly be arranged in Dubai?"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "dialogue_kernel": {
+        "state": {
+          "version": 1,
+          "active_flow": "product_selection",
+          "slots": {
+            "customer_name": "Lili"
+          },
+          "expected_answer_frames": [
+            {
+              "frame_id": "product_preference:test",
+              "flow": "product_selection",
+              "question_kind": "product_preference",
+              "prompt_key": "workspace_luma_novo_preference",
+              "status": "active",
+              "priority": 80,
+              "max_customer_turns": 6,
+              "turns_seen": 0,
+              "expected_slots": [
+                {
+                  "slot": "workspace_preference",
+                  "accepted_values": [
+                    "open",
+                    "private"
+                  ],
+                  "aliases": {
+                    "open": [
+                      "more open",
+                      "for team",
+                      "novo"
+                    ],
+                    "private": [
+                      "private",
+                      "more privacy",
+                      "luma"
+                    ]
+                  }
+                }
+              ],
+              "source_refs": [
+                {
+                  "kind": "product_family",
+                  "value": "LUMA",
+                  "ordinal": 1
+                },
+                {
+                  "kind": "product_family",
+                  "value": "SKYLAND NOVO",
+                  "ordinal": 2
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "customer_name": "E2E Tester",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_dialogue_kernel_does_not_capture_legacy_quote_details_without_consent",
+    "user_text": "Lil, 1 dubay",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need one CH 616"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Please share your name, company or individual status, and the specific delivery address for the quotation."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Lil, 1 dubay"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "CH 616",
+            "quantity": 1
+          }
+        ],
+        "unresolved_items": []
+      }
+    },
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_high_confidence_candidate_uses_guarded_path",
+    "user_text": "I need 200 chairs delivered to Dubai Marina by next week",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need 200 chairs delivered to Dubai Marina by next week"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_split_first_turn_still_uses_guarded_path",
+    "user_text": "We need 200 chairs delivered to Dubai Marina by next week",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "We need 200 chairs"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "delivered to Dubai Marina by next week"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_resolved_status_does_not_short_circuit_guarded_path",
+    "user_text": "I need 200 chairs delivered to Dubai Marina by next week",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need 200 chairs delivered to Dubai Marina by next week"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_retries_guarded_path_once_without_hard_escalation",
+    "user_text": "I need 200 chairs delivered to Dubai Marina by next week",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need 200 chairs delivered to Dubai Marina by next week"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_second_guarded_pass_can_succeed_with_escalation",
+    "user_text": "I need 200 chairs delivered to Dubai Marina by next week",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need 200 chairs delivered to Dubai Marina by next week"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_non_candidate_uses_full_tool_mode",
+    "user_text": "We need 20 chairs for next week, what options do you have?",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "We need 20 chairs for next week, what options do you have?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_high_risk_partial_bypasses_agent_with_handoff",
+    "user_text": "Can you install in Abu Dhabi next Tuesday?",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Can you install in Abu Dhabi next Tuesday?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_price_objection_uses_compact_sales_fallback",
+    "user_text": "The chairs feel too expensive, I found a cheaper option from another supplier. Why should I buy from Treejar?",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "The chairs feel too expensive, I found a cheaper option from another supplier. Why should I buy from Treejar?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_retention_uses_compact_sales_fallback",
+    "user_text": "We do not need the office furniture anymore for now. Maybe later.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "We do not need the office furniture anymore for now. Maybe later."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_off_catalog_uses_compact_sales_fallback",
+    "user_text": "Do you sell helicopter spare parts or gaming laptops?",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Do you sell helicopter spare parts or gaming laptops?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_payment_terms_still_use_manager_handoff",
+    "user_text": "Can you do net 30 payment terms and a 20% discount?",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Can you do net 30 payment terms and a 20% discount?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_payment_terms_percent_words_do_not_become_order_selection",
+    "user_text": "My name is Lilia. I need 20 percent discount and net 30 payment terms for office furniture.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "My name is Lilia. I need 20 percent discount and net 30 payment terms for office furniture."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_payment_terms_in_proposal_still_use_manager_handoff",
+    "user_text": "Please include net 30 payment terms in the business proposal.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please include net 30 payment terms in the business proposal."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_high_risk_verified_uses_service_policy_mode",
+    "user_text": "What are your delivery times in Dubai?",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "What are your delivery times in Dubai?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_missing_low_risk_hands_off_without_agent_run",
+    "user_text": "Do you have a showroom?",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Do you have a showroom?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Viktor",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_name_only_reply_after_name_gate_does_not_escalate",
+    "user_text": "My name is E2E Tester.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi, I need CH-620 price."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "My name is E2E Tester."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_arabic_name_reply_resumes_pending_request",
+    "user_text": "اسمي ليان، وأنا مديرة المرافق في شركة Cedarline QA Offices.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "نجهز مكتباً لستة موظفين ونحتاج محطات عمل خاصة وكراسي مريحة ضمن ميزانية محددة. ما الخيارات المناسبة؟"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "مرحبًا، أنا Noor من Treejar. هل يمكنني معرفة اسمك لأخاطبك بشكل مناسب؟"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "اسمي ليان، وأنا مديرة المرافق في شركة Cedarline QA Offices."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "name_gate_pending_request": {
+        "version": 2,
+        "text": "نجهز مكتباً لستة موظفين ونحتاج محطات عمل خاصة وكراسي مريحة ضمن ميزانية محددة. ما الخيارات المناسبة؟",
+        "intent": "catalog_discovery",
+        "language": "ar"
+      }
+    },
+    "customer_name": null,
+    "language": "ar",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_name_only_reply_resumes_pending_name_gate_request",
+    "user_text": "My name is E2E Tester.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi, I need CH-620 price and availability."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "My name is E2E Tester."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "name_gate_pending_request": {
+        "text": "Hi, I need CH-620 price and availability."
+      }
+    },
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_name_gate_resumes_wardrobe_request_without_handoff",
+    "user_text": "My name is Angela.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi, I need two wardrobes for my living room."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "My name is Angela."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "name_gate_pending_request": {
+        "text": "Hi, I need two wardrobes for my living room."
+      }
+    },
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_name_only_update_in_active_product_context_does_not_reset_goal",
+    "user_text": "My name is Lili Cutover.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hello, I need 2 Skyland Novo workstations, 2 mobile drawers, delivery to Business Bay, and assembly."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Great, I found SKYLAND NOVO 2400 workstations and mobile drawer options. Which drawer finish works?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "My name is Lili Cutover."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_first_turn_observed_name_continues_substantive_request[0]",
+    "user_text": "Hi, my name is Lilia and I purchase for Northstar QA LLC. I need workstation options with individual privacy panels for a small office.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi, my name is Lilia and I purchase for Northstar QA LLC. I need workstation options with individual privacy panels for a small office."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_first_turn_observed_name_continues_substantive_request[1]",
+    "user_text": "this is Binu from Bikram Interiors Sharjah.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "this is Binu from Bikram Interiors Sharjah."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_company_detail_update_does_not_handoff",
+    "user_text": "The company is Memory Test LLC.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hello, I need 2 Skyland Novo workstations, 2 mobile drawers, delivery to Business Bay, and assembly."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Great, I found SKYLAND NOVO 2400 workstations and mobile drawer options. Which drawer finish works?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "The company is Memory Test LLC."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Lili"
+      }
+    },
+    "customer_name": "Lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_company_detail_with_payment_terms_still_handoffs",
+    "user_text": "Company is ABC Trading LLC. Need net 30 payment terms.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hello, I need 2 Skyland Novo workstations, 2 mobile drawers, delivery to Business Bay, and assembly."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Great, I found SKYLAND NOVO 2400 workstations and mobile drawer options. Which drawer finish works?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Company is ABC Trading LLC. Need net 30 payment terms."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_address_detail_update_does_not_handoff",
+    "user_text": "Delivery address is Bay Square Building 3, Business Bay, Dubai.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hello, I need 2 Skyland Novo workstations, 2 mobile drawers, delivery to Business Bay, and assembly."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Great, I found SKYLAND NOVO 2400 workstations and mobile drawer options. Which drawer finish works?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Delivery address is Bay Square Building 3, Business Bay, Dubai."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Lili"
+      }
+    },
+    "customer_name": "Lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_sales_memory_note_does_not_handoff",
+    "user_text": "Please remember assembly is required, but don't create a quotation yet.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hello, I need 2 Skyland Novo workstations, 2 mobile drawers, delivery to Business Bay, and assembly."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Great, I found SKYLAND NOVO 2400 workstations and mobile drawer options. Which drawer finish works?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please remember assembly is required, but don't create a quotation yet."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_product_quantity_update_stays_with_agent",
+    "user_text": "Let's use 3 mobile drawers instead of 2. Keep 2 workstations.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hello, I need 2 Skyland Novo workstations, 2 mobile drawers, delivery to Business Bay, and assembly."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Great, I found SKYLAND NOVO 2400 workstations and mobile drawer options. Which drawer finish works?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Let's use 3 mobile drawers instead of 2. Keep 2 workstations."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_bare_name_reply_resumes_pending_name_gate_request",
+    "user_text": "Lili",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hello, I am interested in ordering work station for 2 people and some mobile drawers. I appreciate fast delivery within 2-3 days. I wanted to ask if you will also assembly the desk upon delivery?"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Lili"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "name_gate_pending_request": {
+        "text": "Hello, I am interested in ordering work station for 2 people and some mobile drawers. I appreciate fast delivery within 2-3 days. I wanted to ask if you will also assembly the desk upon delivery?"
+      }
+    },
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_bare_name_resume_repairs_duplicate_name_prompt_generically",
+    "user_text": "Lili",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi! I need a workstation for 4 people and storage cabinets. Do you also offer assembly?"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Lili"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "name_gate_pending_request": {
+        "text": "Hi! I need a workstation for 4 people and storage cabinets. Do you also offer assembly?"
+      }
+    },
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_bare_name_resume_exact_refs_asks_quantities",
+    "user_text": "Lil",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need SKYLAND NOVO 2400 Meeting Table and CH 616"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Lil"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "name_gate_pending_request": {
+        "text": "I need SKYLAND NOVO 2400 Meeting Table and CH 616"
+      }
+    },
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_name_only_reply_resumes_pending_exact_quote_request",
+    "user_text": "My name is Jio.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi, I need 5 x CH 190.\n[smoke:a444e12f]"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "My name is Jio."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "name_gate_pending_request": {
+        "text": "Hi, I need 5 x CH 190.\n[smoke:a444e12f]"
+      }
+    },
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_commercial_offer_request_does_not_escalate_after_selection",
+    "user_text": "Make a commercial offer for me.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I would like to purchase an executive office chair and an L-shaped corner desk."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "CH 620 black and SKYLAND NOVO 1400 are available options."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "620 black"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "I can help with products, prices, stock, delivery, or quotations. What do you need?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Make a commercial offer for me."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "verified_policy_repair": {
+        "kind": "benign_no_match",
+        "count": 1
+      }
+    },
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_incomplete_proforma_invoice_request_clarifies_without_escalation",
+    "user_text": "Please issue a proforma invoice for these items.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please issue a proforma invoice for these items."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_quote_hold_skips_proposal_clarification",
+    "user_text": "That configuration is still too expensive. Give me a cheaper option and one relevant cross-sell while keeping the total under AED 7,000. Do not prepare a quotation.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "That configuration is still too expensive. Give me a cheaper option and one relevant cross-sell while keeping the total under AED 7,000. Do not prepare a quotation."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Samir",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_uses_verified_catalog_plan_through_chat_model[0]",
+    "user_text": "That configuration is still too expensive. Give me a cheaper option and one relevant cross-sell while keeping the total under AED 7,000. Do not prepare a quotation.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "We need chairs and compact desks for twelve staff below AED 400 each."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Here are catalog options."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "That configuration is still too expensive. Give me a cheaper option and one relevant cross-sell while keeping the total under AED 7,000. Do not prepare a quotation."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Samir",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_uses_verified_catalog_plan_through_chat_model[1]",
+    "user_text": "That configuration is still too expensive. Give me a cheaper option and one relevant cross-sell while keeping the total under AED 7,000. Do not prepare a quotation.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "We need chairs and compact desks for twelve staff below AED 400 each."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Here are catalog options."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "That configuration is still too expensive. Give me a cheaper option and one relevant cross-sell while keeping the total under AED 7,000. Do not prepare a quotation."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Samir",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_a_repaired_catalog_decision_ships_instead_of_the_template",
+    "user_text": "That configuration is still too expensive. Give me a cheaper option and one relevant cross-sell while keeping the total under AED 7,000. Do not prepare a quotation.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "We need chairs for twelve."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Here are catalog options."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "That configuration is still too expensive. Give me a cheaper option and one relevant cross-sell while keeping the total under AED 7,000. Do not prepare a quotation."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Samir",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_the_quotation_is_created_before_the_model_writes_a_word",
+    "user_text": "Please issue a quotation for 1 CHAIR-01.\nFull name: Lilia Kustova\nCompany: Test Clinic LLC\nEmail: lilia@example.com\nPhone: +971501234567\nDelivery address: Dubai, UAE",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please issue a quotation for 1 CHAIR-01.\nFull name: Lilia Kustova\nCompany: Test Clinic LLC\nEmail: lilia@example.com\nPhone: +971501234567\nDelivery address: Dubai, UAE"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_a_failed_rewrite_still_delivers_the_created_quotation",
+    "user_text": "Please issue a quotation for 1 CHAIR-01.\nFull name: Lilia Kustova\nCompany: Test Clinic LLC\nEmail: lilia@example.com\nPhone: +971501234567\nDelivery address: Dubai, UAE",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please issue a quotation for 1 CHAIR-01.\nFull name: Lilia Kustova\nCompany: Test Clinic LLC\nEmail: lilia@example.com\nPhone: +971501234567\nDelivery address: Dubai, UAE"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_requirement_correction_keeps_quote_hold",
+    "user_text": "Correction: update the requirement to three LUMA 9719-4 units. Keep the no-quotation instruction.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "LUMA 9719-4 Walnut is available at 1,883 AED per unit, with 30 units in stock."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Correction: update the requirement to three LUMA 9719-4 units. Keep the no-quotation instruction."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Leila",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_second_benign_no_match_escalates_after_clarification",
+    "user_text": "I need help",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need help"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "verified_policy_repair": {
+        "kind": "benign_no_match",
+        "count": 1
+      }
+    },
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_service_handoff_deduplicates_current_user_in_recent_history",
+    "user_text": "Do you offer deferred payment for this order?",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hello"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "How can I help?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Do you offer deferred payment for this order?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_greeting_with_real_question_uses_service_policy",
+    "user_text": "Good afternoon, is there delivery to Dubai?",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Good afternoon, is there delivery to Dubai?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_exact_price_request_without_quote_terms_uses_guarded_path",
+    "user_text": "What is the exact price and availability for 1 CHAIR-01?",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "What is the exact price and availability for 1 CHAIR-01?"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Test User",
+        "company": "Test Trading LLC",
+        "email": "test@example.com",
+        "phone": "+971501234567",
+        "address": "Dubai Marina, Tower A"
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_short_quote_followup_uses_single_stock_price_option",
+    "user_text": "Yes prepare the quotation",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please confirm stock and price for 2 CH 140 black chairs before I decide."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Hello, I'm Noor from Treejar.\n\nI found these options for 2 chairs:\n\nOption 1: Skyland Executive office chair CH 140 black\n- SKU: CH 140 black\n- Price: 450.00 AED each\n- Stock: 12 available\n\nWhich option would you prefer? I can prepare a formal quotation after that."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Yes prepare the quotation"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Victor Long Context",
+        "customer_type": "individual",
+        "email": "victor.routeadapter.long@example.com",
+        "address": "Office 1701 Long Context Tower Dubai"
+      }
+    },
+    "customer_name": "Victor Long Context",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_ambiguous_ch616_selection_returns_catalog_options",
+    "user_text": "My name is Lilia Orderstate. I need 4 CH 616 chairs.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "My name is Lilia Orderstate. I need 4 CH 616 chairs."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_purchase_selection_uses_static_no_media_confirmation",
+    "user_text": "I would like buy 10 Operative table, IMAGO-S, CP-2.1S, 1200х600х755, White/Aluminum — 179.00 AED and 5 Operative table, IMAGO-S, SP-2.1SD, 1200х600х755, Maple/Aluminum — 246.00 AED",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi! I need 15 tables"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Here are your table options."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I would like buy 10 Operative table, IMAGO-S, CP-2.1S, 1200х600х755, White/Aluminum — 179.00 AED and 5 Operative table, IMAGO-S, SP-2.1SD, 1200х600х755, Maple/Aluminum — 246.00 AED"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_confirms_selection_from_prior_product_media_captions",
+    "user_text": "I would like buy 10 Operative table, IMAGO-S, CP-2.1S, 1200х600х755, White/Aluminum — 179.00 AED and 5 Operative table, IMAGO-S, SP-2.1SD, 1200х600х755, Maple/Aluminum — 246.00 AED",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi! I need 15 tables"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Here are your table options."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_confirms_ordinal_selection_from_prior_sku_options",
+    "user_text": "The first option please.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "My name is Lilia Orderstate. What is the stock and price for 2 CH 616 chairs?"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "I found two CH 616 chair options for you:\n\n**Option 1: SkyLand Workstation Chair CH 616 black**\n- **Price:** 220 AED each\n- **Stock:** 3 units available\n\n**Option 2: Skyland Operative Chair CH 616 NEW black**\n- **Price:** 295 AED each\n- **Stock:** 93 units available\n\nWould you like me to prepare a quote for 2 units of either model?"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Lilia Orderstate"
+      }
+    },
+    "customer_name": "Lilia Orderstate",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_confirms_bare_ordinal_from_prior_sku_options",
+    "user_text": "2\n[smoke:bafd415d]",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "My name is Lilia Orderstate. What is the stock and price for 2 CH 616 chairs?"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "There are several variants for your 2 chairs. Here are the options:\n\nOption 1: Skyland Operative Chair CH 616 NEW black\n- SKU: CH 616 NEW black\n- Price: 295.00 AED each\n- Stock: 101 available\n\nOption 2: SkyLand Workstation Chair CH 616 black\n- SKU: CH 616 black\n- Price: 220.00 AED each\n- Stock: 3 available\n\nWhich option would you prefer? I can prepare a formal quotation after that."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Lilia Orderstate"
+      }
+    },
+    "customer_name": "Lilia Orderstate",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_bare_ordinal_keeps_option_prompt_quantity_after_name_gate",
+    "user_text": "2\n[smoke:a89fdc4a]",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Victor Route Final"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "There are several variants for your 2 chairs. Here are the options:\n\nOption 1: Skyland Operative Chair CH 616 NEW black\n- SKU: CH 616 NEW black\n- Price: 295.00 AED each\n- Stock: 101 available\n\nOption 2: SkyLand Workstation Chair CH 616 black\n- SKU: CH 616 black\n- Price: 220.00 AED each\n- Stock: 3 available\n\nWhich option would you prefer? I can prepare a formal quotation after that."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Victor Route Final"
+      }
+    },
+    "customer_name": "Victor Route Final",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_ch616_selection_confirms_without_manager_handoff",
+    "user_text": "I need 6 CH 616",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi, I need 2 SKYLAND NOVO 2400 tables and 4 ergonomic chairs"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "How should I address you?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "lil"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Which table type do you prefer - the SKYLAND NOVO 2400 workstation or meeting table? For the chairs, would you like Skyland Operative Chair CH 616 NEW black or visitor chairs?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_clean_context_disambiguates_novo_meeting_table",
+    "user_text": "I need 2 SKYLAND NOVO 2400 Meeting Table",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_name_gate_resume_accepts_name_plus_customer_type",
+    "user_text": "Victor PII Test, individual",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi Noor, I need 2 CH 616 black chairs with delivery to Office 1905, JLT Dubai, email victor.pii.e2e@example.com, phone +15550001111. Please confirm these selected items."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Victor PII Test, individual"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "name_gate_pending_request": {
+        "text": "Hi Noor, I need 2 CH 616 black chairs with delivery to Office 1905, JLT Dubai, email victor.pii.e2e@example.com, phone +15550001111. Please confirm these selected items."
+      }
+    },
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_ch616_spaced_sku_with_details_uses_leading_quantity",
+    "user_text": "Hi Noor, I need 2 CH 616 chairs with delivery and assembly. My name is Victor, individual, delivery address Office 1905, JLT Dubai, email victor.memory.e2e@example.com.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi Noor, I need 2 CH 616 chairs with delivery and assembly. My name is Victor, individual, delivery address Office 1905, JLT Dubai, email victor.memory.e2e@example.com."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_first_turn_with_name_contacts_and_sku_skips_name_gate",
+    "user_text": "Hi Noor, I need 2 CH 616 black chairs with delivery and assembly. My name is Victor PII Test, individual, delivery address Office 1905, JLT Dubai, email victor.pii.e2e@example.com, phone +15550001111. Please confirm these selected items using these details.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi Noor, I need 2 CH 616 black chairs with delivery and assembly. My name is Victor PII Test, individual, delivery address Office 1905, JLT Dubai, email victor.pii.e2e@example.com, phone +15550001111. Please confirm these selected items using these details."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_name_gate_resume_with_contacts_and_sku_stays_product_path",
+    "user_text": "Victor PII Test",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi Noor, I need 2 CH 616 black chairs with delivery and assembly. My name is Victor PII Test, individual, delivery address Office 1905, JLT Dubai, email victor.pii.e2e@example.com, phone +15550001111. Please confirm these selected items using these details."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Victor PII Test"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "name_gate_pending_request": {
+        "text": "Hi Noor, I need 2 CH 616 black chairs with delivery and assembly. My name is Victor PII Test, individual, delivery address Office 1905, JLT Dubai, email victor.pii.e2e@example.com, phone +15550001111. Please confirm these selected items using these details."
+      }
+    },
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_stale_pending_quantity_does_not_consume_later_number",
+    "user_text": "5",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "I can help with products, prices, stock, delivery, or quotations."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "5"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_product_reference_quantity": {
+        "source": "product_reference_quantity_clarification",
+        "references": [
+          "CH 140"
+        ]
+      }
+    },
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_expired_quantity_frame_blocks_legacy_pending_reference",
+    "user_text": "2",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "I have these product references: SK 45 White. Please confirm the quantity for each item."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "2"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "order_runtime": {
+        "pending_question_frame": {
+          "version": 1,
+          "frame_id": "quantity:sk45",
+          "question_kind": "quantity",
+          "status": "expired",
+          "prompt_key": "ask_quantity_for_sku",
+          "max_customer_turns": 2,
+          "turns_seen": 2,
+          "source_refs": [
+            {
+              "kind": "order_line",
+              "catalog_ref": "SK-45",
+              "source_text": "SK 45 White",
+              "sku": "SK-45",
+              "ordinal": 1
+            }
+          ]
+        }
+      },
+      "pending_product_reference_quantity": {
+        "source": "product_reference_quantity_clarification",
+        "references": [
+          "SK 45 White"
+        ]
+      }
+    },
+    "customer_name": "Lilia",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_novo_model_number_does_not_become_chair_quantity",
+    "user_text": "I need SKYLAND NOVO 2400 Meeting Table and CH 616",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "My name is Lili"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Thanks, how can I help?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need SKYLAND NOVO 2400 Meeting Table and CH 616"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_customer_details_resume_pending_quote_selection",
+    "user_text": "Full name: Lilia Kustova\nCompany: Test Clinic LLC\nEmail: lilia@example.com\nPhone: +971501234567\nDelivery address: Dubai Marina, Tower A",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Would you like me to prepare a formal quotation for these selected items? If yes, please share your full name, company name, and phone number."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "00-07024022",
+            "quantity": 10
+          },
+          {
+            "sku": "00-07023896",
+            "quantity": 5
+          }
+        ],
+        "unresolved_items": []
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_canonical_only_quote_frame_resumes_without_assistant_prose",
+    "user_text": "Company: DAO company\nEmail: lilia@example.com\nDelivery address: 2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Thanks, I noted the selected items."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "order_runtime": {
+        "quote_frame": {
+          "source": "selection_confirmation",
+          "status": "collecting_details",
+          "lines": [
+            {
+              "sku": "CH-616",
+              "quantity": 2
+            }
+          ]
+        },
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "Lilia",
+    "language": "en",
+    "sales_stage": "quoting"
+  },
+  {
+    "id": "test_order_cutover_quote_details_do_not_recover_items_from_assistant_prose",
+    "user_text": "Full name: Lilia Kustova\nCompany: Del company\nEmail: lilia@example.com\nPhone: +971501234567\nDelivery address: 2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Summary of selected items:\n- 2 x CH 616 chairs\n\nBefore I prepare the quotation, please share customer name, company name, customer email, and specific delivery address."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "Lilia",
+    "language": "en",
+    "sales_stage": "quoting"
+  },
+  {
+    "id": "test_process_message_quoted_frame_same_details_does_not_restart_items",
+    "user_text": "Use the same company and address, please. Do not change the items.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Quotation Fr3367 has been prepared and sent to you. Please let me know if the quotation works for you."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Lilia",
+        "company": "Del company",
+        "email": "lilia@example.com",
+        "address": "2 Test Street Dubai"
+      },
+      "order_runtime": {
+        "quote_frame": {
+          "source": "selection_confirmation",
+          "status": "quoted",
+          "lines": [
+            {
+              "sku": "OF-YED-NOVO-Table-63LW-1.2T-9-white",
+              "quantity": 2
+            },
+            {
+              "sku": "CH 616 NEW black",
+              "quantity": 4
+            }
+          ]
+        }
+      }
+    },
+    "customer_name": "Lilia",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_quote_details_after_bullet_summary_requires_saved_quote_frame",
+    "user_text": "Full name: Lilia Kustova\nCompany: DAO company\nEmail: lilia@example.com\nDelivery address: 2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Here is your order summary:\n- 2 x MEETING TABLE SKYLAND NOVO 2400 — 3,480.00 AED\n- 4 x Skyland Operative Chair CH 616 NEW black — 1,180.00 AED\nGrand Total: 4,660.00 AED\nPlease share company name, email address, and delivery address so I can prepare the quotation."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "Lilia Kustova",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_terse_details_preserves_pending_quote_context",
+    "user_text": "Lil, 1 dubay",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Before I prepare the quotation, please share: company name, or confirm you are buying as an individual; specific delivery address."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "CH-616",
+            "quantity": 1
+          }
+        ],
+        "unresolved_items": []
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_unlabeled_quote_brief_completes_pdf_details[0]",
+    "user_text": "Lilia\nLLD\nLfdsf@kfsl.ru\n2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Would you like me to prepare a formal quotation for these selected items? To make the PDF complete, please share full name, company name, email, delivery address."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "CH 620 grey",
+            "quantity": 5
+          }
+        ],
+        "unresolved_items": []
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_unlabeled_quote_brief_completes_pdf_details[1]",
+    "user_text": "Lilia / LLD / Lfdsf@kfsl.ru / 2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Would you like me to prepare a formal quotation for these selected items? To make the PDF complete, please share full name, company name, email, delivery address."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "CH 620 grey",
+            "quantity": 5
+          }
+        ],
+        "unresolved_items": []
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_unlabeled_quote_brief_completes_pdf_details[2]",
+    "user_text": "Lilia / LLD / Lfdsf@kfsl.ru / 2 street / office table and chairs",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Would you like me to prepare a formal quotation for these selected items? To make the PDF complete, please share full name, company name, email, delivery address."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "CH 620 grey",
+            "quantity": 5
+          }
+        ],
+        "unresolved_items": []
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_unlabeled_quote_brief_completes_pdf_details[3]",
+    "user_text": "Lilia, LLD, Lfdsf@kfsl.ru, 2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Would you like me to prepare a formal quotation for these selected items? To make the PDF complete, please share full name, company name, email, delivery address."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "CH 620 grey",
+            "quantity": 5
+          }
+        ],
+        "unresolved_items": []
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_unlabeled_quote_brief_keeps_order_named_customer_and_full_address",
+    "user_text": "Lilia Orderstate / Del company / lilia.orderstate.e2e@example.com / Office 1208, JLT Dubai",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Would you like me to prepare a formal quotation for these selected items? To make the PDF complete, please share full name, company name, email, delivery address."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "CH 620 grey",
+            "quantity": 5
+          }
+        ],
+        "unresolved_items": []
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_ambiguous_individual_reply_keeps_explicit_company",
+    "user_text": "individual\ndubay 2 street 7",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Before I prepare the quotation, please share: company name, or confirm you are buying as an individual; specific delivery address."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Lilia",
+        "company": "LLD",
+        "email": "Lfdsf@kfsl.ru",
+        "address": "2 street"
+      },
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "CH 620 grey",
+            "quantity": 5
+          }
+        ],
+        "unresolved_items": []
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "Lilia",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_low_confidence_unlabeled_brief_asks_confirmation",
+    "user_text": "Lilia\nLLD\nLfdsf@kfsl.ru\nDubai",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "To make the PDF complete, please share full name, company name, email, delivery address."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "CH 620 grey",
+            "quantity": 5
+          }
+        ],
+        "unresolved_items": []
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_confirmed_quote_brief_generates_quotation",
+    "user_text": "yes",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Please confirm I understood correctly:\nName: Lilia\nCompany: LLD\nEmail: Lfdsf@kfsl.ru\nAddress: Dubai\nReply yes to use these details, or send the corrected details."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_brief_confirmation": {
+        "name": "Lilia",
+        "company": "LLD",
+        "email": "Lfdsf@kfsl.ru",
+        "address": "Dubai"
+      },
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "CH 620 grey",
+            "quantity": 5
+          }
+        ],
+        "unresolved_items": []
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_terse_details_blocks_llm_selection_table_recovery",
+    "user_text": "Lil, 1 dubay",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Perfect, Lil! Here's your selection:\n\n| Item | Qty | Price | Total |\n|------|-----|-------|-------|\n| MEETING TABLE SKYLAND NOVO 2400 | 1 | 1,740 AED | 1,740 AED |\n| Skyland Operative Chair CH 616 NEW (Black) | 1 | 268 AED | 268 AED |\n\nWould you like me to send you a formal quotation? If so, please share:\n1. Your company name (or if this is for personal use)\n2. Your delivery address"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_terse_details_blocks_llm_selection_prose_confirmation_recovery",
+    "user_text": "Lil / individual purchase / 2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Perfect, Lil. I have confirmed 4 x SkyLand CH 140 Executive Office Chair (Black). To prepare the formal quotation PDF, please share your company name or confirm individual purchase, delivery address, and email."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_terse_details_blocks_availability_quote_context_recovery",
+    "user_text": "Lil / individual purchase / 2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Perfect! We have exactly what you need in stock:\n\n**Skyland Executive Office Chair CH 140 Black** — 450 AED each\n- **12 units confirmed available** (more than your 4-unit requirement)\n- Aircraft reclining mechanism with 3 lockable positions\n- Mesh back with breathable fabric seat\n- 3D adjustable armrests\n- Chrome metal base, German TUV Class 3 gas lift\n- 120 kg load capacity\n- Free delivery across UAE\n\n**Total for 4: 1,800 AED**\n\nWould you like me to prepare a quotation for these 4 chairs? If so, please share the delivery address and confirm if this is for a company or personal purchase."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_quote_confirmation_blocks_availability_offer_recovery",
+    "user_text": "Yes, prepare quotation. Lil / individual purchase / 2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "I found the exact chair you're looking for:\n\n**Skyland Executive Office Chair CH 140 Black** – 450 AED each\n- Stock available: 4 units (matches your quantity)\n- Features: Aircraft reclining mechanism (3 lockable positions), mesh back with fabric seat, 3D adjustable armrests\n\n**Closest alternatives:**\n\n1. **Skyland Executive Chair CH 125 Black** – 460 AED each (21 in stock)\n2. **Skyland Executive Chair CH 490 Black** – 1,013 AED each (55 in stock)\n\nFor 4 units of the CH 140 Black, your total would be **1,800 AED** with free delivery across the UAE.\n\nWould you like me to confirm stock and prepare a quote for the CH 140 Black chairs?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_quote_details_blocks_proceed_with_units_recovery[0]",
+    "user_text": "Yes, prepare quotation. Lil / individual purchase / 2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Great news! The **Skyland CH 140 Black** you requested is available:\n\n1. **Skyland CH 140 Black** – 450 AED each\n   - 12 in stock (enough for your 4 chairs)\n   - Mesh back with fabric seat, aircraft mechanism with 3-position lock, 3D adjustable armrests, chrome base\n\n**Similar alternatives if you'd like to compare:**\n\n2. **Skyland CH 125 Black** – 460 AED each (21 in stock)\n3. **Skyland CH 490 Black** – 1,013 AED each (55 in stock)\n\nThe CH 140 fits your request and is ready to ship. Would you like to proceed with the 4 units, or would you prefer to see details on any alternatives?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_quote_details_blocks_proceed_with_units_recovery[1]",
+    "user_text": "Yes, prepare the quotation for the recommended option. Full name: Lil; Company: LLD; Delivery address: 2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Great news! The **Skyland CH 140 Black** you requested is available:\n\n1. **Skyland CH 140 Black** – 450 AED each\n   - 12 in stock (enough for your 4 chairs)\n   - Mesh back with fabric seat, aircraft mechanism with 3-position lock, 3D adjustable armrests, chrome base\n\n**Similar alternatives if you'd like to compare:**\n\n2. **Skyland CH 125 Black** – 460 AED each (21 in stock)\n3. **Skyland CH 490 Black** – 1,013 AED each (55 in stock)\n\nThe CH 140 fits your request and is ready to ship. Would you like to proceed with the 4 units, or would you prefer to see details on any alternatives?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_quote_details_blocks_proceed_with_units_recovery[2]",
+    "user_text": "Yes, send the quotation; all details are unchanged. Full name: Lil; Company: LLD; Delivery address: 2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Great news! The **Skyland CH 140 Black** you requested is available:\n\n1. **Skyland CH 140 Black** – 450 AED each\n   - 12 in stock (enough for your 4 chairs)\n   - Mesh back with fabric seat, aircraft mechanism with 3-position lock, 3D adjustable armrests, chrome base\n\n**Similar alternatives if you'd like to compare:**\n\n2. **Skyland CH 125 Black** – 460 AED each (21 in stock)\n3. **Skyland CH 490 Black** – 1,013 AED each (55 in stock)\n\nThe CH 140 fits your request and is ready to ship. Would you like to proceed with the 4 units, or would you prefer to see details on any alternatives?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_quote_details_blocks_proceed_with_units_recovery[3]",
+    "user_text": "Yes, prepare the quotation, but change only the delivery address. Full name: Lil; Company: LLD; Delivery address: 2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Great news! The **Skyland CH 140 Black** you requested is available:\n\n1. **Skyland CH 140 Black** – 450 AED each\n   - 12 in stock (enough for your 4 chairs)\n   - Mesh back with fabric seat, aircraft mechanism with 3-position lock, 3D adjustable armrests, chrome base\n\n**Similar alternatives if you'd like to compare:**\n\n2. **Skyland CH 125 Black** – 460 AED each (21 in stock)\n3. **Skyland CH 490 Black** – 1,013 AED each (55 in stock)\n\nThe CH 140 fits your request and is ready to ship. Would you like to proceed with the 4 units, or would you prefer to see details on any alternatives?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_quote_details_blocks_proceed_with_units_recovery[4]",
+    "user_text": "نعم، جهز عرض سعر، غير عنوان التسليم فقط. Full name: Lil; Company: LLD; Delivery address: 2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Great news! The **Skyland CH 140 Black** you requested is available:\n\n1. **Skyland CH 140 Black** – 450 AED each\n   - 12 in stock (enough for your 4 chairs)\n   - Mesh back with fabric seat, aircraft mechanism with 3-position lock, 3D adjustable armrests, chrome base\n\n**Similar alternatives if you'd like to compare:**\n\n2. **Skyland CH 125 Black** – 460 AED each (21 in stock)\n3. **Skyland CH 490 Black** – 1,013 AED each (55 in stock)\n\nThe CH 140 fits your request and is ready to ship. Would you like to proceed with the 4 units, or would you prefer to see details on any alternatives?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_quote_details_blocks_proceed_with_units_recovery[5]",
+    "user_text": "نعم، جهز عرض سعر للكرسي CH 140، غير عنوان التسليم فقط. Full name: Lil; Company: LLD; Delivery address: 2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Great news! The **Skyland CH 140 Black** you requested is available:\n\n1. **Skyland CH 140 Black** – 450 AED each\n   - 12 in stock (enough for your 4 chairs)\n   - Mesh back with fabric seat, aircraft mechanism with 3-position lock, 3D adjustable armrests, chrome base\n\n**Similar alternatives if you'd like to compare:**\n\n2. **Skyland CH 125 Black** – 460 AED each (21 in stock)\n3. **Skyland CH 490 Black** – 1,013 AED each (55 in stock)\n\nThe CH 140 fits your request and is ready to ship. Would you like to proceed with the 4 units, or would you prefer to see details on any alternatives?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_quote_details_blocks_proceed_with_units_recovery[6]",
+    "user_text": "نعم، جهز عرض سعر للكرسي CH 140 ذي الظهر المرتفع. Full name: Lil; Company: LLD; Delivery address: 2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Great news! The **Skyland CH 140 Black** you requested is available:\n\n1. **Skyland CH 140 Black** – 450 AED each\n   - 12 in stock (enough for your 4 chairs)\n   - Mesh back with fabric seat, aircraft mechanism with 3-position lock, 3D adjustable armrests, chrome base\n\n**Similar alternatives if you'd like to compare:**\n\n2. **Skyland CH 125 Black** – 460 AED each (21 in stock)\n3. **Skyland CH 490 Black** – 1,013 AED each (55 in stock)\n\nThe CH 140 fits your request and is ready to ship. Would you like to proceed with the 4 units, or would you prefer to see details on any alternatives?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_quote_offer_details_do_not_start_quote_without_opt_in",
+    "user_text": "Lil / individual purchase / 2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Perfect — confirmed availability:\n\n**Skyland Executive Office Chair CH 140 Black**\n- **Price:** 450 AED each\n- **Stock:** 12 units confirmed in stock ✓\n- Features: Aircraft mechanism (3 lockable positions), mesh back, fabric seat, 3D adjustable armrests, chrome base, 120 kg load capacity\n- Free delivery across UAE\n\n**Your order:** 4 chairs = **1,800 AED total**\n\nWould you like me to send you a formal quotation for these 4 chairs?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_quote_details_item_correction_updates_selection_first",
+    "user_text": "5 CH 140 / Lil / individual purchase / 2 street / lil@example.com",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Before I prepare the quotation, please share: customer name, company name or individual purchase, email, and specific delivery address."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "CH-616",
+            "quantity": 1
+          }
+        ],
+        "unresolved_items": []
+      }
+    },
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_quote_details_only_model_position_updates_selection_first",
+    "user_text": "Lilia / Del company / 2 street / Only SKYLAND NOVO 2400 2 position",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Before I prepare the quotation, please share: customer name, company name or individual purchase, email, and specific delivery address."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "CH-616",
+            "quantity": 1
+          }
+        ],
+        "unresolved_items": []
+      }
+    },
+    "customer_name": "Lilia",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_selection_unresolved_followup_resumes_quote",
+    "user_text": "CH 616 NEW black",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Before I prepare the quotation, please confirm the exact catalog item or SKU for: 4 x CH 616 chairs."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "SKYLAND NOVO 2400",
+            "quantity": 2
+          }
+        ],
+        "unresolved_items": [
+          {
+            "sku": "CH 616",
+            "quantity": 4,
+            "item_candidate": "CH 616 chairs"
+          }
+        ]
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "Igor",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_selection_unresolved_followup_resumes_from_canonical_quote_frame",
+    "user_text": "CH 616 NEW black",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Before I prepare the quotation, please confirm the exact catalog item or SKU for: 4 x CH 616 chairs."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "order_runtime": {
+        "quote_frame": {
+          "source": "selection_confirmation",
+          "status": "repair_required",
+          "lines": [
+            {
+              "sku": "OF-YED-NOVO-Table-63LW-1.2T-9-white",
+              "quantity": 2,
+              "product_id": "1ec8f4b4-f3e9-4c6a-b5c2-fb986bc9c642",
+              "display_name": "MEETING TABLE SKYLAND NOVO 2400",
+              "unit_price": 1740.0,
+              "currency": "AED",
+              "item_candidate": "SKYLAND NOVO 2400 Meeting Table"
+            }
+          ],
+          "quote_details": {},
+          "missing_quote_fields": [
+            "items and quantities"
+          ]
+        },
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      },
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "OF-YED-NOVO-Table-63LW-1.2T-9-white",
+            "quantity": 2
+          }
+        ],
+        "unresolved_items": [
+          {
+            "sku": "CH-616",
+            "quantity": 4,
+            "item_candidate": "CH 616 chairs"
+          }
+        ]
+      }
+    },
+    "customer_name": "Igor",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_unresolved_only_canonical_quote_frame_resumes_without_legacy",
+    "user_text": "The exact SKU is CH 620 grey, quantity 5.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "I found the quantity, but I need the exact catalog item for 5 x CH 620 grey before I can prepare the quotation."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "order_runtime": {
+        "quote_frame": {
+          "source": "exact_quote",
+          "status": "repair_required",
+          "lines": [],
+          "unresolved_items": [
+            {
+              "sku": null,
+              "quantity": 5,
+              "item_candidate": "CH 620 grey"
+            }
+          ],
+          "quote_details": {
+            "name": "Igor"
+          },
+          "missing_quote_fields": [
+            "items and quantities"
+          ]
+        }
+      }
+    },
+    "customer_name": "Igor",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_terse_generic_city_still_asks_specific_address",
+    "user_text": "Lil, dubay",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Please share company and address."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "CH-616",
+            "quantity": 1
+          }
+        ],
+        "unresolved_items": []
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_unparseable_quote_details_reply_requires_typed_consent",
+    "user_text": "same as before",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Please share company and address."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "CH-616",
+            "quantity": 1
+          }
+        ],
+        "unresolved_items": []
+      }
+    },
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_ok_i_can_buy_resumes_pending_quote_without_reasking_items",
+    "user_text": "Ok I can buy",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Would you like me to prepare a formal quotation for these selected items? Please share your email for the PDF."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Lil",
+        "customer_type": "individual",
+        "address": "2 street"
+      },
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "CH-140",
+            "quantity": 4
+          }
+        ],
+        "unresolved_items": []
+      }
+    },
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_russian_kp_request_resumes_pending_quote_selection",
+    "user_text": "Please send the quotation",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "I can prepare a quotation."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Test User",
+        "company": "Test Trading LLC",
+        "email": "test@example.com",
+        "phone": "+971501234567",
+        "address": "Dubai Marina, Tower A"
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      },
+      "pending_quote_selection": {
+        "source": "selection_confirmation",
+        "items": [
+          {
+            "sku": "00-07024022",
+            "quantity": 10
+          }
+        ],
+        "unresolved_items": []
+      }
+    },
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_exact_quote_second_consultative_pass_falls_back_to_direct_quotation",
+    "user_text": "What is the exact price and availability for 1 CHAIR-01?",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "What is the exact price and availability for 1 CHAIR-01?"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Test User",
+        "company": "Test Trading LLC",
+        "email": "test@example.com",
+        "phone": "+971501234567",
+        "address": "Dubai Marina, Tower A"
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_exact_quote_stores_customer_details_before_quotation",
+    "user_text": "Please issue a quotation for 1 CHAIR-01.\nFull name: Lilia Kustova\nCompany: Test Clinic LLC\nEmail: lilia@example.com\nPhone: +971501234567\nDelivery address: Dubai, UAE",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please issue a quotation for 1 CHAIR-01.\nFull name: Lilia Kustova\nCompany: Test Clinic LLC\nEmail: lilia@example.com\nPhone: +971501234567\nDelivery address: Dubai, UAE"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_exact_quote_uses_original_text_when_pii_masks_numeric_sku",
+    "user_text": "Please issue a proforma invoice for 1 00-07024023.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please issue a proforma invoice for 1 00-07024023."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Test User",
+        "company": "Test Trading LLC",
+        "email": "test@example.com",
+        "phone": "+971501234567",
+        "address": "Dubai Marina, Tower A"
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_exact_named_item_second_consultative_pass_resolves_to_catalog_sku",
+    "user_text": "I need the exact price and current availability for 1 Reception desk 1600 SKYLAND LUMA 9788-8.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need the exact price and current availability for 1 Reception desk 1600 SKYLAND LUMA 9788-8."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Test User",
+        "company": "Test Trading LLC",
+        "email": "test@example.com",
+        "phone": "+971501234567",
+        "address": "Dubai Marina, Tower A"
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      }
+    },
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_exact_quote_missing_details_returns_gate_without_escalation",
+    "user_text": "Please issue a quotation for 1 CHAIR-01.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please issue a quotation for 1 CHAIR-01."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_quote_request_with_multiple_items_keeps_all_lines",
+    "user_text": "Hi, I'm Lilia. I need 2 SKYLAND NOVO 2400 Meeting Table and 4 CH 616 chairs. Please prepare a quotation.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi, I'm Lilia. I need 2 SKYLAND NOVO 2400 Meeting Table and 4 CH 616 chairs. Please prepare a quotation."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_exact_quote_missing_details_uses_arabic_gate",
+    "user_text": "Please issue a quotation for 1 CHAIR-01.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please issue a quotation for 1 CHAIR-01."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "ar",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_exact_quote_missing_details_accepts_quantity_x_sku",
+    "user_text": "Please create a quotation for 1 x CH-620. Deliver to UAE.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi, I need CH-620 product details."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "My name is E2E Tester."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please create a quotation for 1 x CH-620. Deliver to UAE."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "E2E Tester"
+      }
+    },
+    "customer_name": "E2E Tester",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_exact_quote_unresolved_item_clarifies_without_escalation",
+    "user_text": "I need the exact price and current availability for 1 Reception desk SKYLAND LUMA.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need the exact price and current availability for 1 Reception desk SKYLAND LUMA."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_exact_quote_unresolved_followup_resolves_sku_and_quantity",
+    "user_text": "The exact SKU is CH 620 grey, quantity 5.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "I found the requested quantity, but I need the exact catalog item for 5 x CH 620 before I can prepare the quotation."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Test User",
+        "company": "Test Trading LLC",
+        "email": "test@example.com",
+        "phone": "+971501234567",
+        "address": "Dubai Marina, Tower A"
+      },
+      "order_runtime": {
+        "quote_workflow": {
+          "version": 2,
+          "consent": "granted",
+          "lifecycle": "quote_requested"
+        }
+      },
+      "pending_quote_selection": {
+        "source": "exact_quote",
+        "items": [],
+        "unresolved_items": [
+          {
+            "sku": null,
+            "quantity": 5,
+            "item_candidate": "CH 620"
+          }
+        ]
+      }
+    },
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_exact_quote_clarification_suppresses_product_media",
+    "user_text": "I need the exact price and current availability for 1 Reception desk SKYLAND LUMA.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need the exact price and current availability for 1 Reception desk SKYLAND LUMA."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_exact_quote_request_gates_missing_details_before_llm",
+    "user_text": "Please send a quotation for 1 CHAIR-01. I need the exact price and current availability.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please send a quotation for 1 CHAIR-01. I need the exact price and current availability."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_sales_order_request_creates_multi_item_quotation",
+    "user_text": "give me please sales order on SKYLAND NOVO 1800 - 1 pcs and CH 620 black - 2 pcs and executive Office Chair CH 410 black - 1 pcs",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "give me please sales order on SKYLAND NOVO 1800 - 1 pcs and CH 620 black - 2 pcs and executive Office Chair CH 410 black - 1 pcs"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_sales_order_quantity_before_item_unresolved_clarifies",
+    "user_text": "Can I have sales order ? I need 2 SKYLAND LUMA 9719-4 and 3 TORR Cabinet",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Can I have sales order ? I need 2 SKYLAND LUMA 9719-4 and 3 TORR Cabinet"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_sales_order_normalizes_cyrillic_sku_prefix",
+    "user_text": "give me please sales order -SKYLAND NOVO 1800 - 1pcs and СН 190 black- 2 pcs and CH 410 black 1 pcs",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "give me please sales order -SKYLAND NOVO 1800 - 1pcs and СН 190 black- 2 pcs and CH 410 black 1 pcs"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_sales_order_unresolved_stores_pending_context",
+    "user_text": "give me please sales order -SKYLAND NOVO 1800 - 1pcs and СН 190 black- 2 pcs and CH 410 black 1 pcs",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "give me please sales order -SKYLAND NOVO 1800 - 1pcs and СН 190 black- 2 pcs and CH 410 black 1 pcs"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_sales_order_unresolved_followup_resumes_quote",
+    "user_text": "СН 190 black",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "I can prepare a sales order, but I need to confirm the exact catalog item(s) for: 2 x CH 190 black."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "sales_order_quote",
+        "items": [
+          {
+            "sku": "NOVO-1800",
+            "quantity": 1
+          },
+          {
+            "sku": "CH-410-BLACK",
+            "quantity": 1
+          }
+        ],
+        "unresolved_items": [
+          {
+            "sku": null,
+            "quantity": 2,
+            "item_candidate": "CH 190 black"
+          }
+        ]
+      }
+    },
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_quote_details_reply_clears_stale_name_gate_request",
+    "user_text": "My name is Lilia Cutover.\nCompany: QA Cutover LLC.\nEmail lilia.cutover+sales@example.com.\nPhone +971501234567.\nDelivery address Office 101, Business Bay, Dubai.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi, I need a quotation: 5 x CH 620"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "5 x CH 620 grey"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Before I prepare the quotation, please share: customer name; company name; specific delivery address; customer email."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "My name is Lilia Cutover.\nCompany: QA Cutover LLC.\nEmail lilia.cutover+sales@example.com.\nPhone +971501234567.\nDelivery address Office 101, Business Bay, Dubai."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "name_gate_pending_request": {
+        "text": "Hi, I need a quotation: 5 x CH 620"
+      },
+      "pending_quote_selection": {
+        "source": "exact_quote",
+        "items": [
+          {
+            "sku": "CH 620 grey",
+            "quantity": 5
+          }
+        ],
+        "unresolved_items": []
+      },
+      "order_runtime": {
+        "quote_frame": {
+          "version": 1,
+          "frame_id": "qf-details-over-name-gate",
+          "source": "exact_quote",
+          "status": "collecting_details",
+          "lines": [
+            {
+              "sku": "CH 620 grey",
+              "quantity": 5,
+              "item_candidate": "CH 620 grey"
+            }
+          ],
+          "unresolved_items": [],
+          "quote_details": {},
+          "missing_quote_fields": []
+        }
+      }
+    },
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_first_turn_stores_sales_order_quote_context",
+    "user_text": "sales order 5 x CH 620",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "sales order 5 x CH 620"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_active_quote_repair_bypasses_dialogue_kernel_product_selection",
+    "user_text": "The exact SKU is CH 620 grey, quantity 5.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Before I prepare the quotation, please confirm the exact catalog item or SKU for: 5 x CH 620."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "The exact SKU is CH 620 grey, quantity 5."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Victor Cutover"
+      },
+      "order_runtime": {
+        "quote_frame": {
+          "version": 1,
+          "frame_id": "qf-live-repair",
+          "source": "exact_quote",
+          "status": "repair_required",
+          "lines": [],
+          "unresolved_items": [
+            {
+              "sku": "CH-620",
+              "quantity": 5,
+              "item_candidate": "CH 620"
+            }
+          ],
+          "quote_details": {
+            "name": "Victor Cutover"
+          },
+          "missing_quote_fields": [
+            "items and quantities"
+          ]
+        }
+      },
+      "pending_quote_selection": {
+        "source": "exact_quote",
+        "items": [],
+        "unresolved_items": [
+          {
+            "sku": "CH-620",
+            "quantity": 5,
+            "item_candidate": "CH 620"
+          }
+        ]
+      }
+    },
+    "customer_name": "Victor Cutover",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_mixed_product_service_request_stays_in_full_mode",
+    "user_text": "Hello, I am interested in ordering work station for 2 people and some mobile drawers. I appreciate fast delivery within 2-3 days. I wanted to ask if you will also assembly the desk upon delivery?",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hello, I am interested in ordering work station for 2 people and some mobile drawers. I appreciate fast delivery within 2-3 days. I wanted to ask if you will also assembly the desk upon delivery?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_product_preference_answer_continues_without_manager_handoff",
+    "user_text": "I prefer more open for team",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need workstation options for the team with drawers."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Would you prefer a more private workspace with individual drawer pedestals (LUMA), or is a more open, collaborative setup with privacy panels (NOVO) better for your team?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I prefer more open for team"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_captures_product_preference_frame_from_assistant_question",
+    "user_text": "I need workstation options for the team with drawers.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need workstation options for the team with drawers."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_product_preference_answer_after_interruption_uses_frame_when_enforced",
+    "user_text": "I prefer more open for team",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need workstation options for the team with drawers."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Would you prefer a more private workspace with individual drawer pedestals (LUMA), or is a more open, collaborative setup with privacy panels (NOVO) better for your team?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Can delivery be arranged?"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Yes, delivery and installation can be arranged in Dubai."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I prefer more open for team"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "dialogue_kernel": {
+        "state": {
+          "version": 1,
+          "active_flow": "product_selection",
+          "slots": {
+            "customer_name": "Lili"
+          },
+          "expected_answer_frames": [
+            {
+              "frame_id": "product_preference:test",
+              "flow": "product_selection",
+              "question_kind": "product_preference",
+              "prompt_key": "workspace_luma_novo_preference",
+              "status": "active",
+              "priority": 80,
+              "max_customer_turns": 6,
+              "turns_seen": 0,
+              "expected_slots": [
+                {
+                  "slot": "workspace_preference",
+                  "accepted_values": [
+                    "open",
+                    "private"
+                  ],
+                  "aliases": {
+                    "open": [
+                      "more open",
+                      "for team",
+                      "novo"
+                    ],
+                    "private": [
+                      "private",
+                      "more privacy",
+                      "luma"
+                    ]
+                  }
+                }
+              ],
+              "source_refs": [
+                {
+                  "kind": "product_family",
+                  "value": "LUMA",
+                  "ordinal": 1
+                },
+                {
+                  "kind": "product_family",
+                  "value": "SKYLAND NOVO",
+                  "ordinal": 2
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "customer_name": "Lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_product_preference_frame_does_not_steer_unusable_kernel_match[0]",
+    "user_text": "I prefer more open for team",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need workstation options for the team with drawers."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Would you prefer a more private workspace with individual drawer pedestals (LUMA), or is a more open, collaborative setup with privacy panels (NOVO) better for your team?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Can delivery be arranged?"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Yes, delivery and installation can be arranged in Dubai."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I prefer more open for team"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "dialogue_kernel": {
+        "state": {
+          "version": 1,
+          "active_flow": "product_selection",
+          "slots": {
+            "customer_name": "Lili"
+          },
+          "expected_answer_frames": [
+            {
+              "frame_id": "product_preference:test",
+              "flow": "product_selection",
+              "question_kind": "product_preference",
+              "prompt_key": "workspace_luma_novo_preference",
+              "status": "active",
+              "priority": 80,
+              "max_customer_turns": 6,
+              "turns_seen": 0,
+              "expected_slots": [
+                {
+                  "slot": "workspace_preference",
+                  "accepted_values": [
+                    "open",
+                    "private"
+                  ],
+                  "aliases": {
+                    "open": [
+                      "more open",
+                      "for team",
+                      "novo"
+                    ],
+                    "private": [
+                      "private",
+                      "more privacy",
+                      "luma"
+                    ]
+                  }
+                }
+              ],
+              "source_refs": [
+                {
+                  "kind": "product_family",
+                  "value": "LUMA",
+                  "ordinal": 1
+                },
+                {
+                  "kind": "product_family",
+                  "value": "SKYLAND NOVO",
+                  "ordinal": 2
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "customer_name": "Lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_product_preference_frame_does_not_steer_unusable_kernel_match[1]",
+    "user_text": "I prefer more open for team",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need workstation options for the team with drawers."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Would you prefer a more private workspace with individual drawer pedestals (LUMA), or is a more open, collaborative setup with privacy panels (NOVO) better for your team?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Can delivery be arranged?"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Yes, delivery and installation can be arranged in Dubai."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I prefer more open for team"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "dialogue_kernel": {
+        "state": {
+          "version": 1,
+          "active_flow": "product_selection",
+          "slots": {
+            "customer_name": "Lili"
+          },
+          "expected_answer_frames": [
+            {
+              "frame_id": "product_preference:test",
+              "flow": "product_selection",
+              "question_kind": "product_preference",
+              "prompt_key": "workspace_luma_novo_preference",
+              "status": "active",
+              "priority": 80,
+              "max_customer_turns": 6,
+              "turns_seen": 0,
+              "expected_slots": [
+                {
+                  "slot": "workspace_preference",
+                  "accepted_values": [
+                    "open",
+                    "private"
+                  ],
+                  "aliases": {
+                    "open": [
+                      "more open",
+                      "for team",
+                      "novo"
+                    ],
+                    "private": [
+                      "private",
+                      "more privacy",
+                      "luma"
+                    ]
+                  }
+                }
+              ],
+              "source_refs": [
+                {
+                  "kind": "product_family",
+                  "value": "LUMA",
+                  "ordinal": 1
+                },
+                {
+                  "kind": "product_family",
+                  "value": "SKYLAND NOVO",
+                  "ordinal": 2
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "customer_name": "Lili",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_short_yes_after_assembly_question_escalates_without_generic_fallback",
+    "user_text": "Yes",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please prepare the quotation."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Would you like to add furniture assembly service as well?"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Test User",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_name_gate_resume_preserves_catalog_discovery_intent",
+    "user_text": "I'm Nora, facilities manager at Northstar Workspace.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "We're preparing a ten-person office in Dubai. We need desks and supportive chairs and want to keep the total near AED 14,000. What combination should we consider?"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I'm Nora, facilities manager at Northstar Workspace."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "name_gate_pending_request": {
+        "version": 2,
+        "text": "We're preparing a ten-person office in Dubai. We need desks and supportive chairs and want to keep the total near AED 14,000. What combination should we consider?",
+        "source": "first_turn_name_gate",
+        "intent": "catalog_discovery",
+        "language": "en",
+        "identity": {}
+      }
+    },
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_records_explicit_sales_opportunity_without_quote",
+    "user_text": "Company: Horizon QA Test LLC. Budget: AED 7,000. Decision expected within two weeks. Record this as a sales opportunity and tell me the next commercial step without creating a quotation.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hello, I need 2 Skyland Novo workstations, 2 mobile drawers, delivery to Business Bay, and assembly."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Great, I found SKYLAND NOVO 2400 workstations and mobile drawer options. Which drawer finish works?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Company: Horizon QA Test LLC. Budget: AED 7,000. Decision expected within two weeks. Record this as a sales opportunity and tell me the next commercial step without creating a quotation."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "quote_customer_details": {
+        "name": "Yusuf"
+      },
+      "sales_memory": {
+        "latest_product_note": "We are planning to buy 20 CH 616 NEW black chairs this month and want help moving the project forward, but no quotation yet."
+      }
+    },
+    "customer_name": "Yusuf",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_exact_sku_stock_request_returns_only_requested_variant[0]",
+    "user_text": "Please confirm from live inventory whether 12 units of CH 616 NEW black are available and the exact unit price. Do not prepare a quotation yet.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please confirm from live inventory whether 12 units of CH 616 NEW black are available and the exact unit price. Do not prepare a quotation yet."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Aisha",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_exact_sku_stock_request_returns_only_requested_variant[1]",
+    "user_text": "Please confirm from live inventory whether 12 units of CH 616 NEW black are available and the exact unit price. I do not want a quotation.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please confirm from live inventory whether 12 units of CH 616 NEW black are available and the exact unit price. I do not want a quotation."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Aisha",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_exact_sku_stock_request_returns_only_requested_variant[2]",
+    "user_text": "Please confirm from live inventory whether 12 units of CH 616 NEW black are available and the exact unit price. Please do not offer a quotation.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please confirm from live inventory whether 12 units of CH 616 NEW black are available and the exact unit price. Please do not offer a quotation."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Aisha",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_the_quotation_says_what_it_covers_before_it_asks_for_the_paperwork",
+    "user_text": "Please prepare a quotation for 4 x CH 616 NEW black.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need office furniture."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Which products are you considering?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Please prepare a quotation for 4 x CH 616 NEW black."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Aisha",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_first_turn_unknown_name_quote_ready_resumes_deterministically[turn-1]",
+    "sequence_id": "test_process_message_first_turn_unknown_name_quote_ready_resumes_deterministically",
+    "turn": 1,
+    "source_boundary": "Original mock setup and history; initial metadata is retained for both turns. No retired route mutations are synthesized.",
+    "user_text": "Hello, I need a quotation for 1 CH 616 chair delivered to Office 1202, Business Bay, Dubai. I am an individual. Email: alex@example.com",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hello, I need a quotation for 1 CH 616 chair delivered to Office 1202, Business Bay, Dubai. I am an individual. Email: alex@example.com"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_first_turn_unknown_name_quote_ready_resumes_deterministically[turn-2]",
+    "sequence_id": "test_process_message_first_turn_unknown_name_quote_ready_resumes_deterministically",
+    "turn": 2,
+    "source_boundary": "Original mock setup and history; initial metadata is retained for both turns. No retired route mutations are synthesized.",
+    "user_text": "Alex",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hello, I need a quotation for 1 CH 616 chair delivered to Office 1202, Business Bay, Dubai. I am an individual. Email: alex@example.com"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Alex"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": null,
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_missing_quantity_reference_then_bare_number_resolves_selection[turn-1]",
+    "sequence_id": "test_process_message_missing_quantity_reference_then_bare_number_resolves_selection",
+    "turn": 1,
+    "source_boundary": "Original mock setup and history; initial metadata is retained for both turns. No retired route mutations are synthesized.",
+    "user_text": "I need CH 140",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "My name is Lil"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Thanks, how can I help?"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need CH 140"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_missing_quantity_reference_then_bare_number_resolves_selection[turn-2]",
+    "sequence_id": "test_process_message_missing_quantity_reference_then_bare_number_resolves_selection",
+    "turn": 2,
+    "source_boundary": "Original mock setup and history; initial metadata is retained for both turns. No retired route mutations are synthesized.",
+    "user_text": "5",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "I need CH 140"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "I have these product references: CH 140. Please confirm the quantity for each item so I can check availability."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "5"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lil",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_kernel_quantity_prompt_stores_order_runtime_frame[turn-1]",
+    "sequence_id": "test_process_message_kernel_quantity_prompt_stores_order_runtime_frame",
+    "turn": 1,
+    "source_boundary": "Original mock setup and history; initial metadata is retained for both turns. No retired route mutations are synthesized.",
+    "user_text": "Hi Noor, I need CH 140. Customer: Victor Quantity. Individual purchase.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi Noor, I need CH 140. Customer: Victor Quantity. Individual purchase."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Victor Quantity",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_kernel_quantity_prompt_stores_order_runtime_frame[turn-2]",
+    "sequence_id": "test_process_message_kernel_quantity_prompt_stores_order_runtime_frame",
+    "turn": 2,
+    "source_boundary": "Original mock setup and history; initial metadata is retained for both turns. No retired route mutations are synthesized.",
+    "user_text": "2",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Hi Noor, I need CH 140. Customer: Victor Quantity. Individual purchase."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Hello, I'm Noor from Treejar.\n\nI have the product reference. Please confirm the quantity for each item so I can continue accurately."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "2"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Victor Quantity",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_pending_quantity_descriptor_followup_resolves_novo_table[turn-1]",
+    "sequence_id": "test_process_message_pending_quantity_descriptor_followup_resolves_novo_table",
+    "turn": 1,
+    "source_boundary": "Original mock setup and history; initial metadata is retained for both turns. No retired route mutations are synthesized.",
+    "user_text": "My name is Lilia Orderstate. I need SKYLAND NOVO 2400 Meeting Table. Please confirm this selected item.",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "My name is Lilia Orderstate. I need SKYLAND NOVO 2400 Meeting Table. Please confirm this selected item."
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lilia Orderstate",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_pending_quantity_descriptor_followup_resolves_novo_table[turn-2]",
+    "sequence_id": "test_process_message_pending_quantity_descriptor_followup_resolves_novo_table",
+    "turn": 2,
+    "source_boundary": "Original mock setup and history; initial metadata is retained for both turns. No retired route mutations are synthesized.",
+    "user_text": "Only SKYLAND NOVO 2400 2 position",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "My name is Lilia Orderstate. I need SKYLAND NOVO 2400 Meeting Table. Please confirm this selected item."
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "I have these product references: SKYLAND NOVO 2400 Meeting Table. Please confirm the quantity for each item."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Only SKYLAND NOVO 2400 2 position"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lilia Orderstate",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_order_cutover_gh42_second_occurrence_bare_quantity_uses_runtime_frame_without_recent_assistant[turn-1]",
+    "sequence_id": "test_order_cutover_gh42_second_occurrence_bare_quantity_uses_runtime_frame_without_recent_assistant",
+    "turn": 1,
+    "source_boundary": "Original mock setup and history; initial metadata is retained for both turns. No retired route mutations are synthesized.",
+    "user_text": "SK 45 White",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "SK 45 White"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lilia",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_order_cutover_gh42_second_occurrence_bare_quantity_uses_runtime_frame_without_recent_assistant[turn-2]",
+    "sequence_id": "test_order_cutover_gh42_second_occurrence_bare_quantity_uses_runtime_frame_without_recent_assistant",
+    "turn": 2,
+    "source_boundary": "Original mock setup and history; initial metadata is retained for both turns. No retired route mutations are synthesized.",
+    "user_text": "2",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "SK 45 White"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "2"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lilia",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_order_cutover_does_not_resume_quote_from_details_without_opt_in[turn-1]",
+    "sequence_id": "test_order_cutover_does_not_resume_quote_from_details_without_opt_in",
+    "turn": 1,
+    "source_boundary": "Original mock setup and history; initial metadata is retained for both turns. No retired route mutations are synthesized.",
+    "user_text": "CH 615 NEW black 6 point",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "CH 615 NEW black 6 point"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lilia",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_order_cutover_does_not_resume_quote_from_details_without_opt_in[turn-2]",
+    "sequence_id": "test_order_cutover_does_not_resume_quote_from_details_without_opt_in",
+    "turn": 2,
+    "source_boundary": "Original mock setup and history; initial metadata is retained for both turns. No retired route mutations are synthesized.",
+    "user_text": "Name company GHP / Address - 2 street / +79137704837",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "CH 615 NEW black 6 point"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Great, I can confirm the selected items from our catalog:\n\n1. Skyland Operative Chair CH 615 NEW black\n   Quantity: 6\n   Availability: 20 available (Zoho-confirmed)\n   Unit price: 199.00 AED\n   Line total: 1,194.00 AED\n\nWould you like me to prepare a formal quotation for these selected items? I can use this WhatsApp number for the draft. To make the PDF complete, please share: company name, or confirm you are buying as an individual; email; specific delivery address."
+          }
+        ]
+      },
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "user-prompt",
+            "content": "Name company GHP / Address - 2 street / +79137704837"
+          }
+        ]
+      }
+    ],
+    "metadata": {},
+    "customer_name": "Lilia",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_sales_order_resolved_followup_then_brief_creates_quote[turn-1]",
+    "sequence_id": "test_process_message_sales_order_resolved_followup_then_brief_creates_quote",
+    "turn": 1,
+    "source_boundary": "Original mock setup and history; initial metadata is retained for both turns. No retired route mutations are synthesized.",
+    "user_text": "5 x CH 620 grey",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "I can prepare a sales order, but I need to confirm the exact catalog item(s) for: 5 x CH 620 grey."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "sales_order_quote",
+        "items": [],
+        "unresolved_items": [
+          {
+            "sku": null,
+            "quantity": 5,
+            "item_candidate": "CH 620 grey"
+          }
+        ]
+      }
+    },
+    "customer_name": "Lilia",
+    "language": "en",
+    "sales_stage": "greeting"
+  },
+  {
+    "id": "test_process_message_sales_order_resolved_followup_then_brief_creates_quote[turn-2]",
+    "sequence_id": "test_process_message_sales_order_resolved_followup_then_brief_creates_quote",
+    "turn": 2,
+    "source_boundary": "Original mock setup and history; initial metadata is retained for both turns. No retired route mutations are synthesized.",
+    "user_text": "Lilia\nLLD\nLfdsf@kfsl.ru\n2 street",
+    "history": [
+      {
+        "kind": "request",
+        "parts": [
+          {
+            "part_kind": "system-prompt",
+            "content": "summary"
+          }
+        ]
+      },
+      {
+        "kind": "response",
+        "parts": [
+          {
+            "part_kind": "text",
+            "content": "Before I prepare the quotation, please share: company name, or confirm you are buying as an individual; specific delivery address; customer email."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "pending_quote_selection": {
+        "source": "sales_order_quote",
+        "items": [],
+        "unresolved_items": [
+          {
+            "sku": null,
+            "quantity": 5,
+            "item_candidate": "CH 620 grey"
+          }
+        ]
+      }
+    },
+    "customer_name": "Lilia",
+    "language": "en",
+    "sales_stage": "greeting"
+  }
+]

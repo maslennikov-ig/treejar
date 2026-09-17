@@ -202,6 +202,7 @@ def test_vps_deploy_app_only_starts_no_worker(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr or result.stdout
     assert docker_log.read_text().splitlines() == [
+        f"compose --project-name noor -f {target_dir}/docker-compose.yml ps --status running --quiet worker",
         f"compose --project-name noor -f {target_dir}/docker-compose.yml stop worker",
         "compose --project-name noor -f "
         f"{target_dir}/docker-compose.yml ps --status running --quiet worker",
@@ -241,6 +242,8 @@ def test_vps_deploy_app_only_aborts_when_worker_remains_running(
                 f"printf '%s\\n' \"$*\" >> '{docker_log}'",
                 "if [[ \"$*\" == *'ps --status running --quiet worker' ]]; then",
                 "  printf 'still-running\\n'",
+                'elif [[ "$*" == exec* ]]; then',
+                "  printf 'disabled\\n'",
                 "fi",
             ]
         )
@@ -272,3 +275,115 @@ def test_vps_deploy_app_only_aborts_when_worker_remains_running(
     assert result.returncode != 0
     assert "Worker is still running" in result.stderr
     assert all(" up " not in call for call in docker_log.read_text().splitlines())
+
+
+def test_preserve_test_worker_requires_app_only(tmp_path: Path) -> None:
+    result = subprocess.run(
+        ["bash", str(SCRIPT_PATH), "--preserve-test-worker"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "requires --app-only" in result.stderr
+
+
+def _run_preserve_worker_deploy(
+    tmp_path: Path, *, running: bool, live_state: str, candidate_state: str
+) -> tuple[subprocess.CompletedProcess[str], str]:
+    release_root = tmp_path / "release"
+    release_root.mkdir()
+    (release_root / "docker-compose.yml").write_text("services: {}\n")
+    archive_path = tmp_path / "release.tar.gz"
+    _build_release_archive(release_root, archive_path)
+    target = tmp_path / "noor"
+    target.mkdir()
+    (target / ".env").write_text("SECRET=do-not-source\n")
+    (target / "docker-compose.yml").write_text("services: {}\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "docker.log"
+    stopped = tmp_path / "stopped"
+    _write_executable(
+        bin_dir / "docker",
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "${{*%% -c*}}" >> '{log}'
+if [[ "$*" == *'stop worker' ]]; then touch '{stopped}'; fi
+if [[ "$*" == *'ps --status running --quiet worker' ]]; then
+    if [ '{int(running)}' = 1 ] && [ ! -f '{stopped}' ]; then echo worker-id; fi
+elif [[ "$1" = exec ]]; then
+    echo '{live_state}'
+elif [[ "$*" == *'run --rm --no-deps --entrypoint python worker'* ]]; then
+    echo '{candidate_state}'
+fi
+""",
+    )
+    _write_executable(bin_dir / "curl", "#!/usr/bin/env bash\nexit 0\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    result = subprocess.run(
+        [
+            "bash",
+            str(SCRIPT_PATH),
+            "--archive",
+            str(archive_path),
+            "--target-dir",
+            str(target),
+            "--app-only",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert (target / ".env").read_text() == "SECRET=do-not-source\n"
+    return result, log.read_text()
+
+
+def test_preserve_refreshes_only_existing_verified_test_worker(tmp_path: Path) -> None:
+    result, calls = _run_preserve_worker_deploy(
+        tmp_path, running=True, live_state="a" * 64, candidate_state="a" * 64
+    )
+    assert result.returncode == 0, result.stderr
+    assert "build app worker" in calls
+    assert "run --rm --no-deps --entrypoint python worker" in calls
+    assert "up -d --no-build --no-deps --timeout 180 app worker" in calls
+    assert "stop worker" not in calls
+
+
+def test_preserve_keeps_stopped_worker_stopped(tmp_path: Path) -> None:
+    result, calls = _run_preserve_worker_deploy(
+        tmp_path, running=False, live_state="a" * 64, candidate_state="a" * 64
+    )
+    assert result.returncode == 0, result.stderr
+    assert "up -d --build --no-deps app" in calls
+    assert "build app worker" not in calls
+
+
+def test_preserve_retains_app_only_gate_for_non_test_worker(tmp_path: Path) -> None:
+    result, calls = _run_preserve_worker_deploy(
+        tmp_path, running=True, live_state="disabled", candidate_state="a" * 64
+    )
+    assert result.returncode == 0, result.stderr
+    assert "stop worker" in calls
+    assert "up -d --build --no-deps app" in calls
+    assert "build app worker" not in calls
+
+
+def test_preserve_rejects_candidate_boundary_change_before_restart(
+    tmp_path: Path,
+) -> None:
+    result, calls = _run_preserve_worker_deploy(
+        tmp_path, running=True, live_state="a" * 64, candidate_state="b" * 64
+    )
+    assert result.returncode != 0
+    assert "Candidate changes test-worker boundaries" in result.stderr
+    assert "up -d" not in calls
+    assert "stop worker" not in calls
+
+
+def test_preserve_rejects_unverifiable_existing_worker(tmp_path: Path) -> None:
+    result, calls = _run_preserve_worker_deploy(
+        tmp_path, running=True, live_state="unexpected", candidate_state="a" * 64
+    )
+    assert result.returncode != 0
+    assert "Cannot verify existing test-worker" in result.stderr
+    assert "build app worker" not in calls

@@ -16,7 +16,8 @@ Options:
   --compose-file <path>    Compose file relative to target dir. Default: docker-compose.yml
   --project-name <name>    Docker Compose project name. Default: basename of target dir.
   --health-url <url>       URL checked after deploy. Default: http://127.0.0.1:8002/api/v1/health
-  --app-only               Build and start only app; leave worker stopped for an operator gate.
+  --app-only               Start app; preserve a verified running test-only worker, otherwise stop worker.
+  --preserve-test-worker   With --app-only, refresh an already-running test-only worker.
   -h, --help               Show this help.
 
 The release archive should contain the tracked repository files plus optional
@@ -38,6 +39,8 @@ COMPOSE_FILE="docker-compose.yml"
 PROJECT_NAME=""
 HEALTH_URL="http://127.0.0.1:8002/api/v1/health"
 APP_ONLY=false
+PRESERVE_TEST_WORKER=false
+REFRESH_TEST_WORKER=false
 KEEP_PATHS=(
     ".agent"
     ".beads"
@@ -80,6 +83,11 @@ while [ "$#" -gt 0 ]; do
             ;;
         --app-only)
             APP_ONLY=true
+            PRESERVE_TEST_WORKER=true
+            shift
+            ;;
+        --preserve-test-worker)
+            PRESERVE_TEST_WORKER=true
             shift
             ;;
         -h|--help)
@@ -93,6 +101,11 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
+
+if [ "$PRESERVE_TEST_WORKER" = true ] && [ "$APP_ONLY" != true ]; then
+    echo "Error: --preserve-test-worker requires --app-only." >&2
+    exit 1
+fi
 
 if [ -z "$ARCHIVE_PATH" ]; then
     echo "Error: --archive is required." >&2
@@ -126,7 +139,40 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [ "$APP_ONLY" = true ] && [ -f "$TARGET_DIR/$COMPOSE_FILE" ]; then
+# Read only the effective safety configuration, never source or print secrets.
+# Importing WorkerSettings does not run startup or connect to runtime services.
+TEST_WORKER_PROBE=$(cat <<'PYCODE'
+import hashlib
+import json
+from src.core.config import settings
+if not settings.test_channel_restore_mode:
+    print("disabled")
+else:
+    from src.worker import WorkerSettings
+    assert not WorkerSettings.cron_jobs, "test worker must have no cron jobs"
+    assert [f.name for f in WorkerSettings.functions] == ["process_incoming_batch"]
+    fields = ("test_channel_restore_mode", "wazzup_channel_id",
+              "wazzup_outbound_allowed_channel_id", "telegram_allowed_inbound_phone")
+    state = {key: getattr(settings, key) for key in fields}
+    assert state["wazzup_channel_id"] and state["wazzup_channel_id"] == state["wazzup_outbound_allowed_channel_id"]
+    print(hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest())
+PYCODE
+)
+if [ "$PRESERVE_TEST_WORKER" = true ] && [ -f "$TARGET_DIR/$COMPOSE_FILE" ]; then
+    EXISTING_WORKER_ID="$(docker compose --project-name "$PROJECT_NAME" \
+        -f "$TARGET_DIR/$COMPOSE_FILE" ps --status running --quiet worker)"
+    if [ -n "$EXISTING_WORKER_ID" ]; then
+        TEST_WORKER_STATE="$(docker exec "$EXISTING_WORKER_ID" python -c "$TEST_WORKER_PROBE")"
+        if [[ "$TEST_WORKER_STATE" =~ ^[0-9a-f]{64}$ ]]; then
+            REFRESH_TEST_WORKER=true
+        elif [ "$TEST_WORKER_STATE" != disabled ]; then
+            echo "Error: Cannot verify existing test-worker safety state." >&2
+            exit 1
+        fi
+    fi
+fi
+
+if [ "$APP_ONLY" = true ] && [ "$REFRESH_TEST_WORKER" = false ] && [ -f "$TARGET_DIR/$COMPOSE_FILE" ]; then
     # The app-only gate must also contain an already-running worker. Stop it
     # before replacing the runtime tree or building the new application.
     docker compose --project-name "$PROJECT_NAME" \
@@ -186,7 +232,25 @@ rsync "${RSYNC_ARGS[@]}" "$STAGING_DIR"/ "$TARGET_DIR"/
 mkdir -p "$TARGET_DIR/logs/maintenance"
 
 cd "$TARGET_DIR"
-if [ "$APP_ONLY" = true ]; then
+if [ "$REFRESH_TEST_WORKER" = true ]; then
+    docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" build app worker
+    CANDIDATE_TEST_STATE="$(docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" \
+        run --rm --no-deps --entrypoint python worker -c "$TEST_WORKER_PROBE")"
+    if [ "$CANDIDATE_TEST_STATE" != "$TEST_WORKER_STATE" ]; then
+        echo "Error: Candidate changes test-worker boundaries; running containers preserved." >&2
+        exit 1
+    fi
+    docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" \
+        up -d --no-build --no-deps --timeout 180 app worker
+    NEW_WORKER_ID="$(docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" \
+        ps --status running --quiet worker)"
+    if [ -z "$NEW_WORKER_ID" ] || \
+        [ "$(docker exec "$NEW_WORKER_ID" python -c "$TEST_WORKER_PROBE")" != "$TEST_WORKER_STATE" ]; then
+        docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" stop worker
+        echo "Error: Refreshed worker failed safety verification; worker stopped." >&2
+        exit 1
+    fi
+elif [ "$APP_ONLY" = true ]; then
     docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" \
         up -d --build --no-deps app
 else

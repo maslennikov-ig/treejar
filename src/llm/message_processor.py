@@ -19,14 +19,12 @@ suite rather than trusting anyone to keep a second list correct.
 
 from __future__ import annotations
 
-import datetime
 import json
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic_ai._run_context import RunContext
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import (
     ModelRequest,
@@ -42,44 +40,25 @@ from src.core.config import settings
 from src.dialogue.order_guards import quotation_claimed_without_call
 from src.dialogue.order_state import (
     QuoteConsent,
-    QuoteLifecycle,
-    QuoteWorkflowState,
     quote_workflow_from_metadata,
 )
 from src.dialogue.runner import (
-    quote_consent_signal,
     record_legacy_route,
 )
 from src.llm.catalog_planning import (
     CLAIM_CONTRACT_SCOPE_KEY,
     SalesDeps,
-    _catalog_decision_defects,
-    _catalog_decision_output_is_valid,
-    _catalog_decision_repair_directive,
-    _catalog_decision_runtime_directive,
-    _catalog_planning_for_turn,
-    _catalog_recovery_output_is_valid,
     _claim_contract_directive,
     _claim_contract_runs_every_catalog_turn,
-    _complete_verified_cross_sell_for_recovery,
     _enforce_claim_contract,
     _log_claim_contract,
+    _materialize_claim_rows,
     _materialize_verified_catalog_facts,
-    _should_override_policy_for_catalog_fact_query,
-    _store_catalog_planning,
-    _try_verified_opening_catalog_options,
     _turn_owes_the_company_question,
-    _verified_prose_response,
     _verify_volunteered_claims,
-    catalog_anchor,
     grounded_amounts_for_turn,
-    opening_wants_a_price_anchor,
 )
-from src.llm.closed_question_guard import response_asks_customer_name
 from src.llm.grounding_output import GroundingOutputAction
-from src.llm.order_quote_routes import (
-    build_declared_static_response,
-)
 from src.llm.outbound_reply_guard import finalize_customer_reply_text
 from src.llm.pii import (
     mask_pii,
@@ -99,9 +78,6 @@ from src.llm.response_policy import (
     permitted_asks_for_turn,
     render_reply,
 )
-from src.llm.response_policy import (
-    last_assistant_asked_quote_customer_details as _last_assistant_asked_quote_customer_details,
-)
 from src.llm.response_runtime import (
     PendingReferenceRoute,
     _product_media_is_referenced,
@@ -113,15 +89,6 @@ from src.llm.safety import (
     model_name_for_path,
     model_settings_for_path,
     run_agent_with_safety,
-)
-from src.llm.verified_answers import (
-    build_clarification_response,
-    build_quote_or_proposal_clarification_response,
-    build_sales_fallback_response,
-    build_service_handoff_reason,
-    build_service_handoff_response,
-    build_service_runtime_directives,
-    is_quote_or_proposal_request,
 )
 from src.models.conversation import Conversation
 from src.services.bot_behavior_rules import (
@@ -162,22 +129,13 @@ if TYPE_CHECKING:
         ReplyProvenance as ReplyProvenanceT,
     )
     from src.llm.response_runtime import (
-        ExactQuoteCandidate as ExactQuoteCandidateT,
-    )
-    from src.llm.response_runtime import (
         LLMResponse as LLMResponseT,
     )
     from src.llm.response_runtime import (
         ProductMediaPayload as ProductMediaPayloadT,
     )
-    from src.llm.response_runtime import (
-        SalesOpportunityRequest as SalesOpportunityRequestT,
-    )
     from src.llm.safety import (
         OpenRouterTelemetryChatModel as OpenAIChatModelT,
-    )
-    from src.llm.verified_answers import (
-        VerifiedAnswerDecision as VerifiedAnswerDecisionT,
     )
     from src.models.conversation import Conversation as ConversationT
     from src.rag.embeddings import EmbeddingEngine
@@ -265,25 +223,6 @@ def _deferred_product_media_for_response(
 # the clearer to the order/quote adapter as a `Callable[[], Awaitable[None]]` --
 # keep their zero-argument shape through a `partial` bound once the conversation
 # is loaded.
-def _verified_policy_repair_state(conv: ConversationT) -> dict[str, int | str] | None:
-    metadata = conv.metadata_ if isinstance(conv.metadata_, dict) else {}
-    state = metadata.get(engine.VERIFIED_POLICY_REPAIR_KEY)
-    if not isinstance(state, dict):
-        return None
-    kind = state.get("kind")
-    count = state.get("count")
-    if not isinstance(kind, str) or not isinstance(count, int):
-        return None
-    return {"kind": kind, "count": count}
-
-
-async def _store_verified_policy_repair_state(
-    conv: ConversationT, db: AsyncSession, kind: str, count: int
-) -> None:
-    metadata = dict(conv.metadata_ or {})
-    metadata[engine.VERIFIED_POLICY_REPAIR_KEY] = {"kind": kind, "count": count}
-    conv.metadata_ = metadata
-    await db.flush()
 
 
 async def _drop_verified_policy_repair_state(
@@ -329,24 +268,6 @@ class _LazyModelRuntime:
                 ),
             )
         return self._runtime
-
-
-async def _run_prose_agent_on(
-    model_runtime: _LazyModelRuntime, directive: str, run_deps: SalesDepsT
-) -> Any:
-    """Run the rewrite on its own, away from the product system prompt."""
-
-    runtime_model_name, runtime_model = await model_runtime.get()
-    return await run_agent_with_safety(
-        engine.prose_agent,
-        PATH_CORE_CHAT,
-        user_prompt=directive,
-        deps=run_deps,
-        message_history=[],
-        model=runtime_model,
-        model_name=runtime_model_name,
-        usage=RunUsage(),
-    )
 
 
 def _limited_stock_product_references(deps: SalesDepsT) -> tuple[str, ...]:
@@ -419,37 +340,29 @@ class _Turn:
     name_gate_resume_customer_name: str | None = None
     failed_run_usage: RunUsageT | None = None
     permitted_asks_cache: frozenset[AskKind] | None = None
+    completed_model_history: list[ModelRequestT | ModelResponseT] | None = None
 
     # The verified-answer repair counter lives in conversation metadata; these
     # three keep their zero-argument shape because several call sites hand the
     # clearer to the order/quote adapter as a `Callable[[], Awaitable[None]]`.
-    def repair_state(self) -> dict[str, int | str] | None:
-        return _verified_policy_repair_state(self.conv)
-
-    async def set_repair_state(self, kind: str, count: int) -> None:
-        await _store_verified_policy_repair_state(self.conv, self.db, kind, count)
 
     async def clear_repair_state(self) -> None:
         await _drop_verified_policy_repair_state(self.conv, self.db)
 
-    async def run_prose_agent(self, directive: str, run_deps: SalesDepsT) -> Any:
-        return await _run_prose_agent_on(self.model_runtime, directive, run_deps)
-
     def permitted_asks(self) -> frozenset[AskKind]:
-        """Compute the turn's ask contract once, before prompt or guard uses it."""
+        """Read current workflow state, including changes made by model tools."""
 
-        if self.permitted_asks_cache is None:
-            quote_workflow = quote_workflow_from_metadata(self.conv.metadata_)
-            self.permitted_asks_cache = permitted_asks_for_turn(
-                is_first_turn=self.is_first_turn,
-                customer_name=self.known_customer_name() or None,
-                customer_name_asked=engine._customer_name_was_asked(self.conv),
-                owes_company_question=_turn_owes_the_company_question(self.deps),
-                quote_consent_granted=(quote_workflow.consent is QuoteConsent.GRANTED),
-                company_activity_asked_previous_turn=(
-                    engine._company_activity_was_asked_previous_turn(self.conv)
-                ),
-            )
+        quote_workflow = quote_workflow_from_metadata(self.conv.metadata_)
+        self.permitted_asks_cache = permitted_asks_for_turn(
+            is_first_turn=self.is_first_turn,
+            customer_name=self.known_customer_name() or None,
+            customer_name_asked=engine._customer_name_was_asked(self.conv),
+            owes_company_question=_turn_owes_the_company_question(self.deps),
+            quote_consent_granted=(quote_workflow.consent is QuoteConsent.GRANTED),
+            company_activity_asked_previous_turn=(
+                engine._company_activity_was_asked_previous_turn(self.conv)
+            ),
+        )
         return self.permitted_asks_cache
 
     def known_customer_name(self) -> str:
@@ -543,11 +456,6 @@ class _Turn:
             self.dialogue_kernel_result,
             legacy_route=model_name,
         )
-        engine._capture_expected_answer_frames_from_assistant_response(
-            self.conv,
-            response_text=response_text,
-            dialogue_kernel_mode=self.dialogue_kernel_mode,
-        )
 
     def build_llm_response(
         self,
@@ -628,74 +536,6 @@ class _Turn:
             tool_traces=tool_traces,
         )
 
-    async def build_policy_handoff_response(
-        self,
-        model_name: str,
-        decision_language: str,
-        decision_text: str,
-        *,
-        policy_decision: VerifiedAnswerDecisionT,
-    ) -> LLMResponseT:
-        final_text = (
-            decision_text
-            if decision_text
-            else build_service_handoff_response(policy_decision, decision_language)
-        )
-        response_model = f"{model_name}|verified-policy"
-        rendered = self.render_reply(
-            final_text,
-            response_deps=self.deps,
-            provenance="deterministic_static",
-            model_name=response_model,
-        )
-        return _response_from_rendered_reply(
-            rendered,
-            tokens_in=0,
-            tokens_out=0,
-            cost=None,
-            model=response_model,
-            usage_provenance="deterministic_static",
-            deferred_product_media=_deferred_product_media_for_response(
-                self.deps,
-                allow_product_media=False,
-                response_text=rendered.text,
-            ),
-        )
-
-    def build_replacement_response(
-        self,
-        text: str,
-        tool_traces: tuple[RuntimeToolTraceT, ...],
-        *,
-        run_deps: SalesDepsT,
-        usage: Any,
-        cost: float | None,
-        model_name: str,
-        allow_product_media: bool = True,
-    ) -> LLMResponseT:
-        """The verified text the catalog planner prepared, sent instead of the model's."""
-
-        rendered = self.render_reply(
-            text,
-            response_deps=run_deps,
-            provenance="deterministic_replacement",
-            model_name=model_name,
-        )
-        return _response_from_rendered_reply(
-            rendered,
-            tokens_in=usage.input_tokens,
-            tokens_out=usage.output_tokens,
-            cost=cost,
-            model=model_name,
-            usage_provenance="provider_reported",
-            deferred_product_media=_deferred_product_media_for_response(
-                run_deps,
-                allow_product_media=allow_product_media,
-                response_text=rendered.text,
-            ),
-            tool_traces=tool_traces,
-        )
-
     async def run_agent(self, run_deps: SalesDepsT) -> Any:
         # Keep the exact dependency object that tools mutate. Copying it here
         # lost inventory/product evidence before the reply was rendered.
@@ -711,11 +551,21 @@ class _Turn:
                 PATH_CORE_CHAT,
                 user_prompt=self.masked_text,
                 deps=run_deps,
-                message_history=self.history,
+                message_history=(
+                    self.completed_model_history
+                    if run_deps.tool_mode == "catalog_materialization"
+                    and self.completed_model_history is not None
+                    else self.history
+                ),
                 model=runtime_model,
                 model_name=runtime_model_name,
                 usage=run_usage,
             )
+            all_messages = getattr(result, "all_messages", None)
+            if callable(all_messages):
+                completed = all_messages()
+                if isinstance(completed, list):
+                    self.completed_model_history = list(completed)
             if run_deps.inventory_confirmed:
                 self.deps.inventory_confirmed = True
             return result
@@ -754,6 +604,14 @@ async def _finalize_turn_response(
                     ),
                     executed_tool_names=tuple(sorted(turn.deps.executed_tool_names)),
                     quote_consent_granted=state.quote_consent_granted,
+                    retrieved_catalog_rows=(
+                        (_materialize_claim_rows(turn.deps) or {})
+                        if getattr(turn.deps, "claim_rows", None)
+                        else {}
+                    ),
+                    recent_history=tuple(
+                        getattr(turn.deps, "recent_history", None) or ()
+                    )[-6:],
                 ),
                 provenance=response.text_provenance,
                 pii_map=turn.pii_map,
@@ -882,45 +740,8 @@ class _TurnConfig:
     """The system-config reads a turn makes, taken once at the top."""
 
     customer_facts_mode: str
-    customer_facts_trace_enabled: bool
-    customer_facts_fast_extractor_enabled: bool
     customer_facts_max_context_orders: int
     claim_contract_every_catalog_turn: bool
-    dialogue_kernel_trace_enabled: bool
-    dialogue_kernel_enforced_flows: str
-
-
-@dataclass
-class _QuoteFacts:
-    """What this turn's text and the stored quote state say about the quote.
-
-    Read once, then amended by the name gate: a resumed turn replaces the
-    customer text, so the details, the intent frame, and the opportunity
-    request are all re-read against the request that was parked.
-    """
-
-    customer_name_was_unknown: bool
-    current_quote_customer_details: dict[str, str]
-    current_quote_intent_frame: Mapping[str, Any] | None
-    current_sales_memory_updates: dict[str, str]
-    current_sales_opportunity_request: SalesOpportunityRequestT | None
-    pending_name_gate_request: str | None
-    pending_name_gate_intent: str | None
-    pending_quote_selection_at_start: Mapping[str, Any] | None
-    has_pending_quote_selection: bool
-    pending_exact_quote_followup_candidates: tuple[ExactQuoteCandidateT, ...]
-    assistant_offered_quote_selection: bool
-    assistant_supports_quote_resume: bool
-    quote_offer_reply_has_consultative_priority: bool
-    quote_reply_updates_purchase_selection: bool
-    quote_consent_granted: bool
-    unconsented_quote_details: bool
-    quote_detail_context_active: bool
-    quote_brief_confirmation_details: dict[str, str] | None
-    confirmed_quote_brief_address: str | None
-    resumed_name_gate_intent: str | None = None
-    name_gate_completion_reply: bool = False
-    offer_quote_for_turn: bool = False
 
 
 async def _read_turn_config(turn: _Turn) -> _TurnConfig:
@@ -931,11 +752,7 @@ async def _read_turn_config(turn: _Turn) -> _TurnConfig:
     # freeze the real one before the patch lands.
     from src.core.config import get_system_config
 
-    turn.dialogue_kernel_mode = await get_system_config(
-        turn.db,
-        "dialogue_kernel_mode",
-        settings.dialogue_kernel_mode,
-    )
+    turn.dialogue_kernel_mode = "disabled"
     return _TurnConfig(
         customer_facts_mode=engine._normalize_customer_facts_mode(
             await get_system_config(
@@ -943,22 +760,6 @@ async def _read_turn_config(turn: _Turn) -> _TurnConfig:
                 "customer_facts_mode",
                 settings.customer_facts_mode,
             )
-        ),
-        customer_facts_trace_enabled=engine._dialogue_kernel_bool_config(
-            await get_system_config(
-                turn.db,
-                "customer_facts_trace_enabled",
-                str(settings.customer_facts_trace_enabled).lower(),
-            ),
-            default=settings.customer_facts_trace_enabled,
-        ),
-        customer_facts_fast_extractor_enabled=engine._dialogue_kernel_bool_config(
-            await get_system_config(
-                turn.db,
-                "customer_facts_fast_extractor_enabled",
-                str(settings.customer_facts_fast_extractor_enabled).lower(),
-            ),
-            default=settings.customer_facts_fast_extractor_enabled,
         ),
         customer_facts_max_context_orders=engine._customer_facts_int_config(
             await get_system_config(
@@ -977,599 +778,6 @@ async def _read_turn_config(turn: _Turn) -> _TurnConfig:
                 "requested_gaps",
             )
         ),
-        dialogue_kernel_trace_enabled=engine._dialogue_kernel_bool_config(
-            await get_system_config(
-                turn.db,
-                "dialogue_kernel_trace_enabled",
-                str(settings.dialogue_kernel_trace_enabled).lower(),
-            ),
-            default=settings.dialogue_kernel_trace_enabled,
-        ),
-        dialogue_kernel_enforced_flows=await get_system_config(
-            turn.db,
-            "dialogue_kernel_enforced_flows",
-            settings.dialogue_kernel_enforced_flows,
-        ),
-    )
-
-
-async def _read_quote_facts(
-    turn: _Turn, *, order_runtime_blocks_kernel_reply: bool
-) -> _QuoteFacts:
-    """What the customer text and the stored quote state say about this turn.
-
-    `tj-rt7w.10`. Twenty-two locals computed in one run, several of them
-    consumed a thousand lines below. Naming the set is what lets the routes
-    that use it live in their own functions.
-    """
-
-    customer_name_was_unknown = not str(turn.conv.customer_name or "").strip()
-    current_quote_customer_details = dict(turn.current_message_quote_customer_details)
-    current_quote_intent_frame: Mapping[str, Any] | None = (
-        engine._quote_intent_frame_from_text(turn.combined_text)
-    )
-    current_sales_memory_updates = engine._extract_sales_memory_updates(
-        turn.combined_text
-    )
-    current_sales_opportunity_request = engine._extract_sales_opportunity_request(
-        turn.combined_text
-    )
-    pending_name_gate_request = engine._name_gate_pending_request_from_metadata(
-        turn.conv
-    )
-    pending_name_gate_intent = engine._name_gate_pending_intent_from_metadata(turn.conv)
-    pending_quote_selection_at_start = (
-        engine._active_pending_quote_selection_from_conversation(turn.conv)
-    )
-    has_pending_quote_selection = pending_quote_selection_at_start is not None
-    pending_unconsented_detail_keys: set[str] = set()
-    if has_pending_quote_selection and not current_quote_customer_details:
-        identity_candidates = engine._extract_terse_quote_customer_details(
-            turn.combined_text
-        )
-        pending_unconsented_detail_keys = set(identity_candidates).intersection(
-            {"customer_type", "email", "phone", "address"}
-        )
-        current_quote_customer_details = {
-            key: value
-            for key, value in identity_candidates.items()
-            if key in {"name", "company"}
-        }
-    pending_exact_quote_followup_candidates = (
-        engine._exact_quote_followup_candidates(
-            selection=pending_quote_selection_at_start,
-            combined_text=turn.combined_text,
-            masked_text=turn.masked_text,
-        )
-        if pending_quote_selection_at_start is not None
-        and engine._accepts_exact_item_quote_followup(pending_quote_selection_at_start)
-        and engine._pending_quote_has_unresolved_items(pending_quote_selection_at_start)
-        else ()
-    )
-    assistant_asked_quote_details = _last_assistant_asked_quote_customer_details(
-        turn.recent_history,
-        quote_context_active=(
-            has_pending_quote_selection or order_runtime_blocks_kernel_reply
-        ),
-    )
-    assistant_offered_quote_selection = (
-        engine._last_assistant_offered_quote_for_selection(turn.recent_history)
-    )
-    quote_offer_reply_has_consultative_priority = (
-        engine._has_quote_resume_consultative_priority(turn.combined_text)
-        or engine._has_quote_resume_consultative_priority(turn.masked_text)
-    )
-    quote_reply_updates_purchase_selection = (
-        engine._has_quote_reply_purchase_selection_update(
-            turn.combined_text, turn.masked_text
-        )
-    )
-    assistant_supports_quote_resume = assistant_asked_quote_details or (
-        assistant_offered_quote_selection
-        and not quote_offer_reply_has_consultative_priority
-        and (
-            engine._has_explicit_quote_opt_in(turn.combined_text)
-            or engine._has_explicit_quote_opt_in(turn.masked_text)
-            or engine._has_affirmative_quote_resume_intent(turn.combined_text)
-            or engine._has_affirmative_quote_resume_intent(turn.masked_text)
-        )
-    )
-    explicit_quote_consent = not quote_offer_reply_has_consultative_priority and (
-        engine._has_explicit_quote_opt_in(turn.combined_text)
-        or engine._has_explicit_quote_opt_in(turn.masked_text)
-        or (
-            (
-                assistant_offered_quote_selection
-                or (has_pending_quote_selection and assistant_asked_quote_details)
-            )
-            and (
-                engine._has_affirmative_quote_resume_intent(turn.combined_text)
-                or engine._has_affirmative_quote_resume_intent(turn.masked_text)
-            )
-        )
-    )
-    quote_workflow = quote_workflow_from_metadata(turn.conv.metadata_)
-    if explicit_quote_consent:
-        quote_workflow = QuoteWorkflowState(
-            consent=QuoteConsent.GRANTED,
-            lifecycle=QuoteLifecycle.QUOTE_REQUESTED,
-        )
-        await engine._store_quote_workflow(turn.db, turn.conv, quote_workflow)
-    quote_consent_granted = quote_workflow.consent is QuoteConsent.GRANTED
-    unconsented_quote_details = (
-        not quote_consent_granted
-        and not quote_offer_reply_has_consultative_priority
-        and not quote_reply_updates_purchase_selection
-        and bool(
-            (has_pending_quote_selection or assistant_asked_quote_details)
-            and (
-                pending_unconsented_detail_keys
-                or set(current_quote_customer_details).intersection(
-                    {"customer_type", "email", "phone", "address"}
-                )
-            )
-        )
-    )
-    quote_detail_context_active = quote_consent_granted and (
-        assistant_supports_quote_resume or has_pending_quote_selection
-    )
-    quote_brief_confirmation_details: dict[str, str] | None = None
-    confirmed_quote_brief_address: str | None = None
-    pending_quote_brief_confirmation = (
-        engine._pending_quote_brief_confirmation_from_metadata(turn.conv)
-    )
-    if (
-        pending_quote_brief_confirmation
-        and engine._last_assistant_asked_quote_brief_confirmation(turn.recent_history)
-        and engine._has_affirmative_quote_resume_intent(turn.combined_text)
-    ):
-        current_quote_customer_details = {
-            **current_quote_customer_details,
-            **pending_quote_brief_confirmation,
-        }
-        confirmed_quote_brief_address = engine._string_value(
-            pending_quote_brief_confirmation.get("address")
-        )
-        await engine._clear_pending_quote_brief_confirmation(turn.db, turn.conv)
-    if quote_detail_context_active:
-        unlabeled_quote_brief = engine._extract_ordered_unlabeled_quote_brief(
-            turn.combined_text
-        )
-        if unlabeled_quote_brief and unlabeled_quote_brief.needs_confirmation:
-            quote_brief_confirmation_details = unlabeled_quote_brief.details
-            current_quote_customer_details = {}
-        elif unlabeled_quote_brief:
-            terse_quote_customer_details = unlabeled_quote_brief.details
-            current_quote_customer_details = {
-                **current_quote_customer_details,
-                **terse_quote_customer_details,
-            }
-            await engine._clear_pending_quote_brief_confirmation(turn.db, turn.conv)
-        else:
-            terse_quote_customer_details = (
-                {}
-                if pending_exact_quote_followup_candidates
-                else engine._extract_terse_quote_customer_details(turn.combined_text)
-            )
-            if terse_quote_customer_details:
-                current_quote_customer_details = {
-                    **current_quote_customer_details,
-                    **terse_quote_customer_details,
-                }
-                await engine._clear_pending_quote_brief_confirmation(turn.db, turn.conv)
-    if (
-        not quote_detail_context_active
-        and current_quote_customer_details
-        and pending_quote_brief_confirmation
-    ):
-        await engine._clear_pending_quote_brief_confirmation(turn.db, turn.conv)
-    return _QuoteFacts(
-        customer_name_was_unknown=customer_name_was_unknown,
-        current_quote_customer_details=current_quote_customer_details,
-        current_quote_intent_frame=current_quote_intent_frame,
-        current_sales_memory_updates=current_sales_memory_updates,
-        current_sales_opportunity_request=current_sales_opportunity_request,
-        pending_name_gate_request=pending_name_gate_request,
-        pending_name_gate_intent=pending_name_gate_intent,
-        pending_quote_selection_at_start=pending_quote_selection_at_start,
-        has_pending_quote_selection=has_pending_quote_selection,
-        pending_exact_quote_followup_candidates=(
-            pending_exact_quote_followup_candidates
-        ),
-        assistant_offered_quote_selection=assistant_offered_quote_selection,
-        assistant_supports_quote_resume=assistant_supports_quote_resume,
-        quote_offer_reply_has_consultative_priority=(
-            quote_offer_reply_has_consultative_priority
-        ),
-        quote_reply_updates_purchase_selection=quote_reply_updates_purchase_selection,
-        quote_consent_granted=quote_consent_granted,
-        unconsented_quote_details=unconsented_quote_details,
-        quote_detail_context_active=quote_detail_context_active,
-        quote_brief_confirmation_details=quote_brief_confirmation_details,
-        confirmed_quote_brief_address=confirmed_quote_brief_address,
-    )
-
-
-async def _verified_policy_routes(
-    turn: _Turn,
-    facts: _QuoteFacts,
-    *,
-    policy_decision: VerifiedAnswerDecisionT,
-    product_preference_frame_match: dict[str, Any] | None,
-    resolved_pending_reference: PendingReferenceRoute,
-    trace_enabled: bool,
-    db_model_main: str,
-    dynamic_model: OpenAIChatModelT,
-) -> LLMResponseT | None:
-    """The routes the verified-answer policy selects, and the order/quote adapter.
-
-    Each one either answers the turn or declines it; `None` means the sales
-    agent runs.
-    """
-
-    if (
-        not policy_decision.is_order_status
-        and policy_decision.sales_fallback_intent is not None
-    ):
-        await turn.clear_repair_state()
-        return build_declared_static_response(
-            build_sales_fallback_response(
-                policy_decision.sales_fallback_intent,
-                str(turn.deps.conversation.language),
-            ),
-            route="sales-fallback",
-            build_static_response=turn.build_static_response,
-            model_prefix=db_model_main,
-        )
-
-    order_quote_response = None
-    if not facts.unconsented_quote_details:
-        order_quote_response = await turn.order_quote_route(
-            phase="post_policy",
-            db=turn.db,
-            conversation=turn.conv,
-            deps=turn.deps,
-            masked_text=turn.masked_text,
-            combined_text=turn.combined_text,
-            is_first_turn=turn.is_first_turn,
-            pending_quote_selection_at_start=facts.pending_quote_selection_at_start,
-            pending_exact_quote_followup_candidates=(
-                facts.pending_exact_quote_followup_candidates
-            ),
-            current_quote_intent_frame=facts.current_quote_intent_frame,
-            current_quote_customer_details=facts.current_quote_customer_details,
-            assistant_supports_quote_resume=facts.assistant_supports_quote_resume,
-            quote_detail_context_active=facts.quote_detail_context_active,
-            has_pending_quote_selection=facts.has_pending_quote_selection,
-            pending_reference_route=resolved_pending_reference,
-            zoho_client=turn.zoho_client,
-            crm_context=turn.crm_context,
-            trace_enabled=trace_enabled,
-            build_static_response=turn.build_static_response,
-            clear_verified_policy_repair_state=(turn.clear_repair_state),
-            db_model_main=db_model_main,
-            dynamic_model=dynamic_model,
-            run_agent=turn.run_agent,
-            build_llm_response=turn.build_llm_response,
-            run_prose_agent=turn.run_prose_agent,
-            has_escalation=_has_escalation,
-            quote_brief_confirmation_details=facts.quote_brief_confirmation_details,
-            offer_quote=facts.offer_quote_for_turn,
-            resumed_name_gate_intent=facts.resumed_name_gate_intent,
-        )
-    if order_quote_response is not None:
-        return order_quote_response
-
-    if (
-        not policy_decision.is_order_status
-        and policy_decision.question_class == "service_low_risk"
-        and policy_decision.policy_action == "allow"
-        and is_quote_or_proposal_request(turn.masked_text)
-        and not engine._has_explicit_quote_hold(turn.masked_text)
-    ):
-        await turn.clear_repair_state()
-        return build_declared_static_response(
-            build_quote_or_proposal_clarification_response(
-                str(turn.deps.conversation.language)
-            ),
-            route="proposal-clarify",
-            build_static_response=turn.build_static_response,
-            model_prefix=db_model_main,
-        )
-
-    if not policy_decision.is_order_status and (
-        engine._is_mixed_product_service_request(turn.masked_text)
-        or engine._is_mixed_product_service_request(turn.combined_text)
-    ):
-        result = await turn.run_agent(
-            replace(
-                turn.deps,
-                tool_mode="full",
-                runtime_directives=(
-                    *turn.deps.runtime_directives,
-                    *engine.MIXED_PRODUCT_SERVICE_DIRECTIVES,
-                ),
-            )
-        )
-        await turn.clear_repair_state()
-        return turn.build_llm_response(result, db_model_main)
-
-    if not policy_decision.is_order_status and engine._is_service_confirmation_reply(
-        turn.combined_text,
-        turn.deps.recent_history,
-    ):
-        from src.integrations.notifications.escalation import (
-            notify_manager_escalation,
-        )
-        from src.schemas.common import EscalationType
-
-        if not is_active_human_handoff(turn.deps.conversation.escalation_status):
-            await notify_manager_escalation(
-                conversation=turn.deps.conversation,
-                reason=(
-                    "Customer confirmed they want assembly/installation service "
-                    "after the assistant asked a service confirmation question. "
-                    "Manager should confirm service conditions and next steps."
-                ),
-                recent_messages=turn.deps.recent_history or [],
-                db=turn.deps.db,
-                escalation_type=EscalationType.GENERAL,
-            )
-        await turn.clear_repair_state()
-        return build_declared_static_response(
-            engine._service_confirmation_handoff_text(),
-            route="service-confirmation-handoff",
-            build_static_response=turn.build_static_response,
-            model_prefix=db_model_main,
-            allow_product_media=False,
-        )
-
-    if (
-        not policy_decision.is_order_status
-        and not (
-            policy_decision.question_class == "service_high_risk"
-            and policy_decision.policy_action == "handoff"
-        )
-        and "showroom" in policy_decision.matched_topics
-    ):
-        await turn.clear_repair_state()
-        return build_declared_static_response(
-            engine._showroom_location_response(str(turn.deps.conversation.language)),
-            route="showroom-location",
-            build_static_response=turn.build_static_response,
-            model_prefix=db_model_main,
-            allow_product_media=False,
-        )
-
-    if (
-        not policy_decision.is_order_status
-        and policy_decision.sales_fallback_intent is None
-        and (
-            product_preference_frame_match is not None
-            or engine._is_product_preference_answer(
-                turn.combined_text, turn.deps.recent_history
-            )
-            or engine._is_product_preference_answer(
-                turn.masked_text, turn.deps.recent_history
-            )
-        )
-    ):
-        frame_directives = (
-            engine._product_preference_frame_directives(product_preference_frame_match)
-            if product_preference_frame_match is not None
-            else ()
-        )
-        result = await turn.run_agent(
-            replace(
-                turn.deps,
-                tool_mode="full",
-                runtime_directives=(
-                    *turn.deps.runtime_directives,
-                    *engine.PRODUCT_PREFERENCE_ANSWER_DIRECTIVES,
-                    *frame_directives,
-                ),
-            )
-        )
-        await turn.clear_repair_state()
-        return turn.build_llm_response(result, db_model_main)
-
-    policy_action = policy_decision.policy_action
-    if not policy_decision.is_order_status and policy_action == "clarify":
-        repair_state = turn.repair_state()
-        repair_count = repair_state.get("count") if repair_state is not None else None
-        if (
-            repair_state is not None
-            and repair_state.get("kind") == "benign_no_match"
-            and isinstance(repair_count, int)
-            and repair_count >= 1
-        ):
-            policy_action = "handoff"
-            await turn.clear_repair_state()
-        else:
-            await turn.set_repair_state("benign_no_match", 1)
-            return build_declared_static_response(
-                build_clarification_response(str(turn.deps.conversation.language)),
-                route="verified-policy-clarify",
-                build_static_response=turn.build_static_response,
-                model_prefix=db_model_main,
-            )
-
-    if (
-        not policy_decision.is_order_status
-        and policy_decision.sales_fallback_intent is not None
-    ):
-        await turn.clear_repair_state()
-        return build_declared_static_response(
-            build_sales_fallback_response(
-                policy_decision.sales_fallback_intent,
-                str(turn.deps.conversation.language),
-            ),
-            route="sales-fallback",
-            build_static_response=turn.build_static_response,
-            model_prefix=db_model_main,
-        )
-
-    if not policy_decision.is_order_status and policy_action == "handoff":
-        from src.integrations.notifications.escalation import (
-            notify_manager_escalation,
-        )
-        from src.schemas.common import EscalationType
-
-        await notify_manager_escalation(
-            conversation=turn.deps.conversation,
-            reason=build_service_handoff_reason(turn.masked_text, policy_decision),
-            recent_messages=turn.deps.recent_history or [],
-            db=turn.deps.db,
-            escalation_type=EscalationType.GENERAL,
-        )
-        await turn.clear_repair_state()
-        return await turn.build_policy_handoff_response(
-            db_model_main,
-            str(turn.deps.conversation.language),
-            build_service_handoff_response(
-                policy_decision, str(turn.deps.conversation.language)
-            ),
-            policy_decision=policy_decision,
-        )
-
-    if not policy_decision.is_order_status and policy_decision.question_class in {
-        "service_low_risk",
-        "service_high_risk",
-    }:
-        result = await turn.run_agent(
-            replace(
-                turn.deps,
-                tool_mode="service_policy",
-                runtime_directives=(
-                    *turn.deps.runtime_directives,
-                    *build_service_runtime_directives(policy_decision),
-                ),
-            )
-        )
-        await turn.clear_repair_state()
-        return turn.build_llm_response(result, db_model_main)
-    return None
-
-
-async def _verified_catalog_plan_route(
-    turn: _Turn,
-    *,
-    db_model_main: str,
-    dynamic_model: OpenAIChatModelT,
-) -> LLMResponseT | None:
-    """The planner prepared verified catalog text; the model gets one pass to use it."""
-
-    verified_catalog_plan = await engine._try_verified_catalog_plan(turn.deps)
-    if verified_catalog_plan is None:
-        return None
-    fallback_text, plan_traces = verified_catalog_plan
-    decision_directive = _catalog_decision_runtime_directive(turn.deps)
-    if decision_directive is None:
-        await turn.clear_repair_state()
-        return build_declared_static_response(
-            fallback_text,
-            route="verified-catalog-functional-failure",
-            build_static_response=turn.build_static_response,
-            model_prefix=db_model_main,
-            response_deps=turn.deps,
-            allow_product_media=False,
-            tool_traces=plan_traces,
-        )
-    run_deps = replace(
-        turn.deps,
-        tool_mode="catalog_materialization",
-        runtime_directives=(
-            *turn.deps.runtime_directives,
-            decision_directive,
-        ),
-    )
-    try:
-        result = await turn.run_agent(run_deps)
-    except (UnexpectedModelBehavior, TimeoutError):
-        await turn.clear_repair_state()
-        return turn.build_replacement_response(
-            fallback_text,
-            plan_traces,
-            run_deps=run_deps,
-            usage=turn.failed_run_usage or RunUsage(),
-            cost=dynamic_model.provider_cost_snapshot(),
-            model_name=f"{db_model_main}|verified-catalog-functional-failure",
-            allow_product_media=False,
-        )
-    decision_provenance: Literal["model", "model_repaired"] = "model"
-    defects = _catalog_decision_defects(
-        unmask_pii(result.output, turn.pii_map), run_deps
-    )
-    if defects:
-        # One repair pass naming the defect, then the template. The
-        # check is right to fire; replacing the whole reply is what
-        # dropped a product family on S05 (tj-swgu.2).
-        repair_directive = _catalog_decision_repair_directive(defects)
-        repaired = None
-        if repair_directive is not None:
-            repair_deps = replace(
-                run_deps,
-                runtime_directives=(
-                    *run_deps.runtime_directives,
-                    repair_directive,
-                ),
-            )
-            try:
-                candidate = await turn.run_agent(repair_deps)
-            except (UnexpectedModelBehavior, TimeoutError):
-                candidate = None
-            if candidate is not None and _catalog_decision_output_is_valid(
-                unmask_pii(candidate.output, turn.pii_map), repair_deps
-            ):
-                repaired = candidate
-        if repaired is None:
-            usage = result.usage() or RunUsage()
-            usage_telemetry = get_llm_usage_telemetry(result)
-            await turn.clear_repair_state()
-            return turn.build_replacement_response(
-                fallback_text,
-                plan_traces,
-                run_deps=run_deps,
-                usage=usage,
-                cost=(
-                    usage_telemetry.cost
-                    if usage_telemetry is not None
-                    else dynamic_model.provider_cost_snapshot()
-                ),
-                model_name=(f"{db_model_main}|verified-catalog-functional-failure"),
-                allow_product_media=False,
-            )
-        result = repaired
-        decision_provenance = "model_repaired"
-    await turn.clear_repair_state()
-    response = turn.build_llm_response(
-        result,
-        f"{db_model_main}|verified-catalog-plan",
-        response_deps=turn.deps,
-        allow_product_media=False,
-        text_provenance=decision_provenance,
-    )
-    return replace(response, tool_traces=plan_traces)
-
-
-async def _verified_opening_catalog_route(
-    turn: _Turn,
-    *,
-    db_model_main: str,
-) -> LLMResponseT | None:
-    """A scoped office brief gets verified rows before a model can ask a form."""
-
-    verified_text = await _try_verified_opening_catalog_options(turn.deps)
-    if verified_text is None:
-        return None
-    await turn.clear_repair_state()
-    return build_declared_static_response(
-        verified_text,
-        route="verified-opening-catalog",
-        build_static_response=turn.build_static_response,
-        model_prefix=db_model_main,
-        response_deps=turn.deps,
-        allow_product_media=False,
     )
 
 
@@ -1583,89 +791,16 @@ async def _sales_agent_route(
     """The ordinary turn: the sales agent runs, and its claims are checked."""
 
     run_deps = turn.deps
-    turn_directives = engine._turn_runtime_directives(
-        turn.combined_text,
-        turn.masked_text,
-        sales_stage=str(getattr(turn.deps.conversation, "sales_stage", "") or ""),
-        opening_states_the_offer=turn.is_first_turn,
-        language=str(turn.deps.conversation.language or ""),
-    )
-    if turn_directives:
-        run_deps = replace(
-            turn.deps,
-            runtime_directives=(
-                *turn.deps.runtime_directives,
-                *turn_directives,
-            ),
-        )
-    try:
-        result = await turn.run_agent(run_deps)
-    except (UnexpectedModelBehavior, TimeoutError):
-        explicit_quote_hold = engine._has_explicit_quote_hold(
-            turn.masked_text
-        ) or engine._has_explicit_quote_hold(turn.combined_text)
-        await _complete_verified_cross_sell_for_recovery(
-            RunContext(
-                deps=run_deps,
-                retry=0,
-                messages=turn.history,
-                prompt=turn.masked_text,
-                model=dynamic_model,
-                usage=turn.failed_run_usage or RunUsage(),
-            ),
-            explicit_quote_hold=explicit_quote_hold,
-        )
-        recovery_traces = tuple(run_deps.recovery_tool_traces)
-        recovery_text = engine._materialize_verified_catalog_recovery(
-            run_deps,
-            recovery_traces,
-            explicit_quote_hold=explicit_quote_hold,
-        )
-        if recovery_text is None:
-            raise
-        await turn.clear_repair_state()
-        usage = turn.failed_run_usage or RunUsage()
-        return turn.build_replacement_response(
-            recovery_text,
-            recovery_traces,
-            run_deps=run_deps,
-            usage=usage,
-            cost=dynamic_model.provider_cost_snapshot(),
-            model_name=f"{db_model_main}|verified-catalog-functional-failure",
-        )
+    result = await turn.run_agent(run_deps)
     recovery_traces = tuple(run_deps.recovery_tool_traces)
-    recovery_text = engine._materialize_verified_catalog_recovery(
-        run_deps,
-        recovery_traces,
-        explicit_quote_hold=(
-            engine._has_explicit_quote_hold(turn.masked_text)
-            or engine._has_explicit_quote_hold(turn.combined_text)
-        ),
-    )
-    if recovery_text is not None and not _catalog_recovery_output_is_valid(
-        unmask_pii(result.output, turn.pii_map), run_deps
-    ):
-        await turn.clear_repair_state()
-        usage = result.usage() or RunUsage()
-        usage_telemetry = get_llm_usage_telemetry(result)
-        return turn.build_replacement_response(
-            recovery_text,
-            recovery_traces,
-            run_deps=run_deps,
-            usage=usage,
-            cost=(
-                usage_telemetry.cost
-                if usage_telemetry is not None
-                else dynamic_model.provider_cost_snapshot()
-            ),
-            model_name=f"{db_model_main}|verified-catalog-functional-failure",
-        )
     verified_catalog_facts = _materialize_verified_catalog_facts(run_deps)
     if verified_catalog_facts is not None:
         repair_payload = json.dumps(
             {
                 "candidate_response": str(result.output),
                 "verified_catalog_facts": verified_catalog_facts,
+                "retrieved_rows": _materialize_claim_rows(run_deps),
+                "customer_request": turn.masked_text,
             },
             ensure_ascii=False,
             separators=(",", ":"),
@@ -1800,12 +935,8 @@ async def _load_turn(
     current_user_entry = f"user: {masked_text}"
     if not recent_history or recent_history[-1] != current_user_entry:
         recent_history.append(current_user_entry)
-    catalog_planning = _catalog_planning_for_turn(
-        conv,
-        recent_history,
-        masked_text,
-    )
-    await _store_catalog_planning(db, conv, catalog_planning)
+    # Search intent and constraints come from model tool arguments, not a
+    # keyword-derived plan that can silently negate the customer's request.
 
     deps = SalesDeps(
         db=db,
@@ -1821,15 +952,12 @@ async def _load_turn(
         recent_history=recent_history,
         defer_product_media=True,
         source_message_id=source_message_id,
-        catalog_planning=catalog_planning,
     )
 
     # One extraction is read by both the pre-persistence response policy and
     # the later durable quote/customer-detail capture. They cannot disagree on
     # what the current inbound message supplied.
-    current_message_quote_customer_details = engine._extract_quote_customer_details(
-        combined_text
-    )
+    current_message_quote_customer_details: dict[str, str] = {}
 
     turn = _Turn(
         pending_reference_route=pending_reference_route,
@@ -1863,558 +991,27 @@ async def _load_turn(
     return turn
 
 
-async def _customer_facts_and_quotation_routes(
-    turn: _Turn, config: _TurnConfig
-) -> LLMResponseT | None:
-    """The customer-facts layer, then the routes a pending quotation owns."""
-
-    # See `_read_turn_config`: this import stays inside the call so the suite's
-    # `src.core.config.get_system_config` patch still lands.
-    from src.core.config import get_system_config
-
-    customer_facts_run = await engine._run_customer_facts_layer(
-        turn.db,
-        conversation=turn.conv,
-        text=turn.combined_text,
-        mode=config.customer_facts_mode,
-        trace_enabled=config.customer_facts_trace_enabled,
-        fast_extractor_enabled=config.customer_facts_fast_extractor_enabled,
-        max_context_orders=config.customer_facts_max_context_orders,
-        source_message_id=turn.source_message_id,
-    )
-    if customer_facts_run.context_text:
-        turn.deps = replace(
-            turn.deps, customer_facts_context=customer_facts_run.context_text
-        )
-    if customer_facts_run.past_order_response:
-        db_model_main = await get_system_config(
-            turn.db, "openrouter_model_main", settings.openrouter_model_main
-        )
-        db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
-        return build_declared_static_response(
-            customer_facts_run.past_order_response,
-            route="customer-facts-past-order",
-            build_static_response=turn.build_static_response,
-            model_prefix=db_model_main,
-            allow_product_media=False,
-        )
-
-    if engine._has_pending_proposal_decision(
-        turn.conv
-    ) and engine._is_post_quotation_acceptance(
-        turn.combined_text,
-        turn.recent_history,
-    ):
-        from src.integrations.notifications.escalation import (
-            notify_manager_escalation,
-        )
-        from src.schemas.common import EscalationType
-
-        accepted_at = datetime.datetime.now(datetime.UTC)
-        engine._mark_quotation_accepted(
-            turn.conv,
-            accepted_at=accepted_at,
-            customer_text=turn.combined_text,
-        )
-        if not is_active_human_handoff(turn.conv.escalation_status):
-            await notify_manager_escalation(
-                conversation=turn.conv,
-                reason=(
-                    "Customer accepted the quotation/proposal after the PDF was sent. "
-                    "Manager should proceed with the next commercial steps."
-                ),
-                recent_messages=turn.deps.recent_history or [],
-                db=turn.db,
-                escalation_type=EscalationType.ORDER_CONFIRMATION,
-            )
-        await turn.db.flush()
-        db_model_main = await get_system_config(
-            turn.db, "openrouter_model_main", settings.openrouter_model_main
-        )
-        db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
-        return build_declared_static_response(
-            engine._post_quotation_accepted_response(str(turn.conv.language)),
-            route="post-quotation-accepted",
-            build_static_response=turn.build_static_response,
-            model_prefix=db_model_main,
-            allow_product_media=False,
-        )
-
-    if (
-        engine._has_pending_proposal_decision(turn.conv)
-        and engine._normalize_text(turn.combined_text)
-        in engine._POST_QUOTATION_GENERIC_ACCEPTANCE_EXACT
-    ):
-        db_model_main = await get_system_config(
-            turn.db, "openrouter_model_main", settings.openrouter_model_main
-        )
-        db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
-        return build_declared_static_response(
-            engine._post_quotation_acknowledgement_response(str(turn.conv.language)),
-            route="post-quotation-ack",
-            build_static_response=turn.build_static_response,
-            model_prefix=db_model_main,
-            allow_product_media=False,
-        )
-
-    if engine._has_quoted_quote_frame(
-        turn.conv
-    ) and engine._is_post_quotation_context_preserving_reply(turn.combined_text):
-        db_model_main = await get_system_config(
-            turn.db, "openrouter_model_main", settings.openrouter_model_main
-        )
-        db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
-        return build_declared_static_response(
-            engine._post_quotation_context_acknowledgement_response(
-                str(turn.conv.language)
-            ),
-            route="post-quotation-context-ack",
-            build_static_response=turn.build_static_response,
-            model_prefix=db_model_main,
-            allow_product_media=False,
-        )
-
-    if engine._has_explicit_quote_hold(turn.combined_text):
-        await engine._suspend_quote_workflow(
-            turn.db,
-            turn.conv,
-            consent=quote_consent_signal(turn.combined_text, [])
-            or QuoteConsent.DECLINED,
-        )
-    return None
-
-
-async def _dialogue_kernel_route(
-    turn: _Turn, config: _TurnConfig
-) -> tuple[LLMResponseT | None, bool]:
-    """Run the dialogue kernel, store what it decided, and answer when it owns the turn.
-
-    Returns the reply, if the kernel owns this turn, and whether the order
-    runtime blocks a kernel reply -- which the quote facts below need.
-    """
-
-    order_runtime_blocks_kernel_reply = (
-        engine._active_pending_quote_selection_from_conversation(turn.conv) is not None
-        or engine._quote_intent_frame_from_metadata(turn.conv) is not None
-    )
+async def _load_customer_memory(turn: _Turn, config: _TurnConfig) -> None:
+    """Load durable customer context; never return a prewritten customer answer."""
+    if config.customer_facts_mode != "enforce":
+        return
+    from src.services.customer_memory import load_existing_customer_context
 
     try:
-        turn.dialogue_kernel_result = await engine.run_dialogue_kernel(
-            conversation=turn.conv,
-            text=turn.combined_text,
-            recent_history=turn.recent_history,
-            is_first_turn=turn.is_first_turn,
-            mode=turn.dialogue_kernel_mode,
-            enforced_flows=config.dialogue_kernel_enforced_flows,
-            trace_enabled=config.dialogue_kernel_trace_enabled,
-        )
-    except Exception:
-        if str(turn.dialogue_kernel_mode or "").strip().casefold() != "shadow":
-            raise
-        logger.warning(
-            "Dialogue kernel shadow run failed for conversation %s; "
-            "continuing legacy path",
-            turn.conv.id,
-            exc_info=True,
-        )
-        turn.dialogue_kernel_result = None
-    if turn.dialogue_kernel_result is not None:
-        kernel_workflow = QuoteWorkflowState(
-            consent=turn.dialogue_kernel_result.state.quote_consent,
-            lifecycle=turn.dialogue_kernel_result.state.quote_lifecycle,
-        )
-        current_workflow = quote_workflow_from_metadata(turn.conv.metadata_)
-        kernel_consent_value = turn.dialogue_kernel_result.decision.metadata.get(
-            "quote_consent"
-        )
-        kernel_has_explicit_consent = isinstance(kernel_consent_value, str)
-        kernel_grant_is_current_turn = (
-            kernel_consent_value == QuoteConsent.GRANTED.value
-            and (
-                engine._has_explicit_quote_opt_in(turn.combined_text)
-                or (
-                    engine._last_assistant_offered_quote_for_selection(
-                        turn.recent_history
-                    )
-                    and engine._has_affirmative_quote_resume_intent(turn.combined_text)
-                )
-            )
-        )
-        canonical_blocks_stale_kernel_grant = (
-            engine._has_canonical_quote_workflow(turn.conv)
-            and current_workflow.consent
-            in {QuoteConsent.DEFERRED, QuoteConsent.DECLINED}
-            and kernel_workflow.consent is QuoteConsent.GRANTED
-            and not kernel_grant_is_current_turn
-        )
-        if kernel_workflow != current_workflow and (
-            kernel_grant_is_current_turn
-            or (
-                kernel_has_explicit_consent
-                and kernel_workflow.consent is not QuoteConsent.GRANTED
-            )
-            or (
-                not engine._has_canonical_quote_workflow(turn.conv)
-                and current_workflow.consent is QuoteConsent.NOT_REQUESTED
-                and kernel_workflow.consent is not QuoteConsent.GRANTED
-            )
-        ):
-            await engine._store_quote_workflow(turn.db, turn.conv, kernel_workflow)
-    if (
-        turn.dialogue_kernel_result is not None
-        and turn.dialogue_kernel_result.should_use_kernel
-        and not canonical_blocks_stale_kernel_grant
-        and turn.dialogue_kernel_result.decision.action != "product_preference_answer"
-        and not (
-            order_runtime_blocks_kernel_reply
-            and turn.dialogue_kernel_result.decision.flow != "quote_details"
-        )
-    ):
-        if turn.dialogue_kernel_result.decision.flow == "name_gate":
-            await engine._store_name_gate_pending_request(
-                turn.db, turn.conv, turn.combined_text
-            )
-        if turn.dialogue_kernel_result.decision.flow == "quote_details":
-            raw_details = turn.dialogue_kernel_result.decision.metadata.get(
-                "quote_customer_details"
-            )
-            if isinstance(raw_details, Mapping):
-                quote_details: dict[str, str] = {}
-                name = raw_details.get("customer_name")
-                address = raw_details.get("delivery_address")
-                company = raw_details.get("company")
-                customer_type = raw_details.get("customer_type")
-                if isinstance(name, str) and name.strip():
-                    quote_details["name"] = name.strip()
-                if isinstance(address, str) and address.strip():
-                    quote_details["address"] = address.strip()
-                if isinstance(company, str) and company.strip():
-                    quote_details["company"] = company.strip()
-                if isinstance(customer_type, str) and customer_type.strip():
-                    quote_details["customer_type"] = customer_type.strip()
-                await engine._store_extracted_quote_customer_details(
-                    turn.db, turn.conv, quote_details
-                )
-        if turn.dialogue_kernel_result.decision.flow == "product_selection":
-            await engine._store_kernel_quantity_prompt_frame(
-                turn.db,
-                turn.conv,
-                combined_text=turn.combined_text,
-                masked_text=turn.masked_text,
-                response_text=turn.dialogue_kernel_result.decision.response_text or "",
-            )
-        return (
-            turn.build_static_response(
-                turn.dialogue_kernel_result.decision.response_text or "",
-                f"dialogue-kernel|{turn.dialogue_kernel_result.decision.flow}",
-                allow_product_media=False,
-            ),
-            order_runtime_blocks_kernel_reply,
-        )
-    return None, order_runtime_blocks_kernel_reply
-
-
-async def _capture_details_and_name_gate_routes(
-    turn: _Turn, facts: _QuoteFacts
-) -> LLMResponseT | None:
-    """Store what the customer just gave, and answer if that is the whole turn.
-
-    The name gate lives here: when the reply completes it, the parked request
-    is resumed, which replaces the turn's text and rebuilds `deps` and the
-    quote facts against it.
-    """
-
-    # A bare "Alex" is only a name because we just asked for one. Until
-    # 2026-08-10 the only thing that ever asked was the name gate, so this read
-    # its parked request; now any route can ask, and the reply has to land the
-    # same way. The condition is on what we actually sent, not on what the
-    # engine believes it did.
-    if facts.pending_name_gate_request or response_asks_customer_name(
-        engine._last_assistant_message(turn.recent_history)
-    ):
-        pending_reply_name = engine._extract_pending_name_gate_reply_name(
-            turn.combined_text,
-            facts.current_quote_customer_details,
-        )
-        if pending_reply_name and not facts.current_quote_customer_details.get("name"):
-            facts.current_quote_customer_details = {
-                **facts.current_quote_customer_details,
-                "name": pending_reply_name,
-            }
-
-    if (
-        turn.is_first_turn
-        and facts.customer_name_was_unknown
-        and not engine._string_value(facts.current_quote_customer_details.get("name"))
-    ):
-        # The turn is no longer spent on the question. It runs to the end like
-        # any other, and `apply_opening_guard` folds the name request onto the
-        # answer -- owner decision of 2026-08-10, on the measurement that 36% of
-        # customers never send a second message and so never got past this
-        # point. Nothing is deferred for a later resume, because nothing is
-        # deferred at all.
-        #
-        # The anchor is still read here, where the catalog is in reach, so the
-        # opening carries a price when the reply itself found none. `tj-7vhq`:
-        # not on a message that is about something other than furniture, where a
-        # price list only contradicts the answer that follows it.
-        anchor = (
-            await catalog_anchor(turn.db, str(turn.conv.language))
-            if opening_wants_a_price_anchor(turn.combined_text)
-            else None
-        )
-        turn.opening_anchor_line = anchor.line if anchor is not None else None
-        turn.opening_anchor_has_limited_stock = bool(
-            anchor is not None and anchor.has_limited_stock
-        )
-        turn.opening_anchor_grounded_amounts = (
-            anchor.grounded_amounts if anchor is not None else ()
-        )
-
-    # Store customer details from the original, unmasked text before any route
-    # can call create_quotation. Phone is enough to create a draft, while the
-    # other fields are optional PDF details when the customer provides them.
-    if facts.current_quote_customer_details:
-        allowed_quote_customer_details = (
-            facts.current_quote_customer_details
-            if facts.quote_consent_granted
-            else {
-                key: value
-                for key, value in facts.current_quote_customer_details.items()
-                if key in {"name", "company"}
-            }
-        )
-        await engine._store_extracted_quote_customer_details(
+        context = await load_existing_customer_context(
             turn.db,
-            turn.conv,
-            allowed_quote_customer_details,
+            conversation=turn.conv,
+            max_past_orders=config.customer_facts_max_context_orders,
         )
-        if facts.quote_consent_granted and facts.confirmed_quote_brief_address:
-            await engine._store_confirmed_quote_brief_address(
-                turn.db,
-                turn.conv,
-                facts.confirmed_quote_brief_address,
-            )
-    if (
-        facts.current_quote_intent_frame is not None
-        and facts.pending_quote_selection_at_start is None
-    ):
-        await engine._store_quote_intent_frame(turn.db, turn.conv, turn.combined_text)
-    if facts.current_sales_memory_updates:
-        await engine._store_sales_memory_updates(
-            turn.db, turn.conv, facts.current_sales_memory_updates
+        turn.deps.customer_facts_context = context
+    except Exception:
+        logger.warning(
+            "Customer memory read failed; using conversation history", exc_info=True
         )
 
-    facts.name_gate_completion_reply = engine._is_name_gate_completion_reply(
-        turn.combined_text,
-        facts.current_quote_customer_details,
-        pending_request_exists=bool(facts.pending_name_gate_request),
-    )
-    if (
-        facts.name_gate_completion_reply
-        and facts.quote_detail_context_active
-        and engine._has_quote_customer_details_beyond_name(
-            facts.current_quote_customer_details
-        )
-    ):
-        await engine._consume_name_gate_pending_request(turn.db, turn.conv)
-        facts.pending_name_gate_request = None
-    elif facts.name_gate_completion_reply:
-        captured_customer_name = engine._string_value(
-            facts.current_quote_customer_details["name"]
-        )
-        facts.resumed_name_gate_intent = facts.pending_name_gate_intent
-        facts.pending_name_gate_request = (
-            await engine._consume_name_gate_pending_request(turn.db, turn.conv)
-        )
-        if facts.pending_name_gate_request:
-            turn.name_gate_resume_customer_name = captured_customer_name
-            turn.combined_text = facts.pending_name_gate_request
-            turn.masked_text, pending_piis = mask_pii(turn.combined_text)
-            turn.pii_map.update(pending_piis)
-            resumed_quote_customer_details = engine._extract_quote_customer_details(
-                turn.combined_text
-            )
-            if resumed_quote_customer_details:
-                if not engine._string_value(resumed_quote_customer_details.get("name")):
-                    resumed_quote_customer_details = {
-                        **resumed_quote_customer_details,
-                        "name": captured_customer_name,
-                    }
-                if not facts.quote_consent_granted:
-                    resumed_quote_customer_details = {
-                        key: value
-                        for key, value in resumed_quote_customer_details.items()
-                        if key in {"name", "company"}
-                    }
-                await engine._store_extracted_quote_customer_details(
-                    turn.db,
-                    turn.conv,
-                    resumed_quote_customer_details,
-                )
-            pending_user_entry = f"user: {turn.masked_text}"
-            if pending_user_entry not in turn.recent_history:
-                turn.recent_history.append(pending_user_entry)
-            turn.recent_history = turn.recent_history[-5:]
-            turn.deps = replace(
-                turn.deps,
-                user_query=turn.masked_text,
-                recent_history=turn.recent_history,
-                runtime_directives=(
-                    *turn.deps.runtime_directives,
-                    f"Customer name is {captured_customer_name}. Continue the "
-                    "customer's prior request now that their name is known. "
-                    "Acknowledge the name briefly. Do not ask for their name "
-                    "again, and do not ask what they need again.",
-                ),
-            )
-            facts.current_quote_customer_details = (
-                engine._quote_customer_details_from_metadata(turn.conv)
-            )
-            facts.current_quote_intent_frame = engine._quote_intent_frame_from_metadata(
-                turn.conv
-            ) or engine._quote_intent_frame_from_text(turn.combined_text)
-            facts.current_sales_opportunity_request = (
-                engine._extract_sales_opportunity_request(turn.combined_text)
-            )
-        else:
-            # Nothing was parked, so there is no prior request to resume. If a
-            # quotation is pending, though, the name that just arrived is the
-            # detail it was waiting for, and the quote route below owes an
-            # answer -- not "Thank you, Alex. How can I help you?"
-            if (
-                not engine._has_detail_capture_handoff_blocker(turn.combined_text)
-                and not facts.has_pending_quote_selection
-            ):
-                if (
-                    engine._has_active_sales_detail_capture_context(
-                        turn.conv,
-                        turn.deps.recent_history,
-                    )
-                    and not facts.quote_reply_updates_purchase_selection
-                    and engine._is_neutral_detail_capture_update(
-                        text=turn.combined_text,
-                        customer_details=facts.current_quote_customer_details,
-                        sales_memory_updates=facts.current_sales_memory_updates,
-                    )
-                ):
-                    return build_declared_static_response(
-                        engine._detail_capture_acknowledgement(
-                            facts.current_quote_customer_details,
-                            facts.current_sales_memory_updates,
-                        ),
-                        route="detail-capture",
-                        build_static_response=turn.build_static_response,
-                        allow_product_media=False,
-                    )
-                return build_declared_static_response(
-                    f"Thank you, {facts.current_quote_customer_details['name']}. "
-                    "How can I help you with your office furniture requirement?",
-                    route="name-capture",
-                    build_static_response=turn.build_static_response,
-                    allow_product_media=False,
-                )
-    return None
 
-
-async def _pre_policy_routes(turn: _Turn, facts: _QuoteFacts) -> LLMResponseT | None:
-    """Consent, the sales opportunity, and the detail-capture acknowledgement."""
-
-    if facts.unconsented_quote_details:
-        return build_declared_static_response(
-            (
-                "I have kept the selected items, but I will collect customer and "
-                "delivery details only after you explicitly confirm that you want "
-                "a formal quotation."
-            ),
-            route="quote-consent-required",
-            build_static_response=turn.build_static_response,
-            allow_product_media=False,
-        )
-
-    facts.offer_quote_for_turn = await engine._quote_offer_allowed_for_turn(
-        turn.db,
-        turn.conv,
-        turn.combined_text,
-    )
-    if (
-        facts.current_sales_opportunity_request is not None
-        and not facts.offer_quote_for_turn
-    ):
-        facts.current_sales_opportunity_request = replace(
-            facts.current_sales_opportunity_request,
-            quote_consent=quote_workflow_from_metadata(turn.conv.metadata_).consent,
-        )
-
-    if facts.current_sales_opportunity_request is not None:
-        opportunity_result = await engine._create_or_reuse_sales_opportunity(
-            turn.deps,
-            title=engine._sales_opportunity_title(turn.deps),
-            amount=facts.current_sales_opportunity_request.amount,
-            allow_reuse=True,
-        )
-        response_model = (
-            "sales-opportunity"
-            if opportunity_result.verified
-            else "sales-opportunity-unverified"
-        )
-        return await _verified_prose_response(
-            verified_text=engine._sales_opportunity_response(
-                facts.current_sales_opportunity_request,
-                opportunity_result,
-                language=str(turn.conv.language),
-            ),
-            deps=turn.deps,
-            model_name=response_model,
-            customer_text=turn.combined_text,
-            build_static_response=turn.build_static_response,
-            build_llm_response=turn.build_llm_response,
-            run_prose_agent=turn.run_prose_agent,
-        )
-
-    if (
-        not facts.quote_detail_context_active
-        and not facts.quote_reply_updates_purchase_selection
-        and engine._has_active_sales_detail_capture_context(
-            turn.conv, turn.deps.recent_history
-        )
-        # An acknowledgement is not an answer. The customer's opening question
-        # is stored while the name gate runs, and on 2026-08-09 R03 showed what
-        # happens when this route fires on the turn that completes the gate:
-        # "hi do u have ch616 in black" -> name gate -> "Omar" -> "Thanks, I've
-        # noted name: Omar." The question was never served and the turn carried
-        # nothing. Reading the metadata here is too late -- the pending request
-        # has already been consumed by this point -- so the test is whether this
-        # turn is the one that completed the gate.
-        and not facts.name_gate_completion_reply
-        # The same rule, generalised on 2026-08-10 when the gate was removed. A
-        # customer answering the last detail a pending quotation was waiting for
-        # is owed the quotation, not "Thanks, I've noted name: Alex." The quote
-        # route below either completes it or asks for what is still missing
-        # while carrying the verified price and stock, and both beat a receipt.
-        and not facts.has_pending_quote_selection
-        and engine._is_neutral_detail_capture_update(
-            text=turn.combined_text,
-            customer_details=facts.current_quote_customer_details,
-            sales_memory_updates=facts.current_sales_memory_updates,
-        )
-    ):
-        return build_declared_static_response(
-            engine._detail_capture_acknowledgement(
-                facts.current_quote_customer_details,
-                facts.current_sales_memory_updates,
-            ),
-            route="detail-capture",
-            build_static_response=turn.build_static_response,
-            allow_product_media=False,
-        )
-    return None
-
-
-async def _search_context_and_policy(
-    turn: _Turn, facts: _QuoteFacts
-) -> tuple[VerifiedAnswerDecisionT, dict[str, Any] | None]:
-    """FAQ and behaviour-rule retrieval, then the verified-answer policy call."""
+async def _retrieve_context(turn: _Turn) -> None:
+    """Retrieve evidence for the model without selecting a semantic route."""
 
     if turn.latency_trace is not None and turn.context_started is not None:
         turn.latency_trace.finish_phase("llm_context", turn.context_started)
@@ -2464,37 +1061,6 @@ async def _search_context_and_policy(
         if turn.latency_trace is not None and behavior_started is not None:
             turn.latency_trace.finish_phase("behavior_rag", behavior_started)
 
-    policy_decision = engine.evaluate_verified_answer_policy(
-        turn.masked_text, turn.deps.faq_context or []
-    )
-    if _should_override_policy_for_catalog_fact_query(
-        turn.combined_text,
-        policy_decision,
-    ):
-        policy_decision = replace(
-            policy_decision,
-            question_class="product",
-            policy_action="allow",
-            requires_manager_handoff=False,
-            sales_fallback_intent=None,
-        )
-    if (
-        facts.assistant_offered_quote_selection
-        and facts.quote_offer_reply_has_consultative_priority
-        and not engine._has_detail_capture_handoff_blocker(turn.combined_text)
-    ):
-        policy_decision = replace(
-            policy_decision,
-            question_class="product",
-            policy_action="allow",
-            requires_manager_handoff=False,
-            sales_fallback_intent=None,
-        )
-    product_preference_frame_match = engine._dialogue_kernel_product_preference_match(
-        turn.dialogue_kernel_result
-    )
-    return policy_decision, product_preference_frame_match
-
 
 async def process_message_impl(
     *,
@@ -2513,8 +1079,9 @@ async def process_message_impl(
 ) -> LLMResponseT:
     """Process an incoming message through the PydanticAI agent.
 
-    The turn is a sequence of phases over one `_Turn`. Each phase either answers
-    the turn or returns `None` and hands it on; the last one always answers.
+    Load factual context, let the main model choose tools and answer, then check
+    factual claims and delivery constraints. Legacy adapters are accepted only
+    for API compatibility and are never invoked.
     """
 
     turn = await _load_turn(
@@ -2533,110 +1100,21 @@ async def process_message_impl(
     )
     config = await _read_turn_config(turn)
 
-    response = await _customer_facts_and_quotation_routes(turn, config)
-    if response is not None:
-        return await _finalize_turn_response(turn, response)
-
-    response, order_runtime_blocks_kernel_reply = await _dialogue_kernel_route(
-        turn, config
-    )
-    if response is not None:
-        return await _finalize_turn_response(turn, response)
-
-    facts = await _read_quote_facts(
-        turn, order_runtime_blocks_kernel_reply=order_runtime_blocks_kernel_reply
-    )
-    response = await _capture_details_and_name_gate_routes(turn, facts)
-    if response is not None:
-        return await _finalize_turn_response(turn, response)
-
-    response = await _pre_policy_routes(turn, facts)
-    if response is not None:
-        return await _finalize_turn_response(turn, response)
-
-    resolved_pending_reference = await turn.pending_reference_route(
-        db=turn.db,
-        conversation=turn.conv,
-        recent_history=turn.deps.recent_history,
-        combined_text=turn.combined_text,
-        masked_text=turn.masked_text,
-    )
-    order_quote_response = None
-    if not facts.unconsented_quote_details:
-        order_quote_response = await turn.order_quote_route(
-            phase="pre_policy",
-            db=turn.db,
-            conversation=turn.conv,
-            deps=turn.deps,
-            masked_text=turn.masked_text,
-            combined_text=turn.combined_text,
-            is_first_turn=turn.is_first_turn,
-            pending_quote_selection_at_start=facts.pending_quote_selection_at_start,
-            pending_exact_quote_followup_candidates=(
-                facts.pending_exact_quote_followup_candidates
-            ),
-            current_quote_intent_frame=facts.current_quote_intent_frame,
-            current_quote_customer_details=facts.current_quote_customer_details,
-            assistant_supports_quote_resume=facts.assistant_supports_quote_resume,
-            quote_detail_context_active=facts.quote_detail_context_active,
-            has_pending_quote_selection=facts.has_pending_quote_selection,
-            pending_reference_route=resolved_pending_reference,
-            zoho_client=turn.zoho_client,
-            crm_context=turn.crm_context,
-            trace_enabled=config.dialogue_kernel_trace_enabled,
-            build_static_response=turn.build_static_response,
-            clear_verified_policy_repair_state=turn.clear_repair_state,
-            offer_quote=facts.offer_quote_for_turn,
-            resumed_name_gate_intent=facts.resumed_name_gate_intent,
-            # The pre-policy phase used to run before the model existed, so it
-            # could only ever send route text. The runtime is memoised now, so
-            # selection-confirmation gets its sentence written here too
-            # (tj-swgu.3); a turn that never reaches the model still builds
-            # nothing.
-            run_agent=turn.run_agent,
-            build_llm_response=turn.build_llm_response,
-            run_prose_agent=turn.run_prose_agent,
-        )
-    if order_quote_response is not None:
-        return await _finalize_turn_response(turn, order_quote_response)
-
-    policy_decision, product_preference_frame_match = await _search_context_and_policy(
-        turn, facts
-    )
+    # Intent and next action belong to the tool-using model. Historical route
+    # adapters must not inspect the wording, mutate consent or execute actions
+    # before the model sees the original message and conversation history.
+    await _load_customer_memory(turn, config)
+    await _retrieve_context(turn)
 
     db_model_main = "unknown"
     try:
         db_model_main, dynamic_model = await turn.model_runtime.get()
-        response = await _verified_policy_routes(
+        response = await _sales_agent_route(
             turn,
-            facts,
-            policy_decision=policy_decision,
-            product_preference_frame_match=product_preference_frame_match,
-            resolved_pending_reference=resolved_pending_reference,
-            trace_enabled=config.dialogue_kernel_trace_enabled,
             db_model_main=db_model_main,
             dynamic_model=dynamic_model,
+            claim_contract_every_catalog_turn=config.claim_contract_every_catalog_turn,
         )
-        if response is None:
-            response = await _verified_catalog_plan_route(
-                turn,
-                db_model_main=db_model_main,
-                dynamic_model=dynamic_model,
-            )
-        if response is None:
-            response = await _verified_opening_catalog_route(
-                turn,
-                db_model_main=db_model_main,
-            )
-        if response is None:
-            response = await _sales_agent_route(
-                turn,
-                db_model_main=db_model_main,
-                dynamic_model=dynamic_model,
-                claim_contract_every_catalog_turn=(
-                    config.claim_contract_every_catalog_turn
-                ),
-            )
 
     except Exception:
         logger.exception(

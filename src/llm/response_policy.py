@@ -25,8 +25,8 @@ from src.llm.sales_turn_guard import (
     asks_the_company_activity,
     carry_the_company_question,
     collapse_question_form,
-    commit_to_what_you_deferred,
     disclose_limited_stock,
+    empty_list_item_lines,
     only_asks_were_dropped,
     refuse_to_chase_the_name,
 )
@@ -85,7 +85,9 @@ def format_permitted_asks_prompt(permitted: frozenset[AskKind]) -> str:
         lines.append(f"- {ask.value}: {status}")
     lines.append(
         "Ask only types marked allowed. Phrase an allowed ask naturally; "
-        "do not add a forbidden ask."
+        "do not add a forbidden ask. This is the initial state: if "
+        "record_customer_intent records granted quotation consent during this "
+        "turn, you may then ask for missing quotation details."
     )
     return "\n".join(lines)
 
@@ -720,12 +722,6 @@ def render_reply(
         ),
     )
     raised_flags.extend(flags)
-    rendered, flags = _render_declared_guard(
-        rendered,
-        guard_name="deferred_commitment",
-        guard=partial(commit_to_what_you_deferred, language=state.language),
-    )
-    raised_flags.extend(flags)
     rendered_before_grounding = rendered
     violations = classify_grounding_output(
         rendered,
@@ -762,6 +758,15 @@ def render_reply(
             disclosure=state.required_tool_disclosure,
         ),
     )
+    empty_items = empty_list_item_lines(rendered)
+    if empty_items:
+        raised_flags.append(
+            ReplyGuardFlag(
+                guard_name="empty_list_items",
+                reason="List markers have no content; rewrite the list and its surrounding item-count references coherently.",
+                flagged_sentences=empty_items,
+            )
+        )
     # Permission is decided from state before generation. This observation is
     # narrower: it records which permitted stateful asks the selected customer
     # text still carries after every reducing guard has run.
