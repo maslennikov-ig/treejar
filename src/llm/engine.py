@@ -172,13 +172,13 @@ from src.llm.customer_intent_tools import (
     RecordedItem as RecordedItem,
 )
 from src.llm.customer_intent_tools import (
-    record_customer_intent as record_customer_intent,
+    record_customer_intent as _record_customer_intent_impl,
 )
 from src.llm.customer_intent_tools import (
-    record_customer_requirements as record_customer_requirements,
+    record_customer_requirements as _record_customer_requirements_impl,
 )
 from src.llm.customer_intent_tools import (
-    record_proposal_response as record_proposal_response,
+    record_proposal_response as _record_proposal_response_impl,
 )
 from src.llm.fact_extractor import (
     CustomerFactExtractionResult,
@@ -302,6 +302,17 @@ OpenAIChatModel = OpenRouterTelemetryChatModel
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "QuoteConsent",
+    "QuoteDetails",
+    "QuoteLifecycle",
+    "QuoteWorkflowState",
+    "_customer_facts_write_scope",
+    "quote_frame_from_metadata",
+    "quote_frame_to_metadata",
+    "quote_workflow_to_metadata",
+    "settings",
+    "unmask_pii",
+    "DialogueState",
     "ProductMediaPayload",
     "rag_search_products",
     *_catalog_planning_runtime.__all__,
@@ -9727,6 +9738,12 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
         "recording acceptance does not notify anyone. Use record_proposal_response "
         "for an explicit rejection of an already sent quotation or a requested "
         "pause in follow-ups; declining quotation creation is a separate decision. "
+        "Search results are a limited sample, not an exhaustive catalog. "
+        "A missing product or variant is not proof it does not exist. "
+        "Refine your search for each requested model; if still unconfirmed, "
+        "say it was not found in the returned results, not that the catalog "
+        "has no such product. This overrides any instruction to infer "
+        "unavailability merely from an empty search. "
         "Never claim an action "
         "completed unless its tool confirms success.\n"
     )
@@ -10457,10 +10474,14 @@ async def update_language(ctx: RunContext[SalesDeps], language: Language) -> str
 
 
 # Keep public engine imports and tool registration stable after extraction.
-record_customer_intent = sales_agent.tool(_track_sales_tool(record_customer_intent))
-record_proposal_response = sales_agent.tool(_track_sales_tool(record_proposal_response))
+record_customer_intent = sales_agent.tool(
+    _track_sales_tool(_record_customer_intent_impl)
+)
+record_proposal_response = sales_agent.tool(
+    _track_sales_tool(_record_proposal_response_impl)
+)
 record_customer_requirements = sales_agent.tool(
-    _track_sales_tool(record_customer_requirements)
+    _track_sales_tool(_record_customer_requirements_impl)
 )
 
 
