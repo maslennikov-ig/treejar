@@ -110,7 +110,6 @@ from src.llm.catalog_planning import (
     VerifiedCatalogFactProduct,
     VerifiedCrossSell,
     _catalog_product_capacity,
-    _catalog_product_families,
     _catalog_product_family,
     _catalog_remaining_budget,
     _CatalogCoverageCandidate,
@@ -120,8 +119,6 @@ from src.llm.catalog_planning import (
     _product_search_response_contract,
     _record_recovery_tool_result,
     _requested_catalog_evidence_gaps,
-    _requested_catalog_fact_domains,
-    _requests_confirmed_lumbar_support,
     _search_budget_fallback_contract,
     _search_products_limit_message,
     _stock_follow_up_contract,
@@ -129,6 +126,9 @@ from src.llm.catalog_planning import (
     _track_sales_tool,
     _try_verified_opening_catalog_options,  # noqa: F401 - compatibility export
     _zoho_stock_for_catalog_candidates,
+)
+from src.llm.catalog_planning import (
+    _catalog_product_families as _catalog_product_families,
 )
 from src.llm.catalog_planning import (
     _catalog_search_query_with_constraints as _catalog_search_query_with_constraints,
@@ -143,7 +143,13 @@ from src.llm.catalog_planning import (
     _needs_complete_catalog_coverage as _needs_complete_catalog_coverage,
 )
 from src.llm.catalog_planning import (
+    _requested_catalog_fact_domains as _requested_catalog_fact_domains,
+)
+from src.llm.catalog_planning import (
     _requested_seat_count as _requested_seat_count,
+)
+from src.llm.catalog_planning import (
+    _requests_confirmed_lumbar_support as _requests_confirmed_lumbar_support,
 )
 from src.llm.catalog_planning import (
     _try_verified_catalog_plan as _try_verified_catalog_plan,
@@ -9798,9 +9804,12 @@ async def search_products(
     min_price: float | None = None,
     max_results: int = 3,
     requested_seats: int | None = None,
-    complete_coverage: bool = False,
+    complete_coverage: bool | None = None,
     budget_cap_aed: float | None = None,
     families: list[Literal["seating", "workspace", "storage", "privacy"]] | None = None,
+    requested_fact_domains: list[Literal["acoustic", "footprint"]] | None = None,
+    require_lumbar_support: bool = False,
+    complementary_search: bool = False,
 ) -> str | ToolReturn:
     """Search for products in the Treejar catalog based on the customer's query.
     Call this whenever a customer asks for recommendations, prices, or product features.
@@ -9814,6 +9823,11 @@ async def search_products(
         complete_coverage: Calculate a configuration covering all requested seats.
         budget_cap_aed: Overall configuration budget, not a per-unit limit.
         families: Product families needed for the complete configuration.
+        requested_fact_domains: Catalog evidence to check for this search only.
+            Select acoustic and/or footprint only when relevant to your answer.
+        require_lumbar_support: Check explicit lumbar-support evidence.
+        complementary_search: This search is for a complementary item, not the
+            main configuration. No customer wording overrides these parameters.
     """
     logger.info(
         "LLM Tool requested: search_products(query=%r, min_price=%r, max_price=%r, executed_calls=%d)",
@@ -9863,11 +9877,13 @@ async def search_products(
     planning = ctx.deps.catalog_planning
     if requested_seats is not None:
         planning.requested_seats = requested_seats
-    planning.complete_coverage = complete_coverage
+    if complete_coverage is not None:
+        planning.complete_coverage = complete_coverage
     if budget_cap_aed is not None:
         planning.budget_cap = budget_cap_aed
     if families is not None:
         planning.families = tuple(dict.fromkeys(families))
+    requested_seats = planning.requested_seats
     effective_query = " ".join(query.split())
     search_query = ProductSearchQuery(
         query=effective_query,
@@ -9916,20 +9932,8 @@ async def search_products(
     formatted_results = []
     cross_sell_candidates: list[VerifiedCrossSell] = []
     target_product_family = _catalog_product_family(effective_query)
-    required_catalog_facts = _requested_catalog_fact_domains(ctx.deps.user_query)
-    lumbar_fact_requested = _requests_confirmed_lumbar_support(ctx.deps.user_query)
-    cross_sell_marker = _CROSS_SELL_REQUEST_RE.search(ctx.deps.user_query)
-    fact_scope_text = (
-        ctx.deps.user_query[: cross_sell_marker.start()]
-        if cross_sell_marker is not None
-        else ctx.deps.user_query
-    )
-    fact_scope_families = set(_catalog_product_families(fact_scope_text))
-    complementary_search = bool(
-        cross_sell_marker
-        and target_product_family is not None
-        and target_product_family not in ctx.deps.catalog_planning.families
-    )
+    required_catalog_facts = tuple(requested_fact_domains or [])
+    lumbar_fact_requested = require_lumbar_support
 
     def _product_match_text(product: Any) -> str:
         return (
@@ -10128,20 +10132,16 @@ async def search_products(
                 f"\nCatalog price basis: full {product_capacity}-seat SKU unit "
                 "(not per seat)."
             )
-        scoped_product_family = product_family or target_product_family
-        fact_scope_matches = not fact_scope_families or (
-            scoped_product_family in fact_scope_families
-        )
         fact_assessment_active = bool(
             (required_catalog_facts or lumbar_fact_requested)
             and not complementary_search
-            and fact_scope_matches
         )
         evidence_gaps = (
             _requested_catalog_evidence_gaps(
-                ctx.deps.user_query,
+                "",
                 product_text,
                 required_facts=required_catalog_facts,
+                require_lumbar_support=require_lumbar_support,
             )
             if fact_assessment_active
             else ()
@@ -10660,6 +10660,8 @@ async def record_customer_requirements(
     needed_by: str | None = None,
     decision_authority: str | None = None,
     company_activity: str | None = None,
+    replace_items: bool = False,
+    remove_skus: list[str] | None = None,
 ) -> str:
     """Record what the customer told you, so the conversation stops re-asking it.
 
@@ -10676,6 +10678,11 @@ async def record_customer_requirements(
         needed_by: When they need it, in the customer's own words.
         decision_authority: Who signs this off, in the customer's own words.
         company_activity: What the customer's company does.
+        replace_items: Replace the entire selection with items, including an
+            empty list to clear it. Use when the customer changes their choice.
+            Invalid replacement lines leave all requirements unchanged.
+        remove_skus: Remove these exact previously selected SKUs. An unknown
+            SKU rejects the change. Do not combine removal with replacement.
     """
 
     logger.info(
@@ -10684,6 +10691,7 @@ async def record_customer_requirements(
         budget_cap_aed,
     )
     conversation = ctx.deps.conversation
+    original_metadata = deepcopy(conversation.metadata_)
     state = DialogueState.from_conversation(conversation)
     slots = state.slots
 
@@ -10695,6 +10703,18 @@ async def record_customer_requirements(
         for item in slots.selected_items
         if isinstance(item, dict) and item.get("sku")
     }
+    if replace_items and remove_skus:
+        return "Not recorded: use replacement or SKU removal, not both."
+    removal_keys = {sku.strip() for sku in remove_skus or []}
+    unknown_removals = removal_keys - set(existing)
+    if unknown_removals:
+        return "Not recorded: removal SKUs are not selected: " + ", ".join(
+            sorted(unknown_removals)
+        )
+    if replace_items:
+        existing = {}
+    for sku in removal_keys:
+        existing.pop(sku)
     for item in items or []:
         sku = str(item.sku).strip()
         if not 1 <= item.quantity <= MAX_RECORDED_QUANTITY:
@@ -10708,7 +10728,13 @@ async def record_customer_requirements(
         canonical = str(product.sku)
         existing[canonical] = {"sku": canonical, "quantity": item.quantity}
         recorded.append(f"{item.quantity} x {canonical}")
+    if rejected and (replace_items or removal_keys):
+        return "Not recorded: " + "; ".join(rejected) + ". Requirements unchanged."
     slots.selected_items = list(existing.values())
+    if replace_items:
+        recorded.append("selection replaced" if existing else "selection cleared")
+    if removal_keys:
+        recorded.append("removed " + ", ".join(sorted(removal_keys)))
 
     def _text(value: str | None) -> str | None:
         cleaned = " ".join(str(value or "").split())[:MAX_RECORDED_TEXT_CHARS]
@@ -10733,14 +10759,13 @@ async def record_customer_requirements(
     if not recorded and not rejected:
         return "Nothing to record."
 
-    conversation.metadata_ = state.to_metadata(conversation.metadata_)
     try:
-        await ctx.deps.db.flush()
+        async with _customer_facts_write_scope(ctx.deps.db):
+            conversation.metadata_ = state.to_metadata(conversation.metadata_)
+            await ctx.deps.db.flush()
     except Exception:
-        logger.warning(
-            "Failed to flush recorded requirements for conversation %s",
-            conversation.id,
-        )
+        conversation.metadata_ = original_metadata
+        raise
 
     parts = []
     if recorded:
@@ -11747,6 +11772,7 @@ async def recommend_products(
     product_id: str | None = None,
     category: str | None = None,
     recommendation_type: str = "similar",
+    catalog_query: str | None = None,
 ) -> str | ToolReturn:
     """Get product recommendations for the customer.
     Use 'similar' type when a customer is looking at a specific product.
@@ -11756,6 +11782,9 @@ async def recommend_products(
         product_id: UUID of the source product (required for 'similar' type).
         category: Product category (required for 'cross_sell' type).
         recommendation_type: Either 'similar' or 'cross_sell'.
+        catalog_query: Exact complementary-product query you choose. When set,
+            search this query instead of category recommendations; never infer
+            a substitute product from the customer's wording.
     """
     logger.info(
         "LLM Tool called: recommend_products(product_id=%s, category=%s, type=%s)",
@@ -11826,7 +11855,11 @@ async def recommend_products(
                 ),
             )
 
-        items = await get_cross_sell(ctx.deps.db, category, limit=3)
+        items = (
+            []
+            if catalog_query
+            else await get_cross_sell(ctx.deps.db, category, limit=3)
+        )
         if remaining_budget is not None and items:
             affordable_items = [
                 item
@@ -11859,10 +11892,14 @@ async def recommend_products(
                 )
             ]
         if not items:
-            fallback_query = _cross_sell_catalog_fallback_query(
-                category=category,
-                customer_text=ctx.deps.user_query,
-            )
+            if not catalog_query or not catalog_query.strip():
+                return _finish_cross_sell(
+                    ToolReturn(
+                        return_value=f"No cross-sell items found for category '{category}'.",
+                        content="Choose a relevant complementary item yourself and call search_products or supply an explicit catalog_query. Do not invent availability.",
+                    )
+                )
+            fallback_query = " ".join(catalog_query.split())
             fallback_family = _catalog_product_family(fallback_query)
             fallback_results = await rag_search_products(
                 db=ctx.deps.db,
@@ -11881,11 +11918,14 @@ async def recommend_products(
                     remaining_budget is None
                     or float(_valid_catalog_price(product) or 0) <= remaining_budget
                 )
-                and _catalog_product_family(
-                    f"{product.name_en} {product.description_en or ''} "
-                    f"{product.category or ''}"
+                and (
+                    fallback_family is None
+                    or _catalog_product_family(
+                        f"{product.name_en} {product.description_en or ''} "
+                        f"{product.category or ''}"
+                    )
+                    == fallback_family
                 )
-                == fallback_family
             ]
             if not fallback_items:
                 ctx.deps.required_cross_sell_disclosure = (

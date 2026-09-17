@@ -10273,7 +10273,10 @@ async def test_catalog_search_preserves_capacity_constraint_and_evidence_limits(
 
     with patch.object(engine_module, "rag_search_products", mock_search):
         result = await engine_module.search_products(
-            ctx, "private 4 person workstation", requested_seats=4
+            ctx,
+            "private 4 person workstation",
+            requested_seats=4,
+            requested_fact_domains=["acoustic", "footprint"],
         )
 
     search_query = mock_search.await_args.kwargs["query"]
@@ -10379,8 +10382,12 @@ async def test_catalog_search_preserves_per_product_fact_gaps_across_calls(
     )
 
     with patch.object(engine_module, "rag_search_products", mock_search):
-        await engine_module.search_products(ctx, "LUMA 9719-4 workstation")
-        await engine_module.search_products(ctx, "NOVO 2400 workstation")
+        await engine_module.search_products(
+            ctx, "LUMA 9719-4 workstation", requested_fact_domains=["acoustic"]
+        )
+        await engine_module.search_products(
+            ctx, "NOVO 2400 workstation", requested_fact_domains=["acoustic"]
+        )
 
     assert deps.unsupported_catalog_facts == {"acoustic_performance=not_stated"}
     assert deps.catalog_fact_products["LUMA-4"].fact_gaps == (
@@ -10462,8 +10469,10 @@ async def test_catalog_fact_scope_excludes_cross_sell_search_results(
     )
 
     with patch.object(engine_module, "rag_search_products", mock_search):
-        await engine_module.search_products(ctx, "workstation")
-        await engine_module.search_products(ctx, "pedestal")
+        await engine_module.search_products(
+            ctx, "workstation", requested_fact_domains=["acoustic"]
+        )
+        await engine_module.search_products(ctx, "pedestal", complementary_search=True)
 
     assert deps.unsupported_catalog_facts == {"acoustic_performance=not_stated"}
     assert set(deps.catalog_fact_products) == {"WORK-4"}
@@ -10528,8 +10537,12 @@ async def test_catalog_fact_materializer_prioritizes_gap_from_later_search_call(
     )
 
     with patch.object(engine_module, "rag_search_products", mock_search):
-        await engine_module.search_products(ctx, "first workstation options")
-        await engine_module.search_products(ctx, "late workstation option")
+        await engine_module.search_products(
+            ctx, "first workstation options", requested_fact_domains=["acoustic"]
+        )
+        await engine_module.search_products(
+            ctx, "late workstation option", requested_fact_domains=["acoustic"]
+        )
 
     materialized = engine_module._materialize_verified_catalog_facts(deps)
 
@@ -10989,7 +11002,9 @@ async def test_catalog_search_marks_unstated_lumbar_support_without_treating_erg
     )
 
     with patch.object(engine_module, "rag_search_products", mock_search):
-        result = await engine_module.search_products(ctx, "ergonomic lumbar chairs")
+        result = await engine_module.search_products(
+            ctx, "ergonomic lumbar chairs", require_lumbar_support=True
+        )
 
     assert isinstance(result, ToolReturn)
     product_blocks = result.return_value.split("\n---\n")
@@ -11492,6 +11507,7 @@ async def test_cross_sell_falls_back_to_verified_catalog_product(
             ctx,
             category="desk",
             recommendation_type="cross_sell",
+            catalog_query="mobile pedestal office storage",
         )
 
     result_text = result.return_value if isinstance(result, ToolReturn) else result
@@ -11937,7 +11953,11 @@ async def test_catalog_recovery_uses_complete_current_turn_selection(
         side_effect=search_results,
     ):
         await engine_module.search_products(
-            ctx, "office accessories", complete_coverage=True, requested_seats=12
+            ctx,
+            "office accessories",
+            complete_coverage=True,
+            requested_seats=12,
+            complementary_search=True,
         )
         await engine_module.search_products(
             ctx, "office chairs", complete_coverage=True, requested_seats=12
@@ -11981,7 +12001,11 @@ async def test_catalog_recovery_uses_complete_current_turn_selection(
         ),
     ):
         await engine_module.search_products(
-            ctx, "office lighting add-on", complete_coverage=True, requested_seats=12
+            ctx,
+            "office lighting add-on",
+            complete_coverage=True,
+            requested_seats=12,
+            complementary_search=True,
         )
 
     assert deps.verified_cross_sell is None

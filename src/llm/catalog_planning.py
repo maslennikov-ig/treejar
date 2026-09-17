@@ -2118,6 +2118,7 @@ def _requested_catalog_evidence_gaps(
     product_text: str,
     *,
     required_facts: tuple[CatalogFactDomain, ...] | None = None,
+    require_lumbar_support: bool | None = None,
 ) -> tuple[str, ...]:
     normalized_customer = _normalize_text(customer_text)
     requested_facts = (
@@ -2134,9 +2135,12 @@ def _requested_catalog_evidence_gaps(
         product_text
     ):
         gaps.append(_FOOTPRINT_FACT_GAP)
-    if _requests_confirmed_lumbar_support(
-        normalized_customer
-    ) and not _has_positive_lumbar_support(product_text):
+    lumbar_requested = (
+        _requests_confirmed_lumbar_support(normalized_customer)
+        if require_lumbar_support is None
+        else require_lumbar_support
+    )
+    if lumbar_requested and not _has_positive_lumbar_support(product_text):
         gaps.append("lumbar_support=not_stated")
     return tuple(gaps)
 

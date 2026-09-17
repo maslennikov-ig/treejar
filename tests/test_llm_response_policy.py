@@ -4,7 +4,11 @@ import logging
 
 import pytest
 
-from src.llm.response_policy import apply_guard_with_reply_bound
+from src.llm.response_policy import (
+    ReplyPolicyState,
+    apply_guard_with_reply_bound,
+    render_reply,
+)
 
 
 @pytest.mark.parametrize(
@@ -94,3 +98,29 @@ def test_the_guard_receives_the_current_reply() -> None:
 
     assert result == "Current reply."
     assert received == ["Current reply."]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Assembly is not confirmed, and you said you do not need it.",
+        "The delivery timing remains unconfirmed.",
+        "The warranty terms need confirmation.",
+        "التركيب غير مؤكد حتى الآن.",
+    ],
+)
+def test_live_policy_does_not_invent_followup_commitments(text: str) -> None:
+    language = "ar" if text.startswith("ال") else "en"
+    result = render_reply(
+        text, state=ReplyPolicyState(language=language), provenance="model"
+    )
+    assert result.text == text
+    assert not any(flag.guard_name == "deferred_commitment" for flag in result.flags)
+
+
+def test_live_policy_preserves_model_selected_followup_wording() -> None:
+    text = "I will confirm the delivery timing with our team and come back to you."
+    result = render_reply(
+        text, state=ReplyPolicyState(language="en"), provenance="model"
+    )
+    assert result.text == text

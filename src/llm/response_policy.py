@@ -25,7 +25,6 @@ from src.llm.sales_turn_guard import (
     asks_the_company_activity,
     carry_the_company_question,
     collapse_question_form,
-    commit_to_what_you_deferred,
     disclose_limited_stock,
     only_asks_were_dropped,
     refuse_to_chase_the_name,
@@ -720,12 +719,6 @@ def render_reply(
             product_references=state.limited_stock_product_references,
             language=state.language,
         ),
-    )
-    raised_flags.extend(flags)
-    rendered, flags = _render_declared_guard(
-        rendered,
-        guard_name="deferred_commitment",
-        guard=partial(commit_to_what_you_deferred, language=state.language),
     )
     raised_flags.extend(flags)
     rendered_before_grounding = rendered
