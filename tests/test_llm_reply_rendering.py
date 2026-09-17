@@ -40,11 +40,11 @@ def test_render_reply_classifies_grounding_without_editing_any_provenance(
     assert "assess your used desks" not in rendered.flags[0].candidate.casefold()
 
 
-def test_render_reply_turns_a_deferral_into_an_explicit_commitment() -> None:
+def test_render_reply_leaves_followup_commitment_to_model() -> None:
     rendered = render_reply(
         "Assembly remains unconfirmed.",
         state=ReplyPolicyState(language="en"),
         provenance="deterministic_static",
     )
 
-    assert "I'll confirm assembly with our team" in rendered.text
+    assert rendered.text == "Assembly remains unconfirmed."

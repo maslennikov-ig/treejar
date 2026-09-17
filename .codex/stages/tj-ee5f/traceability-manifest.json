@@ -2,7 +2,7 @@
   "schema_version": "noor-e2e-traceability/v1",
   "goal_id": "tj-ee5f",
   "scope_source_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
-  "source_set_digest": "7ddb69714e7c90ea2857eabea434c9fb71ec099f8d1e1147f49084546c51d478",
+  "source_set_digest": "ea63f5e8d18fb09c4b2756fb45a7dd4576ceeba5699954a460018add6e1de655",
   "precedence_order": [
     "current repository and runtime contracts",
     "original and updated requirements",
@@ -47,23 +47,23 @@
     },
     "runtime-truth": {
       "path": ".codex/handoff.md",
-      "content_digest": "46c0d8fb2ad440929763d4a020ca155cb2850fea8ee92a415b64a0c514fd133c",
+      "content_digest": "54652b5742afca27604781e59e1ab9a6fe7690f4be79d805f8e7511dcc0c50cf",
       "sections": [
         {
           "start_locator": "# Orchestrator Handoff",
           "end_locator": null,
-          "content_digest": "46c0d8fb2ad440929763d4a020ca155cb2850fea8ee92a415b64a0c514fd133c"
+          "content_digest": "54652b5742afca27604781e59e1ab9a6fe7690f4be79d805f8e7511dcc0c50cf"
         }
       ]
     },
     "project-index": {
       "path": ".codex/project-index.md",
-      "content_digest": "43d48982aac7d4299cb2f248f5fcb368f48b2a66d31c8a91ffe781a0c77781a9",
+      "content_digest": "106b96da8d25b002c4d958abcf787de3eb3b40ba2e113b90146098b73c9486a8",
       "sections": [
         {
           "start_locator": "# Project Index - Treejar AI Sales Bot",
           "end_locator": null,
-          "content_digest": "43d48982aac7d4299cb2f248f5fcb368f48b2a66d31c8a91ffe781a0c77781a9"
+          "content_digest": "106b96da8d25b002c4d958abcf787de3eb3b40ba2e113b90146098b73c9486a8"
         }
       ]
     },

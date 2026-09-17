@@ -3,7 +3,7 @@
 Updated: 2026-09-17
 Current branch: `codex/model-owned-intent` (local worktree)
 Current stage id: `tj-stwf-test-only-restore`
-Status: `tj-r703` implemented and verified locally; not deployed.
+Status: `tj-tn29` final audit and authorized test-only release in progress.
 Production testing remains limited to WhatsApp ending0665.
 
 ## Local delivery: tj-r703
@@ -85,8 +85,9 @@ operation requires a separately authorized release.
 ## Next recommended
 
 Next stage id: `none` (accepted stage is complete)
-Recommended action: review local tj-r703 delivery; obtain owner authority
-before deployment, preserving the existing test0665-only boundary.
+Recommended action: finish tj-tn29 verification and authorized deployment;
+preserve the existing test0665-only boundary. Up to six read-only main-model
+requests are authorized; no customer messaging is authorized for probes.
 
 ## Starter prompt for next orchestrator
 

@@ -19,7 +19,7 @@ Stable navigation map for this repository. Keep operational state in
 - `README.md` - product/runtime overview and developer quick start.
 - `src/main.py` - FastAPI application wiring.
 - `src/api/v1/router.py` and `src/api/telegram_webhook.py` - public API and Telegram callback surfaces.
-- `src/llm/engine.py`, `src/llm/message_processor.py`, `src/llm/catalog_planning.py`, `src/llm/order_quote_routes.py`, `src/llm/response_policy.py`, and `src/llm/response_runtime.py` - sales-agent tools, message orchestration, catalog evidence/materialization, legacy order adapters (not called by incoming chat), the single customer-text policy, and response transport.
+- `src/llm/engine.py`, `src/llm/customer_intent_tools.py`, `src/llm/message_processor.py`, `src/llm/catalog_planning.py`, `src/llm/order_quote_routes.py`, `src/llm/response_policy.py`, and `src/llm/response_runtime.py` - sales-agent tools, model-owned intent persistence, message orchestration, catalog evidence/materialization, legacy order adapters (not called by incoming chat), the single customer-text policy, and response transport.
 - `src/dialogue/` - LangGraph dialogue-state kernel, side-effect-free typed order-state runtime, slot state, trace reducer, expected-answer frame matcher, and catalog reference parsing.
 - `src/services/customer_memory.py` and `src/models/customer_memory.py` - durable customer profile facts, current-order memory, past-order history, and compact prompt context.
 - `scripts/orchestration/run_process_verification.sh` - process-contract verification entrypoint.

@@ -1391,7 +1391,7 @@ async def test_production_finalizer_enforces_the_selected_language_before_record
 
 
 @pytest.mark.asyncio
-async def test_the_harness_commits_to_what_it_defers() -> None:
+async def test_the_harness_does_not_invent_a_deferred_commitment() -> None:
     committed = await apply_shipped_output_guards(
         "Whether assembly can be included still needs confirmation.",
         language="en",
@@ -1401,7 +1401,8 @@ async def test_the_harness_commits_to_what_it_defers() -> None:
     )
 
     assert (
-        "I'll confirm assembly with our team and come back to you." in committed.content
+        "I'll confirm assembly with our team and come back to you."
+        not in committed.content
     )
 
 

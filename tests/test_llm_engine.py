@@ -10909,7 +10909,9 @@ async def test_process_message_detects_catalog_fact_gap_and_repairs_model_output
             model=TestModel(),
             usage=RunUsage(),
         )
-        await engine_module.search_products(ctx, "workstation")
+        await engine_module.search_products(
+            ctx, "workstation", requested_fact_domains=["acoustic", "footprint"]
+        )
         return _FakeAgentResult("This product is compact and its panels dampen sound.")
 
     mock_run.side_effect = run_side_effect
