@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from decimal import Decimal, InvalidOperation
 from functools import wraps
+from time import monotonic
 from typing import Annotated, Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, SkipValidation, ValidationError
@@ -2968,7 +2969,21 @@ def _track_sales_tool(func: Callable[..., Any]) -> Callable[..., Any]:
         executed_tool_names = getattr(ctx.deps, "executed_tool_names", None)
         if isinstance(executed_tool_names, list):
             executed_tool_names.append(func.__name__)
-        return await func(ctx, *args, **kwargs)
+        started = monotonic()
+        outcome = "ok"
+        logger.info("llm.sales_tool.start tool=%s", func.__name__)
+        try:
+            return await func(ctx, *args, **kwargs)
+        except BaseException as exc:
+            outcome = type(exc).__name__
+            raise
+        finally:
+            logger.info(
+                "llm.sales_tool.finish tool=%s outcome=%s duration_ms=%.1f",
+                func.__name__,
+                outcome,
+                (monotonic() - started) * 1000,
+            )
 
     return tracked
 

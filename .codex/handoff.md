@@ -1,9 +1,9 @@
 # Orchestrator Handoff
 
-Updated: 2026-09-17
+Updated: 2026-09-18
 Current branch: `main` (delivered via codex/model-intent-main-final)
 Current stage id: `tj-stwf-test-only-restore` (last operational stage)
-Status: tj-r703, tj-tn29, tj-15bc and tj-a1bi complete; merged and deployed.
+Status: tj-3egt quotation-timeout repair in progress; prior release remains live.
 
 ## Current truth
 
@@ -52,7 +52,7 @@ Status: tj-r703, tj-tn29, tj-15bc and tj-a1bi complete; merged and deployed.
 ## Next recommended
 
 Next stage id: `none`
-Recommended action: tester-authored dialogue on updated test-only runtime.
+Recommended action: finish tj-3egt acceptance and authorized Push, Merge, Deploy.
 No claim that local tests eliminate all future model errors.
 
 ## Starter prompt for next orchestrator

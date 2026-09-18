@@ -10994,7 +10994,8 @@ async def create_quotation(
 ) -> str:
     """Generate a formal PDF quotation for the customer, save it to Zoho Inventory as a draft, and send it via WhatsApp.
     Call this when the customer has explicitly asked for a quote and confirmed the items and quantities.
-    Block before Zoho/PDF/send if customer name, company-or-explicit-individual, specific delivery address, or item quantities are missing.
+    First persist the interpreted consent with record_customer_intent.
+    Block before Zoho/PDF/send if customer name, company-or-explicit-individual, email, specific delivery address, or item quantities are missing.
 
     Args:
         items: List of the SKUs and quantities to include in the quote.
@@ -11011,7 +11012,11 @@ async def create_quotation(
     if invalid_canonical_workflow or workflow.consent is not QuoteConsent.GRANTED:
         return (
             "I can prepare the quotation only after you explicitly confirm that "
-            "you want it. No customer, order, PDF, or message was created."
+            "you want it. No customer, order, PDF, or message was created. "
+            "Consent has not been recorded: if the current message already grants "
+            "permission in context, call record_customer_intent with that literal "
+            "evidence and quotation_consent='granted', then retry this tool. "
+            "Do not ask the customer to repeat consent they already provided."
         )
 
     missing_required = _quote_missing_required_details(ctx.deps, items)

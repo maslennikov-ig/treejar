@@ -6,12 +6,14 @@ import asyncio
 import logging
 import math
 from collections.abc import Mapping
+from contextvars import ContextVar
+from copy import copy
 from dataclasses import dataclass
 from html import escape
 from typing import Any, Literal, cast, overload
 
 import httpx
-from openai import AsyncStream
+from openai import APITimeoutError, AsyncStream
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from pydantic_ai import ModelSettings, UsageLimits
 from pydantic_ai.exceptions import (
@@ -61,6 +63,11 @@ _OPENROUTER_RETRYABLE_ERROR_TYPES = frozenset(
 _OPENROUTER_RETRY_COUNT_ATTR = "treejar_openrouter_error_retries"
 _OPENROUTER_RETRY_COST_ATTR = "treejar_openrouter_retry_cost_usd"
 _OPENROUTER_RETRY_TYPE_ATTR = "treejar_openrouter_error_type"
+_OPENROUTER_RETRY_COST_UNKNOWN_ATTR = "treejar_openrouter_retry_cost_unknown"
+_CORE_CHAT_COMPLETION_TIMEOUT_SECONDS = 35.0
+_CORE_CHAT_COMPLETION_DEADLINE: ContextVar[float | None] = ContextVar(
+    "core_chat_completion_deadline", default=None
+)
 
 
 class LLMBudgetBlocked(RuntimeError):
@@ -107,53 +114,90 @@ class OpenRouterTelemetryChatModel(OpenAIChatModel):
                 model_request_parameters,
             )
 
-        response = await super()._completions_create(
-            messages,
-            False,
-            model_settings,
-            model_request_parameters,
-        )
-        if not _openrouter_completion_failed(response):
-            return response
-
-        error_type = _openrouter_completion_error_type(response)
-        retrying = error_type in _OPENROUTER_RETRYABLE_ERROR_TYPES
-        logger.warning(
-            "openrouter.finish_reason_error",
-            extra={
-                "model": self.model_name,
-                "error_type": error_type or "unknown",
-                "retrying": retrying,
-            },
-        )
-        if not retrying:
-            raise _openrouter_completion_error(self.model_name, error_type)
-
-        retry_response = await super()._completions_create(
-            messages,
-            False,
-            model_settings,
-            model_request_parameters,
-        )
-        if _openrouter_completion_failed(retry_response):
-            retry_error_type = _openrouter_completion_error_type(retry_response)
-            raise _openrouter_completion_error(self.model_name, retry_error_type)
-
-        setattr(retry_response, _OPENROUTER_RETRY_COUNT_ATTR, 1)
-        setattr(retry_response, _OPENROUTER_RETRY_TYPE_ATTR, error_type)
-        retry_cost = _usage_number(
-            getattr(response, "usage", None),
-            "cost",
-            "cost_usd",
-        )
-        valid_retry_cost = _valid_cost(retry_cost)
-        if valid_retry_cost is not None:
-            setattr(
-                retry_response,
-                _OPENROUTER_RETRY_COST_ATTR,
-                valid_retry_cost,
+        deadline = _CORE_CHAT_COMPLETION_DEADLINE.get()
+        request_model = self
+        if deadline is not None:
+            # Disable hidden SDK retries inside this single explicit retry budget.
+            # Copy the model/client options rather than mutate a shared client.
+            request_model = copy(self)
+            request_model.client = self.client.with_options(max_retries=0)
+        prior_response: ChatCompletion | None = None
+        prior_error_type: str | None = None
+        retry_cost_unknown = False
+        error_type: str | None
+        for attempt in range(2):
+            remaining = (
+                deadline - asyncio.get_running_loop().time()
+                if deadline is not None
+                else None
             )
-        return retry_response
+            if remaining is not None and remaining <= 0:
+                raise _openrouter_completion_error(self.model_name, "timeout")
+            try:
+                request = OpenAIChatModel._completions_create(
+                    request_model,
+                    messages,
+                    False,
+                    model_settings,
+                    model_request_parameters,
+                )
+                response = (
+                    await asyncio.wait_for(
+                        request,
+                        timeout=min(_CORE_CHAT_COMPLETION_TIMEOUT_SECONDS, remaining),
+                    )
+                    if remaining is not None
+                    else await request
+                )
+            except (TimeoutError, APITimeoutError, httpx.TimeoutException):
+                if deadline is None or asyncio.get_running_loop().time() >= deadline:
+                    raise
+                error_type = "timeout"
+                retry_cost_unknown = True
+            else:
+                if not _openrouter_completion_failed(response):
+                    if attempt:
+                        setattr(response, _OPENROUTER_RETRY_COUNT_ATTR, 1)
+                        setattr(response, _OPENROUTER_RETRY_TYPE_ATTR, prior_error_type)
+                        if retry_cost_unknown:
+                            setattr(response, _OPENROUTER_RETRY_COST_UNKNOWN_ATTR, True)
+                        if prior_response is not None:
+                            prior_cost = _valid_cost(
+                                _usage_number(
+                                    getattr(prior_response, "usage", None),
+                                    "cost",
+                                    "cost_usd",
+                                )
+                            )
+                            if prior_cost is not None:
+                                setattr(
+                                    response, _OPENROUTER_RETRY_COST_ATTR, prior_cost
+                                )
+                    return response
+                error_type = _openrouter_completion_error_type(response)
+                prior_response = response
+            retrying = attempt == 0 and error_type in _OPENROUTER_RETRYABLE_ERROR_TYPES
+            if deadline is not None:
+                retrying = retrying and asyncio.get_running_loop().time() < deadline
+            logger.warning(
+                "openrouter.completion_retry model=%s error_type=%s attempt=%s retrying=%s cost_unknown=%s",
+                self.model_name,
+                error_type or "unknown",
+                attempt + 1,
+                retrying,
+                retry_cost_unknown,
+                extra={
+                    "model": self.model_name,
+                    "error_type": error_type or "unknown",
+                    "retrying": retrying,
+                    "attempt": attempt + 1,
+                    "attempt_cost_unknown": retry_cost_unknown,
+                },
+            )
+            if not retrying:
+                raise _openrouter_completion_error(self.model_name, error_type)
+            prior_error_type = error_type
+        raise RuntimeError("Unreachable completion retry state")
 
     def _process_provider_details(self, response: Any) -> dict[str, Any]:
         details = super()._process_provider_details(response)
@@ -176,6 +220,8 @@ class OpenRouterTelemetryChatModel(OpenAIChatModel):
             error_type = getattr(response, _OPENROUTER_RETRY_TYPE_ATTR, None)
             if isinstance(error_type, str) and error_type:
                 details["openrouter_error_type"] = error_type
+        if getattr(response, _OPENROUTER_RETRY_COST_UNKNOWN_ATTR, False):
+            details["openrouter_retry_cost_unknown"] = True
         return details
 
     def provider_cost_snapshot(self) -> float | None:
@@ -902,7 +948,11 @@ async def run_agent_with_safety(
             )
         raise error
 
-    attempts = max(max_attempts_override or policy.max_attempts, 1)
+    attempts = (
+        1
+        if path == PATH_CORE_CHAT
+        else max(max_attempts_override or policy.max_attempts, 1)
+    )
     notify_on_failure = (
         policy.notify_on_failure
         if notify_on_failure_override is None
@@ -910,6 +960,11 @@ async def run_agent_with_safety(
     )
     last_error: BaseException | None = None
     for attempt_number in range(1, attempts + 1):
+        deadline_token = _CORE_CHAT_COMPLETION_DEADLINE.set(
+            asyncio.get_running_loop().time() + policy.timeout_seconds
+            if path == PATH_CORE_CHAT
+            else None
+        )
         try:
             result = await asyncio.wait_for(
                 agent.run(user_prompt, **run_kwargs),
@@ -950,6 +1005,8 @@ async def run_agent_with_safety(
                     error=exc,
                 )
             raise
+        finally:
+            _CORE_CHAT_COMPLETION_DEADLINE.reset(deadline_token)
 
     if last_error is not None:
         raise last_error
