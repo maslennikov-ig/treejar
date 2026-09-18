@@ -1,6 +1,6 @@
 # Quotation confirmation timeout
 
-Task: tj-3egt. Status: local acceptance complete; main deployment pending.
+Task: tj-3egt. Status: deployed and verified.
 Owner's standing delivery request is Push, Merge, Deploy; preserve test-only
 channel/worker. No additional paid probes, synthetic messages or data repairs.
 
@@ -53,3 +53,22 @@ Rollback backup: `/opt/noor/.hotfix-backups/tj-3egt-20260918`. Restore
 source-before.tar.gz and compose-rollback.yml for app/worker only, using preserved
 images noor-rollback:tj-3egt-app and noor-rollback:tj-3egt-worker. Previous live
 release4abe835. Preserve environment, database activity and held messages.
+
+## Delivery verification
+
+Fast-forward merged and pushed to main. Runtime release:
+`74ae14c789c909763b4150a4b22e296dd8abdd38`.
+[CI 35360991418](https://github.com/maslennikov-ig/treejar/actions/runs/35360991418)
+succeeded, including deployment: 4,066 passed, 27 skipped on CI; lint and types
+passed. Local Python environment: 4,073 passed, 20 skipped.
+
+Public health returned this exact release SHA with healthy database and Redis.
+All three changed source hashes match in both running app and worker containers;
+both have zero restarts. Environment fingerprint unchanged. Worker startup lists
+only process_incoming_batch and confirms restore mode, disabled cron and warmup.
+Existing test-channel restrictions remain in place.
+
+No additional paid probes or outbound test messages were sent. Local mocked
+transport tests prove recovery and no tool replay; successful live quotation
+creation after this release still requires the tester's normal scenario.
+Private acceptance logs and source hashes: ~/.local/state/treejar/tj-3egt/.

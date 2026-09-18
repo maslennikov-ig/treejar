@@ -1,16 +1,21 @@
 # Orchestrator Handoff
 
 Updated: 2026-09-18
-Current branch: `main` (delivered via codex/model-intent-main-final)
+Current branch: `main` (delivered via codex/quotation-timeout)
 Current stage id: `tj-stwf-test-only-restore` (last operational stage)
-Status: tj-3egt quotation-timeout repair in progress; prior release remains live.
+Status: tj-3egt quotation-timeout repair deployed and verified.
 
 ## Current truth
 
-- Live release: `4abe8355d6dbb074d1d8e66e963457e054a481c2`.
-- CI35223521584 succeeded: 4,059 passed, 27 skipped; lint/types passed.
+- Live release: `74ae14c789c909763b4150a4b22e296dd8abdd38`.
+- CI35360991418 succeeded: 4,066 passed, 27 skipped; lint/types passed.
+- Local acceptance: 4,073 passed, 20 skipped.
 - Public health200; database/Redis healthy. App/worker running, zero restarts;
-  all14changed source hashes match accepted code in both containers.
+  all three changed source hashes match accepted code in both containers.
+- Core completions have a 35-second bound and one same-request retry within
+  the unchanged 90-second run deadline; completed tools are not replayed.
+- Quotation guidance records contextual consent through the model-owned tool;
+  tool phase/outcome/duration logs omit customer arguments.
 - Main model owns contextual customer intent and receives per-run instructions
   even with history. Repairs retain tool results and bounded catalog/context.
 - Orphan numbered-list reductions are rejected for coherent model repair.
@@ -18,7 +23,7 @@ Status: tj-3egt quotation-timeout repair in progress; prior release remains live
   the answer. Shared-session tools execute sequentially.
 - Existing CI --app-only invocation now safely refreshes an already-running
   verified test-only worker; stopped/non-test workers retain the app-only gate.
-- Report: `docs/reports/2026-09-17-live-reply-repair.md`.
+- Report: `docs/reports/2026-09-18-quotation-timeout.md`.
 
 ## Operating boundary
 
@@ -33,9 +38,10 @@ Status: tj-3egt quotation-timeout repair in progress; prior release remains live
 
 ## Recovery
 
-- Latest backup: `/opt/noor/.hotfix-backups/tj-15bc-main-20260917`.
+- Latest backup: `/opt/noor/.hotfix-backups/tj-3egt-20260918`.
   Restore source-before.tar.gz and compose-rollback.yml for app/worker only,
-  image noor-intent:tj-tn29, previous release9a08683. Preserve DB activity/env.
+  images noor-rollback:tj-3egt-app and noor-rollback:tj-3egt-worker, previous
+  release4abe835. Preserve DB activity/env.
 - Earlier release backup: `/opt/noor/.hotfix-backups/tj-tn29-20260917`.
 - Reset backup: `/opt/noor/.hotfix-backups/tj-0pht-20260916`.
 - Customer-fact backup remains
@@ -52,7 +58,8 @@ Status: tj-3egt quotation-timeout repair in progress; prior release remains live
 ## Next recommended
 
 Next stage id: `none`
-Recommended action: finish tj-3egt acceptance and authorized Push, Merge, Deploy.
+Recommended action: tester repeats the normal quotation scenario; live end-to-end
+quotation creation was not probed in this release (no new paid-call authority).
 No claim that local tests eliminate all future model errors.
 
 ## Starter prompt for next orchestrator
