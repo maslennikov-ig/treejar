@@ -1,17 +1,26 @@
 # Orchestrator Handoff
 
-Updated: 2026-09-18
-Current branch: `main` (delivered via codex/quotation-timeout)
+Updated: 2026-09-22
+Current branch: `main` (delivered via codex/tj-telegram-reset-webhook)
 Current stage id: `tj-stwf-test-only-restore` (last operational stage)
-Status: tj-3egt quotation-timeout repair deployed and verified.
+Status: tj-it9r Telegram reset webhook repair deployed and reset verified.
 
 ## Current truth
 
-- Live release: `74ae14c789c909763b4150a4b22e296dd8abdd38`.
-- CI35360991418 succeeded: 4,066 passed, 27 skipped; lint/types passed.
-- Local acceptance: 4,073 passed, 20 skipped.
-- Public health200; database/Redis healthy. App/worker running, zero restarts;
-  all three changed source hashes match accepted code in both containers.
+- Live release: `64a28bd520fce97a998596a652666eb2267d71ee`.
+- CI 35706122529 succeeded: 4,067 passed, 27 skipped; lint/types passed.
+- Telegram points directly to the canonical Noor webhook with zero pending
+  updates and no delivery error. Restore-mode startup now reconciles the
+  webhook without publishing unavailable commands.
+- Owner-requested reset for `+79689818825` completed at
+  2026-09-22T08:33:12.989639Z. New conversation
+  `d73f0b16-928b-41ab-97e4-de8c3644fd74` has no name and zero messages.
+  The previous conversation is archived with all 10 messages retained; no
+  matching customer profile or pending reset token remains.
+- Focused acceptance: 61 passed; Ruff/format/Mypy passed. Production webhook
+  authentication smoke passed.
+- Public health 200; database/Redis healthy. App/worker running, zero restarts;
+  changed source hashes match accepted code.
 - Core completions have a 35-second bound and one same-request retry within
   the unchanged 90-second run deadline; completed tools are not replayed.
 - Quotation guidance records contextual consent through the model-owned tool;
@@ -23,14 +32,18 @@ Status: tj-3egt quotation-timeout repair deployed and verified.
   the answer. Shared-session tools execute sequentially.
 - Existing CI --app-only invocation now safely refreshes an already-running
   verified test-only worker; stopped/non-test workers retain the app-only gate.
-- Report: `docs/reports/2026-09-18-quotation-timeout.md`.
+- Reset report: `docs/reports/2026-09-22-telegram-reset-webhook.md`.
+- Quotation repair remains present; its report is
+  `docs/reports/2026-09-18-quotation-timeout.md`.
 
 ## Operating boundary
 
-- Environment unchanged. TEST_CHANNEL_RESTORE_MODE=true; only WhatsApp ending0665.
+- Environment unchanged. TEST_CHANNEL_RESTORE_MODE=true; WhatsApp remains
+  limited to ending0665 and Telegram to authenticated admin reset operations.
 - Worker only processes inbound batches; cron and embedding warmup disabled.
-- Authenticated admin Telegram reset hotfix preserved.
-- No synthetic messages, DB repairs, resets or held-message changes for release.
+- Non-reset Telegram actions remain ignored.
+- No synthetic messages, direct DB repairs or held-message changes. The requested
+  reset ran only through the authenticated Telegram flow.
 - Earlier six paid probes are exhausted; no further calls were made. Those
   probes showed intended tool directions but were not WhatsApp E2E evidence.
 - Broader activation, additional paid probes or synthetic messaging require
@@ -38,7 +51,10 @@ Status: tj-3egt quotation-timeout repair deployed and verified.
 
 ## Recovery
 
-- Latest backup: `/opt/noor/.hotfix-backups/tj-3egt-20260918`.
+- Latest backup: `/opt/noor/.hotfix-backups/tj-it9r-20260922T083204Z`;
+  prior app image tag `noor-app:tj-it9r-before`. Preserve the completed data
+  reset during any code rollback.
+- Previous quotation-release backup: `/opt/noor/.hotfix-backups/tj-3egt-20260918`.
   Restore source-before.tar.gz and compose-rollback.yml for app/worker only,
   images noor-rollback:tj-3egt-app and noor-rollback:tj-3egt-worker, previous
   release4abe835. Preserve DB activity/env.
@@ -58,14 +74,15 @@ Status: tj-3egt quotation-timeout repair deployed and verified.
 ## Next recommended
 
 Next stage id: `none`
-Recommended action: tester repeats the normal quotation scenario; live end-to-end
-quotation creation was not probed in this release (no new paid-call authority).
-No claim that local tests eliminate all future model errors.
+Recommended action: continue tester-owned testing on test0665. Use Telegram only
+for authenticated admin reset operations. The live quotation scenario remains
+unprobed without new paid-call authority.
 
 ## Starter prompt for next orchestrator
 
 Use $orchestrator-stage for a newly authorized change. Preserve test-only
-channels, worker restrictions, rollback evidence and unrelated work.
+channels, worker restrictions, rollback evidence and unrelated work. The reset
+webhook repair is integrated into main; do not reintroduce the legacy relay.
 
-docs-reviewed: updated - main release, proof and recovery recorded.
+docs-reviewed: updated - current release, reset evidence and recovery recorded.
 graph-reviewed: no-change-needed - no graph is available in this worktree.
