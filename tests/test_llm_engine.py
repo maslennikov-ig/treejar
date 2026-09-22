@@ -22,6 +22,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
+from pydantic_ai.usage import RunUsage
 
 from src.dialogue.claim_contract import (
     comparison_consultation_directive,
@@ -1701,8 +1702,43 @@ async def test_engine_process_message_db_error(
 
 
 @pytest.mark.asyncio
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+async def test_load_turn_persists_an_explicit_intro_name_before_generation(
+    mock_build_history: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from src.llm.message_processor import _load_turn
+
+    mock_build_history.return_value = []
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+
+    turn = await _load_turn(
+        pending_reference_route=AsyncMock(),
+        order_quote_route=AsyncMock(),
+        conversation_id=conv.id,
+        combined_text="Hi, I'm Nadia",
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+        crm_client=None,
+        source_message_id="wamid-name-intro",
+        latency_trace=None,
+    )
+
+    assert conv.customer_name == "Nadia"
+    assert turn.current_message_quote_customer_details == {"name": "Nadia"}
+    assert turn.known_customer_name() == "Nadia"
+    db.flush.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 @patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
-async def test_order_handoff_mode_limits_available_tools(
+async def test_noncritical_first_turn_order_cannot_access_escalation_tool(
     mock_prompt: AsyncMock,
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
@@ -1720,6 +1756,7 @@ async def test_order_handoff_mode_limits_available_tools(
         messaging_client=messaging,
         pii_map={},
         tool_mode="order_handoff",
+        user_query="I need 200 chairs delivered to Dubai Marina by next week",
     )
     seen_tool_names: list[set[str]] = []
 
@@ -1735,7 +1772,7 @@ async def test_order_handoff_mode_limits_available_tools(
             deps=deps,
         )
 
-    assert seen_tool_names == [{"escalate_to_manager", "update_language"}]
+    assert seen_tool_names == [{"update_language"}]
 
 
 @pytest.mark.asyncio
@@ -4547,7 +4584,9 @@ async def test_tools_escalate_to_manager(
 
         call_kwargs = mock_notify.call_args
         assert call_kwargs.kwargs["escalation_type"].value == "human_requested"
-        assert call_kwargs.kwargs["reason"] == "Customer demanded a human"
+        assert call_kwargs.kwargs["reason"] == (
+            "Critical escalation: the customer explicitly requested a human response."
+        )
         assert call_kwargs.kwargs["recent_messages"] == [
             "user: I want to speak to your manager"
         ]
@@ -4556,7 +4595,7 @@ async def test_tools_escalate_to_manager(
 
 
 @pytest.mark.asyncio
-async def test_tools_escalate_to_manager_honors_model_selected_intent(
+async def test_tools_escalate_to_manager_blocks_unconfirmed_order(
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
@@ -4601,13 +4640,55 @@ async def test_tools_escalate_to_manager_honors_model_selected_intent(
             escalation_type="order_confirmation",
         )
 
-        assert "Manager has been notified" in result
-        mock_notify.assert_awaited_once()
+        assert "Escalation was not created" in result
+        mock_notify.assert_not_awaited()
         assert (
             conv.metadata_ is None or "quotation_decision_status" not in conv.metadata_
         )
     finally:
         notifications.notify_manager_escalation = orig_notify
+
+
+@pytest.mark.asyncio
+async def test_tools_escalate_to_manager_allows_accepted_quotation(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.metadata_ = {"quotation_decision_status": "approved"}
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query="yes, proceed with the quotation",
+        recent_history=["user: yes, proceed with the quotation"],
+    )
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    import src.integrations.notifications.escalation as notifications
+
+    original = notifications.notify_manager_escalation
+    notify = AsyncMock()
+    notifications.notify_manager_escalation = notify
+    try:
+        result = await engine_module.escalate_to_manager(
+            ctx,
+            reason="Customer accepted the quote",
+            escalation_type="order_confirmation",
+        )
+        assert "Manager has been notified" in result
+        notify.assert_awaited_once()
+        assert notify.await_args.kwargs["escalation_type"].value == "order_confirmation"
+    finally:
+        notifications.notify_manager_escalation = original
 
 
 @pytest.mark.asyncio
@@ -4792,7 +4873,7 @@ async def test_tools_search_products_masks_missing_catalog_price_and_media_capti
                 stock=5,
                 image_url="https://cdn.example/chair.jpg",
                 is_active=True,
-                description_en="A chair with catalog price under manager review",
+                description_en="A chair with catalog price pending verification",
                 created_at=datetime.now(UTC),
             )
         ],
@@ -4822,11 +4903,13 @@ async def test_tools_search_products_masks_missing_catalog_price_and_media_capti
 
         assert isinstance(result, ToolReturn)
         assert "Office Chair" in result.return_value
-        assert "Price: requires manager verification" in result.return_value
+        assert "Price: not currently verified" in result.return_value
+        assert "manager" not in result.return_value.lower()
         assert "0.00" not in result.return_value
         mock_send_media.assert_awaited_once()
         caption = mock_send_media.await_args.kwargs["caption"]
-        assert "requires manager verification" in caption
+        assert "not currently verified" in caption
+        assert "manager" not in caption.lower()
         assert "0.00" not in caption
     finally:
         if orig_search:
@@ -5353,7 +5436,7 @@ async def test_tools_get_stock_malformed_inventory_result_is_unresolved(
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
 )
-async def test_tools_get_stock_catalog_mismatch_notifies_and_escalates(
+async def test_tools_get_stock_catalog_mismatch_alerts_without_escalating(
     mock_notify_manager: AsyncMock,
     mock_notify_mismatch: AsyncMock,
     mock_deps: tuple[
@@ -5396,7 +5479,7 @@ async def test_tools_get_stock_catalog_mismatch_notifies_and_escalates(
 
     assert "couldn't confirm exact price and availability" in result.lower()
     mock_notify_mismatch.assert_awaited_once()
-    mock_notify_manager.assert_awaited_once()
+    mock_notify_manager.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -5642,7 +5725,7 @@ async def test_tools_get_stock_fails_closed_when_catalog_price_missing_or_zero(
     assert price_events[-1]["issue"] == "missing_or_invalid_catalog_price"
     assert price_events[-1]["source"] == "treejar_catalog_price"
     json.dumps(conv.metadata_)
-    mock_notify_manager.assert_awaited_once()
+    mock_notify_manager.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -6413,7 +6496,7 @@ async def test_tools_create_quotation_blocks_when_catalog_line_rate_override_fai
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
 )
-async def test_tools_create_quotation_ignores_zoho_rate_diff_and_catalog_only_escalates(
+async def test_tools_create_quotation_catalog_mismatch_alerts_without_escalating(
     mock_notify_manager: AsyncMock,
     mock_notify_mismatch: AsyncMock,
     mock_deps: tuple[
@@ -6492,11 +6575,7 @@ async def test_tools_create_quotation_ignores_zoho_rate_diff_and_catalog_only_es
     mismatch_events = conv.metadata_["catalog_zoho_mismatches"]
     assert [event["sku"] for event in mismatch_events] == ["CATALOG-ONLY"]
     mock_notify_mismatch.assert_awaited_once()
-    mock_notify_manager.assert_awaited_once()
-    assert (
-        "could not confirm exact price/availability"
-        in (mock_notify_manager.await_args.kwargs["reason"])
-    )
+    mock_notify_manager.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -6505,7 +6584,7 @@ async def test_tools_create_quotation_ignores_zoho_rate_diff_and_catalog_only_es
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
 )
-async def test_tools_create_quotation_blocks_catalog_only_item_and_escalates(
+async def test_tools_create_quotation_blocks_catalog_only_item_without_escalation(
     mock_notify_manager: AsyncMock,
     mock_notify_mismatch: AsyncMock,
     mock_deps: tuple[
@@ -6555,7 +6634,7 @@ async def test_tools_create_quotation_blocks_catalog_only_item_and_escalates(
     assert "couldn't confirm exact price and availability" in result.lower()
     zoho.create_sale_order.assert_not_awaited()
     mock_notify_mismatch.assert_awaited_once()
-    mock_notify_manager.assert_awaited_once()
+    mock_notify_manager.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -6646,7 +6725,7 @@ async def test_tools_create_quotation_fails_closed_when_catalog_price_missing_or
     assert price_events[-1]["issue"] == "missing_or_invalid_catalog_price"
     assert price_events[-1]["source"] == "treejar_catalog_price"
     json.dumps(conv.metadata_)
-    mock_notify_manager.assert_awaited_once()
+    mock_notify_manager.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -7668,7 +7747,6 @@ async def test_prepare_tools_selection_confirmation_removes_product_search(
 
     assert [tool.name for tool in filtered] == [
         "get_stock",
-        "escalate_to_manager",
         "update_language",
     ]
 
@@ -12742,7 +12820,7 @@ async def test_prepare_tools_hides_quotation_after_explicit_decline(
 
     assert "create_quotation" not in [tool.name for tool in filtered]
     assert "search_products" in [tool.name for tool in filtered]
-    assert "escalate_to_manager" in [tool.name for tool in filtered]
+    assert "escalate_to_manager" not in [tool.name for tool in filtered]
 
 
 @pytest.mark.asyncio

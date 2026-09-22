@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from functools import cache
@@ -543,6 +544,65 @@ def repair_manager_handoff_text(language: str) -> str:
     return (
         "I couldn't safely verify my draft, so I've asked a manager to review "
         "your request and confirm the details."
+    )
+
+
+def repair_autonomous_fallback_text(
+    language: str,
+    *,
+    customer_message: str,
+    recent_history: tuple[str, ...] = (),
+) -> str:
+    """Keep a noncritical repair failure inside the autonomous sales flow."""
+
+    normalized = re.sub(
+        r"[\s,;:!?،؛؟.]+",
+        " ",
+        customer_message.casefold(),
+    ).strip()
+    context = " ".join(recent_history).casefold()
+    last_assistant = ""
+    for entry in reversed(recent_history):
+        role, separator, content = entry.partition(":")
+        if separator and role.strip().casefold() == "assistant":
+            last_assistant = content.casefold()
+            break
+    declined = normalized in {
+        "no",
+        "no thanks",
+        "no thank you",
+        "not now",
+        "لا",
+        "لا شكرا",
+        "لا شكرًا",
+    }
+    chairs_were_offered = any(
+        term in last_assistant for term in ("chair", "chairs", "كرسي", "كراسي")
+    )
+    workstation_context = any(
+        term in context
+        for term in ("workstation", "workstations", "desk", "desks", "مكتب")
+    )
+
+    if declined and chairs_were_offered and workstation_context:
+        if is_arabic_customer_language(language):
+            return "مفهوم — بدون كراسي. هل ترغب أن أجهز عرض سعر رسمي لخيار محطة العمل الذي تفضله؟"
+        return (
+            "Understood — no chairs. Would you like me to prepare a formal "
+            "quotation for the workstation option you prefer?"
+        )
+    if declined:
+        if is_arabic_customer_language(language):
+            return "مفهوم — سأستبعد هذا الخيار. ما الخطوة التالية التي تفضلها؟"
+        return "Understood — I'll leave that out. What would you like to do next?"
+    if is_arabic_customer_language(language):
+        return (
+            "أريد أن أبقي المعلومات دقيقة، لذلك لن أقدم التزامًا غير مؤكد. "
+            "يرجى إعادة صياغة طلبك وسأتابع بالمعلومات المؤكدة فقط."
+        )
+    return (
+        "I want to keep this accurate, so I won't make an unverified commitment. "
+        "Please rephrase your request and I'll continue with confirmed information only."
     )
 
 

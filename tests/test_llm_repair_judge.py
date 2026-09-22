@@ -531,6 +531,8 @@ def _turn_for_fallback(
     *,
     language: str = "en",
     escalation_status: str = "none",
+    customer_message: str = "Can you buy my used desks?",
+    recent_history: list[str] | None = None,
 ) -> SimpleNamespace:
     conversation = SimpleNamespace(
         language=language,
@@ -538,13 +540,13 @@ def _turn_for_fallback(
         metadata_={},
     )
     return SimpleNamespace(
-        masked_text="Can you buy my used desks?",
+        masked_text=customer_message,
         pii_map={},
         db=object(),
         deps=SimpleNamespace(
             conversation=conversation,
             executed_tool_names=(),
-            recent_history=[],
+            recent_history=recent_history or [],
         ),
         _record_reply_on_conversation=lambda model, text: recorded.append(
             (model, text)
@@ -709,11 +711,13 @@ async def test_repair_fallback_sends_the_substantive_candidate_and_counts(
 
 
 @pytest.mark.asyncio
-async def test_an_opening_and_question_only_repair_escalates_in_arabic(
+async def test_an_opening_and_question_only_repair_stays_autonomous_in_arabic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    notifications: list[dict[str, object]] = []
+
     async def notify_manager(**_kwargs: object) -> None:
-        return None
+        notifications.append(_kwargs)
 
     monkeypatch.setattr(
         "src.integrations.notifications.escalation.notify_manager_escalation",
@@ -754,8 +758,80 @@ async def test_an_opening_and_question_only_repair_escalates_in_arabic(
         ),
     )
 
-    assert "مديرنا" in finalized.text
+    assert notifications == []
+    assert "مديرنا" not in finalized.text
     assert "manager" not in finalized.text.lower()
+    assert finalized.repair_trace is not None
+    assert finalized.repair_trace.requires_handoff is False
+
+
+@pytest.mark.asyncio
+async def test_no_thanks_after_chair_offer_continues_to_quotation_without_escalation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notifications: list[dict[str, object]] = []
+
+    async def notify_manager(**kwargs: object) -> None:
+        notifications.append(kwargs)
+
+    monkeypatch.setattr(
+        "src.integrations.notifications.escalation.notify_manager_escalation",
+        notify_manager,
+    )
+    state = ReplyPolicyState(
+        language="en",
+        customer_name_asked=True,
+        customer_name="Nadia",
+    )
+    response = LLMResponse(
+        text="The workstation is AED 1,883. May I have your name?",
+        tokens_in=10,
+        tokens_out=10,
+        cost=0.001,
+        model="z-ai/glm-5.3-flash",
+        repair_flags=(
+            ReplyGuardFlag(
+                guard_name="grounding_output",
+                reason="removing_guard_triggered",
+                details=("unverified_price",),
+                candidate="Would you like a formal quotation?",
+            ),
+            ReplyGuardFlag(
+                guard_name="name_chase",
+                reason="reduction_lost_content",
+                details=("deterministic_fold_would_lose_content",),
+                candidate="The workstation is AED 1,883.",
+            ),
+        ),
+        repair_policy_state=state,
+    )
+
+    finalized = await _finalize_turn_response(
+        _turn_for_fallback(
+            [],
+            customer_message="no, thanks",
+            recent_history=[
+                "assistant: The LUMA workstation adds privacy and personal storage.",
+                "assistant: Shall I shortlist ergonomic chairs for the four stations?",
+                "user: no, thanks",
+            ],
+        ),
+        response,
+        runner=_runner(
+            RepairJudgeDecision(
+                answer="cannot_fix",
+                rationale="The proposed correction still lacks bounded evidence.",
+            ),
+            [],
+        ),
+    )
+
+    assert notifications == []
+    assert "no chairs" in finalized.text.lower()
+    assert "formal quotation" in finalized.text.lower()
+    assert "manager" not in finalized.text.lower()
+    assert finalized.repair_trace is not None
+    assert finalized.repair_trace.requires_handoff is False
 
 
 @pytest.mark.asyncio

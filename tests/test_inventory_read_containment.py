@@ -123,7 +123,7 @@ async def test_notification_failure_is_not_misreported_as_an_inventory_read():
         ),
         patch.object(
             engine,
-            "_notify_catalog_mismatch_and_escalate",
+            "_record_catalog_mismatch_and_alert",
             AsyncMock(side_effect=rate_limit()),
         ),
         pytest.raises(httpx.HTTPStatusError),

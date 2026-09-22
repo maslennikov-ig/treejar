@@ -58,6 +58,7 @@ from src.llm.catalog_planning import (
     _verify_volunteered_claims,
     grounded_amounts_for_turn,
 )
+from src.llm.escalation_policy import critical_escalation_decision
 from src.llm.grounding_output import GroundingOutputAction
 from src.llm.outbound_reply_guard import finalize_customer_reply_text
 from src.llm.pii import (
@@ -68,6 +69,7 @@ from src.llm.repair_judge import (
     RepairJudgeEvidence,
     RepairJudgeRunner,
     RepairJudgeTrace,
+    repair_autonomous_fallback_text,
     repair_manager_handoff_text,
     review_flagged_reply_with_pii,
     unavailable_repair_judge_trace,
@@ -619,7 +621,7 @@ async def _finalize_turn_response(
             )
         except Exception as error:
             logger.warning(
-                "Repair judge unavailable; using manager handoff: error_type=%s",
+                "Repair judge unavailable; selecting bounded fallback: error_type=%s",
                 type(error).__name__,
             )
             response.repair_trace = unavailable_repair_judge_trace(
@@ -634,7 +636,7 @@ async def _finalize_turn_response(
                 response.emitted_asks = judged.emitted_asks
 
         if response.repair_trace is not None and response.repair_trace.requires_handoff:
-            await _apply_repair_manager_handoff(
+            await _apply_repair_fallback(
                 turn,
                 response,
                 state=state,
@@ -700,34 +702,59 @@ def _repair_manager_handoff_reason(trace: RepairJudgeTrace) -> str:
     )
 
 
-async def _apply_repair_manager_handoff(
+async def _apply_repair_fallback(
     turn: _Turn,
     response: LLMResponseT,
     *,
     state: ReplyPolicyState,
     trace: RepairJudgeTrace,
 ) -> None:
-    """Persist a handoff, then replace the unsafe draft with a customer notice."""
+    """Escalate only a critical turn; otherwise keep the bot in control."""
 
     from src.integrations.notifications.escalation import notify_manager_escalation
-    from src.schemas.common import EscalationType
 
-    if not is_active_human_handoff(turn.deps.conversation.escalation_status):
+    active_handoff = is_active_human_handoff(turn.deps.conversation.escalation_status)
+    decision = critical_escalation_decision(
+        customer_text=turn.masked_text,
+        conversation_metadata=turn.deps.conversation.metadata_ or {},
+        recent_history=turn.deps.recent_history or (),
+    )
+    if not active_handoff and decision.allowed and decision.escalation_type is not None:
         await notify_manager_escalation(
             conversation=turn.deps.conversation,
-            reason=_repair_manager_handoff_reason(trace),
+            reason=f"{decision.reason} {_repair_manager_handoff_reason(trace)}",
             recent_messages=turn.deps.recent_history or [],
             db=turn.db,
-            escalation_type=EscalationType.GENERAL,
+            escalation_type=decision.escalation_type,
+        )
+
+    if active_handoff or decision.allowed:
+        fallback_text = repair_manager_handoff_text(state.language)
+    else:
+        fallback_text = repair_autonomous_fallback_text(
+            state.language,
+            customer_message=turn.masked_text,
+            recent_history=tuple(turn.deps.recent_history or ()),
+        )
+        outcome = trace.rejection_reason or trace.answer
+        response.repair_trace = replace(
+            trace,
+            requires_handoff=False,
+            rejection_reason=f"autonomous_continuation_after_{outcome}",
+        )
+        logger.warning(
+            "Repair fallback stayed autonomous: outcome=%s guards=%s",
+            outcome,
+            ",".join(sorted({flag.guard_name for flag in trace.flags})) or "unknown",
         )
 
     rendered = render_reply(
-        repair_manager_handoff_text(state.language),
+        fallback_text,
         state=state,
         provenance="deterministic_static",
     )
     if rendered.flags:
-        raise RuntimeError("repair manager handoff notice raised a removal flag")
+        raise RuntimeError("repair fallback notice raised a removal flag")
     response.text = rendered.text
     response.text_provenance = rendered.provenance
     response.repair_flags = ()
@@ -954,10 +981,18 @@ async def _load_turn(
         source_message_id=source_message_id,
     )
 
-    # One extraction is read by both the pre-persistence response policy and
-    # the later durable quote/customer-detail capture. They cannot disagree on
-    # what the current inbound message supplied.
-    current_message_quote_customer_details: dict[str, str] = {}
+    # Identity is an observed customer fact, not a routing decision. Capture it
+    # before generation so "I'm Nadia" cannot be followed by another name ask.
+    # Other quote details remain current-turn context until quotation consent.
+    current_message_quote_customer_details = engine._extract_quote_customer_details(
+        combined_text
+    )
+    observed_name = str(
+        current_message_quote_customer_details.get("name") or ""
+    ).strip()
+    if observed_name and not str(conv.customer_name or "").strip():
+        conv.customer_name = observed_name
+        await db.flush()
 
     turn = _Turn(
         pending_reference_route=pending_reference_route,

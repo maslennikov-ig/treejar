@@ -825,7 +825,7 @@ async def test_create_quotation_without_company_email_uses_temp_customer(
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
 )
-async def test_create_quotation_inventory_contact_creation_failure_fails_closed(
+async def test_create_quotation_inventory_contact_failure_stays_autonomous(
     mock_notify: AsyncMock,
 ) -> None:
     mock_inventory = AsyncMock()
@@ -870,8 +870,9 @@ async def test_create_quotation_inventory_contact_creation_failure_fails_closed(
     result = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
 
     assert "couldn't finalize the exact quotation automatically" in result.lower()
+    assert "manager" not in result.lower()
     mock_inventory.create_sale_order.assert_not_called()
-    mock_notify.assert_awaited_once()
+    mock_notify.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1066,7 +1067,7 @@ async def test_resolve_inventory_customer_id_rejects_stale_reactivated_readback(
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
 )
-async def test_create_quotation_catalog_mismatch_notifies_and_aborts(
+async def test_create_quotation_catalog_mismatch_alerts_without_escalating(
     mock_notify_manager: AsyncMock,
     mock_notify_mismatch: AsyncMock,
 ) -> None:
@@ -1109,8 +1110,9 @@ async def test_create_quotation_catalog_mismatch_notifies_and_aborts(
     result = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
 
     assert "couldn't confirm exact price and availability" in result.lower()
+    assert "manager" not in result.lower()
     mock_notify_mismatch.assert_awaited_once()
-    mock_notify_manager.assert_awaited_once()
+    mock_notify_manager.assert_not_awaited()
     mock_inventory.create_sale_order.assert_not_called()
 
 
@@ -1120,7 +1122,7 @@ async def test_create_quotation_catalog_mismatch_notifies_and_aborts(
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
 )
-async def test_create_quotation_malformed_inventory_payload_fails_closed(
+async def test_create_quotation_malformed_inventory_payload_stays_autonomous(
     mock_notify_manager: AsyncMock,
     mock_notify_mismatch: AsyncMock,
 ) -> None:
@@ -1164,7 +1166,8 @@ async def test_create_quotation_malformed_inventory_payload_fails_closed(
     result = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
 
     assert "couldn't confirm exact price and availability" in result.lower()
+    assert "manager" not in result.lower()
     assert deps.catalog_mismatch_alerted is True
     mock_notify_mismatch.assert_awaited_once()
-    mock_notify_manager.assert_awaited_once()
+    mock_notify_manager.assert_not_awaited()
     mock_inventory.create_sale_order.assert_not_called()

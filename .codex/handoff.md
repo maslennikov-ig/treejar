@@ -65,6 +65,9 @@ Status: tj-it9r Telegram reset webhook repair deployed and reset verified.
 
 ## Explicit defers
 
+- `tj-bltw`: critical-only escalation policy is implemented and locally accepted
+  on `codex/critical-escalation-only`; it is not merged or deployed, so the live
+  runtime remains unchanged pending explicit integration/deployment authority.
 - `tj-bgwu`: corpus identity tests assume normal treejar/.git; local full
   acceptance uses an isolated normal clone with canonical remote identity.
 - Existing unrelated product defects stay tracked separately. Wazzup sender

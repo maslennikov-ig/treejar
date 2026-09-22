@@ -180,6 +180,7 @@ from src.llm.customer_intent_tools import (
 from src.llm.customer_intent_tools import (
     record_proposal_response as _record_proposal_response_impl,
 )
+from src.llm.escalation_policy import critical_escalation_decision
 from src.llm.fact_extractor import (
     CustomerFactExtractionResult,
     ExtractedCustomerFact,
@@ -593,22 +594,22 @@ EXACT_QUOTE_ALLOWED_TOOLS = frozenset(
     }
 )
 ORDER_HANDOFF_PASS_1_DIRECTIVES = (
-    "this is likely a concrete order handoff case",
-    "do not ask qualifying questions if order evidence is already sufficient",
-    "either escalate_to_manager(order_confirmation) or ask only one truly necessary clarification",
+    "this is a concrete order or quotation case",
+    "continue autonomously unless an already prepared quotation has been accepted",
+    "ask only one truly necessary clarification when order evidence is incomplete",
 )
 ORDER_HANDOFF_PASS_2_DIRECTIVES = (
-    "previous pass missed likely order handoff",
+    "previous pass missed the concrete order or quotation next step",
     "do not ask qualifying questions",
     "do not search",
-    "if order evidence is sufficient, use escalate_to_manager(order_confirmation)",
+    "offer or prepare the quotation autonomously; escalate only after the customer accepts an already prepared quotation",
 )
 EXACT_QUOTE_PASS_1_DIRECTIVES = (
     "the customer is asking for an exact quotation-ready commitment",
     "create_quotation requires customer name, company or explicit individual status, specific delivery address, and exact item quantities",
     "if exact sku and quantity are already known, confirm stock via get_stock and then call create_quotation immediately",
     "Treejar catalog price is the customer-facing commercial truth; Zoho rate is operational and must not replace or invalidate catalog price",
-    "if Zoho cannot confirm the item, escalate to manager and do not promise exact price or availability",
+    "if Zoho cannot confirm the item, state that exact price or availability could not be confirmed and continue with a safe autonomous next step",
 )
 EXACT_QUOTE_PASS_2_DIRECTIVES = (
     "previous pass stayed consultative on an exact quotation-ready request",
@@ -628,7 +629,7 @@ PRODUCT_PREFERENCE_ANSWER_DIRECTIVES = (
     "customer is answering the assistant's product preference question",
     "treat the reply as product preference context for the current catalog discussion",
     "continue the product discovery or quotation path and ask only the next missing product or quantity detail",
-    "do not hand off to manager unless the customer explicitly requests a human or asks a high-risk commercial or service commitment",
+    "do not hand off unless the customer explicitly requests a human, accepts an already prepared quotation, or reports an active order/payment/refund/legal/safety incident",
 )
 CROSS_SELL_VERIFICATION_DIRECTIVES = (
     "Use search_products and recommend_products(cross_sell); under 900 characters "
@@ -4680,12 +4681,12 @@ def _variant_options_response(
             lines.append(f"الخيار {index}: {product_name}")
             lines.append(f"- رمز المنتج: {sku}")
             lines.append(
-                "- السعر: يحتاج تأكيد المدير"
+                "- السعر: غير مؤكد حالياً"
                 if price_text is None
                 else f"- السعر: {price_text} للقطعة"
             )
             lines.append(
-                "- المخزون: يحتاج تأكيد المدير"
+                "- المخزون: غير مؤكد حالياً"
                 if option.availability is None
                 else f"- المخزون: {option.availability} متوفر"
             )
@@ -4693,12 +4694,12 @@ def _variant_options_response(
             lines.append(f"Option {index}: {product_name}")
             lines.append(f"- SKU: {sku}")
             lines.append(
-                "- Price: needs manager confirmation"
+                "- Price: not currently verified"
                 if price_text is None
                 else f"- Price: {price_text} each"
             )
             lines.append(
-                "- Stock: needs manager confirmation"
+                "- Stock: not currently verified"
                 if option.availability is None
                 else f"- Stock: {option.availability} available"
             )
@@ -4809,7 +4810,7 @@ def _build_purchase_selection_confirmation_text(
 
         if item.availability is None:
             has_total = False
-            lines.append("   Availability: needs manager verification")
+            lines.append("   Availability: not currently verified")
         else:
             availability_label = (
                 "Zoho-confirmed" if item.availability_source == "zoho" else "Catalog"
@@ -4822,7 +4823,7 @@ def _build_purchase_selection_confirmation_text(
 
         if item.unit_price is None:
             has_total = False
-            lines.append("   Unit price: needs manager verification")
+            lines.append("   Unit price: not currently verified")
         else:
             line_total = item.unit_price * quantity
             total += line_total
@@ -4840,7 +4841,7 @@ def _build_purchase_selection_confirmation_text(
         lines.append("")
 
     if resolution.unresolved:
-        lines.append("I also captured these selected items for manager verification:")
+        lines.append("These selected items still need an exact catalog or SKU match:")
         for unresolved_item in resolution.unresolved:
             lines.append(
                 f"- {unresolved_item.quantity} x "
@@ -4851,8 +4852,8 @@ def _build_purchase_selection_confirmation_text(
     if has_limited_stock:
         lines.append(
             "Some requested quantities are above the confirmed available stock. "
-            "Please confirm whether to adjust the quantities or wait for manager "
-            "restock confirmation."
+            "Please confirm whether to adjust the quantities or wait for a verified "
+            "restock update."
         )
     elif resolution.unresolved:
         if offer_quote:
@@ -4883,8 +4884,8 @@ def _build_purchase_selection_confirmation_text(
             )
     else:
         lines.append(
-            "I have captured the selected items and will need manager verification "
-            "before confirming price and availability."
+            "I have captured the selected items, but I still need an exact catalog "
+            "item or SKU before confirming price and availability."
         )
 
     return "\n".join(lines).strip()
@@ -8576,14 +8577,14 @@ async def _suspend_quote_workflow(
 def _catalog_mismatch_customer_message() -> str:
     return (
         "I couldn't confirm exact price and availability in Zoho for this item. "
-        "A manager has been asked to verify it before we make a commitment."
+        "I haven't created a quotation or made an unverified commitment."
     )
 
 
 def _catalog_price_unavailable_customer_message() -> str:
     return (
         "I couldn't confirm a customer-facing catalog price for this item. "
-        "A manager has been asked to verify it before we make a commitment."
+        "I haven't created a quotation or made an unverified commitment."
     )
 
 
@@ -8636,7 +8637,7 @@ def _valid_catalog_price(catalog_product: Any | None) -> float | None:
 
 
 def _catalog_price_requires_verification_text() -> str:
-    return "Price: requires manager verification"
+    return "Price: not currently verified"
 
 
 def _json_safe_price_value(value: Any) -> float | int | str | None:
@@ -8753,10 +8754,16 @@ async def _record_catalog_zoho_mismatch(
         logger.warning("Failed to flush catalog/Zoho mismatch audit: %s", exc)
 
 
-def _exact_quote_fail_closed_message() -> str:
+def _exact_quote_fail_closed_message(*, manager_notified: bool = False) -> str:
+    if manager_notified:
+        return (
+            "I couldn't finalize the exact quotation automatically. "
+            "A manager has been asked to verify the incomplete quotation operation."
+        )
     return (
-        "I couldn't finalize the exact quotation automatically. "
-        "A manager has been asked to verify exact price and availability before we make a commitment."
+        "I couldn't finalize the exact quotation automatically, and I haven't "
+        "made any unverified price or availability commitment. Please try again "
+        "in a moment or continue with the verified options already discussed."
     )
 
 
@@ -9447,7 +9454,7 @@ def _quotation_prepared_message(conversation: Conversation, quote_number: str) -
     )
 
 
-async def _notify_catalog_mismatch_and_escalate(
+async def _record_catalog_mismatch_and_alert(
     ctx: RunContext[SalesDeps],
     *,
     sku: str,
@@ -9461,9 +9468,6 @@ async def _notify_catalog_mismatch_and_escalate(
         detail=detail,
         issue="Product exists in Treejar Catalog API but is missing in Zoho.",
     )
-    from src.integrations.notifications.escalation import notify_manager_escalation
-    from src.schemas.common import EscalationType
-
     if not ctx.deps.catalog_mismatch_alerted:
         from src.services.notifications import notify_catalog_mismatch
 
@@ -9479,27 +9483,13 @@ async def _notify_catalog_mismatch_and_escalate(
         )
         ctx.deps.catalog_mismatch_alerted = True
 
-    await notify_manager_escalation(
-        conversation=ctx.deps.conversation,
-        reason=(
-            "Catalog mismatch for exact commitment: Treejar item exists but Zoho "
-            "could not confirm exact price/availability."
-        ),
-        recent_messages=ctx.deps.recent_history or [],
-        db=ctx.deps.db,
-        escalation_type=EscalationType.GENERAL,
-    )
 
-
-async def _notify_catalog_price_unavailable_and_escalate(
+async def _record_catalog_price_unavailable(
     ctx: RunContext[SalesDeps],
     *,
     sku: str,
     catalog_product: Any,
 ) -> None:
-    from src.integrations.notifications.escalation import notify_manager_escalation
-    from src.schemas.common import EscalationType
-
     metadata = dict(ctx.deps.conversation.metadata_ or {})
     raw_events = metadata.get("catalog_price_fail_closed")
     events = raw_events if isinstance(raw_events, list) else []
@@ -9519,40 +9509,38 @@ async def _notify_catalog_price_unavailable_and_escalate(
         },
     ][-10:]
     ctx.deps.conversation.metadata_ = metadata
-
-    if is_active_human_handoff(ctx.deps.conversation.escalation_status):
-        return
-
-    await notify_manager_escalation(
-        conversation=ctx.deps.conversation,
-        reason=(
-            "Catalog price missing or invalid for exact commitment: Treejar item "
-            f"{getattr(catalog_product, 'sku', sku)} has no valid customer-facing "
-            "catalog price, and Zoho rate must not be used as a fallback."
-        ),
-        recent_messages=ctx.deps.recent_history or [],
-        db=ctx.deps.db,
-        escalation_type=EscalationType.GENERAL,
+    logger.warning(
+        "Catalog price unavailable without customer escalation: conversation=%s sku=%s",
+        ctx.deps.conversation.id,
+        getattr(catalog_product, "sku", sku),
     )
 
 
-async def _fail_closed_exact_quote_request(deps: SalesDeps) -> str:
+async def _fail_closed_exact_quote_request(
+    deps: SalesDeps,
+    *,
+    critical_reason: str | None = None,
+) -> str:
     from src.integrations.notifications.escalation import notify_manager_escalation
     from src.schemas.common import EscalationType
 
-    if not is_active_human_handoff(deps.conversation.escalation_status):
+    manager_notified = is_active_human_handoff(deps.conversation.escalation_status)
+    if critical_reason and not manager_notified:
         await notify_manager_escalation(
             conversation=deps.conversation,
-            reason=(
-                "Exact quote flow stayed unresolved after two guarded passes and "
-                "no deterministic quotation could be created safely."
-            ),
+            reason=f"Critical quotation side-effect uncertainty: {critical_reason}",
             recent_messages=deps.recent_history or [],
             db=deps.db,
             escalation_type=EscalationType.GENERAL,
         )
+        manager_notified = True
+    elif not critical_reason:
+        logger.warning(
+            "Exact quotation stopped before a critical side effect: conversation=%s",
+            deps.conversation.id,
+        )
 
-    return _exact_quote_fail_closed_message()
+    return _exact_quote_fail_closed_message(manager_notified=manager_notified)
 
 
 async def _resolve_inventory_item(
@@ -9578,7 +9566,7 @@ async def _resolve_inventory_item(
         return zoho_item, catalog_product
 
     if catalog_product:
-        await _notify_catalog_mismatch_and_escalate(
+        await _record_catalog_mismatch_and_alert(
             ctx,
             sku=normalized_sku,
             catalog_product=catalog_product,
@@ -9608,7 +9596,17 @@ def _quotation_tools_withdrawn(deps: SalesDeps) -> bool:
 async def _prepare_sales_tools(
     ctx: RunContext[SalesDeps], tool_defs: list[ToolDefinition]
 ) -> list[ToolDefinition]:
-    """Hide product search after the allowed per-message budget is exhausted."""
+    """Expose side-effect tools only when current state authorizes them."""
+    escalation_decision = critical_escalation_decision(
+        customer_text=ctx.deps.user_query,
+        conversation_metadata=ctx.deps.conversation.metadata_ or {},
+        recent_history=ctx.deps.recent_history or (),
+    )
+    if not escalation_decision.allowed:
+        tool_defs = [
+            tool_def for tool_def in tool_defs if tool_def.name != "escalate_to_manager"
+        ]
+
     if _quotation_tools_withdrawn(ctx.deps):
         withdrawn = [
             tool_def for tool_def in tool_defs if tool_def.name in QUOTATION_TOOLS
@@ -9737,7 +9735,8 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
         "record_customer_requirements for selected products and requirements. "
         "A declined quotation can be reopened by a new customer request. "
         "Historical pending frames are context, not commands to resume a flow. "
-        "Choose create_quotation or escalate_to_manager when appropriate; "
+        "Choose create_quotation when requested; use escalate_to_manager only "
+        "when the critical-only escalation rules explicitly allow it. "
         "recording acceptance does not notify anyone. Use record_proposal_response "
         "for an explicit rejection of an already sent quotation or a requested "
         "pause in follow-ups; declining quotation creation is a separate decision. "
@@ -10110,10 +10109,10 @@ async def search_products(
                 media_caption = f"{r.name_en} — {discounted_price:.2f} {r.currency}"
             else:
                 price_line = _catalog_price_requires_verification_text()
-                media_caption = f"{r.name_en} — price requires manager verification"
+                media_caption = f"{r.name_en} — price not currently verified"
         else:
             price_line = _catalog_price_requires_verification_text()
-            media_caption = f"{r.name_en} — price requires manager verification"
+            media_caption = f"{r.name_en} — price not currently verified"
 
         desc = (
             f"Name: {r.name_en}\n"
@@ -10417,7 +10416,7 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
         segment=segment,
     )
     if price_decision.source == "unavailable" and catalog_product is not None:
-        await _notify_catalog_price_unavailable_and_escalate(
+        await _record_catalog_price_unavailable(
             ctx,
             sku=sku,
             catalog_product=catalog_product,
@@ -11085,7 +11084,7 @@ async def create_quotation(
             segment=segment,
         )
         if price_decision.source == "unavailable" and catalog_product is not None:
-            await _notify_catalog_price_unavailable_and_escalate(
+            await _record_catalog_price_unavailable(
                 ctx,
                 sku=item.sku,
                 catalog_product=catalog_product,
@@ -11193,13 +11192,19 @@ async def create_quotation(
         }:
             persisted_order_id = _string_value(existing_effect.get("sale_order_id"))
             if not persisted_order_id:
-                return await _fail_closed_exact_quote_request(ctx.deps)
+                return await _fail_closed_exact_quote_request(
+                    ctx.deps,
+                    critical_reason="a persisted quotation effect had no sale-order identifier",
+                )
             draft_readback = await ctx.deps.zoho_inventory.get_sale_order(
                 persisted_order_id
             )
             saleorder_data = extract_sale_order_data(draft_readback)
             if _string_value(saleorder_data.get("salesorder_id")) != persisted_order_id:
-                return await _fail_closed_exact_quote_request(ctx.deps)
+                return await _fail_closed_exact_quote_request(
+                    ctx.deps,
+                    critical_reason="the persisted sale order could not be verified by readback",
+                )
         else:
             draft_resp = await ctx.deps.zoho_inventory.create_sale_order(
                 customer_id=customer_id,
@@ -11246,7 +11251,10 @@ async def create_quotation(
                 )
     except Exception as e:
         logger.error("Failed to create draft sale order: %s", e)
-        return await _fail_closed_exact_quote_request(ctx.deps)
+        return await _fail_closed_exact_quote_request(
+            ctx.deps,
+            critical_reason="draft sale-order creation returned an uncertain outcome",
+        )
 
     # Customer-facing quotation assets are catalog-owned. A missing image never
     # falls back to operational media from Zoho.
@@ -11395,7 +11403,10 @@ async def create_quotation(
         media_message_id = audited_send.media.provider_message_id
     except Exception as e:
         logger.error("Failed to send quotation PDF %s to customer: %s", pdf_filename, e)
-        return await _fail_closed_exact_quote_request(ctx.deps)
+        return await _fail_closed_exact_quote_request(
+            ctx.deps,
+            critical_reason="a draft sale order exists but quotation delivery failed",
+        )
 
     record_proposal_sent(
         ctx.deps.conversation,
@@ -11768,7 +11779,7 @@ async def apply_referral_code(ctx: RunContext[SalesDeps], code: str) -> str:
 
     if result.success:
         return result.message
-    return f"Referral program is not launched or needs manager confirmation: {result.message}"
+    return f"Referral code could not be applied automatically: {result.message}"
 
 
 @sales_agent.tool(sequential=True)
@@ -11903,22 +11914,12 @@ async def escalate_to_manager(
         "order_confirmation", "human_requested", "general"
     ] = "general",
 ) -> str:
-    """Escalate the conversation to a human manager.
-    Call this ONLY when the situation genuinely requires human intervention.
+    """Escalate only a customer-evidenced critical human-only situation.
 
-    DO NOT call this for:
-    - Simple product questions (even about wholesale, MOQ, bulk)
-    - Questions you can answer from the catalog or FAQ
-    - Price inquiries for products in stock
-
-    DO call this for:
-    - Customer places a concrete large order with quantities and delivery details
-    - Customer explicitly asks to speak to a human/manager
-    - Complaints about existing orders (damaged, delayed, wrong product)
-    - Request for refund/return
-    - Highly technical questions you cannot answer
-    - Customer threatening legal action
-    - Customization requests not in catalog
+    Critical means an explicit human request, acceptance of an already prepared
+    quotation, or an active order/payment/refund/legal/safety incident. Product
+    questions, missing facts, custom requests, bulk interest, technical failures,
+    and repair uncertainty must remain autonomous.
 
     Args:
         reason: Clear explanation of WHY escalation is needed.
@@ -11930,21 +11931,32 @@ async def escalate_to_manager(
         escalation_type,
     )
     from src.integrations.notifications.escalation import notify_manager_escalation
-    from src.schemas.common import EscalationType
 
-    esc_type = EscalationType(escalation_type)
-
-    # The model chooses the escalation intent from the conversation. A manager
-    # notification is not approval of a quotation or execution of an order.
-    # Use pre-built history from SalesDeps (no extra SQL query)
     recent_messages = ctx.deps.recent_history or []
+    decision = critical_escalation_decision(
+        customer_text=ctx.deps.user_query,
+        conversation_metadata=ctx.deps.conversation.metadata_ or {},
+        recent_history=recent_messages,
+    )
+    if not decision.allowed or decision.escalation_type is None:
+        logger.warning(
+            "Noncritical manager escalation blocked: requested_type=%s reason=%r",
+            escalation_type,
+            reason,
+        )
+        return (
+            "Escalation was not created because this turn has no critical "
+            "human-only trigger. Continue helping autonomously, state any "
+            "uncertainty plainly, and offer one safe next step. Do not say that "
+            "a manager was notified."
+        )
 
     await notify_manager_escalation(
         conversation=ctx.deps.conversation,
-        reason=reason,
+        reason=decision.reason,
         recent_messages=recent_messages,
         db=ctx.deps.db,
-        escalation_type=esc_type,
+        escalation_type=decision.escalation_type,
     )
 
     return (
