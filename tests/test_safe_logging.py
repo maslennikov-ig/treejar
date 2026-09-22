@@ -128,7 +128,7 @@ async def test_api_lifespan_installs_the_same_record_filter_before_http_calls(
 
 
 @pytest.mark.asyncio
-async def test_restore_mode_lifespan_skips_telegram_sync() -> None:
+async def test_restore_mode_lifespan_syncs_only_the_guarded_telegram_webhook() -> None:
     from types import SimpleNamespace
 
     from src import main
@@ -153,4 +153,4 @@ async def test_restore_mode_lifespan_skips_telegram_sync() -> None:
         async with main.lifespan(app):
             pass
 
-    telegram_sync.assert_not_awaited()
+    telegram_sync.assert_awaited_once_with(sync_commands=False)

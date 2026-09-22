@@ -43,7 +43,7 @@ def telegram_webhook_url() -> str | None:
     return None
 
 
-async def sync_telegram_webhook() -> bool:
+async def sync_telegram_webhook(*, sync_commands: bool = True) -> bool:
     """Upsert the Telegram webhook so the registered secret never drifts."""
     if not settings.telegram_bot_token:
         logger.info("Telegram webhook sync skipped: bot token is not configured")
@@ -82,12 +82,13 @@ async def sync_telegram_webhook() -> bool:
         synced = bool(result and result.get("ok"))
         if synced:
             logger.info("Telegram webhook synced to %s", webhook_url)
-            commands_result = await client.set_my_commands(_TELEGRAM_BOT_COMMANDS)
-            if not commands_result or not commands_result.get("ok"):
-                logger.warning(
-                    "Telegram command menu sync returned a non-ok response: %s",
-                    commands_result,
-                )
+            if sync_commands:
+                commands_result = await client.set_my_commands(_TELEGRAM_BOT_COMMANDS)
+                if not commands_result or not commands_result.get("ok"):
+                    logger.warning(
+                        "Telegram command menu sync returned a non-ok response: %s",
+                        commands_result,
+                    )
         else:
             logger.warning(
                 "Telegram webhook sync returned a non-ok response: %s", result

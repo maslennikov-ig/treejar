@@ -29,9 +29,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.arq_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     app.state.redis = redis_client
     if settings.test_channel_restore_mode:
-        logger.warning("Telegram startup sync disabled during test-channel restore")
-    else:
-        await sync_telegram_webhook()
+        logger.warning(
+            "Telegram startup sync limited to the guarded webhook during "
+            "test-channel restore"
+        )
+    await sync_telegram_webhook(
+        sync_commands=not settings.test_channel_restore_mode,
+    )
     yield
     # Shutdown
     await app.state.arq_pool.aclose()

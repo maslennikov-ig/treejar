@@ -197,6 +197,42 @@ async def test_sync_telegram_webhook_is_idempotent() -> None:
 
 
 @pytest.mark.asyncio
+async def test_restore_sync_does_not_publish_unavailable_telegram_commands() -> None:
+    from src.core.config import settings
+    from src.integrations.notifications.telegram_webhook import sync_telegram_webhook
+
+    original_token = settings.telegram_bot_token
+    original_domain = settings.domain
+    original_secret = settings.app_secret_key
+
+    settings.telegram_bot_token = "123456:TEST-TOKEN"
+    settings.domain = "https://example.com"
+    settings.app_secret_key = "runtime-secret"
+
+    try:
+        with patch(
+            "src.integrations.notifications.telegram_webhook.TelegramClient"
+        ) as MockClient:
+            mock_client = AsyncMock()
+            MockClient.return_value = mock_client
+            mock_client.get_webhook_info = AsyncMock(
+                return_value={"ok": True, "result": {"url": "https://old.example"}}
+            )
+            mock_client.set_webhook = AsyncMock(
+                return_value={"ok": True, "result": True}
+            )
+
+            assert await sync_telegram_webhook(sync_commands=False) is True
+
+        mock_client.set_webhook.assert_awaited_once()
+        mock_client.set_my_commands.assert_not_awaited()
+    finally:
+        settings.telegram_bot_token = original_token
+        settings.domain = original_domain
+        settings.app_secret_key = original_secret
+
+
+@pytest.mark.asyncio
 async def test_telegram_webhook_accepts_valid_secret(client: AsyncMock) -> None:
     """Callback webhook should still pass when the registered secret matches runtime."""
     from src.integrations.notifications.telegram_webhook import (
