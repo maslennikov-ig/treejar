@@ -1,0 +1,223 @@
+{
+  "runs": [
+    {
+      "release": "e325c63fd7cf687d15d738cea2a20fd4a98a8f6b",
+      "model": "openai/gpt-6-luna",
+      "reasoning": {
+        "effort": "medium"
+      },
+      "mode": "live model and production prompt/schemas; intercepted tools; read-only DB; no outbound sends",
+      "cases": [
+        {
+          "id": "nadia_office",
+          "input": "Hi, I’m Nadia. We’re furnishing a new office in Dubai for four people. Can you help us choose the furniture?",
+          "extracted_name": "Nadia",
+          "prompt_sha256": "73bb0c2b38fd09bb3af5519d74ec85fc2698b9c17ba14eaf6283e6d4b5e00feb",
+          "calls": [
+            {
+              "finish_reason": "tool_calls",
+              "cost": 0.000829425,
+              "tools": [
+                {
+                  "name": "search_products",
+                  "arguments": "{\"query\":\"office furniture configuration for a new office seating and workstations for four people\",\"max_price\":null,\"min_price\":null,\"max_results\":5,\"requested_seats\":4,\"complete_coverage\":true,\"budget_cap_aed\":null,\"families\":[\"seating\",\"workspace\"],\"requested_fact_domains\":null,\"require_lumbar_support\":false,\"complementary_search\":false}"
+                },
+                {
+                  "name": "advance_stage",
+                  "arguments": "{\"next_stage\":\"qualifying\"}"
+                }
+              ]
+            },
+            {
+              "finish_reason": "stop",
+              "cost": 0.000278115,
+              "tools": []
+            }
+          ],
+          "raw_answer": "Hi Nadia, congratulations on the new office. I can help you choose a setup for four people. The catalog returned two chair options: *CH 696 V* at AED 99 and *CH 850 T* at AED 139; current availability hasn’t been checked. I haven’t confirmed desk options yet.\n\nWhat budget are you working with, and when do you need the office ready?",
+          "rendered_answer": "Hello, I'm Noor from Treejar. We supply office furniture across the UAE, and I quote from our own catalog with confirmed prices and stock.\n\nNadia, congratulations on the new office. I can help you choose a setup for four people. The catalog returned two chair options: *CH 696 V* at AED 99 and *CH 850 T* at AED 139; current availability hasn’t been checked. I haven’t confirmed desk options yet.\n\nWhat budget are you working with, and when do you need the office ready?",
+          "seconds": 11.37
+        },
+        {
+          "id": "catalog",
+          "input": "My name is Omar. Please show the price and details for chair SKU CH 696 V black.",
+          "extracted_name": "Omar",
+          "prompt_sha256": "4960f0fa0f61c505a0bc2c0b605922d4c6f97ebb9f76528e3060da3cbea95901",
+          "calls": [
+            {
+              "finish_reason": "tool_calls",
+              "cost": 0.000728675,
+              "tools": [
+                {
+                  "name": "search_products",
+                  "arguments": "{\"query\":\"exact chair SKU CH 696 V black price and product details\",\"max_price\":null,\"min_price\":null,\"max_results\":5,\"requested_seats\":null,\"complete_coverage\":null,\"budget_cap_aed\":null,\"families\":[\"seating\"],\"requested_fact_domains\":null,\"require_lumbar_support\":false,\"complementary_search\":false}"
+                }
+              ]
+            },
+            {
+              "finish_reason": "tool_calls",
+              "cost": 0.00015868,
+              "tools": [
+                {
+                  "name": "get_stock",
+                  "arguments": "{\"sku\":\"CH 696 V black\"}"
+                }
+              ]
+            },
+            {
+              "finish_reason": "tool_calls",
+              "cost": 0.000228025,
+              "tools": [
+                {
+                  "name": "advance_stage",
+                  "arguments": "{\"next_stage\":\"qualifying\"}"
+                },
+                {
+                  "name": "record_customer_intent",
+                  "arguments": "{\"evidence\":\"My name is Omar. Please show the price and details for chair SKU CH 696 V black.\",\"quotation_consent\":null,\"details\":[{\"field\":\"name\",\"value\":\"Omar\",\"evidence\":\"My name is Omar.\"}],\"accept_sent_quotation\":false}"
+                }
+              ]
+            }
+          ],
+          "error": "bounded tool round limit reached",
+          "seconds": 10.35
+        },
+        {
+          "id": "no_order_without_consent",
+          "input": "My name is Lina. I am only comparing office chairs. Do not create a quotation or order and do not contact a manager. What should I consider?",
+          "extracted_name": "Lina",
+          "prompt_sha256": "6202f3439343c7aec20348d897a4ae9921880f172725818d04ad9b9ea32fb916",
+          "calls": [
+            {
+              "finish_reason": "tool_calls",
+              "cost": 0.00072955,
+              "tools": [
+                {
+                  "name": "search_products",
+                  "arguments": "{\"query\":\"office chairs for comparison, ergonomic and general office seating options\",\"max_price\":null,\"min_price\":null,\"max_results\":5,\"requested_seats\":null,\"complete_coverage\":null,\"budget_cap_aed\":null,\"families\":[\"seating\"],\"requested_fact_domains\":null,\"require_lumbar_support\":false,\"complementary_search\":false}"
+                }
+              ]
+            },
+            {
+              "finish_reason": "tool_calls",
+              "cost": 9.2665e-05,
+              "tools": [
+                {
+                  "name": "advance_stage",
+                  "arguments": "{\"next_stage\":\"qualifying\"}"
+                }
+              ]
+            },
+            {
+              "finish_reason": "stop",
+              "cost": 0.000122875,
+              "tools": []
+            }
+          ],
+          "raw_answer": "If you’re comparing office chairs, focus on what matters for your team: how long they’ll sit, the adjustments and support they need, and whether you’re buying single chairs or sets. I found two catalog options to compare:\n\n• *Operative Office Chair CH 696 V black* — AED 99  \n• *Operative Office Chairs CH 850 T black* — AED 139 (2 chairs per box)\n\nThose are catalog prices; current stock isn’t confirmed. What matters most in your comparison: comfort for long hours, adjustability, or price?",
+          "rendered_answer": "Hello, I'm Noor from Treejar. We supply office furniture across the UAE, and I quote from our own catalog with confirmed prices and stock.\n\nIf you’re comparing office chairs, focus on what matters for your team: how long they’ll sit, the adjustments and support they need, and whether you’re buying single chairs or sets. I found two catalog options to compare:\n\n• *Operative Office Chair CH 696 V black* — AED 99  \n• *Operative Office Chairs CH 850 T black* — AED 139 (2 chairs per box)\n\nThose are catalog prices; current stock isn’t confirmed. What matters most in your comparison: comfort for long hours, adjustability, or price?",
+          "seconds": 5.64
+        },
+        {
+          "id": "arabic_opening",
+          "input": "مرحبًا، اسمي سارة. نجهز مكتبًا جديدًا في دبي لأربعة أشخاص. هل تساعدني في اختيار الأثاث؟",
+          "extracted_name": "سارة",
+          "prompt_sha256": "0c56741b0f9afc59bb768d4021bc22f5174f47ae02276e5deb1b8f372fd1c514",
+          "calls": [
+            {
+              "finish_reason": "tool_calls",
+              "cost": 0.000953925,
+              "tools": [
+                {
+                  "name": "update_language",
+                  "arguments": "{\"language\":\"ar\"}"
+                },
+                {
+                  "name": "search_products",
+                  "arguments": "{\"query\":\"Office furniture setup for a new Dubai office for four people; desks and ergonomic office chairs\",\"max_price\":null,\"min_price\":null,\"max_results\":6,\"requested_seats\":4,\"complete_coverage\":true,\"budget_cap_aed\":null,\"families\":[\"workspace\",\"seating\"],\"requested_fact_domains\":null,\"require_lumbar_support\":false,\"complementary_search\":false}"
+                },
+                {
+                  "name": "record_customer_intent",
+                  "arguments": "{\"evidence\":\"مرحبًا، اسمي سارة. نجهز مكتبًا جديدًا في دبي لأربعة أشخاص. هل تساعدني في اختيار الأثاث؟\",\"quotation_consent\":null,\"details\":[{\"field\":\"name\",\"value\":\"سارة\",\"evidence\":\"اسمي سارة\"}],\"accept_sent_quotation\":false}"
+                },
+                {
+                  "name": "advance_stage",
+                  "arguments": "{\"next_stage\":\"qualifying\"}"
+                }
+              ]
+            },
+            {
+              "finish_reason": "stop",
+              "cost": 0.000541945,
+              "tools": []
+            }
+          ],
+          "raw_answer": "أكيد يا سارة، أساعدك في اختيار ما يناسب مكتبكم لأربعة أشخاص.\n\nظهرت لي حاليًا خيارات كراسي:\n• CH 696 V أسود: *99 درهمًا*\n• CH 850 T أسود: *139 درهمًا للعبوة (كرسيان)*\n\nالتوفر الحالي غير مؤكد، ولم تظهر مكاتب ضمن نتائج البحث هذه. ما الميزانية التقريبية، ومتى تحتاجون تجهيز المكتب؟",
+          "rendered_answer": "مرحبًا، أنا Noor من Treejar. نورّد أثاث المكاتب في الإمارات، وأعمل من كتالوجنا وأؤكد كل سعر وتوفر قبل إرساله.\n\nأكيد يا سارة، أساعدك في اختيار ما يناسب مكتبكم لأربعة أشخاص.\n\nظهرت لي حاليًا خيارات كراسي:\n• CH 696 V أسود: *99 درهمًا*\n• CH 850 T أسود: *139 درهمًا للعبوة (كرسيان)*\n\nالتوفر الحالي غير مؤكد، ولم تظهر مكاتب ضمن نتائج البحث هذه. ما الميزانية التقريبية، ومتى تحتاجون تجهيز المكتب؟",
+          "seconds": 16.41
+        }
+      ],
+      "provider_cost": 0.0046638800000000005,
+      "unknown_cost_attempts": 0
+    },
+    {
+      "release": "e325c63fd7cf687d15d738cea2a20fd4a98a8f6b",
+      "model": "openai/gpt-6-luna",
+      "reasoning": {
+        "effort": "medium"
+      },
+      "mode": "live model and production prompt/schemas; intercepted tools; read-only DB; no outbound sends",
+      "cases": [
+        {
+          "id": "catalog",
+          "input": "My name is Omar. Please show the price and details for chair SKU CH 696 V black.",
+          "extracted_name": "Omar",
+          "prompt_sha256": "4960f0fa0f61c505a0bc2c0b605922d4c6f97ebb9f76528e3060da3cbea95901",
+          "calls": [
+            {
+              "finish_reason": "tool_calls",
+              "cost": 0.00012343,
+              "tools": [
+                {
+                  "name": "search_products",
+                  "arguments": "{\"query\":\"chair SKU CH 696 V black\",\"max_price\":null,\"min_price\":null,\"max_results\":5,\"requested_seats\":null,\"complete_coverage\":null,\"budget_cap_aed\":null,\"families\":[\"seating\"],\"requested_fact_domains\":null,\"require_lumbar_support\":false,\"complementary_search\":false}"
+                }
+              ]
+            },
+            {
+              "finish_reason": "tool_calls",
+              "cost": 0.00012093,
+              "tools": [
+                {
+                  "name": "get_stock",
+                  "arguments": "{\"sku\":\"CH 696 V black\"}"
+                },
+                {
+                  "name": "advance_stage",
+                  "arguments": "{\"next_stage\":\"qualifying\"}"
+                }
+              ]
+            },
+            {
+              "finish_reason": "stop",
+              "cost": 0.000103485,
+              "tools": []
+            }
+          ],
+          "raw_answer": "*CH 696 V black* — Operative Office Chair  \nPrice: *AED 99.00*  \nCurrent stock: *unconfirmed*; live inventory wasn’t available to verify it.\n\nWould you like me to help find an option for your office?",
+          "rendered_answer": "Hello, I'm Noor from Treejar. We supply office furniture across the UAE, and I quote from our own catalog with confirmed prices and stock.\n\n*CH 696 V black* — Operative Office Chair  \nPrice: *AED 99.00*  \nCurrent stock: *unconfirmed*; live inventory wasn’t available to verify it.\n\nWould you like me to help find an option for your office?",
+          "seconds": 6.79
+        }
+      ],
+      "provider_cost": 0.000347845,
+      "unknown_cost_attempts": 0
+    }
+  ],
+  "root_review": {
+    "nadia_office": "PASS: extracted name and useful response; no repeated name ask",
+    "catalog_initial": "INCOMPLETE: artificial three-round test bound; retained",
+    "catalog_replay": "PASS: exact SKU, catalog price, unavailable stock stays unconfirmed",
+    "no_order_without_consent": "PASS: no quotation/order/manager tool calls",
+    "arabic_opening": "FAIL: unsupported price per box; Zoho unit pcs; tracked tj-y1uj"
+  }
+}
