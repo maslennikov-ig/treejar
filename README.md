@@ -104,6 +104,6 @@ docs/              # Project documentation
 - [Architecture](docs/architecture.md)
 - [Development Guide](docs/dev-guide.md)
 - [Roadmap](docs/roadmap.md)
-- [**Manager Guide**](docs/manager-guide.md) — For sales managers: 18 escalation triggers, handover process
+- [**Manager Guide**](docs/manager-guide.md) — For sales managers: critical-only escalation and handover process
 - [**Admin Guide**](docs/admin-guide.md) — For administrators: shared `/admin` + `/dashboard` access, prompts, operator center, monitoring, emergency procedures
 - [**Metrics Reference**](docs/metrics.md) — Current dashboard payload, including manager and feedback KPI sections

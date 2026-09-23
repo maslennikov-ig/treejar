@@ -4556,6 +4556,7 @@ async def test_tools_escalate_to_manager(
         messaging_client=messaging,
         pii_map={},
         redis=redis,
+        user_query="I want to speak to your manager",
         recent_history=["user: I want to speak to your manager"],
     )
 
@@ -4687,6 +4688,48 @@ async def test_tools_escalate_to_manager_allows_accepted_quotation(
         assert "Manager has been notified" in result
         notify.assert_awaited_once()
         assert notify.await_args.kwargs["escalation_type"].value == "order_confirmation"
+    finally:
+        notifications.notify_manager_escalation = original
+
+
+@pytest.mark.asyncio
+async def test_tools_escalate_to_manager_does_not_duplicate_active_handoff(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.escalation_status = "pending"
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query="I want to speak to a manager",
+    )
+    ctx = _run_context(deps)
+
+    import src.integrations.notifications.escalation as notifications
+
+    original = notifications.notify_manager_escalation
+    notify = AsyncMock()
+    notifications.notify_manager_escalation = notify
+    try:
+        filtered = await engine_module._prepare_sales_tools(
+            ctx, [ToolDefinition(name="escalate_to_manager")]
+        )
+        result = await engine_module.escalate_to_manager(
+            ctx,
+            reason="Customer asked for a manager",
+            escalation_type="human_requested",
+        )
+        assert filtered == []
+        assert "already active" in result
+        notify.assert_not_awaited()
     finally:
         notifications.notify_manager_escalation = original
 

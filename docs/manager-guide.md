@@ -1,6 +1,6 @@
 # Manager Guide: Noor AI Sales Bot
 
-> **Version:** 1.0 | **Last updated:** March 2026
+> **Version:** 1.1 | **Last updated:** September 2026
 
 This guide is for sales managers at Treejar who work alongside the Noor AI bot. Noor handles initial customer inquiries in WhatsApp and automatically escalates conversations to you when human expertise is needed.
 
@@ -12,36 +12,28 @@ This guide is for sales managers at Treejar who work alongside the Noor AI bot. 
 - Greets customers and qualifies their needs
 - Searches the product catalog and checks stock
 - Generates commercial proposals (PDF quotations)
-- Escalates to a human manager when specific conditions are met
+- Escalates to a human manager only when a critical situation requires one
 
 Your role begins **after** Noor escalates — you take over the conversation in WhatsApp/Wazzup and close the deal.
 
 ---
 
-## When Noor Transfers a Conversation to You (18 Triggers)
+## When Noor Transfers a Conversation to You
 
-Noor will notify you via Telegram and flag the conversation when any of these occur:
+Noor will notify you via Telegram and pause the conversation only for these
+customer-evidenced cases:
 
-| # | Trigger | Example |
-|---|---------|---------|
-| 1 | Customer explicitly asks for a human / realizes it's a bot | "Can I speak to a person?" |
-| 2 | Bot fails to understand the question **2 times in a row** | Repeated "I don't understand" |
-| 3 | Complaint, negativity, or conflict | "This is terrible service!" |
-| 4 | **Order value > 10,000 AED** | Large furniture order |
-| 5 | Non-standard conditions (special discount, deferred payment, customization) | "Can you do net-30?" |
-| 6 | Delivery/logistics questions outside the knowledge base | Specific export requirements |
-| 7 | Return or claim | "I need to return a chair" |
-| 8 | Customer asks for a specific manager by name | "Can I speak to Luna?" |
-| 9 | Customer wants to visit the **showroom** | "Where is your showroom?" |
-| 10 | Customer is a **B2B company** (office furniture, interior design) | "We're furnishing our new HQ" |
-| 11 | Customer wants to buy **in bulk / wholesale** | "I need 200 chairs" |
-| 12 | Customer needs **full office furnishing** | "Complete office setup" |
-| 13 | Customer mentions a **large project** | "We have a big project" |
-| 14 | Customer sends **drawings or floor plans** | Sends a PDF/image |
-| 15 | Customer requests **product samples** | "Can I see a sample first?" |
-| 16 | Customer is **not convinced** by Noor's answers | Keeps rejecting proposals |
-| 17 | Customer wants a **phone call** | "Can you call me?" |
-| 18 | Customer requests a manager of a **specific nationality** | "I prefer an Arabic speaker" |
+| Situation | Example |
+|-----------|---------|
+| Customer explicitly asks to speak with a person or requests a call | "Can I speak to a manager?" |
+| Customer accepts a quotation that Noor has already sent; the acceptance is recorded for the current message | "I accept the quotation. Please proceed." |
+| Customer reports an existing order, payment, refund, legal, or safety incident needing human action | "My order arrived damaged." |
+
+A rare exception is uncertainty **after** an external quotation/order side effect:
+Noor must stop rather than risk repeating that action. Ordinary sales questions,
+large or B2B orders, custom requests, missing catalog details, frustration, and
+questions about return/refund *policy* are not by themselves manager handoffs.
+Noor should continue helping, clarify if needed, and offer to prepare a quotation.
 
 ---
 
@@ -103,8 +95,8 @@ A: Yes — the full conversation history is visible in WhatsApp/Wazzup and also 
 **Q: What does "escalation_status: pending" mean?**  
 A: The bot has flagged the conversation but no manager has taken action yet. Please respond as soon as possible.
 
-**Q: Who are the 7 current managers?**  
-A: Israullah, Annabelle, Sreeja, Radhika, Luna, Shariq, Azad. Noor notifies the general group; individual assignment is handled by the team leader.
+**Q: Who receives alerts?**
+A: Noor notifies the general Telegram group; individual assignment is handled by the team leader.
 
 **Q: Can the bot send messages while I'm handling a conversation?**  
 A: No. Once escalated to `pending` or `in_progress`, the bot stops sending messages in that conversation.

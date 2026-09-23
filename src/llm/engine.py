@@ -9601,8 +9601,13 @@ async def _prepare_sales_tools(
         customer_text=ctx.deps.user_query,
         conversation_metadata=ctx.deps.conversation.metadata_ or {},
         recent_history=ctx.deps.recent_history or (),
+        quote_acceptance_recorded_this_turn=getattr(
+            ctx.deps, "quote_acceptance_recorded_this_turn", False
+        ),
     )
-    if not escalation_decision.allowed:
+    if not escalation_decision.allowed or is_active_human_handoff(
+        ctx.deps.conversation.escalation_status
+    ):
         tool_defs = [
             tool_def for tool_def in tool_defs if tool_def.name != "escalate_to_manager"
         ]
@@ -11932,11 +11937,17 @@ async def escalate_to_manager(
     )
     from src.integrations.notifications.escalation import notify_manager_escalation
 
+    if is_active_human_handoff(ctx.deps.conversation.escalation_status):
+        return "Manager handoff is already active. Do not create another notification."
+
     recent_messages = ctx.deps.recent_history or []
     decision = critical_escalation_decision(
         customer_text=ctx.deps.user_query,
         conversation_metadata=ctx.deps.conversation.metadata_ or {},
         recent_history=recent_messages,
+        quote_acceptance_recorded_this_turn=getattr(
+            ctx.deps, "quote_acceptance_recorded_this_turn", False
+        ),
     )
     if not decision.allowed or decision.escalation_type is None:
         logger.warning(

@@ -2294,6 +2294,7 @@ class SalesDeps:
     )
     inventory_confirmed: bool = False
     quotation_created: bool = False
+    quote_acceptance_recorded_this_turn: bool = False
     catalog_mismatch_alerted: bool = False
     required_cross_sell_disclosure: str | None = None
     unsupported_catalog_facts: set[str] = field(default_factory=set)

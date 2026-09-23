@@ -77,7 +77,8 @@ _NEGATED_ORDER_INCIDENT_RE = re.compile(
     re.IGNORECASE,
 )
 _DIRECT_REFUND_RE = re.compile(
-    r"\b(?:i|we)\s+(?:want|need|request)\s+(?:a\s+)?(?:refund|return|exchange)\b"
+    r"\b(?:i|we)\s+(?:want|need|request)\s+(?:a\s+)?"
+    r"(?:refund|return|exchange)\b(?!\s+(?:policy|terms|rules|procedure|information)\b)"
     r"|\b(?:refund|return|exchange)\s+(?:my|our|this|the)\b"
     r"|\bmoney\s+back\b",
     re.IGNORECASE,
@@ -100,17 +101,17 @@ _ARABIC_INCIDENT_RE = re.compile(
     r"(?:شكوى|استرداد|إرجاع|ارجاع|تالف|مكسور|طلب\s+خاطئ|لم\s+يصل|متأخر|"
     r"محامي|إجراء\s+قانوني|اجراء\s+قانوني|شرطة|احتيال|خطر|إصابة|اصابة)",
 )
-
-_ORDER_FINALIZATION_RE = re.compile(
-    r"\b(?:accept|approve|confirm|proceed|go\s+ahead|place|finali[sz]e)\b"
-    r".{0,35}\b(?:quote|quotation|proposal|order|purchase)?\b",
-    re.IGNORECASE | re.DOTALL,
+_ARABIC_POLICY_INFORMATION_RE = re.compile(
+    r"(?:سياسة|شروط|قواعد|طريقة|كيفية)\s+(?:ال)?(?:استرداد|إرجاع|ارجاع)"
+    r"|(?:ال)?(?:استرداد|إرجاع|ارجاع)\s+(?:سياسة|شروط|قواعد)",
 )
+
 _EXPLICIT_QUOTE_ACCEPTANCE_RE = re.compile(
-    r"\b(?:accept|approve|confirm|proceed|go\s+ahead|place|finali[sz]e)\b"
-    r".{0,35}\b(?:quote|quotation|proposal|order|purchase)\b"
-    r"|\b(?:quote|quotation|proposal|order|purchase)\b"
-    r".{0,35}\b(?:accept|approve|confirm|proceed|go\s+ahead|place|finali[sz]e)\b",
+    r"\b(?:i|we)\s+(?:accept|approve|confirm)\s+(?:(?:the|your|this)\s+)?"
+    r"(?:quote|quotation|proposal|order|purchase)\b"
+    r"|\b(?:proceed|go\s+ahead|place|finali[sz]e)\s+"
+    r"(?:(?:with|on)\s+)?(?:(?:the|my|our|this)\s+)?"
+    r"(?:quote|quotation|proposal|order|purchase)\b",
     re.IGNORECASE | re.DOTALL,
 )
 _NEGATED_QUOTE_ACCEPTANCE_RE = re.compile(
@@ -120,35 +121,6 @@ _NEGATED_QUOTE_ACCEPTANCE_RE = re.compile(
     r"\b(?:quote|quotation|proposal|order|purchase)\b",
     re.IGNORECASE | re.DOTALL,
 )
-_AFFIRMATIVE_REPLIES = frozenset(
-    {
-        "yes",
-        "yes please",
-        "approved",
-        "accepted",
-        "i accept",
-        "we accept",
-        "go ahead",
-        "proceed",
-        "نعم",
-        "موافق",
-    }
-)
-_GENERIC_AFFIRMATIVE_REPLIES = frozenset(
-    {"yes", "yes please", "go ahead", "proceed", "نعم", "موافق"}
-)
-_QUOTE_APPROVAL_PROMPT_CUES = (
-    "quotation works",
-    "quotation work",
-    "proposal works",
-    "proposal work",
-    "offer works",
-    "offer work",
-    "approve the quotation",
-    "accept the quotation",
-    "proceed with the quotation",
-    "هل يناسبك العرض",
-)
 _APPROVED_QUOTE_STATUSES = frozenset({"approved", "accepted", "confirmed"})
 
 
@@ -156,16 +128,9 @@ def customer_text_for_escalation(
     customer_text: str | None,
     recent_history: Sequence[str] = (),
 ) -> str:
-    """Return the current customer turn without trusting assistant history."""
+    """Never treat a historical customer request as a new critical turn."""
 
-    direct = str(customer_text or "").strip()
-    if direct:
-        return direct
-    for entry in reversed(recent_history):
-        role, separator, content = str(entry).partition(":")
-        if separator and role.strip().casefold() == "user" and content.strip():
-            return content.strip()
-    return ""
+    return str(customer_text or "").strip()
 
 
 def critical_escalation_decision(
@@ -173,6 +138,7 @@ def critical_escalation_decision(
     customer_text: str | None,
     conversation_metadata: Mapping[str, Any] | None = None,
     recent_history: Sequence[str] = (),
+    quote_acceptance_recorded_this_turn: bool = False,
 ) -> CriticalEscalationDecision:
     """Allow a handoff only for a narrow, customer-evidenced critical case."""
 
@@ -200,22 +166,11 @@ def critical_escalation_decision(
         not quote_acceptance_is_negated
         and _quotation_is_approved(metadata)
         and (
-            normalized in _AFFIRMATIVE_REPLIES
-            or _ORDER_FINALIZATION_RE.search(normalized)
+            quote_acceptance_recorded_this_turn
+            or _EXPLICIT_QUOTE_ACCEPTANCE_RE.search(normalized)
         )
     )
-    explicit_pending_quote_acceptance = (
-        _quotation_is_awaiting_acceptance(metadata)
-        and not quote_acceptance_is_negated
-        and (
-            _EXPLICIT_QUOTE_ACCEPTANCE_RE.search(normalized)
-            or (
-                normalized in _GENERIC_AFFIRMATIVE_REPLIES
-                and _last_assistant_asked_quote_approval(recent_history)
-            )
-        )
-    )
-    if accepted_prepared_quote or explicit_pending_quote_acceptance:
+    if accepted_prepared_quote:
         return CriticalEscalationDecision(
             allowed=True,
             escalation_type=EscalationType.ORDER_CONFIRMATION,
@@ -224,10 +179,11 @@ def critical_escalation_decision(
         )
 
     incident_text = _NEGATED_ORDER_INCIDENT_RE.sub("", normalized)
+    arabic_incident_text = _ARABIC_POLICY_INFORMATION_RE.sub("", text)
     if (
         _LEGAL_SAFETY_RE.search(normalized)
         or _PAYMENT_INCIDENT_RE.search(normalized)
-        or _ARABIC_INCIDENT_RE.search(text)
+        or _ARABIC_INCIDENT_RE.search(arabic_incident_text)
         or _DIRECT_REFUND_RE.search(normalized)
         or (
             _ORDER_CONTEXT_RE.search(normalized)
@@ -252,17 +208,6 @@ def _quotation_is_approved(metadata: Mapping[str, Any]) -> bool:
     return _quotation_status(metadata) in _APPROVED_QUOTE_STATUSES
 
 
-def _quotation_is_awaiting_acceptance(metadata: Mapping[str, Any]) -> bool:
-    if _quotation_status(metadata) != "pending":
-        return False
-    proposal = metadata.get("proposal_followup")
-    decision = metadata.get("quotation_decision")
-    return bool(
-        (isinstance(proposal, Mapping) and proposal.get("sent_at"))
-        or (isinstance(decision, Mapping) and decision.get("sent_at"))
-    )
-
-
 def _quotation_status(metadata: Mapping[str, Any]) -> str:
     decision = metadata.get("quotation_decision")
     if isinstance(decision, Mapping):
@@ -270,12 +215,3 @@ def _quotation_status(metadata: Mapping[str, Any]) -> str:
         if status:
             return status
     return str(metadata.get("quotation_decision_status") or "").casefold()
-
-
-def _last_assistant_asked_quote_approval(recent_history: Sequence[str]) -> bool:
-    for entry in reversed(recent_history):
-        role, separator, content = str(entry).partition(":")
-        if separator and role.strip().casefold() == "assistant":
-            normalized = " ".join(content.casefold().split())
-            return any(cue in normalized for cue in _QUOTE_APPROVAL_PROMPT_CUES)
-    return False

@@ -184,6 +184,8 @@ async def record_customer_intent(
         conversation.metadata_ = original_metadata
         conversation.customer_name = original_name
         raise
+    if accept_sent_quotation:
+        ctx.deps.quote_acceptance_recorded_this_turn = True
     return "Customer intent recorded. No quotation was created and no manager was notified; use the relevant tool if needed."
 
 

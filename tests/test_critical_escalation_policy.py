@@ -71,6 +71,10 @@ def test_only_customer_evidenced_critical_cases_are_allowed(
         "Can you make this in a custom colour?",
         "No, thanks.",
         "What is your return policy?",
+        "I need a refund policy.",
+        "I want a return policy, please.",
+        "أريد معرفة سياسة الاسترداد",
+        "ما هي شروط إرجاع المنتج؟",
         "The catalog price is missing.",
         "This is ridiculous.",
         "أريد كرسي مدير",
@@ -110,6 +114,48 @@ def test_bare_yes_without_an_accepted_quotation_stays_autonomous() -> None:
     assert decision.allowed is False
 
 
+def test_old_approved_quote_does_not_turn_a_new_yes_into_an_order() -> None:
+    decision = critical_escalation_decision(
+        customer_text="yes",
+        conversation_metadata={"quotation_decision_status": "approved"},
+        recent_history=(
+            "assistant: Would you like the chairs in black?",
+            "user: yes",
+        ),
+    )
+
+    assert decision.allowed is False
+
+
+def test_old_critical_message_does_not_escalate_an_empty_current_turn() -> None:
+    decision = critical_escalation_decision(
+        customer_text="",
+        recent_history=("user: I want to speak to a manager",),
+    )
+
+    assert decision.allowed is False
+
+
+def test_recorded_acceptance_of_sent_quote_allows_short_current_reply() -> None:
+    decision = critical_escalation_decision(
+        customer_text="That works, go ahead",
+        conversation_metadata={"quotation_decision_status": "approved"},
+        quote_acceptance_recorded_this_turn=True,
+    )
+
+    assert decision.allowed is True
+    assert decision.escalation_type is EscalationType.ORDER_CONFIRMATION
+
+
+def test_approved_quote_does_not_escalate_order_question() -> None:
+    decision = critical_escalation_decision(
+        customer_text="Can you confirm the order details?",
+        conversation_metadata={"quotation_decision_status": "approved"},
+    )
+
+    assert decision.allowed is False
+
+
 @pytest.mark.parametrize(
     "customer_text",
     [
@@ -127,7 +173,7 @@ def test_negated_or_rejected_quotation_never_escalates(customer_text: str) -> No
     assert decision.allowed is False
 
 
-def test_explicit_acceptance_of_a_sent_pending_quotation_is_allowed() -> None:
+def test_explicit_acceptance_must_be_recorded_before_escalation() -> None:
     decision = critical_escalation_decision(
         customer_text="I accept the quotation, please proceed.",
         conversation_metadata={
@@ -136,11 +182,10 @@ def test_explicit_acceptance_of_a_sent_pending_quotation_is_allowed() -> None:
         },
     )
 
-    assert decision.allowed is True
-    assert decision.escalation_type is EscalationType.ORDER_CONFIRMATION
+    assert decision.allowed is False
 
 
-def test_bare_yes_is_allowed_only_after_a_sent_quote_approval_question() -> None:
+def test_bare_yes_after_quote_question_must_be_recorded_before_escalation() -> None:
     decision = critical_escalation_decision(
         customer_text="yes",
         conversation_metadata={
@@ -153,5 +198,4 @@ def test_bare_yes_is_allowed_only_after_a_sent_quote_approval_question() -> None
         ),
     )
 
-    assert decision.allowed is True
-    assert decision.escalation_type is EscalationType.ORDER_CONFIRMATION
+    assert decision.allowed is False

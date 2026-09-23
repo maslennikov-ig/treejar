@@ -133,6 +133,7 @@ async def test_acceptance_records_state_without_notifying() -> None:
         ctx, evidence="That works, go ahead", accept_sent_quotation=True
     )
     assert ctx.deps.conversation.metadata_["quotation_decision_status"] == "approved"
+    assert ctx.deps.quote_acceptance_recorded_this_turn is True
     assert "no manager was notified" in result
     ctx.deps.db.flush.assert_awaited_once()
 
@@ -192,6 +193,15 @@ async def test_model_acceptance_enables_manager_confirmation(
     await engine.record_customer_intent(
         ctx, evidence="sure", accept_sent_quotation=True
     )
+    from unittest.mock import patch
+
+    with patch.object(engine, "_product_search_call_limit", return_value=3):
+        assert "escalate_to_manager" in [
+            tool.name
+            for tool in await engine._prepare_sales_tools(
+                ctx, [ToolDefinition(name="escalate_to_manager")]
+            )
+        ]
     await engine.escalate_to_manager(
         ctx, reason="accepted", escalation_type="order_confirmation"
     )

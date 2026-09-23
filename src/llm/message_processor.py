@@ -718,6 +718,9 @@ async def _apply_repair_fallback(
         customer_text=turn.masked_text,
         conversation_metadata=turn.deps.conversation.metadata_ or {},
         recent_history=turn.deps.recent_history or (),
+        quote_acceptance_recorded_this_turn=getattr(
+            turn.deps, "quote_acceptance_recorded_this_turn", False
+        ),
     )
     if not active_handoff and decision.allowed and decision.escalation_type is not None:
         await notify_manager_escalation(
