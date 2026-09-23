@@ -5,13 +5,18 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from src.dialogue.catalog_refs import fold_catalog_homoglyphs
+from src.llm.money import BUDGET_AED_CURRENCY_PATTERN
 from src.services.customer_language import is_arabic_customer_language
 
 QuestionClass = Literal["product", "service_low_risk", "service_high_risk", "social"]
 SocialIntent = Literal["greeting", "gratitude", "goodbye", "assist_opener"]
 FaqSupport = Literal["verified", "partial", "missing"]
 PolicyAction = Literal["allow", "clarify", "handoff"]
-ProductMatch = Literal["exact", "nearby", "missing"]
+# "generic" is a needs-only request ("office furniture for four people"): it
+# names no product, brand, model or finish, so there is no exact item whose
+# absence could be confirmed, and the results are options for the need.
+ProductMatch = Literal["exact", "generic", "nearby", "missing"]
 SalesFallbackIntent = Literal["price_objection", "retention", "off_catalog"]
 
 _TOKEN_RE = re.compile(r"[a-z0-9']+")
@@ -1303,13 +1308,327 @@ def _matches_structured_workstation_constraints(
     )
 
 
-def classify_product_match(query: str, candidates: Sequence[str]) -> ProductMatch:
+# Words a search query carries about the request itself rather than about the
+# product. A model-written query such as "Compare SKYLAND LUMA 9719-4 and NOVO
+# 2400 setups for privacy and current price" must not need a catalog row that
+# literally says "compare", "current" or "price" before it counts as the item.
+_PRODUCT_MATCH_FILLER_TERMS = frozenset(
+    {
+        "affordable",
+        "alternative",
+        "alternatives",
+        "around",
+        "availability",
+        "available",
+        "below",
+        "best",
+        "between",
+        "both",
+        "budget",
+        "catalog",
+        "catalogue",
+        "cheap",
+        "cheaper",
+        "check",
+        "closest",
+        "compare",
+        "comparing",
+        "comparison",
+        "configuration",
+        "confirm",
+        "cost",
+        "current",
+        "currently",
+        "detail",
+        "details",
+        "difference",
+        "differences",
+        "each",
+        "exact",
+        "exactly",
+        "find",
+        "have",
+        "info",
+        "information",
+        "item",
+        "items",
+        "latest",
+        "list",
+        "looking",
+        "model",
+        "need",
+        "office",
+        "option",
+        "options",
+        "price",
+        "prices",
+        "pricing",
+        "product",
+        "products",
+        "recommend",
+        "recommendation",
+        "recommendations",
+        "setup",
+        "setups",
+        "show",
+        "sku",
+        "stock",
+        "suggest",
+        "suitable",
+        "treejar",
+        "under",
+        "versus",
+        "vs",
+        "want",
+        "what",
+        "which",
+        "within",
+    }
+)
+# Words that describe a customer's need rather than a specific product: a
+# request made only of these (plus filler and seat counts) names no exact item.
+_PRODUCT_NEED_TERMS = frozenset(
+    {
+        "abu",
+        "ajman",
+        "arrangement",
+        "comfortable",
+        "dedicated",
+        "dhabi",
+        "divider",
+        "dividers",
+        "dubai",
+        "employee",
+        "employees",
+        "enclosed",
+        "ergonomic",
+        "fit",
+        "furnish",
+        "furnishing",
+        "furniture",
+        "individual",
+        "modern",
+        "new",
+        "panel",
+        "panels",
+        "people",
+        "person",
+        "persons",
+        "privacy",
+        "private",
+        "screen",
+        "screens",
+        "seating",
+        "sharjah",
+        "solution",
+        "solutions",
+        "space",
+        "staff",
+        "team",
+        "uae",
+        "work",
+        "workspace",
+        "workspaces",
+    }
+)
+# Finish and colour words. A named model is only the requested item when every
+# finish the customer named is on that row.
+_PRODUCT_FINISH_TERMS = frozenset(
+    {
+        "anthracite",
+        "ash",
+        "beige",
+        "black",
+        "blue",
+        "brown",
+        "cherry",
+        "chrome",
+        "cream",
+        "gray",
+        "green",
+        "grey",
+        "maple",
+        "oak",
+        "orange",
+        "pink",
+        "red",
+        "silver",
+        "sonoma",
+        "teak",
+        "walnut",
+        "wenge",
+        "white",
+        "yellow",
+    }
+)
+_MODEL_CODE_TOKEN_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+_DIMENSION_CODE_RE = re.compile(r"^\d+(?:[x*]\d+)+$")
+_MODEL_CODE_WORD_EXCLUSIONS = frozenset(
+    {"person", "people", "seat", "seats", "seater", "pcs", "pc", "mm", "cm", "aed"}
+)
+
+
+def _fold_model_text(text: str) -> str:
+    return " ".join(fold_catalog_homoglyphs(text).casefold().split())
+
+
+def _candidate_model_references(candidate: str) -> tuple[str, ...]:
+    """Model references a catalog row answers to, taken from its name line.
+
+    "Four person workstation SKYLAND LUMA 9719-4" answers to "luma 9719-4" and
+    to the distinctive code "9719-4" alone; "MEETING TABLE SKYLAND NOVO 2400"
+    answers to "novo 2400" but not to a bare "2400", which reads as a price.
+    """
+    name_line = _fold_model_text(candidate.split("\n", 1)[0])
+    tokens = _MODEL_CODE_TOKEN_RE.findall(name_line)
+    references: list[str] = []
+    for index, token in enumerate(tokens):
+        if not any(char.isdigit() for char in token) or len(token) < 3:
+            continue
+        if _DIMENSION_CODE_RE.match(token):
+            continue
+        following = tokens[index + 1] if index + 1 < len(tokens) else ""
+        if following in _MODEL_CODE_WORD_EXCLUSIONS:
+            continue
+        distinctive = len(token) >= 5 and (
+            "-" in token or any(char.isalpha() for char in token)
+        )
+        if distinctive:
+            references.append(token)
+        previous = tokens[index - 1] if index > 0 else ""
+        if previous.isalpha() and len(previous) >= 2:
+            references.append(f"{previous} {token}")
+    return tuple(dict.fromkeys(references))
+
+
+def _query_names_model_reference(folded_query: str, reference: str) -> bool:
+    pattern = r"[\s-]*".join(re.escape(part) for part in reference.split())
+    return re.search(rf"(?<![a-z0-9]){pattern}(?![a-z0-9])", folded_query) is not None
+
+
+def _model_reference_details_agree(query: str, candidate: str) -> bool:
+    """A named model is the item only if the named finish and size agree too."""
+    query_tokens = _tokenize(_fold_model_text(query))
+    candidate_tokens = _tokenize(_fold_model_text(candidate))
+    if not (query_tokens & _PRODUCT_FINISH_TERMS).issubset(candidate_tokens):
+        return False
+    if not _explicit_structured_discriminators(query).issubset(candidate_tokens):
+        return False
+    requested_capacity = _capacity_value(query)
+    candidate_capacity = _capacity_value(candidate)
+    return (
+        requested_capacity is None
+        or candidate_capacity is None
+        or requested_capacity == candidate_capacity
+    )
+
+
+def _matches_named_model_reference(
+    query: str,
+    candidate: str,
+    sku: str | None = None,
+) -> bool:
+    """Whether the query names this row by model reference or by SKU.
+
+    The SKU takes part only here, never in the word-overlap reading: its
+    fragments ("POD-1", "OF-HAI-...") are codes, not product words.
+    """
+    folded_query = _fold_model_text(query)
+    references = list(_candidate_model_references(candidate))
+    folded_sku = _fold_model_text(sku or "")
+    if len(folded_sku) >= 4 and any(char.isdigit() for char in folded_sku):
+        references.append(" ".join(_MODEL_CODE_TOKEN_RE.findall(folded_sku)))
+    details_text = f"{candidate}\n{sku or ''}"
+    return any(
+        _query_names_model_reference(folded_query, reference)
+        for reference in references
+        if reference
+    ) and _model_reference_details_agree(query, details_text)
+
+
+_MONEY_AMOUNT_RE = re.compile(
+    rf"(?:\b(?:{BUDGET_AED_CURRENCY_PATTERN}|under|below|within|max(?:imum)?"
+    r"|budget|up\s+to)\s*)\d[\d,.]*(?:\s*k)?\b"
+    rf"|\b\d[\d,.]*\s*(?:{BUDGET_AED_CURRENCY_PATTERN})\b",
+    re.IGNORECASE,
+)
+
+
+def query_names_specific_item(query: str) -> bool:
+    """Whether the query names a code, brand, finish or model number."""
+    without_amounts = _MONEY_AMOUNT_RE.sub(" ", _CAPACITY_RE.sub(" ", query))
+    named = (
+        (
+            _explicit_structured_identifiers(query)
+            | _explicit_structured_discriminators(query)
+        )
+        - _PRODUCT_NEED_TERMS
+        - _PRODUCT_MATCH_FILLER_TERMS
+    )
+    return bool(named) or any(char.isdigit() for char in without_amounts)
+
+
+def _term_variants(term: str) -> set[str]:
+    variants = {term}
+    if term.endswith("s") and len(term) > 3:
+        variants.add(term[:-1])
+    else:
+        variants.add(f"{term}s")
+    return variants
+
+
+def _is_generic_need_request(
+    query: str,
+    candidate_tokens: Sequence[set[str]],
+) -> bool:
+    """Whether the query only states a need that the candidates speak to.
+
+    A request naming no product code, brand, finish or other discriminator has
+    no exact item to confirm. It still has to be *about* these candidates: any
+    other word it carries ("pods", "lighting", an unknown brand in lower case)
+    must occur on at least one returned row, otherwise the honest reading stays
+    "nearby" or "missing".
+    """
+    if query_names_specific_item(query):
+        return False
+    need_text = _MONEY_AMOUNT_RE.sub(" ", _CAPACITY_RE.sub(" ", _normalize(query)))
+    terms = _tokenize(need_text) - _PRODUCT_MATCH_FILLER_TERMS
+    if not terms:
+        return False
+    if terms & _PRODUCT_FINISH_TERMS:
+        return False
+    open_terms = {
+        term for term in terms if term not in _PRODUCT_NEED_TERMS and not term.isdigit()
+    }
+    candidate_union: set[str] = set().union(*candidate_tokens)
+    if not all(_term_variants(term) & candidate_union for term in open_terms):
+        return False
+    return bool(open_terms) or bool(terms & _PRODUCT_NEED_TERMS)
+
+
+def classify_product_match(
+    query: str,
+    candidates: Sequence[str],
+    *,
+    candidate_skus: Sequence[str | None] | None = None,
+) -> ProductMatch:
     if not candidates:
         return "missing"
+    skus: Sequence[str | None] = (
+        candidate_skus
+        if candidate_skus is not None and len(candidate_skus) == len(candidates)
+        else [None] * len(candidates)
+    )
 
     if any(
         _matches_structured_workstation_constraints(query, candidate)
         for candidate in candidates
+    ):
+        return "exact"
+
+    if any(
+        _matches_named_model_reference(query, candidate, sku)
+        for candidate, sku in zip(candidates, skus, strict=True)
     ):
         return "exact"
 
@@ -1322,18 +1641,8 @@ def classify_product_match(query: str, candidates: Sequence[str]) -> ProductMatc
     }
 
     exact_terms = {
-        token
-        for token in query_tokens
-        if token not in {"product", "products", "office", "treejar"}
+        token for token in query_tokens if token not in _PRODUCT_MATCH_FILLER_TERMS
     }
-
-    def _term_variants(term: str) -> set[str]:
-        variants = {term}
-        if term.endswith("s") and len(term) > 3:
-            variants.add(term[:-1])
-        else:
-            variants.add(f"{term}s")
-        return variants
 
     if exact_terms and any(
         all(
@@ -1343,6 +1652,9 @@ def classify_product_match(query: str, candidates: Sequence[str]) -> ProductMatc
         for candidate in candidate_tokens
     ):
         return "exact"
+
+    if _is_generic_need_request(query, candidate_tokens):
+        return "generic"
 
     overlap_terms = set(exact_terms)
     for term in exact_terms:

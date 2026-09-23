@@ -133,25 +133,88 @@ _PRODUCT_REFERENCE_VARIANT_WORDS = frozenset(
 )
 
 
+_PRODUCT_REFERENCE_NUMBER_WORDS = {
+    "one": "1",
+    "single": "1",
+    "two": "2",
+    "double": "2",
+    "three": "3",
+    "four": "4",
+    "five": "5",
+    "six": "6",
+    "seven": "7",
+    "eight": "8",
+    "nine": "9",
+    "ten": "10",
+    "twelve": "12",
+}
+_PRODUCT_REFERENCE_STOP_WORDS = frozenset(
+    {"a", "an", "and", "for", "in", "of", "on", "the", "to", "with"}
+)
+_REPLY_NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+_CAPTION_PRICE_RE = re.compile(r"[—–-]\s*(\d[\d,]*(?:\.\d+)?)\s*[A-Za-z]{3}\s*$")
+
+ProductMediaReferenceStrength = Literal["full", "model"]
+
+
 def _normalized_product_reference(value: str) -> str:
     return " ".join(re.sub(r"[^\w]+", " ", value.casefold()).split())
 
 
-def _product_media_is_referenced(
+def _has_digit(word: str) -> bool:
+    return any(char.isdigit() for char in word)
+
+
+def _product_model_reference(raw_reference: str) -> tuple[str, ...]:
+    """Return the stable model reference of a catalog name, e.g. ``novo 2400``.
+
+    The model code is the trailing run of upper-case tokens of ``name_en``
+    ("4 Person Face to Face Table SKYLAND NOVO 2400" -> "SKYLAND NOVO 2400"),
+    cut to the series word before the first digit-bearing token plus the rest
+    of the code ("novo 2400", "luma 9719 4", "ch 145 m"). Colour/variant words
+    are transparent. Names without such a code have no model reference.
+    """
+
+    run: list[str] = []
+    for token in reversed(raw_reference.split()):
+        normalized = _normalized_product_reference(token)
+        if not normalized:
+            continue
+        if normalized in _PRODUCT_REFERENCE_VARIANT_WORDS:
+            continue
+        if any(char.islower() for char in token):
+            break
+        run[:0] = normalized.split()
+
+    for index, word in enumerate(run):
+        if _has_digit(word):
+            if index == 0 or _has_digit(run[index - 1]):
+                return ()
+            return tuple(run[index - 1 :])
+    return ()
+
+
+def _product_reference_words(value: str) -> list[str]:
+    return [
+        _PRODUCT_REFERENCE_NUMBER_WORDS.get(word, word)
+        for word in _normalized_product_reference(value).split()
+    ]
+
+
+def _product_media_reference_strength(
     item: ProductMediaPayload,
     response_text: str,
-) -> bool:
-    if not item.reference_tokens:
-        return True
-
+) -> ProductMediaReferenceStrength | None:
     normalized_response = _normalized_product_reference(response_text)
     response_words = set(normalized_response.split())
+    padded_response = f" {normalized_response} "
+    model_match = False
     for raw_reference in item.reference_tokens:
         reference = _normalized_product_reference(raw_reference)
         if not reference:
             continue
         if reference in normalized_response:
-            return True
+            return "full"
 
         reference_words = [
             word
@@ -160,12 +223,162 @@ def _product_media_is_referenced(
         ]
         if (
             len(reference_words) >= 2
-            and any(any(char.isdigit() for char in word) for word in reference_words)
+            and any(_has_digit(word) for word in reference_words)
             and all(word in response_words for word in reference_words)
         ):
-            return True
+            return "full"
 
-    return False
+        model_reference = _product_model_reference(raw_reference)
+        if model_reference and f" {' '.join(model_reference)} " in padded_response:
+            model_match = True
+
+    return "model" if model_match else None
+
+
+def _product_media_is_referenced(
+    item: ProductMediaPayload,
+    response_text: str,
+) -> bool:
+    if not item.reference_tokens:
+        return True
+    return _product_media_reference_strength(item, response_text) is not None
+
+
+def _product_media_model_key(item: ProductMediaPayload) -> tuple[str, ...]:
+    for raw_reference in item.reference_tokens:
+        model_reference = _product_model_reference(raw_reference)
+        if model_reference:
+            return model_reference
+    return ()
+
+
+def _product_media_caption_price(item: ProductMediaPayload) -> float | None:
+    match = _CAPTION_PRICE_RE.search(item.caption)
+    if match is None:
+        return None
+    try:
+        return float(match.group(1).replace(",", ""))
+    except ValueError:
+        return None
+
+
+def _reply_numbers(response_text: str) -> set[float]:
+    numbers: set[float] = set()
+    for raw in _REPLY_NUMBER_RE.findall(response_text):
+        try:
+            numbers.add(round(float(raw.replace(",", "")), 2))
+        except ValueError:
+            continue
+    return numbers
+
+
+def _product_media_descriptor_score(
+    item: ProductMediaPayload,
+    model_key: tuple[str, ...],
+    response_words: set[str],
+) -> int:
+    name = item.reference_tokens[0] if item.reference_tokens else ""
+    descriptors = {
+        word
+        for word in _product_reference_words(name)
+        if word not in model_key and word not in _PRODUCT_REFERENCE_STOP_WORDS
+    }
+    return len(descriptors & response_words)
+
+
+def _disambiguate_model_siblings(
+    candidates: list[ProductMediaPayload],
+    *,
+    model_key: tuple[str, ...],
+    has_full_sibling: bool,
+    response_text: str,
+) -> list[ProductMediaPayload]:
+    reply_numbers = _reply_numbers(response_text)
+    priced = [
+        item
+        for item in candidates
+        if (price := _product_media_caption_price(item)) is not None
+        and round(price, 2) in reply_numbers
+    ]
+    if priced:
+        return priced
+    if has_full_sibling:
+        # The model code in the reply is already explained by a sibling named
+        # in full; a bare code is not evidence for the other siblings.
+        return []
+
+    response_words = set(_product_reference_words(response_text))
+    scored = [
+        (_product_media_descriptor_score(item, model_key, response_words), item)
+        for item in candidates
+    ]
+    best = max(score for score, _item in scored)
+    if best == 0:
+        # Nothing in the reply tells the siblings apart: keep the
+        # highest-ranked search result rather than every sibling.
+        return [candidates[0]]
+    return [item for score, item in scored if score == best]
+
+
+def _referenced_product_media(
+    items: list[ProductMediaPayload] | tuple[ProductMediaPayload, ...],
+    response_text: str,
+) -> tuple[ProductMediaPayload, ...]:
+    """Keep pending product media the final reply actually offers.
+
+    A reply may name a product by its full catalog name or only by its stable
+    model reference ("SKYLAND NOVO 2400"). Several catalog products can share
+    one model code (a workstation, a meeting table and a liner table all named
+    NOVO 2400), so items matched only by the model reference are kept only
+    when they are the sole pending item with that code, or when the reply's
+    prices or descriptive words single them out among the siblings.
+    """
+
+    strengths: list[ProductMediaReferenceStrength | None] = [
+        "full"
+        if not item.reference_tokens
+        else _product_media_reference_strength(item, response_text)
+        for item in items
+    ]
+    model_keys = [_product_media_model_key(item) for item in items]
+    sibling_counts: dict[tuple[str, ...], int] = {}
+    for key in model_keys:
+        if key:
+            sibling_counts[key] = sibling_counts.get(key, 0) + 1
+
+    kept_model_only: set[int] = set()
+    groups: dict[tuple[str, ...], list[int]] = {}
+    for index, strength in enumerate(strengths):
+        if strength != "model":
+            continue
+        key = model_keys[index]
+        if sibling_counts.get(key, 0) <= 1:
+            kept_model_only.add(index)
+        else:
+            groups.setdefault(key, []).append(index)
+
+    for key, indexes in groups.items():
+        has_full_sibling = any(
+            strengths[index] == "full"
+            for index, other_key in enumerate(model_keys)
+            if other_key == key
+        )
+        chosen = _disambiguate_model_siblings(
+            [items[index] for index in indexes],
+            model_key=key,
+            has_full_sibling=has_full_sibling,
+            response_text=response_text,
+        )
+        chosen_ids = {id(item) for item in chosen}
+        kept_model_only.update(
+            index for index in indexes if id(items[index]) in chosen_ids
+        )
+
+    return tuple(
+        item
+        for index, item in enumerate(items)
+        if strengths[index] == "full" or index in kept_model_only
+    )
 
 
 @dataclass(frozen=True)

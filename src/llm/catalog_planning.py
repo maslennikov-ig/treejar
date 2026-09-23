@@ -39,7 +39,10 @@ from src.llm.money import (
 )
 from src.llm.response_policy import AskKind, append_required_tool_disclosure
 from src.llm.response_runtime import LLMResponse, ProductMediaPayload
-from src.llm.verified_answers import VerifiedAnswerDecision
+from src.llm.verified_answers import (
+    VerifiedAnswerDecision,
+    query_names_specific_item,
+)
 from src.models.conversation import Conversation
 from src.models.product import Product
 from src.rag.embeddings import EmbeddingEngine
@@ -1180,6 +1183,14 @@ def _catalog_search_query_with_constraints(
         else _requested_seat_count(customer_text)
     )
     enriched = " ".join(query.split())
+    # tj-uz6j.2. A query that already names a model or SKU is about that item,
+    # and a seat count or privacy words appended to it only make the named row
+    # look like a partial match. Chairs are counted in units, not seats per
+    # item, so neither addition describes a seating product either.
+    if query_names_specific_item(enriched) or "seating" in _catalog_product_families(
+        enriched
+    ):
+        return enriched
     if requested_seats is not None and _requested_seat_count(enriched) is None:
         enriched = f"{enriched} {requested_seats} person"
 
@@ -2148,11 +2159,14 @@ def _requested_catalog_evidence_gaps(
 
 def _product_search_response_contract(
     *,
-    match_kind: Literal["exact", "nearby", "missing", "empty"] = "exact",
+    match_kind: Literal["exact", "generic", "nearby", "missing", "empty"] = "exact",
     search_budget_exhausted: bool = False,
     target_coverage_complete: bool | None = None,
     lower_verified_family_total: tuple[CatalogFamily, float, float] | None = None,
+    closed_selection_skus: tuple[str, ...] = (),
 ) -> str:
+    if closed_selection_skus and match_kind in {"exact", "generic", "nearby"}:
+        return " ".join(_closed_selection_contract_parts(closed_selection_skus))
     if match_kind == "nearby":
         contract_parts = [
             "Catalog results were found, but they are the closest alternatives rather than a confirmed exact match.",
@@ -2163,6 +2177,21 @@ def _product_search_response_contract(
             "Treejar Catalog price is the customer-facing commercial truth by default.",
             "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
             "After the alternatives, ask at most one narrow follow-up; do not offer sourcing or escalation for an ordinary no-match.",
+            "Tie one verified fact to the stated need and end with one concrete next action.",
+        ]
+    elif match_kind == "generic":
+        # tj-uz6j.2. A need such as "office furniture for four people" names no
+        # item, so there is nothing whose absence could be confirmed. Telling
+        # the customer "the exact requested item isn't confirmed" here reads as
+        # the bot failing to find the very product it is showing.
+        contract_parts = [
+            "Catalog results were found for the customer's stated need; the request names no specific product, so there is no exact item to confirm.",
+            "Lead with up to 3 of these results as options that fit the stated need, before any generic qualifying questions, but respect an explicit smaller maximum in the customer's request.",
+            "Do not say the requested item is unconfirmed, missing, or only a closest alternative.",
+            "Use only facts already present in tool results; do not invent specs, features the item details do not state, or more units than returned catalog stock.",
+            "Treejar Catalog price is the customer-facing commercial truth by default.",
+            "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
+            "After presenting the options, you may ask at most one targeted follow-up to narrow the recommendation.",
             "Tie one verified fact to the stated need and end with one concrete next action.",
         ]
     elif match_kind == "empty":
@@ -2194,11 +2223,10 @@ def _product_search_response_contract(
     else:
         contract_parts = [
             "Relevant catalog results were found for this customer message.",
-            "In your next reply, lead with up to 3 concrete options or closest alternatives from these results before any generic qualifying questions, but respect an explicit smaller maximum in the customer's request.",
+            "In your next reply, lead with up to 3 concrete options from these results before any generic qualifying questions, but respect an explicit smaller maximum in the customer's request.",
             "Use only facts already present in tool results; do not invent specs or allocate more units than returned catalog stock.",
             "Treejar Catalog price is the customer-facing commercial truth by default.",
             "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
-            "If the returned items are only nearby alternatives, say that honestly and position them as the closest fit.",
             "After presenting the options, you may ask at most one targeted follow-up to narrow the recommendation.",
             "Do not start with generic discovery like budget, use case, or timeline if the current results are already relevant enough to show options.",
             "Tie one verified fact to the stated need and end with one concrete next action.",
@@ -2247,7 +2275,40 @@ def _search_budget_fallback_contract(*, prior_results_seen: bool) -> str:
     )
 
 
-def _stock_follow_up_contract() -> str:
+_GROUNDING_CONTRACT_PARTS = (
+    "Use only facts already present in tool results; do not invent specs or allocate more units than returned catalog stock.",
+    "Treejar Catalog price is the customer-facing commercial truth by default.",
+    "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
+)
+
+
+def _closed_selection_contract_parts(
+    closed_selection_skus: tuple[str, ...],
+) -> list[str]:
+    # tj-uz6j.3. Once the customer has chosen, a search only confirms facts
+    # about the chosen item. The option-mode contract ("lead with up to 3")
+    # made the model re-list alternatives after "keep it" and after quote
+    # consent.
+    return [
+        f"The customer has already chosen: {', '.join(closed_selection_skus)}. "
+        "This search confirms facts; it does not reopen the choice.",
+        "If a chosen item is in these results, use its row to answer what the "
+        "customer asked (price, stock, specification) and continue the next step; "
+        "do not list or price the other results.",
+        "Show other results only if the current customer message asks for "
+        "alternatives or names a different product.",
+        *_GROUNDING_CONTRACT_PARTS,
+    ]
+
+
+def _stock_follow_up_contract(*, selection_closed: bool = False) -> str:
+    if selection_closed:
+        return (
+            "Use this stock/price fact for the item the customer has already chosen "
+            "and continue the next step; do not return to listing options. "
+            "Zoho confirms operational stock; Treejar Catalog price remains the "
+            "customer-facing commercial truth when present."
+        )
     return (
         "Use this stock/price fact to strengthen the concrete options you already have. "
         "Zoho confirms operational stock; Treejar Catalog price remains the customer-facing commercial truth when present. "

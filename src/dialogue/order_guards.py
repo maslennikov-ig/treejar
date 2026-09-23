@@ -62,6 +62,16 @@ _QUOTATION_NOT_YET_RE = re.compile(
     r"|(?:سوف|سأ|بمجرد|عندما|إذا|لا\s+أستطيع|لم\s+)",
     re.IGNORECASE,
 )
+# A denial is not an assertion either: "No quotation has been prepared yet"
+# and "I haven't prepared a quotation" say the opposite of the claim the guard
+# looks for (tj-uz6j.5). The negation must sit on the quote noun or directly
+# before the action verb so an unrelated "not" elsewhere cannot mask a claim.
+_QUOTATION_NEGATED_RE = re.compile(
+    r"\bno\s+(?:\w+\s+){0,2}?(?:quote|quotation)s?\b"
+    r"|(?:\b(?:not|never)\b|n['’]t\b)(?:\s+\w+){0,3}?\s+"
+    r"(?:prepared|created|generated|issued|drafted|ready|sent|attached)\b",
+    re.IGNORECASE,
+)
 _SENTENCE_SPLIT_RE = re.compile(r"[.!?؟\n]+")
 
 
@@ -81,9 +91,11 @@ def quotation_claimed_without_call(
     for sentence in _SENTENCE_SPLIT_RE.split(reply_text):
         if not sentence.strip():
             continue
-        if _QUOTATION_DONE_CLAIM_RE.search(
-            sentence
-        ) and not _QUOTATION_NOT_YET_RE.search(sentence):
+        if (
+            _QUOTATION_DONE_CLAIM_RE.search(sentence)
+            and not _QUOTATION_NOT_YET_RE.search(sentence)
+            and not _QUOTATION_NEGATED_RE.search(sentence)
+        ):
             return True
     return False
 

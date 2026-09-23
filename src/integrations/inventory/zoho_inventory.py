@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import email.utils
 import logging
+import math
+import time
 import uuid
 from collections.abc import Mapping
 from typing import Any, NotRequired, TypedDict
@@ -23,6 +27,75 @@ from src.integrations.zoho_oauth import (
 )
 
 logger = logging.getLogger(__name__)
+
+# tj-uz6j.9. Zoho enforces its request quota per organisation, so a 429 can be
+# caused by traffic this worker does not own. After one, every Treejar process
+# stops calling Zoho Inventory for a short cooldown instead of hammering it.
+ZOHO_RATE_LIMIT_COOLDOWN_KEY = "zoho:inventory:rate_limited_until"
+_RATE_LIMIT_DEFAULT_COOLDOWN_SECONDS = 30.0
+_RATE_LIMIT_MAX_COOLDOWN_SECONDS = 300.0
+# Longest single wait a request will sit through before retrying a read; a
+# longer Retry-After ends the request at once and leaves the cooldown in place.
+_RATE_LIMIT_MAX_INLINE_WAIT_SECONDS = 8.0
+_RATE_LIMIT_INLINE_WAIT_BUDGET_SECONDS = 10.0
+# Identical reads inside one client lifetime (one customer turn) reuse the
+# first answer; any write clears them.
+_READ_CACHE_TTL_SECONDS = 60.0
+_READ_CACHE_MAX_ENTRIES = 128
+_process_rate_limited_until = 0.0
+
+
+class ZohoRateLimitError(httpx.HTTPStatusError):
+    """Zoho Inventory refused a request with 429, or a cooldown is active.
+
+    A subclass of HTTPStatusError with status 429, so existing handlers keep
+    working. A 429 means Zoho did not process the request.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        request: httpx.Request,
+        response: httpx.Response,
+        retry_after_seconds: float | None,
+        local_cooldown: bool = False,
+    ) -> None:
+        super().__init__(message, request=request, response=response)
+        self.retry_after_seconds = retry_after_seconds
+        self.local_cooldown = local_cooldown
+
+
+def parse_retry_after(value: str | None, *, now: float | None = None) -> float | None:
+    """Seconds to wait from a Retry-After header (delay-seconds or HTTP-date)."""
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    if raw.isascii() and raw.isdigit() and len(raw) <= 8:
+        return float(raw)
+    try:
+        parsed = email.utils.parsedate_to_datetime(raw)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if parsed is None or parsed.tzinfo is None:
+        return None
+    return max(parsed.timestamp() - (time.time() if now is None else now), 0.0)
+
+
+def reset_rate_limit_cooldown() -> None:
+    """Forget the in-process cooldown (tests and operator tooling)."""
+    global _process_rate_limited_until
+    _process_rate_limited_until = 0.0
+
+
+def contact_lists_only_other_phones(
+    contact: Mapping[str, Any], phone: str | None
+) -> bool:
+    """Whether the contact lists phones and none of them is the given phone."""
+    phones = _contact_phone_values(contact)
+    return bool(phones) and not any(
+        _phones_equivalent(candidate, phone) for candidate in phones
+    )
 
 
 class ZohoContactAddressPayload(TypedDict):
@@ -276,6 +349,9 @@ class ZohoInventoryClient(InventoryProvider):
             base_url=self.base_url,
             timeout=httpx.Timeout(30.0),
         )
+        self._read_cache: dict[
+            tuple[str, tuple[tuple[str, str], ...]], tuple[float, httpx.Response]
+        ] = {}
 
     async def _ensure_token(self) -> str:
         """Get the current access token, refreshing if necessary via Redis lock."""
@@ -345,6 +421,58 @@ class ZohoInventoryClient(InventoryProvider):
                 owner_token=lock_owner,
             )
 
+    async def _cooldown_remaining(self) -> float:
+        """Seconds left in a process- or Redis-wide Zoho rate-limit cooldown."""
+        now = time.time()
+        remaining = _process_rate_limited_until - now
+        try:
+            raw = await self.redis.get(ZOHO_RATE_LIMIT_COOLDOWN_KEY)
+        except Exception:
+            raw = None
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="ignore")
+        if isinstance(raw, str):
+            with contextlib.suppress(ValueError):
+                remaining = max(remaining, float(raw) - now)
+        return max(remaining, 0.0)
+
+    async def _start_cooldown(self, seconds: float) -> None:
+        global _process_rate_limited_until
+        seconds = min(max(seconds, 1.0), _RATE_LIMIT_MAX_COOLDOWN_SECONDS)
+        deadline = time.time() + seconds
+        _process_rate_limited_until = max(_process_rate_limited_until, deadline)
+        try:
+            await self.redis.set(
+                ZOHO_RATE_LIMIT_COOLDOWN_KEY,
+                f"{deadline:.3f}",
+                ex=max(math.ceil(seconds), 1),
+            )
+        except Exception:
+            logger.warning("Could not share the Zoho rate-limit cooldown via Redis")
+
+    def _cooldown_error(
+        self, method: str, path: str, remaining: float
+    ) -> ZohoRateLimitError:
+        request = httpx.Request(method, f"{self.base_url}{path}")
+        retry_after = str(max(math.ceil(remaining), 1))
+        response = httpx.Response(
+            429, headers={"Retry-After": retry_after}, request=request
+        )
+        return ZohoRateLimitError(
+            "Zoho Inventory rate-limit cooldown is active",
+            request=request,
+            response=response,
+            retry_after_seconds=float(retry_after),
+            local_cooldown=True,
+        )
+
+    def _read_cache_key(
+        self, method: str, path: str, params: Mapping[str, Any]
+    ) -> tuple[str, tuple[tuple[str, str], ...]] | None:
+        if method.upper() != "GET" or path.endswith("/image"):
+            return None
+        return path, tuple(sorted((str(k), str(v)) for k, v in params.items()))
+
     async def _request(
         self,
         method: str,
@@ -356,9 +484,31 @@ class ZohoInventoryClient(InventoryProvider):
         params = dict(params) if params else {}
         params["organization_id"] = self.org_id
 
+        cache = self._read_cache
+        cache_key = self._read_cache_key(method, path, params)
+        if cache_key is None:
+            cache.clear()
+        else:
+            cached = cache.get(cache_key)
+            if cached is not None and time.monotonic() - cached[0] < (
+                _READ_CACHE_TTL_SECONDS
+            ):
+                return cached[1]
+
+        remaining = await self._cooldown_remaining()
+        if remaining > 0:
+            logger.warning(
+                "Zoho Inventory %s %s skipped: rate-limit cooldown %.1fs",
+                method.upper(),
+                path,
+                remaining,
+            )
+            raise self._cooldown_error(method.upper(), path, remaining)
+
         # Retry mechanism (3 attempts with backoff)
         max_retries = 3
         retry_read = method.upper() in {"GET", "HEAD", "OPTIONS"}
+        waited = 0.0
 
         for attempt in range(1, max_retries + 1):
             token = await self._ensure_token()
@@ -380,18 +530,46 @@ class ZohoInventoryClient(InventoryProvider):
                         continue
 
                 response.raise_for_status()
+                if cache_key is not None:
+                    if len(cache) >= _READ_CACHE_MAX_ENTRIES:
+                        cache.clear()
+                    cache[cache_key] = (time.monotonic(), response)
                 return response
 
             except httpx.HTTPStatusError as e:
-                # Zoho sometimes returns 429 Too Many Requests
+                if e.response.status_code != 429:
+                    raise
+                retry_after = parse_retry_after(e.response.headers.get("retry-after"))
+                wait = retry_after if retry_after is not None else float(2**attempt)
                 if (
                     retry_read
-                    and e.response.status_code == 429
                     and attempt < max_retries
+                    and wait <= _RATE_LIMIT_MAX_INLINE_WAIT_SECONDS
+                    and waited + wait <= _RATE_LIMIT_INLINE_WAIT_BUDGET_SECONDS
                 ):
-                    await asyncio.sleep(2**attempt)  # 2s, 4s...
+                    waited += wait
+                    await asyncio.sleep(wait)
                     continue
-                raise
+                cooldown = (
+                    retry_after
+                    if retry_after is not None
+                    else _RATE_LIMIT_DEFAULT_COOLDOWN_SECONDS
+                )
+                await self._start_cooldown(cooldown)
+                logger.warning(
+                    "Zoho Inventory rate limit on %s %s after %d attempt(s); "
+                    "cooldown %.0fs",
+                    method.upper(),
+                    path,
+                    attempt,
+                    cooldown,
+                )
+                raise ZohoRateLimitError(
+                    str(e),
+                    request=e.request,
+                    response=e.response,
+                    retry_after_seconds=retry_after,
+                ) from e
 
             except (httpx.TimeoutException, httpx.NetworkError):
                 if retry_read and attempt < max_retries:
@@ -449,7 +627,8 @@ class ZohoInventoryClient(InventoryProvider):
             async with sem:
                 return await self.get_stock(sku)
 
-        results = await asyncio.gather(*[_fetch(sku) for sku in skus])
+        unique_skus = list(dict.fromkeys(skus))
+        results = await asyncio.gather(*[_fetch(sku) for sku in unique_skus])
         return [res for res in results if res is not None]
 
     async def get_item(self, item_id: str) -> dict[str, Any] | None:

@@ -47,6 +47,26 @@ class LastQuestion(BaseModel):
     expected_slots: list[str] = Field(default_factory=list)
 
 
+class ProposalItem(BaseModel):
+    """A catalog row the assistant named in the message that asked the question."""
+
+    sku: str
+    name: str | None = None
+    unit_price: str | None = None
+
+
+class AssistantProposal(BaseModel):
+    """The closing question of the last assistant reply, as it was sent.
+
+    A short "yes" answers this and nothing else (tj-uz6j.7). Overwritten on
+    every reply, cleared when a reply ends without a question.
+    """
+
+    question: str
+    items: list[ProposalItem] = Field(default_factory=list)
+    asked_at: str | None = None
+
+
 class ExpectedSlot(BaseModel):
     slot: str
     required: bool = True
@@ -110,8 +130,22 @@ class DialogueState(BaseModel):
     quote_lifecycle: QuoteLifecycle = QuoteLifecycle.CONSULTATION
     slots: DialogueSlots = Field(default_factory=DialogueSlots)
     last_question: LastQuestion | None = None
+    last_proposal: AssistantProposal | None = None
     expected_answer_frames: list[ExpectedAnswerFrame] = Field(default_factory=list)
     trace_history: list[DialogueTrace] = Field(default_factory=list)
+
+    @field_validator("last_proposal", mode="before")
+    @classmethod
+    def _load_valid_last_proposal(cls, value: Any) -> AssistantProposal | None:
+        # A damaged proposal must cost the proposal, never the whole state.
+        if isinstance(value, AssistantProposal):
+            return value
+        if not isinstance(value, Mapping):
+            return None
+        try:
+            return AssistantProposal.model_validate(value)
+        except ValidationError:
+            return None
 
     @field_validator("expected_answer_frames", mode="before")
     @classmethod

@@ -159,6 +159,16 @@ def repair_judge_is_local() -> Generator[None, None, None]:
 
 
 @pytest.fixture(autouse=True)
+def zoho_rate_limit_cooldown_is_per_test() -> Generator[None, None, None]:
+    """A Zoho 429 in one test must not put the next test into cooldown."""
+    from src.integrations.inventory.zoho_inventory import reset_rate_limit_cooldown
+
+    reset_rate_limit_cooldown()
+    yield
+    reset_rate_limit_cooldown()
+
+
+@pytest.fixture(autouse=True)
 def cleanup_db_pool() -> Generator[None, None, None]:
     """Force SQLAlchemy to dispose of the connection pool after each test.
     This prevents 'different event loop' errors when engines are reused across tests.

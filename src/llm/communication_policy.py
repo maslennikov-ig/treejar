@@ -115,16 +115,27 @@ COMMERCIAL_CAPABILITIES: dict[str, CommercialCapability] = {
         ),
     ),
     "delivery_time_range": CommercialCapability(
-        mode="conditional",
-        source="ratified permission list row 13; delivery FAQ",
-        instruction="State delivery timing only as the range provided by the FAQ.",
+        mode="direct",
+        source=(
+            "ratified permission list row 13; docs/faq.md question 9; "
+            "owner decision 2026-09-23"
+        ),
+        instruction=(
+            "State that ready-stock items are delivered within a few days and that "
+            "custom-made orders depend on design and quantity; leave a specific "
+            "date to the manager."
+        ),
     ),
     "assembly_installation": CommercialCapability(
-        mode="conditional",
-        source="ratified permission list row 14; owner decision 2026-08-11",
+        mode="direct",
+        source=(
+            "ratified permission list row 14; docs/faq.md question 10; "
+            "owner decision 2026-09-23"
+        ),
         instruction=(
-            "Commit to confirming whether assembly or installation is available "
-            "while leaving provision of the service unconfirmed."
+            "Confirm that Treejar provides professional delivery and installation "
+            "(assembly) across the UAE, including Dubai; leave the cost and the "
+            "exact schedule to the quotation or the manager."
         ),
     ),
     "specific_delivery_date": CommercialCapability(

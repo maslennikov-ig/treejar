@@ -54,6 +54,7 @@ from src.llm.response_policy import (
     permitted_asks_for_turn,
     render_reply,
 )
+from src.llm.response_runtime import _referenced_product_media
 from src.models.conversation import Conversation
 from src.schemas.common import SalesStage
 from src.schemas.product import ProductRead
@@ -1903,6 +1904,166 @@ def test_product_media_reference_matches_arabic_response_by_stable_model_code() 
         media,
         "الخيار الأول: كرسي مكتب CH 145 M رمادي جديد",
     )
+
+
+def _novo_luma_media() -> dict[str, ProductMediaPayload]:
+    def payload(key: str, name: str, sku: str, price: str) -> ProductMediaPayload:
+        return ProductMediaPayload(
+            url=f"https://example.com/{key}.jpg",
+            caption=f"{name} — {price} AED",
+            product_key=key,
+            reference_tokens=(name, sku),
+        )
+
+    return {
+        "novo_four": payload(
+            "novo-four",
+            "4 Person Face to Face Table SKYLAND NOVO 2400",
+            "OF-YED-NOVO-Workstation-63LW-1.2T-6-white",
+            "1813.00",
+        ),
+        "novo_two": payload(
+            "novo-two",
+            "Two person liner table SKYLAND NOVO 2400",
+            "OF-YED-NOVO-Liner-2400-white",
+            "1532.00",
+        ),
+        "novo_meeting": payload(
+            "novo-meeting",
+            "MEETING TABLE SKYLAND NOVO 2400",
+            "OF-YED-NOVO-Meeting-2400-white",
+            "1740.00",
+        ),
+        "luma": payload(
+            "luma-four",
+            "Four person workstation SKYLAND LUMA 9719-4",
+            "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+            "1883.00",
+        ),
+        "chair": payload(
+            "ch-270-black",
+            "Operative Chair CH 270 Black",
+            "CH 270 Black",
+            "410.00",
+        ),
+    }
+
+
+def test_product_media_reference_keeps_products_offered_by_short_model_name() -> None:
+    media = _novo_luma_media()
+    reply = "1. SKYLAND NOVO 2400 — 1,813 AED\n2. SKYLAND LUMA 9719-4 — 1,883 AED"
+    pending = (media["novo_four"], media["luma"], media["chair"])
+
+    assert _product_media_is_referenced(media["novo_four"], reply)
+    assert _referenced_product_media(pending, reply) == (
+        media["novo_four"],
+        media["luma"],
+    )
+
+
+def test_product_media_reference_drops_model_siblings_by_price() -> None:
+    media = _novo_luma_media()
+    reply = "1. SKYLAND NOVO 2400 — 1,813 AED\n2. SKYLAND LUMA 9719-4 — 1,883 AED"
+    pending = (
+        media["novo_meeting"],
+        media["novo_four"],
+        media["novo_two"],
+        media["luma"],
+        media["chair"],
+    )
+
+    assert _referenced_product_media(pending, reply) == (
+        media["novo_four"],
+        media["luma"],
+    )
+
+
+def test_product_media_reference_drops_model_siblings_by_descriptor() -> None:
+    media = _novo_luma_media()
+    reply = "I recommend the NOVO 2400 four-person workstation for your team."
+    pending = (
+        media["novo_meeting"],
+        media["novo_two"],
+        media["novo_four"],
+        media["chair"],
+    )
+
+    assert _referenced_product_media(pending, reply) == (media["novo_four"],)
+
+
+def test_product_media_reference_bare_model_code_does_not_add_siblings() -> None:
+    media = _novo_luma_media()
+    reply = (
+        "The 4 Person Face to Face Table SKYLAND NOVO 2400 fits four people; "
+        "NOVO 2400 comes in white."
+    )
+    pending = (media["novo_meeting"], media["novo_four"], media["novo_two"])
+
+    assert _referenced_product_media(pending, reply) == (media["novo_four"],)
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_keeps_media_for_products_offered_by_model_name(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Please recommend four-person workstations."
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    media = _novo_luma_media()
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        deps.pending_product_media.extend(
+            (
+                media["novo_meeting"],
+                media["novo_four"],
+                media["novo_two"],
+                media["luma"],
+                media["chair"],
+            )
+        )
+        return _FakeAgentResult(
+            "Two options fit: SKYLAND NOVO 2400 at 1,813 AED and "
+            "SKYLAND LUMA 9719-4 at 1,883 AED."
+        )
+
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.deferred_product_media == (media["novo_four"], media["luma"])
+    messaging.send_media.assert_not_called()
+
+
+def test_product_media_reference_requires_digit_bearing_model_code() -> None:
+    media = ProductMediaPayload(
+        url="https://example.com/sofa.jpg",
+        caption="Lounge Sofa ARIA — 900.00 AED",
+        product_key="aria",
+        reference_tokens=("Lounge Sofa ARIA", "SOFA-ARIA"),
+    )
+
+    assert not _product_media_is_referenced(media, "The ARIA sofa is 900 AED.")
 
 
 @pytest.mark.asyncio
@@ -12968,6 +13129,7 @@ async def test_renewed_explicit_request_restores_quotation_tool(
         "I have prepared the quotation and sent it to you.",
         "Your quotation is ready.",
         "عرض السعر جاهز.",
+        "Quotation Fr4023 has been prepared and sent.",
     ],
 )
 def test_quotation_claimed_without_call_is_a_defect(reply: str) -> None:
@@ -12987,6 +13149,23 @@ def test_quotation_claimed_without_call_is_a_defect(reply: str) -> None:
     ],
 )
 def test_quotation_promise_is_not_a_defect(reply: str) -> None:
+    from src.dialogue.order_guards import quotation_claimed_without_call
+
+    assert quotation_claimed_without_call(reply, quotation_created=False) is False
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "No quotation has been prepared.",
+        "No quotation has been prepared yet, so please confirm the items.",
+        "I haven't prepared a quotation.",
+        "I have not prepared a quotation for you.",
+        "There is no quote yet; the quotation was not created.",
+        "The quotation has not been sent.",
+    ],
+)
+def test_negated_quotation_statement_is_not_a_defect(reply: str) -> None:
     from src.dialogue.order_guards import quotation_claimed_without_call
 
     assert quotation_claimed_without_call(reply, quotation_created=False) is False

@@ -37,6 +37,7 @@ from pydantic_ai.usage import RunUsage
 
 import src.llm.engine as engine
 from src.core.config import settings
+from src.dialogue.decision_state import record_assistant_proposal
 from src.dialogue.order_guards import quotation_claimed_without_call
 from src.dialogue.order_state import (
     QuoteConsent,
@@ -58,6 +59,7 @@ from src.llm.catalog_planning import (
     _verify_volunteered_claims,
     grounded_amounts_for_turn,
 )
+from src.llm.company_faq import with_approved_faq
 from src.llm.escalation_policy import critical_escalation_decision
 from src.llm.grounding_output import GroundingOutputAction
 from src.llm.outbound_reply_guard import finalize_customer_reply_text
@@ -83,6 +85,7 @@ from src.llm.response_policy import (
 from src.llm.response_runtime import (
     PendingReferenceRoute,
     _product_media_is_referenced,
+    _referenced_product_media,
     _response_from_rendered_reply,
 )
 from src.llm.safety import (
@@ -193,10 +196,8 @@ def _deferred_product_media_for_response(
             )
         return ()
     if allow_product_media:
-        referenced_media = tuple(
-            item
-            for item in response_deps.pending_product_media
-            if _product_media_is_referenced(item, response_text)
+        referenced_media = _referenced_product_media(
+            response_deps.pending_product_media, response_text
         )
         suppressed_count = len(response_deps.pending_product_media) - len(
             referenced_media
@@ -685,6 +686,16 @@ async def _finalize_turn_response(
     )
 
     turn._record_reply_on_conversation(response.model, response.text)
+    # tj-uz6j.7. What the next short "yes" answers is the question this reply,
+    # as finally worded, closes on -- recorded with the catalog rows it names.
+    conversation_metadata = turn.deps.conversation.metadata_
+    proposal_metadata = record_assistant_proposal(
+        conversation_metadata,
+        response.text,
+        getattr(turn.deps, "claim_rows", None) or {},
+    )
+    if proposal_metadata != (conversation_metadata or {}):
+        turn.deps.conversation.metadata_ = proposal_metadata
     if AskKind.CUSTOMER_NAME in response.emitted_asks:
         # This is selected-output metadata from the policy chain. A permitted
         # ask folded away before delivery must not close the persistent slot.
@@ -1070,6 +1081,9 @@ async def _retrieve_context(turn: _Turn) -> None:
     except Exception:
         logger.warning("FAQ knowledge base search failed", exc_info=True)
     finally:
+        turn.deps.faq_context = with_approved_faq(
+            turn.masked_text, turn.deps.faq_context or ()
+        )
         if turn.latency_trace is not None and faq_started is not None:
             turn.latency_trace.finish_phase("faq_rag", faq_started)
 

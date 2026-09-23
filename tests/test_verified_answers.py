@@ -804,3 +804,91 @@ def test_partial_faq_support_escalates_only_for_a_real_commitment() -> None:
     assert scheduled.policy_action == "handoff"
     assert capability.policy_action == "allow"
     assert capability.requires_manager_handoff is False
+
+
+# tj-uz6j.2: production 2026-09-23. Every reply about the LUMA workstation the
+# bot had just shown said "the exact requested item isn't confirmed", because a
+# verbose model-written query needed every one of its words on one catalog row.
+_LUMA_ROW = (
+    "Four person workstation SKYLAND LUMA 9719-4\n"
+    "Four-person workstation with a shared frame.\n"
+    "Workstations"
+)
+_NOVO_ROW = (
+    "4 Person Face to Face Table SKYLAND NOVO 2400\nFace to face desk.\nWorkstations"
+)
+_LUMA_SKU = "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut"
+
+
+def test_verbose_compare_query_naming_two_models_is_exact() -> None:
+    query = (
+        "Compare SKYLAND LUMA 9719-4 and SKYLAND NOVO 2400 four-person "
+        "workstation setups for privacy, collaboration, and current price"
+    )
+
+    assert classify_product_match(query, [_LUMA_ROW, _NOVO_ROW]) == "exact"
+    assert classify_product_match(query, [_NOVO_ROW]) == "exact"
+
+
+def test_named_model_with_appended_seat_count_is_exact() -> None:
+    assert (
+        classify_product_match(
+            "LUMA 9719-4 four-person workstation setup 4 person", [_LUMA_ROW]
+        )
+        == "exact"
+    )
+
+
+def test_finish_carried_only_by_the_sku_still_confirms_the_named_model() -> None:
+    query = "LUMA workstation SKYLAND 9719-4 walnut"
+
+    assert (
+        classify_product_match(query, [_LUMA_ROW], candidate_skus=[_LUMA_SKU])
+        == "exact"
+    )
+    assert classify_product_match(query, [_LUMA_ROW]) != "exact"
+
+
+def test_named_model_in_an_absent_finish_is_not_exact() -> None:
+    assert (
+        classify_product_match(
+            "LUMA 9719-4 in oak finish", [_LUMA_ROW], candidate_skus=[_LUMA_SKU]
+        )
+        == "nearby"
+    )
+
+
+def test_bare_number_does_not_name_a_model() -> None:
+    assert classify_product_match("novo 2400", [_NOVO_ROW]) == "exact"
+    assert classify_product_match("novo 1600 table", [_NOVO_ROW]) == "nearby"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "office furniture for a new Dubai office for four people; seating and "
+        "workspace options",
+        "four-person workstation with privacy dividers",
+        "office furniture for 4 people under AED 5000",
+    ],
+)
+def test_needs_only_request_is_generic(query: str) -> None:
+    assert classify_product_match(query, [_LUMA_ROW, _NOVO_ROW]) == "generic"
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["HERMAN desk for four people", "luma workstation", "Show a LUMA workstation"],
+)
+def test_named_but_absent_brand_stays_nearby(query: str) -> None:
+    assert classify_product_match(query, [_NOVO_ROW]) == "nearby"
+
+
+def test_search_filler_words_do_not_block_an_exact_match() -> None:
+    assert (
+        classify_product_match(
+            "compare current price and stock options for acoustic pods",
+            ["Acoustic Pod Four-person acoustic pod for meetings"],
+        )
+        == "exact"
+    )

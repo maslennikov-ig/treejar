@@ -15,9 +15,10 @@ from src.llm.inventory_read import InventoryReadUnavailable, inventory_read
 from tests.test_model_search_intent import _context
 
 
-def rate_limit():
+def rate_limit(retry_after: str | None = "30"):
     request = httpx.Request("GET", "https://inventory.example/items")
-    response = httpx.Response(429, request=request, headers={"retry-after": "30"})
+    headers = {"retry-after": retry_after} if retry_after else {}
+    response = httpx.Response(429, request=request, headers=headers)
     return httpx.HTTPStatusError("rate limit", request=request, response=response)
 
 
@@ -93,7 +94,13 @@ async def test_only_idempotent_inventory_reads_are_retried(method, attempts, fai
     redis = AsyncMock()
     redis.get.return_value = b"token"
     client = ZohoInventoryClient(redis_client=redis)
-    error = rate_limit() if failure == "429" else httpx.ReadTimeout("unknown outcome")
+    # A 429 without Retry-After uses the bounded 2s/4s backoff; a longer
+    # Retry-After ends the request at once (covered in test_zoho_rate_limit).
+    error = (
+        rate_limit(retry_after=None)
+        if failure == "429"
+        else httpx.ReadTimeout("unknown outcome")
+    )
     try:
         with (
             patch.object(

@@ -1,11 +1,29 @@
 # Orchestrator Handoff
 
 Updated: 2026-09-23
-Current branch: main (delivery worktree: codex/catalog-price-unit)
-Current stage id: tj-stwf-test-only-restore (last operational stage)
-Status: Luna medium integrated, deployed, and bounded post-deploy checks complete.
+Current branch: codex/tj-uz6j-tester-0923 (from codex/catalog-price-unit 5967db6)
+Current stage id: tj-uz6j-tester-0923
+Status: Tester-feedback repairs implemented locally; not committed or deployed.
 
-## Current truth
+## Current stage: tj-uz6j tester feedback 2026-09-23
+
+- Source: Angela's WhatsApp test of demo routes A/B on test0665 against live
+  release 071b0e3; conversations 207f7c10, fa224cab, d24c5360. Plan:
+  `docs/plans/toasty-munching-ritchie.md`.
+- Regressions surfaced after the glm-5.3-flash -> gpt-6-luna switch (6ae4c0e):
+  Luna follows tool contracts literally, exposing contract/state defects.
+- Implemented (uncommitted): T1 media for products named by short model
+  reference; T2 exact/generic match kinds, no false "exact item not confirmed";
+  T3/T7 persisted decision state (selection/quote consent close the choice,
+  proposal-bound affirmatives incl. wrong keyboard layout, reply supersession
+  for messages arriving mid-generation); T4 named SKU direct lookup regardless
+  of local stock; T5 negated quotation statements; T6 delivery/installation per
+  docs/faq.md Q9-Q10 (owner decision 2026-09-23, supersedes 2026-08-11 assembly
+  rule; grounding capability registry changed accordingly); T9 Zoho 429
+  resilience and quotation deferral.
+- Production was read only (DB SELECTs, logs). No server change was made.
+
+## Previous release truth
 
 - Live code release: `071b0e32f35bec5474ba4b7e4d1b651f85d45295`.
 - CI35855524010 passed: 4,115 tests, 27 skipped; Ruff/format, Mypy and standard
@@ -56,6 +74,12 @@ Status: Luna medium integrated, deployed, and bounded post-deploy checks complet
 
 ## Explicit defers
 
+- tj-uz6j.8: multi-turn demo-scenario regression gate before model/prompt
+  switches (root cause of periodic degradation) is tracked, not built.
+- tj-i0n0: no background retry for deferred quotations; completion happens on
+  the next customer message or via the alerted manager.
+- tj-n4kt catalog stock drift and tj-1baw reply latency are tracked separately.
+
 - tj-bgwu: corpus identity tests assume a normal .git directory; local linked
   worktree acceptance uses focused checks and canonical CI for the full suite.
 - Existing unrelated product tasks remain tracked separately. Wazzup sender
@@ -64,9 +88,15 @@ Status: Luna medium integrated, deployed, and bounded post-deploy checks complet
 
 ## Next recommended
 
-Continue tester-authored testing on test0665. Full WhatsApp delivery and a real
-quotation remain separate observations; bounded model checks do not certify every
-future answer. No implementation or main-integration tail remains for this task.
+Next stage id: tj-uz6j-tester-0923
+Recommended action: commit the repairs, then deploy only with fresh owner
+authority and have the tester rerun routes A and B on test0665.
 
-docs-reviewed: updated - final release, model evidence, fixes and recovery recorded.
-graph-reviewed: no-change-needed - no graph is available in this worktree.
+## Starter prompt for next orchestrator
+
+Use $orchestrator-stage for tj-uz6j. Read the plan above, verify the local
+acceptance evidence, and obtain explicit owner authority before push or deploy.
+Preserve the test0665-only boundary.
+
+docs-reviewed: updated - tester-feedback stage and defers recorded.
+graph-reviewed: no-change-needed - no graph used.

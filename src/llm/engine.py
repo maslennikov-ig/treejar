@@ -15,7 +15,7 @@ from collections.abc import (
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from html import escape
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 import httpx
@@ -25,7 +25,7 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserProm
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import RunUsage
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
@@ -45,6 +45,10 @@ from src.dialogue.claim_contract import (
     sizing_assumption_directive,
     solution_consultation_directive,
     substantive_reply_directive,
+)
+from src.dialogue.decision_state import (
+    closed_selection_skus,
+    decision_state_directives,
 )
 from src.dialogue.order_guards import (
     is_order_selection_blocked,
@@ -89,10 +93,8 @@ from src.integrations.crm.zoho_crm import (
     apply_zoho_attribution_mapping,
 )
 from src.integrations.inventory.zoho_inventory import (
-    ZohoContactAddressPayload,
-    ZohoContactPersonPayload,
     ZohoInventoryClient,
-    ZohoInventoryContactPayload,
+    ZohoRateLimitError,
     ZohoSaleOrderLineItemPayload,
     extract_sale_order_data,
 )
@@ -102,7 +104,6 @@ from src.llm.catalog_planning import (
     _ACTIVE_PRODUCT_MEDIA_AUDIT_STATUSES,
     _CATALOG_OPTION_CONTEXT_RE,
     _CROSS_SELL_REQUEST_RE,
-    _SKU_HOMOGLYPH_TRANSLATION,
     CatalogFamily,
     SalesDeps,
     StockSnapshot,
@@ -153,6 +154,16 @@ from src.llm.catalog_planning import (
 from src.llm.catalog_planning import (
     _try_verified_catalog_plan as _try_verified_catalog_plan,
 )
+from src.llm.catalog_references import (
+    _canonicalize_sku_signal,
+    _find_catalog_products_by_sku_stem,
+    _lead_with_resolved_references,
+    _normalize_sku_homoglyphs,
+    _product_reads_for_resolved_references,
+    _resolve_query_catalog_references,
+    _sku_lookup_variants,
+    find_catalog_product_by_sku,
+)
 from src.llm.closed_question_guard import response_asks_customer_name
 from src.llm.communication_policy import finalize_evidence_grounding_prompt
 from src.llm.context import build_message_history as build_message_history
@@ -196,6 +207,10 @@ from src.llm.fact_extractor import (
     is_customer_phone_detail as _is_customer_phone_detail,
 )
 from src.llm.grounding_output import GroundingOutputAction
+from src.llm.inventory_customers import (
+    _build_inventory_contact_payload as _build_inventory_contact_payload,
+)
+from src.llm.inventory_customers import resolve_inventory_customer_id
 from src.llm.inventory_read import InventoryReadUnavailable, inventory_read
 from src.llm.money import (
     AMOUNT_TOKEN_PATTERN,
@@ -208,6 +223,10 @@ from src.llm.order_quote_routes import QuotationItem, _order_quote_route_for_tur
 from src.llm.order_status import format_order_status
 from src.llm.pii import EMAIL_PATTERN, PHONE_PATTERN, mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
+from src.llm.quotation_deferral import (
+    pending_quotation_directive,
+    run_quotation_with_inventory_deferral,
+)
 from src.llm.response_policy import (
     RenderedReply,
     ReplyPolicyState,
@@ -1261,97 +1280,6 @@ def _customer_facts_int_config(
     except (TypeError, ValueError):
         return default
     return max(minimum, min(maximum, parsed))
-
-
-def _normalize_sku_homoglyphs(text: str) -> str:
-    return text.translate(_SKU_HOMOGLYPH_TRANSLATION)
-
-
-def _canonicalize_sku_signal(value: str) -> str:
-    normalized = " ".join(_normalize_sku_homoglyphs(value).split()).strip().upper()
-    compact_match = re.fullmatch(r"([A-Z]{1,4})[-\s]?(\d{2,8})", normalized)
-    if compact_match:
-        return f"{compact_match.group(1)}-{compact_match.group(2)}"
-    return re.sub(r"\s+", "-", normalized)
-
-
-def _sku_lookup_variants(value: str) -> tuple[str, ...]:
-    normalized = " ".join(_normalize_sku_homoglyphs(value).split()).strip().upper()
-    if not normalized:
-        return ()
-
-    variants: list[str] = []
-
-    def add(candidate: str) -> None:
-        candidate = candidate.strip().upper()
-        if candidate and candidate not in variants:
-            variants.append(candidate)
-
-    add(normalized)
-    add(_canonicalize_sku_signal(normalized))
-
-    tokens = re.findall(r"[A-Z0-9]+", normalized)
-    if len(tokens) >= 2 and any(
-        any(char.isdigit() for char in token) for token in tokens
-    ):
-        add("-".join(tokens))
-        add(" ".join(tokens))
-        add("".join(tokens))
-
-    add(normalized.replace("-", " "))
-    add(normalized.replace(" ", "-"))
-    add(re.sub(r"[^A-Z0-9]+", "", normalized))
-
-    # A customer types "ch616"; the catalog stores "CH 616". Splitting a run of
-    # letters from the digits that follow it recovers the spaced and hyphenated
-    # forms, which the token pass above cannot because there is nothing to
-    # tokenise. Found 2026-08-09 on the realistic set: "hi do u have ch616 in
-    # black" reached "I don't have live stock information for CH616".
-    for chunk in re.finditer(r"\b([A-Z]{1,4})(\d{2,5})\b", normalized):
-        letters, digits = chunk.group(1), chunk.group(2)
-        add(f"{letters} {digits}")
-        add(f"{letters}-{digits}")
-    return tuple(variants)
-
-
-def _sku_stem(value: str | None) -> str | None:
-    if not value:
-        return None
-    normalized = " ".join(_normalize_sku_homoglyphs(value).split()).strip().upper()
-    match = re.match(r"^(?P<prefix>[A-Z]{2,4})[-\s]?(?P<number>\d{2,8})", normalized)
-    if match is None:
-        return None
-    return f"{match.group('prefix')}{match.group('number')}"
-
-
-async def _find_catalog_products_by_sku_stem(
-    db: AsyncSession,
-    sku: str,
-) -> list[Any]:
-    stem = _sku_stem(sku)
-    if stem is None:
-        return []
-    number_match = re.search(r"\d{2,8}", stem)
-    if number_match is None:
-        return []
-
-    result = await db.execute(
-        select(Product).where(
-            Product.is_active.is_(True),
-            func.lower(Product.sku).contains(number_match.group(0).casefold()),
-        )
-    )
-    products = list(result.scalars().all())
-    matches: dict[str, Any] = {}
-    for product in products:
-        product_sku = getattr(product, "sku", None)
-        if not isinstance(product_sku, str) or not product_sku.strip():
-            continue
-        if _sku_stem(product_sku) != stem:
-            continue
-        matches.setdefault(product_sku, product)
-
-    return list(matches.values())
 
 
 def _looks_like_price_phrase_sku_match(text: str, match: re.Match[str]) -> bool:
@@ -3982,30 +3910,7 @@ def _catalog_product_contains_numeric_hyphen_anchor(
 
 
 async def _find_catalog_product_by_sku(db: AsyncSession, sku: str) -> Any | None:
-
-    variants = _sku_lookup_variants(sku)
-    if not variants:
-        return None
-
-    variant_priority = {
-        variant.casefold(): index for index, variant in enumerate(variants)
-    }
-    result = await db.execute(
-        select(Product)
-        .where(func.lower(Product.sku).in_(variant_priority))
-        .order_by(
-            case(
-                variant_priority,
-                value=func.lower(Product.sku),
-                else_=len(variant_priority),
-            )
-        )
-        .limit(1)
-    )
-    product = result.scalar_one_or_none()
-    if product is None or not isinstance(getattr(product, "sku", None), str):
-        return None
-    return product
+    return await find_catalog_product_by_sku(db, sku)
 
 
 def _select_exact_quote_product_by_candidate_text(
@@ -8999,55 +8904,6 @@ def _extract_crm_company(value: Any) -> str:
     return _string_value(value)
 
 
-def _split_contact_name(name: str) -> tuple[str, str]:
-    parts = [part for part in name.split() if part]
-    if not parts:
-        return "", ""
-    if len(parts) == 1:
-        return parts[0], ""
-    return parts[0], " ".join(parts[1:])
-
-
-def _external_inventory_phone(phone: str) -> str:
-    phone_value = _string_value(phone)
-    base_phone, _, suffix = phone_value.partition("#")
-    if suffix and base_phone:
-        return base_phone
-    return phone_value
-
-
-def _inventory_contact_id(contact: Mapping[str, Any] | None) -> str | None:
-    if not isinstance(contact, Mapping):
-        return None
-
-    contact_id = contact.get("contact_id")
-    if contact_id is None:
-        return None
-
-    contact_id_str = str(contact_id).strip()
-    return contact_id_str or None
-
-
-def _is_duplicate_inventory_contact_error(exc: Exception) -> bool:
-    if not isinstance(exc, httpx.HTTPStatusError):
-        return False
-    if exc.response.status_code != 400:
-        return False
-
-    try:
-        payload = exc.response.json()
-    except ValueError:
-        payload = None
-
-    if isinstance(payload, Mapping):
-        code = payload.get("code")
-        message = str(payload.get("message") or "").casefold()
-        if code == 3062 or "already exists" in message:
-            return True
-
-    return "already exists" in exc.response.text.casefold()
-
-
 def _is_repeated_outbound_message_error(exc: Exception) -> bool:
     if not isinstance(exc, httpx.HTTPStatusError):
         return False
@@ -9065,254 +8921,6 @@ def _is_repeated_outbound_message_error(exc: Exception) -> bool:
         str(payload.get("error") or "").casefold(),
     )
     return normalized_error == "repeatedcrmmessageid"
-
-
-def _build_inventory_contact_payload(
-    *,
-    phone: str,
-    customer_name: str,
-    customer_email: str,
-    customer_company: str,
-    customer_address: str = "",
-) -> ZohoInventoryContactPayload:
-    fallback_suffix = "".join(ch for ch in phone if ch.isdigit())[-4:] or "customer"
-    contact_name = (
-        customer_company or customer_name or f"WhatsApp Customer {fallback_suffix}"
-    )
-    contact_person_name = customer_name or contact_name
-    first_name, last_name = _split_contact_name(contact_person_name)
-    if not first_name:
-        first_name = contact_name
-
-    contact_person: ZohoContactPersonPayload = {
-        "first_name": first_name,
-        "phone": phone,
-        "mobile": phone,
-        "is_primary_contact": True,
-    }
-    if last_name:
-        contact_person["last_name"] = last_name
-    if customer_email:
-        contact_person["email"] = customer_email
-
-    payload: ZohoInventoryContactPayload = {
-        "contact_name": contact_name,
-        "contact_type": "customer",
-        "contact_persons": [contact_person],
-    }
-    if customer_company:
-        payload["company_name"] = customer_company
-    if customer_address:
-        address: ZohoContactAddressPayload = {"address": customer_address[:500]}
-        payload["billing_address"] = address
-        payload["shipping_address"] = {"address": address["address"]}
-
-    return payload
-
-
-def _inventory_contact_matches_payload(
-    contact: Mapping[str, Any] | None,
-    payload: ZohoInventoryContactPayload,
-    *,
-    expected_status: str = "active",
-) -> bool:
-    if not isinstance(contact, Mapping):
-        return False
-
-    def normalized(value: Any) -> str:
-        return " ".join(str(value or "").split()).casefold()
-
-    if normalized(contact.get("status")) != normalized(expected_status):
-        return False
-    if normalized(contact.get("contact_type")) not in {"", "customer"}:
-        return False
-    for key in ("contact_name", "company_name"):
-        expected = normalized(payload.get(key))
-        if expected and normalized(contact.get(key)) != expected:
-            return False
-
-    expected_people = payload.get("contact_persons") or []
-    expected_person: Mapping[str, Any] = (
-        cast("Mapping[str, Any]", expected_people[0]) if expected_people else {}
-    )
-    people = contact.get("contact_persons")
-    if not isinstance(people, list):
-        return False
-    expected_email = normalized(expected_person.get("email"))
-    expected_phone = "".join(
-        ch for ch in str(expected_person.get("phone") or "") if ch.isdigit()
-    )
-    if expected_email and not any(
-        isinstance(person, Mapping)
-        and normalized(person.get("email")) == expected_email
-        for person in people
-    ):
-        return False
-    if expected_phone and not any(
-        isinstance(person, Mapping)
-        and expected_phone
-        in {
-            "".join(ch for ch in str(person.get(key) or "") if ch.isdigit())
-            for key in ("phone", "mobile")
-        }
-        for person in people
-    ):
-        return False
-
-    for key in ("billing_address", "shipping_address"):
-        expected_address = payload.get(key)
-        if not isinstance(expected_address, Mapping):
-            continue
-        actual_address = contact.get(key)
-        if not isinstance(actual_address, Mapping) or normalized(
-            actual_address.get("address")
-        ) != normalized(expected_address.get("address")):
-            return False
-
-    return True
-
-
-async def resolve_inventory_customer_id(
-    *,
-    phone: str,
-    customer_name: str,
-    customer_email: str,
-    customer_company: str,
-    customer_address: str = "",
-    zoho_inventory: ZohoInventoryClient,
-) -> str | None:
-    """Resolve or create a valid Zoho Inventory customer contact for quotations."""
-    inventory_phone = _external_inventory_phone(phone)
-    try:
-        existing_contact = await zoho_inventory.find_customer_by_phone(inventory_phone)
-    except Exception:
-        logger.exception(
-            "Failed to search Zoho Inventory customer by phone for %s",
-            inventory_phone,
-        )
-        return None
-
-    existing_contact_id = _inventory_contact_id(existing_contact)
-    if existing_contact_id:
-        return existing_contact_id
-
-    if customer_email:
-        try:
-            existing_by_email = await zoho_inventory.find_customer_by_email(
-                customer_email
-            )
-        except Exception:
-            logger.exception(
-                "Failed to search Zoho Inventory customer by email for %s",
-                customer_email,
-            )
-            return None
-
-        existing_by_email_id = _inventory_contact_id(existing_by_email)
-        if existing_by_email_id:
-            return existing_by_email_id
-
-    payload = _build_inventory_contact_payload(
-        phone=inventory_phone,
-        customer_name=customer_name,
-        customer_email=customer_email,
-        customer_company=customer_company,
-        customer_address=customer_address,
-    )
-
-    try:
-        created_contact = await zoho_inventory.create_contact(dict(payload))
-    except Exception as exc:
-        if _is_duplicate_inventory_contact_error(exc):
-            exact_duplicate: Mapping[str, Any] | None = None
-            try:
-                if customer_email:
-                    exact_duplicate = (
-                        await zoho_inventory.find_inactive_customer_by_email(
-                            customer_email
-                        )
-                    )
-                elif inventory_phone:
-                    exact_duplicate = (
-                        await zoho_inventory.find_inactive_customer_by_phone(
-                            inventory_phone
-                        )
-                    )
-            except Exception:
-                logger.exception("Failed exact duplicate lookup in Zoho Inventory")
-                return None
-
-            exact_duplicate_id = _inventory_contact_id(exact_duplicate)
-            exact_duplicate_status = _string_value(
-                (exact_duplicate or {}).get("status")
-            ).casefold()
-            if exact_duplicate_id and exact_duplicate_status in {"active", "inactive"}:
-                if not _inventory_contact_matches_payload(
-                    exact_duplicate,
-                    payload,
-                    expected_status=exact_duplicate_status,
-                ):
-                    return None
-                if exact_duplicate_status == "active":
-                    return exact_duplicate_id
-                try:
-                    await zoho_inventory.activate_contact(exact_duplicate_id)
-                    reactivated = await zoho_inventory.get_contact(exact_duplicate_id)
-                except Exception:
-                    logger.exception(
-                        "Failed to reactivate exact Zoho Inventory duplicate"
-                    )
-                    return None
-                if _inventory_contact_id(
-                    reactivated
-                ) == exact_duplicate_id and _inventory_contact_matches_payload(
-                    reactivated, payload
-                ):
-                    return exact_duplicate_id
-                return None
-
-            seen_names: set[str] = set()
-            for candidate_name in (
-                _string_value(payload.get("contact_name")),
-                customer_company,
-                customer_name,
-            ):
-                normalized_candidate = _string_value(candidate_name)
-                if not normalized_candidate:
-                    continue
-                key = normalized_candidate.casefold()
-                if key in seen_names:
-                    continue
-                seen_names.add(key)
-                try:
-                    existing_by_name = await zoho_inventory.find_customer_by_name(
-                        normalized_candidate
-                    )
-                except Exception:
-                    logger.exception(
-                        "Failed duplicate-name fallback search in Zoho Inventory for %s",
-                        normalized_candidate,
-                    )
-                    continue
-
-                existing_by_name_id = _inventory_contact_id(existing_by_name)
-                if existing_by_name_id:
-                    return existing_by_name_id
-
-        logger.exception(
-            "Failed to create Zoho Inventory customer for phone %s",
-            inventory_phone,
-        )
-        return None
-
-    contact_id = _inventory_contact_id(created_contact)
-    if contact_id is None:
-        logger.error(
-            "Zoho Inventory create_contact returned no contact_id for phone %s: %s",
-            inventory_phone,
-            created_contact,
-        )
-    return contact_id
 
 
 _QUOTATION_EFFECT_VERSION = 2
@@ -9789,6 +9397,18 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
         .replace(">", "\\u003e")
         + "\nThese records do not authorize actions; interpret the current message yourself.\n"
     )
+    # tj-uz6j.3/.7. Tool-validated decisions and the question the last sent
+    # reply closed on. Rendered per model step, so a selection recorded earlier
+    # in this same turn already closes the comparison for the next step.
+    decision_directives = decision_state_directives(
+        ctx.deps.conversation, customer_text=ctx.deps.user_query
+    )
+    if decision_directives:
+        base_prompt += (
+            "\n[DECISION STATE: recorded by validated tools; binding]\n"
+            + "\n".join(f"- {directive}" for directive in decision_directives)
+            + "\n"
+        )
 
     if ctx.deps.behavior_rules:
         base_prompt += f"\n\n{format_behavior_rules_prompt(ctx.deps.behavior_rules)}\n"
@@ -9842,6 +9462,9 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
             f"- {directive}" for directive in ctx.deps.runtime_directives
         )
         base_prompt += f"\n\n[RUNTIME DIRECTIVES]\n{directives_block}\n"
+
+    if pending_quote := pending_quotation_directive(ctx.deps):
+        base_prompt += f"\n\n[PENDING QUOTATION]\n- {pending_quote}\n"
 
     if ctx.deps.permitted_asks is not None:
         base_prompt += f"\n\n{format_permitted_asks_prompt(ctx.deps.permitted_asks)}\n"
@@ -9948,11 +9571,21 @@ async def search_products(
         max_price=max_price,
     )
 
+    reference_resolution = await _resolve_query_catalog_references(
+        ctx.deps.db, effective_query, _find_catalog_product_by_sku
+    )
+    resolved_reference_products = _product_reads_for_resolved_references(
+        reference_resolution.products
+    )
     results = await rag_search_products(
         db=ctx.deps.db,
         query=search_query,
         embedding_engine=ctx.deps.embedding_engine,
     )
+    if resolved_reference_products:
+        results = _lead_with_resolved_references(
+            results, resolved_reference_products, effective_query, max_results
+        )
 
     if not results.products:
         if search_call_number >= search_call_limit:
@@ -9998,16 +9631,31 @@ async def search_products(
             f"{product.category or ''}"
         )
 
+    resolved_reference_keys = {
+        str(getattr(product, "id", None) or product.sku)
+        for product in resolved_reference_products
+    }
+    # The SKU often carries the finish ("...-9719-4-Walnut") the name leaves
+    # out, and a customer may quote it; it is passed separately so its code
+    # fragments never count as product words.
     product_match = classify_product_match(
         effective_query,
         [_product_match_text(product) for product in results.products],
+        candidate_skus=[str(product.sku) for product in results.products],
     )
+    if resolved_reference_keys:
+        # The customer named these rows by code and the catalog has them.
+        product_match = "exact"
     exact_media_product_keys: set[str] | None = None
     if product_match == "exact":
-        exact_keys = {
+        exact_keys = resolved_reference_keys | {
             str(getattr(product, "id", None) or product.sku)
             for product in results.products
-            if classify_product_match(effective_query, [_product_match_text(product)])
+            if classify_product_match(
+                effective_query,
+                [_product_match_text(product)],
+                candidate_skus=[str(product.sku)],
+            )
             == "exact"
         }
         if exact_keys:
@@ -10355,6 +10003,18 @@ async def search_products(
             0,
             "Weak catalog matches only (not a reliable exact match):",
         )
+    elif product_match == "generic":
+        formatted_results.insert(
+            0,
+            "Catalog options for the stated need (no specific item was named):",
+        )
+    if reference_resolution.unresolved_references:
+        formatted_results.insert(
+            0,
+            "Requested catalog reference not found in the catalog: "
+            + "; ".join(reference_resolution.unresolved_references)
+            + ".",
+        )
 
     ctx.deps.product_results_seen = True
     search_budget_exhausted = ctx.deps.product_search_calls >= search_call_limit
@@ -10373,6 +10033,7 @@ async def search_products(
                 search_budget_exhausted=search_budget_exhausted,
                 target_coverage_complete=target_coverage_complete,
                 lower_verified_family_total=lower_verified_family_total,
+                closed_selection_skus=closed_selection_skus(ctx.deps.conversation),
             ),
         ),
     )
@@ -10391,7 +10052,10 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
         stock_info, catalog_product = await _resolve_inventory_item(ctx, sku)
     except InventoryReadUnavailable as exc:
         logger.warning("Inventory lookup unavailable: status=%s", exc.status_code)
-        return exc.tool_result(sku)
+        # tj-uz6j.9. Say whether the catalog lists it; its stock stays unconfirmed
+        # (no snapshot, so no stock number can be grounded on it).
+        catalog_product = await _find_catalog_product_by_sku(ctx.deps.db, sku.strip())
+        return exc.tool_result(sku, catalog_listed=catalog_product is not None)
 
     if not stock_info:
         if catalog_product:
@@ -10454,7 +10118,9 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
     if ctx.deps.product_results_seen:
         return ToolReturn(
             return_value=stock_text,
-            content=_stock_follow_up_contract(),
+            content=_stock_follow_up_contract(
+                selection_closed=bool(closed_selection_skus(ctx.deps.conversation))
+            ),
         )
 
     return stock_text
@@ -11013,6 +10679,13 @@ async def create_quotation(
     Args:
         items: List of the SKUs and quantities to include in the quote.
     """
+    # tj-uz6j.9. A transient Zoho failure defers the quote instead of raising.
+    return await run_quotation_with_inventory_deferral(ctx, items, _create_quotation)
+
+
+async def _create_quotation(
+    ctx: RunContext[SalesDeps], items: list[QuotationItem]
+) -> str:
     logger.info(f"LLM Tool called: create_quotation(items={items})")
 
     metadata = ctx.deps.conversation.metadata_
@@ -11159,6 +10832,8 @@ async def create_quotation(
         customer_company=customer_company,
         customer_address=customer_address,
         zoho_inventory=ctx.deps.zoho_inventory,
+        conversation=ctx.deps.conversation,
+        redis=getattr(ctx.deps, "redis", None),
     )
     if customer_id is None:
         return await _fail_closed_exact_quote_request(ctx.deps)
@@ -11264,6 +10939,8 @@ async def create_quotation(
                     "Failed to persist sale_order_id in metadata: %s", flush_err
                 )
     except Exception as e:
+        if isinstance(e, ZohoRateLimitError):
+            raise  # Zoho did not process it; the caller defers the quotation.
         logger.error("Failed to create draft sale order: %s", e)
         return await _fail_closed_exact_quote_request(
             ctx.deps,

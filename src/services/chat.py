@@ -19,6 +19,7 @@ from sqlalchemy import func, select
 
 from src.core.config import settings
 from src.core.database import async_session_factory
+from src.dialogue.decision_state import clear_assistant_proposal
 from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 from src.integrations.messaging.wazzup import WazzupProvider
@@ -335,6 +336,57 @@ async def _store_inbound_quarantine(
             settings.inbound_batch_quarantine_ttl_seconds,
         )
     return quarantine_key
+
+
+# tj-uz6j.7. Tools whose effects are recorded state the next turn re-reads.
+# A reply built only on these may be withdrawn when newer customer messages
+# arrived while it was generated; anything that reached a person or a system
+# of record (quotation, deal, escalation, referral, feedback) may not.
+_SUPERSEDABLE_TOOL_NAMES = frozenset(
+    {
+        "search_products",
+        "get_stock",
+        "recommend_products",
+        "lookup_customer",
+        "check_order_status",
+        "update_language",
+        "advance_stage",
+        "record_customer_requirements",
+        "record_customer_intent",
+    }
+)
+# Bounds the merge: a batch this large is answered even if the customer is
+# still typing, so a steady stream of messages cannot starve the reply.
+MAX_SUPERSEDED_BATCH_MESSAGES = 5
+
+
+async def _newer_customer_messages_waiting(redis: Any, queue_token: str) -> bool:
+    try:
+        pending = await redis.llen(inbound_queue_key(queue_token))
+    except Exception:
+        logger.warning("Could not inspect inbound queue before reply", exc_info=True)
+        return False
+    return isinstance(pending, int) and pending > 0
+
+
+def _reply_may_be_superseded(llm_response: Any, message_count: int) -> bool:
+    """A generated reply that newer messages may replace instead of following.
+
+    Two customer messages sent seconds apart ("of course", then "4") used to
+    get two replies: the first answered without the second, and the second
+    answered a conversation whose last reply already missed it. When the
+    customer wrote again while the reply was generated, and the reply's run
+    changed nothing but re-readable state, it is withdrawn and its messages
+    are answered together with the new ones in one reply.
+    """
+
+    if message_count >= MAX_SUPERSEDED_BATCH_MESSAGES:
+        return False
+    traces = getattr(llm_response, "tool_traces", ()) or ()
+    return all(
+        getattr(trace, "tool_name", None) in _SUPERSEDABLE_TOOL_NAMES
+        for trace in traces
+    )
 
 
 def _decode_redis_message(raw: str | bytes) -> str:
@@ -1591,6 +1643,27 @@ async def _process_batch_inner(
                     )
                     return
                 latency_trace.finish_phase("llm", llm_started)
+
+                if _reply_may_be_superseded(
+                    llm_response, len(raw_messages)
+                ) and await _newer_customer_messages_waiting(redis, queue_token):
+                    # Put this batch back in front of the newer messages so the
+                    # next claim answers all of them in one reply. Its messages
+                    # are already stored and are not saved twice.
+                    await redis.lpush(
+                        inbound_queue_key(queue_token), *reversed(raw_messages)
+                    )
+                    # The withdrawn reply never reached the customer, so a
+                    # "yes" cannot be answering its question.
+                    conv.metadata_ = clear_assistant_proposal(conv.metadata_)
+                    await db.commit()
+                    logger.info(
+                        "Reply superseded by newer customer messages: "
+                        "batch_ref=%s batch_messages=%d",
+                        batch_ref,
+                        len(raw_messages),
+                    )
+                    return
 
                 # 4. Save response to DB
                 persist_started = latency_trace.start_phase()

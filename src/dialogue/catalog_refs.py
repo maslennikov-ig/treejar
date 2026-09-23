@@ -146,6 +146,11 @@ class CatalogReferenceIndex:
         return cls(by_sku=by_sku, by_name=by_name)
 
 
+def fold_catalog_homoglyphs(raw: str) -> str:
+    """Fold the catalogue's Cyrillic lookalikes onto upper-case Latin."""
+    return raw.translate(_HOMOGLYPHS)
+
+
 def normalize_catalog_ref(raw: str) -> str:
     value = _normalize_text(raw)
     if _NUMERIC_SKU_RE.fullmatch(value):

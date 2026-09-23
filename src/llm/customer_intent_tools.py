@@ -330,7 +330,12 @@ async def record_customer_requirements(
             rejected.append(f"{sku or '?'}: not a catalog SKU, search_products first")
             continue
         canonical = str(product.sku)
-        existing[canonical] = {"sku": canonical, "quantity": item.quantity}
+        line: dict[str, object] = {"sku": canonical, "quantity": item.quantity}
+        # The name lets the closed decision be stated in the customer's terms.
+        name = getattr(product, "name_en", None)
+        if isinstance(name, str) and name.strip():
+            line["name"] = name.strip()
+        existing[canonical] = line
         recorded.append(f"{item.quantity} x {canonical}")
     if rejected and (replace_items or removal_keys):
         return "Not recorded: " + "; ".join(rejected) + ". Requirements unchanged."
