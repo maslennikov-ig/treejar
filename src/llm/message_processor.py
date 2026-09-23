@@ -385,6 +385,7 @@ class _Turn:
         response_deps: SalesDepsT,
         provenance: ReplyProvenanceT,
         model_name: str,
+        suppress_questions: bool = False,
     ) -> RenderedReplyT:
         quote_details = engine._quote_customer_details_from_metadata(self.conv)
         delivery_address = engine._string_value(quote_details.get("address"))
@@ -412,7 +413,9 @@ class _Turn:
                 customer_name=(engine._string_value(self.conv.customer_name) or None),
                 current_message_customer_name=(self.known_customer_name() or None),
                 customer_name_asked=engine._customer_name_was_asked(self.conv),
-                permitted_asks=self.permitted_asks(),
+                permitted_asks=(
+                    frozenset() if suppress_questions else self.permitted_asks()
+                ),
                 anchor_line=self.opening_anchor_line,
                 anchor_has_limited_stock=self.opening_anchor_has_limited_stock,
                 limited_stock_product_references=(
@@ -1169,6 +1172,7 @@ async def process_message_impl(
             response_deps=turn.deps,
             provenance="deterministic_static",
             model_name=response_model,
+            suppress_questions=True,
         )
         response = _response_from_rendered_reply(
             rendered,

@@ -1701,10 +1701,12 @@ async def test_engine_process_message_db_error(
         )
 
 
+@pytest.mark.parametrize("apostrophe", ["'", "’", "ʼ"])
 @pytest.mark.asyncio
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 async def test_load_turn_persists_an_explicit_intro_name_before_generation(
     mock_build_history: AsyncMock,
+    apostrophe: str,
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
@@ -1719,7 +1721,10 @@ async def test_load_turn_persists_an_explicit_intro_name_before_generation(
         pending_reference_route=AsyncMock(),
         order_quote_route=AsyncMock(),
         conversation_id=conv.id,
-        combined_text="Hi, I'm Nadia",
+        combined_text=(
+            f"Hi, I{apostrophe}m Nadia. We’re furnishing a new office in Dubai "
+            "for four people. Can you help us choose the furniture?"
+        ),
         db=db,
         redis=redis,
         embedding_engine=embedding,
@@ -4291,6 +4296,7 @@ async def test_process_message_recovers_catalog_only_after_explicit_functional_f
     mock_notify.assert_not_awaited()
 
 
+@pytest.mark.parametrize("customer_name", ["Samir", None])
 @pytest.mark.asyncio
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
@@ -4306,6 +4312,7 @@ async def test_process_message_does_not_recover_catalog_after_side_effect_tool(
     mock_get_system_config: AsyncMock,
     mock_search_knowledge: AsyncMock,
     mock_notify: AsyncMock,
+    customer_name: str | None,
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
@@ -4313,7 +4320,7 @@ async def test_process_message_does_not_recover_catalog_after_side_effect_tool(
     from pydantic_ai import UnexpectedModelBehavior
 
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
-    conv.customer_name = "Samir"
+    conv.customer_name = customer_name
     text = (
         "Give me a cheaper chair-and-desk configuration with a cross-sell "
         "under AED 7,000. Do not prepare a quotation."
@@ -4395,6 +4402,8 @@ async def test_process_message_does_not_recover_catalog_after_side_effect_tool(
 
     assert response.model == "mock-model|error"
     assert "temporary issue" in response.text
+    assert "how should I address" not in response.text
+    assert "?" not in response.text
     mock_run.assert_awaited_once()
     mock_notify.assert_not_awaited()
 

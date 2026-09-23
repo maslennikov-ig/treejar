@@ -64,3 +64,13 @@ The repo contract requires explicit merge authority; current work was requested
 as a live model switch. Source and deployment receipt are pushed on the dedicated
 branch. A main-based deployment before integration would lose the explicit medium
 code setting (the provider currently defaults to medium, but this is not a pin).
+
+## Authorized integration and regression repair
+
+Owner subsequently authorized Push, Merge, Deploy and several post-deploy tests.
+Initial main CI found a stale expected default and mutable handoff digest; those
+were corrected without changing frozen evidence. The original Nadia case also
+requires tj-pmbv: accept typographic apostrophes and suppress additive questions
+on generation-error replies. Five focused regressions cover all three apostrophe
+forms and failed generation with known/unknown names. Final release verification
+and bounded live model cases are pending.

@@ -1,11 +1,15 @@
 # Orchestrator Handoff
 
 Updated: 2026-09-23
-Current branch: `main` (delivery worktree: codex/gpt6-luna-main)
+Current branch: `main` (delivery worktree: codex/nadia-opening-guard)
 Current stage id: `tj-stwf-test-only-restore` (last operational stage)
 Status: tj-qr32 live; tj-3nvu merged into main, standard deployment and post-deploy checks in progress.
 
 ## Current truth
+
+- tj-pmbv correction is in release validation: recognize straight/curly/modifier
+  apostrophes in explicit names and suppress all added asks on generation errors.
+  Five focused regressions passed; production acceptance is pending.
 
 - Latest live release: `6ae4c0ea4e61fe8bab77a0b9db59f015c4bf1d70` (tj-qr32).
   Primary DB/env model is `openai/gpt-6-luna`; core reasoning explicitly medium.
@@ -84,8 +88,6 @@ Status: tj-qr32 live; tj-3nvu merged into main, standard deployment and post-dep
 
 ## Explicit defers
 
-- `tj-pmbv`: curly-apostrophe self-introduction is not extracted and static
-  error replies receive the first-turn name question. Reproduced; not fixed here.
 
 - `tj-bgwu`: corpus identity tests assume normal treejar/.git; local full
   acceptance uses an isolated normal clone with canonical remote identity.
