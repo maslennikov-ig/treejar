@@ -150,7 +150,7 @@ if not settings.test_channel_restore_mode:
 else:
     from src.worker import WorkerSettings
     assert not WorkerSettings.cron_jobs, "test worker must have no cron jobs"
-    assert [f.name for f in WorkerSettings.functions] == ["process_incoming_batch"]
+    assert [f.name for f in WorkerSettings.functions] == ["process_incoming_batch", "retry_pending_quotation"]
     fields = ("test_channel_restore_mode", "wazzup_channel_id",
               "wazzup_outbound_allowed_channel_id", "telegram_allowed_inbound_phone")
     state = {key: getattr(settings, key) for key in fields}

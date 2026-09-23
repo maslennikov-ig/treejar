@@ -134,3 +134,25 @@ async def test_worker_shutdown_runs() -> None:
     """Verify shutdown doesn't crash."""
     ctx = {"redis": None}
     await WorkerSettings.on_shutdown(ctx)
+
+
+def test_deploy_gate_allowlist_matches_restore_mode_functions() -> None:
+    """scripts/vps-deploy.sh refuses a test worker whose functions drift."""
+    import ast
+    import re
+    from pathlib import Path
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    script = (Path(__file__).parent.parent / "scripts" / "vps-deploy.sh").read_text()
+    match = re.search(
+        r"assert \[f\.name for f in WorkerSettings\.functions\] == (\[[^\]]*\])",
+        script,
+    )
+    assert match is not None
+    with patch("src.worker.settings", SimpleNamespace(test_channel_restore_mode=True)):
+        functions = build_worker_functions()
+
+    assert ast.literal_eval(match.group(1)) == [
+        _function_name(function) for function in functions
+    ]
