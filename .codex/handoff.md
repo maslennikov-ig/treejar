@@ -1,9 +1,9 @@
 # Orchestrator Handoff
 
 Updated: 2026-09-23
-Current branch: `codex/gpt6-luna-main`
+Current branch: `main` (delivery worktree: codex/gpt6-luna-main)
 Current stage id: `tj-stwf-test-only-restore` (last operational stage)
-Status: tj-qr32 primary model switched to GPT-6 Luna medium; live readback verified.
+Status: tj-qr32 live; tj-3nvu merged into main, standard deployment and post-deploy checks in progress.
 
 ## Current truth
 
@@ -84,8 +84,6 @@ Status: tj-qr32 primary model switched to GPT-6 Luna medium; live readback verif
 
 ## Explicit defers
 
-- `tj-3nvu`: integrate pushed `codex/gpt6-luna-main` before the next standard
-  deployment. Explicit merge authority is required by the repo contract.
 - `tj-pmbv`: curly-apostrophe self-introduction is not extracted and static
   error replies receive the first-turn name question. Reproduced; not fixed here.
 
