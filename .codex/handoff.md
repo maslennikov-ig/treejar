@@ -1,9 +1,9 @@
 # Orchestrator Handoff
 
 Updated: 2026-09-23
-Current branch: codex/tj-uz6j-tester-0923 (from codex/catalog-price-unit 5967db6)
+Current branch: main (delivery branch: codex/tj-uz6j-tester-0923)
 Current stage id: tj-uz6j-tester-0923
-Status: Tester-feedback repairs implemented locally; not committed or deployed.
+Status: Tester-feedback repairs delivered to main and deployed as 9f62d29.
 
 ## Current stage: tj-uz6j tester feedback 2026-09-23
 
@@ -12,7 +12,14 @@ Status: Tester-feedback repairs implemented locally; not committed or deployed.
   `docs/plans/toasty-munching-ritchie.md`.
 - Regressions surfaced after the glm-5.3-flash -> gpt-6-luna switch (6ae4c0e):
   Luna follows tool contracts literally, exposing contract/state defects.
-- Implemented (uncommitted): T1 media for products named by short model
+- Live release: `9f62d293e40ddc3835e1cf6d7c36016475e681d9`, CI 35895035121
+  (lint, types, tests, deploy passed). Post-deploy: app/worker up, health 200,
+  model openai/gpt-6-luna, TEST_CHANNEL_RESTORE_MODE=true, worker registers
+  only process_incoming_batch.
+- Live replay (real gpt-6-luna, intercepted tools, catalog snapshot) cost
+  USD 0.036 total: first run found a raw-JSON repair leak (fixed), rerun of
+  scenario A clean. Receipts: docs/reports/2026-09-23-tester-feedback-replay*.json.
+- Delivered: T1 media for products named by short model
   reference; T2 exact/generic match kinds, no false "exact item not confirmed";
   T3/T7 persisted decision state (selection/quote consent close the choice,
   proposal-bound affirmatives incl. wrong keyboard layout, reply supersession
@@ -21,7 +28,8 @@ Status: Tester-feedback repairs implemented locally; not committed or deployed.
   docs/faq.md Q9-Q10 (owner decision 2026-09-23, supersedes 2026-08-11 assembly
   rule; grounding capability registry changed accordingly); T9 Zoho 429
   resilience and quotation deferral.
-- Production was read only (DB SELECTs, logs). No server change was made.
+- Production data was read only (DB SELECTs, logs); the only server change is
+  the standard CI deployment of 9f62d29.
 
 ## Previous release truth
 
@@ -74,8 +82,8 @@ Status: Tester-feedback repairs implemented locally; not committed or deployed.
 
 ## Explicit defers
 
-- tj-uz6j.8: multi-turn demo-scenario regression gate before model/prompt
-  switches (root cause of periodic degradation) is tracked, not built.
+- tj-uz6j.8: replay harness exists (scripts/scenario_replay.py); making it a
+  required release step for model/prompt switches is still open.
 - tj-i0n0: no background retry for deferred quotations; completion happens on
   the next customer message or via the alerted manager.
 - tj-n4kt catalog stock drift and tj-1baw reply latency are tracked separately.
@@ -88,14 +96,13 @@ Status: Tester-feedback repairs implemented locally; not committed or deployed.
 
 ## Next recommended
 
-Next stage id: tj-uz6j-tester-0923
-Recommended action: commit the repairs, then deploy only with fresh owner
-authority and have the tester rerun routes A and B on test0665.
+Next stage id: none (tj-uz6j delivered)
+Recommended action: tester reruns routes A and B on test0665 after /reset.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for tj-uz6j. Read the plan above, verify the local
-acceptance evidence, and obtain explicit owner authority before push or deploy.
+Use $orchestrator-stage only for a newly authorized change. Use
+scripts/scenario_replay.py before any model or prompt switch.
 Preserve the test0665-only boundary.
 
 docs-reviewed: updated - tester-feedback stage and defers recorded.
