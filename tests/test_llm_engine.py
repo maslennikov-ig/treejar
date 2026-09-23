@@ -3173,7 +3173,9 @@ async def test_process_message_first_turn_llm_response_gets_contractual_opening(
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_assist_opener_returns_clarification_without_handoff(
+    mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
     mock_search_knowledge: AsyncMock,
@@ -3188,6 +3190,7 @@ async def test_process_message_assist_opener_returns_clarification_without_hando
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("What office furniture do you need?")
 
     response = await process_message(
         conversation_id=conv.id,
@@ -3199,6 +3202,8 @@ async def test_process_message_assist_opener_returns_clarification_without_hando
         messaging_client=messaging,
     )
 
+    assert response.model == "mock-model"
+    mock_run.assert_awaited_once()
     assert mock_notify.await_count == 0
     # Nothing is parked any more: the request is served on the turn it arrives,
     # so there is no pending state for a second message to resume.
@@ -3215,7 +3220,9 @@ async def test_process_message_assist_opener_returns_clarification_without_hando
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_first_turn_static_clarification_gets_opening(
+    mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
     mock_search_knowledge: AsyncMock,
@@ -3230,6 +3237,7 @@ async def test_process_message_first_turn_static_clarification_gets_opening(
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("What office furniture do you need?")
 
     response = await process_message(
         conversation_id=conv.id,
@@ -3241,6 +3249,8 @@ async def test_process_message_first_turn_static_clarification_gets_opening(
         messaging_client=messaging,
     )
 
+    assert response.model == "mock-model"
+    mock_run.assert_awaited_once()
     assert mock_notify.await_count == 0
     assert "how should I address you" in response.text
     assert "name_gate_pending_request" not in (conv.metadata_ or {})

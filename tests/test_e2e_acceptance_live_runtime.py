@@ -245,7 +245,8 @@ def test_live_semantic_compiler_uses_sealed_plan_observation_and_one_judge_call(
         semantic_customer_text=question,
     )
     execution_id = attempt.execution_id
-    observed_at = datetime.now(UTC)
+    # The fixture puts delivery slightly in the future; do not race wall time.
+    observed_at = max(datetime.now(UTC), attempt.final.observed_at)
     disposition = {
         "artifact_id": "synthetic:item",
         "subsystem": "outbound_text",
