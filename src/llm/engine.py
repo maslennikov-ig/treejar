@@ -9754,6 +9754,12 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
         "say it was not found in the returned results, not that the catalog "
         "has no such product. This overrides any instruction to infer "
         "unavailability merely from an empty search. "
+        "Do not infer a selling unit or a price per box, pack, pair, or bundle "
+        "from packaging quantities in a product name, SKU, or description. "
+        "Use a selling unit only when tool evidence explicitly establishes it. "
+        "If that evidence is missing, quote the catalog price without assigning "
+        "a packaging unit; do not multiply or divide the price using a packaging "
+        "quantity. "
         "Never claim an action "
         "completed unless its tool confirms success.\n"
     )
