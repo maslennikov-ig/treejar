@@ -1,11 +1,22 @@
 # Orchestrator Handoff
 
 Updated: 2026-09-23
-Current branch: `main` (delivered via codex/critical-escalation-only)
+Current branch: `codex/gpt6-luna-main`
 Current stage id: `tj-stwf-test-only-restore` (last operational stage)
-Status: tj-bltw critical-only escalation deployed and exact live release verified.
+Status: tj-qr32 primary model switched to GPT-6 Luna medium; live readback verified.
 
 ## Current truth
+
+- Latest live release: `6ae4c0ea4e61fe8bab77a0b9db59f015c4bf1d70` (tj-qr32).
+  Primary DB/env model is `openai/gpt-6-luna`; core reasoning explicitly medium.
+  App/worker source hashes, fresh DB reads, health and test restrictions verified.
+  Focused acceptance: 43 tests, Ruff/format and Mypy passed. One isolated
+  tool-schema compatibility call cost USD 0.0000155; no customer sends/tools ran.
+  Real conversation quality is not yet verified. Fast/auxiliary routes unchanged.
+  Report: `docs/reports/2026-09-23-gpt6-luna-main.md`.
+  Rollback: `/opt/noor/.hotfix-backups/tj-qr32-20260923`, previous model GLM 5.3.
+
+### Previous release evidence
 
 - Live release: `1dd3b05d1fb69c6bf3b19e7ffb24a3d116334ac7`.
 - CI 35825663699 succeeded: 4,108 passed, 27 skipped; lint/types and
@@ -45,14 +56,14 @@ Status: tj-bltw critical-only escalation deployed and exact live release verifie
 
 ## Operating boundary
 
-- Environment unchanged. TEST_CHANNEL_RESTORE_MODE=true; WhatsApp remains
+- Only primary-model environment setting changed. TEST_CHANNEL_RESTORE_MODE=true; WhatsApp remains
   limited to ending0665 and Telegram to authenticated admin reset operations.
 - Worker only processes inbound batches; cron and embedding warmup disabled.
 - Non-reset Telegram actions remain ignored.
 - No synthetic messages, direct DB repairs or held-message changes. The requested
   reset ran only through the authenticated Telegram flow.
-- Earlier six paid probes are exhausted; no further calls were made. Those
-  probes showed intended tool directions but were not WhatsApp E2E evidence.
+- Prior paid probe allowance remains exhausted. This switch used one isolated
+  compatibility call (USD 0.0000155); no additional calls are queued.
 - Broader activation, additional paid probes or synthetic messaging require
   separate authority.
 
@@ -73,6 +84,11 @@ Status: tj-bltw critical-only escalation deployed and exact live release verifie
 
 ## Explicit defers
 
+- `tj-3nvu`: integrate pushed `codex/gpt6-luna-main` before the next standard
+  deployment. Explicit merge authority is required by the repo contract.
+- `tj-pmbv`: curly-apostrophe self-introduction is not extracted and static
+  error replies receive the first-turn name question. Reproduced; not fixed here.
+
 - `tj-bgwu`: corpus identity tests assume normal treejar/.git; local full
   acceptance uses an isolated normal clone with canonical remote identity.
 - Existing unrelated product defects stay tracked separately. Wazzup sender
@@ -85,7 +101,7 @@ Next stage id: `none`
 Recommended action: continue tester-owned testing on test0665. Use Telegram only
 for authenticated admin reset operations. The live quotation scenario remains
 unprobed without new paid-call authority; no synthetic customer messages or
-paid model calls were part of this release verification.
+paid model calls were part of that earlier release verification.
 
 ## Starter prompt for next orchestrator
 
