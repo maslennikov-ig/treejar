@@ -1,0 +1,125 @@
+{
+  "run": {
+    "release": "071b0e32f35bec5474ba4b7e4d1b651f85d45295",
+    "model": "openai/gpt-6-luna",
+    "reasoning": {
+      "effort": "medium"
+    },
+    "mode": "live model and production prompt/schemas; intercepted tools; read-only DB; no outbound sends",
+    "cases": [
+      {
+        "id": "arabic_opening",
+        "input": "مرحبًا، اسمي سارة. نجهز مكتبًا جديدًا في دبي لأربعة أشخاص. هل تساعدني في اختيار الأثاث؟",
+        "extracted_name": "سارة",
+        "prompt_sha256": "a6059a1a3a9dc89dc3344751b9f8d6087830f4b393fa22a9dc75bf4403fb8d90",
+        "calls": [
+          {
+            "finish_reason": "tool_calls",
+            "cost": 0.0009228,
+            "tools": [
+              {
+                "name": "search_products",
+                "arguments": "{\"query\":\"complete office furniture setup for 4 people, desks/workstations and ergonomic chairs\",\"max_price\":null,\"min_price\":null,\"max_results\":5,\"requested_seats\":4,\"complete_coverage\":true,\"budget_cap_aed\":null,\"families\":[\"workspace\",\"seating\"],\"requested_fact_domains\":null,\"require_lumbar_support\":false,\"complementary_search\":false}"
+              },
+              {
+                "name": "record_customer_intent",
+                "arguments": "{\"evidence\":\"نجهز مكتبًا جديدًا في دبي لأربعة أشخاص. هل تساعدني في اختيار الأثاث؟\",\"quotation_consent\":null,\"details\":[{\"field\":\"name\",\"value\":\"سارة\",\"evidence\":\"اسمي سارة\"}],\"accept_sent_quotation\":false}"
+              },
+              {
+                "name": "advance_stage",
+                "arguments": "{\"next_stage\":\"qualifying\"}"
+              }
+            ]
+          },
+          {
+            "finish_reason": "tool_calls",
+            "cost": 0.000332405,
+            "tools": [
+              {
+                "name": "search_products",
+                "arguments": "{\"query\":\"office desks or workstations for a new 4-person office in Dubai\",\"max_price\":null,\"min_price\":null,\"max_results\":5,\"requested_seats\":4,\"complete_coverage\":true,\"budget_cap_aed\":null,\"families\":[\"workspace\"],\"requested_fact_domains\":null,\"require_lumbar_support\":false,\"complementary_search\":false}"
+              }
+            ]
+          },
+          {
+            "finish_reason": "tool_calls",
+            "cost": 0.000338575,
+            "tools": [
+              {
+                "name": "get_stock",
+                "arguments": "{\"sku\":\"CH 696 V black\"}"
+              },
+              {
+                "name": "get_stock",
+                "arguments": "{\"sku\":\"CH 850 T black (2 pcs/1 box)\"}"
+              }
+            ]
+          },
+          {
+            "finish_reason": "stop",
+            "cost": 0.000386625,
+            "tools": []
+          }
+        ],
+        "raw_answer": "أكيد يا سارة، أساعدك في تجهيز المكتب لأربعة أشخاص. ظهرت لي في البحث خيارات كراسي مثل *CH 696 V black* و*CH 850 T black*، لكن السعر والتوفر الحاليين غير مؤكدين، ولم تظهر خيارات مكاتب في نتائج البحث الحالية.\n\nما الميزانية الإجمالية التي خصصتموها لتجهيز المكتب؟",
+        "rendered_answer": "مرحبًا، أنا Noor من Treejar. نورّد أثاث المكاتب في الإمارات، وأعمل من كتالوجنا وأؤكد كل سعر وتوفر قبل إرساله.\n\nأكيد يا سارة، أساعدك في تجهيز المكتب لأربعة أشخاص. ظهرت لي في البحث خيارات كراسي مثل *CH 696 V black* و*CH 850 T black*، لكن السعر والتوفر الحاليين غير مؤكدين، ولم تظهر خيارات مكاتب في نتائج البحث الحالية.\n\nما الميزانية الإجمالية التي خصصتموها لتجهيز المكتب؟",
+        "seconds": 32.26
+      },
+      {
+        "id": "packaging_price",
+        "input": "My name is Omar. What is the price of CH 850 T black (2 pcs/1 box)? Is AED 139 for the pair?",
+        "extracted_name": "Omar",
+        "prompt_sha256": "b7144adac21a3239ed2e7efc9ae26afcb2253f2c5245d86b02c2709629b10def",
+        "calls": [
+          {
+            "finish_reason": "tool_calls",
+            "cost": 0.0007408,
+            "tools": [
+              {
+                "name": "search_products",
+                "arguments": "{\"query\":\"CH 850 T black (2 pcs/1 box) exact SKU/model and catalog price\",\"max_price\":null,\"min_price\":null,\"max_results\":5,\"requested_seats\":null,\"complete_coverage\":null,\"budget_cap_aed\":null,\"families\":null,\"requested_fact_domains\":null,\"require_lumbar_support\":false,\"complementary_search\":false}"
+              }
+            ]
+          },
+          {
+            "finish_reason": "tool_calls",
+            "cost": 0.00014249,
+            "tools": [
+              {
+                "name": "get_stock",
+                "arguments": "{\"sku\":\"CH 850 T black (2 pcs/1 box)\"}"
+              }
+            ]
+          },
+          {
+            "finish_reason": "tool_calls",
+            "cost": 0.0001455,
+            "tools": [
+              {
+                "name": "advance_stage",
+                "arguments": "{\"next_stage\":\"qualifying\"}"
+              }
+            ]
+          },
+          {
+            "finish_reason": "stop",
+            "cost": 0.0001126,
+            "tools": []
+          }
+        ],
+        "raw_answer": "The catalog lists *CH 850 T black (2 pcs/1 box)* at *AED 139*. It doesn’t confirm whether that price is for the pair or for one box, so I can’t verify that AED 139 is the pair price. Live stock also couldn’t be confirmed.",
+        "rendered_answer": "Hello, I'm Noor from Treejar. We supply office furniture across the UAE, and I quote from our own catalog with confirmed prices and stock.\n\nThe catalog lists *CH 850 T black (2 pcs/1 box)* at *AED 139*. It doesn’t confirm whether that price is for the pair or for one box, so I can’t verify that AED 139 is the pair price. Live stock also couldn’t be confirmed.",
+        "seconds": 12.19
+      }
+    ],
+    "provider_cost": 0.003121795,
+    "unknown_cost_attempts": 0
+  },
+  "root_review": {
+    "arabic_opening": "PASS for Arabic response, retained name, scope honesty and no unverified package price. Conservative: omits catalog amounts while live stock is unavailable.",
+    "packaging_price": "PASS: retains catalog AED 139 without affirming a pair/box price; unavailable stock remains unconfirmed."
+  },
+  "total_smoke_provider_cost_usd": 0.00813352,
+  "unknown_cost_attempts": 0,
+  "total_smoke_completion_calls": 21
+}
