@@ -205,6 +205,6 @@ async def test_llm_apply_referral_code_blocks_without_approved_policy() -> None:
 
     result = await apply_referral_code(ctx, "NOOR-ABC12")
 
-    assert "not launched" in result.lower()
+    assert "could not be applied automatically" in result.lower()
     assert "manager" in result.lower()
     mock_db.flush.assert_not_awaited()

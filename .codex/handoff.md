@@ -1,9 +1,9 @@
 # Orchestrator Handoff
 
-Updated: 2026-09-22
-Current branch: `main` (delivered via codex/tj-telegram-reset-webhook)
+Updated: 2026-09-23
+Current branch: `main` (critical-only escalation release pending CI)
 Current stage id: `tj-stwf-test-only-restore` (last operational stage)
-Status: tj-it9r Telegram reset webhook repair deployed and reset verified.
+Status: tj-it9r reset remains live; tj-bltw is merged but not deployed after a failed CI test gate.
 
 ## Current truth
 
@@ -65,9 +65,10 @@ Status: tj-it9r Telegram reset webhook repair deployed and reset verified.
 
 ## Explicit defers
 
-- `tj-bltw`: critical-only escalation policy is implemented and locally accepted
-  on `codex/critical-escalation-only`; it is not merged or deployed, so the live
-  runtime remains unchanged pending explicit integration/deployment authority.
+- `tj-bltw`: critical-only escalation policy is merged into main at
+  `3faa70296fe249ac4c93a3811565167dab84ab1e`; CI run 35825043070
+  failed tests, so the live runtime remains unchanged while the release gate
+  is corrected. Owner has authorized this deployment once the gate passes.
 - `tj-bgwu`: corpus identity tests assume normal treejar/.git; local full
   acceptance uses an isolated normal clone with canonical remote identity.
 - Existing unrelated product defects stay tracked separately. Wazzup sender

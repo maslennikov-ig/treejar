@@ -470,6 +470,7 @@ class TestScenario4Escalation:
 
         conv = _mock_conversation(SalesStage.SOLUTION, customer_name="Sarah")
         deps = _mock_deps(conv)
+        deps.user_query = "This is ridiculous! Let me speak to your manager NOW!"
         deps.recent_history = ["user: Let me speak to your manager NOW!"]
 
         with sales_agent.override(model=FunctionModel(model_fn)):
@@ -784,8 +785,8 @@ class TestScenario7OrderHandoffGuard:
         assert {
             "search_products",
             "record_customer_intent",
-            "escalate_to_manager",
         } <= tool_names_by_step[0]
+        assert "escalate_to_manager" not in tool_names_by_step[0]
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)

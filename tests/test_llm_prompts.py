@@ -294,9 +294,7 @@ async def test_build_system_prompt_unknown_stage() -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_system_prompt_prioritizes_concrete_orders_without_false_positives() -> (
-    None
-):
+async def test_build_system_prompt_keeps_first_turn_orders_autonomous() -> None:
     db, redis = AsyncMock(), AsyncMock()
     redis.get.return_value = None
     db.execute.return_value.scalars.return_value.first.return_value = None
@@ -305,14 +303,14 @@ async def test_build_system_prompt_prioritizes_concrete_orders_without_false_pos
         db, redis, SalesStage.GREETING.value, language="en"
     )
 
-    assert "Product questions, even about wholesale/MOQ/bulk pricing" in prompt
-    assert "a concrete order on the first turn" in prompt
-    assert "already gave enough order details" in prompt
-    assert "escalate immediately" in prompt
+    assert "wholesale, MOQ" in prompt
+    assert "a first-turn order request, even with quantity and logistics" in prompt
+    assert "product confirmation and quotation first" in prompt
+    assert "Escalate only for these critical situations" in prompt
 
 
 @pytest.mark.asyncio
-async def test_build_system_prompt_requires_immediate_handoff_for_first_turn_concrete_orders() -> (
+async def test_build_system_prompt_requires_accepted_quote_before_order_handoff() -> (
     None
 ):
     db, redis = AsyncMock(), AsyncMock()
@@ -323,17 +321,14 @@ async def test_build_system_prompt_requires_immediate_handoff_for_first_turn_con
         db, redis, SalesStage.GREETING.value, language="en"
     )
 
-    assert "I need 200 chairs delivered to Dubai Marina by next week" in prompt
-    assert "exact street address, SKU, or price approval is not required" in prompt
-    assert (
-        "before any qualifying questions, stage advancement, or product search"
-        in prompt
-    )
-    assert '"I need ... delivered/installed"' in prompt
+    assert "accepted an already prepared quotation" in prompt
+    assert "a human must" in prompt
+    assert "process the confirmed order" in prompt
+    assert "Never claim" in prompt
 
 
 @pytest.mark.asyncio
-async def test_build_system_prompt_preserves_non_escalation_examples_for_bulk_questions() -> (
+async def test_build_system_prompt_preserves_non_escalation_for_bulk_and_addon_decline() -> (
     None
 ):
     db, redis = AsyncMock(), AsyncMock()
@@ -344,14 +339,10 @@ async def test_build_system_prompt_preserves_non_escalation_examples_for_bulk_qu
         db, redis, SalesStage.GREETING.value, language="en"
     )
 
-    assert "What is your MOQ for chairs?" in prompt
-    assert "What are your wholesale prices for bulk orders?" in prompt
-    assert "We may need 200 chairs later, what options do you have?" in prompt
-    assert "We need 20 chairs for next week, what options do you have?" in prompt
-    assert (
-        "If the same message is still asking for options, ideas, recommendations,"
-        in prompt
-    )
+    assert "wholesale, MOQ" in prompt
+    assert "bulk, quotation, customization" in prompt
+    assert "refusal of an optional add-on" in prompt
+    assert '"No" to chairs after choosing a workstation' in prompt
 
 
 @pytest.mark.asyncio

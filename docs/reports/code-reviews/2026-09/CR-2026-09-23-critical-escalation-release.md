@@ -50,3 +50,16 @@ existing app-only rollback path; no customer data reset is part of this change.
 
 CI and production rollout results must be recorded separately after push; this
 local review alone is not evidence of a deployed runtime.
+
+## CI gate correction
+
+The first main run (35825043070) did not deploy because the full suite exposed
+older tests that still expected first-turn order handoff, a current-state
+handoff digest that had drifted after an earlier docs-only update, a stale
+referral-warning text assertion, and the pre-existing 12,000-line engine
+limit. The critical tool implementation was extracted into
+`src/llm/escalation_tools.py` while retaining the engine registration and patch
+seam. Assertions now enforce the critical-only contract; the designated
+re-pin script updated only the mutable handoff source digest. The affected
+gate set passed locally (91 tests). A fresh CI run and actual deployment are
+still required.
