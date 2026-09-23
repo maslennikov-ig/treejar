@@ -1,0 +1,89 @@
+{
+  "id": "A",
+  "source_conversation": "207f7c10",
+  "description": "Nadia, 4-person Dubai office: compare LUMA 9719-4 vs NOVO 2400 4-person, choose LUMA, then 2 workstations.",
+  "customer": {
+    "phone": "+971500000207",
+    "language": "en"
+  },
+  "fixtures": {
+    "catalog": "tests/fixtures/catalog_snapshot_2026-09-23.json",
+    "live_stock_overrides": {
+      "CH 616 NEW black": 1
+    }
+  },
+  "turns": [
+    {
+      "text": "Hi, I'm Nadia. We're furnishing a new office in Dubai for four people. Can you help us choose the furniture?"
+    },
+    {
+      "text": "Please compare LUMA 9719-4 and a NOVO 2400 four-person setup for our team. What are the differences in privacy, collaboration and current price?"
+    },
+    {
+      "text": "Which would you recommend for us, and why?"
+    },
+    {
+      "text": "yes, LUMA would be perfect"
+    },
+    {
+      "text": "We're a design team. We collaborate often, but each person needs some privacy."
+    },
+    {
+      "text": "I need 2 workstations."
+    }
+  ],
+  "checks": [
+    {
+      "type": "no_structured_leak",
+      "description": "No turn sends raw JSON/claim-contract payload as the customer reply."
+    },
+    {
+      "type": "no_unconfirmed_claim",
+      "turns": [
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "description": "No reply says a named/selected product 'isn't confirmed' / 'not confirmed'."
+    },
+    {
+      "type": "no_unconfirmed_claim",
+      "turns": [
+        1
+      ],
+      "description": "Informational (outside the tester's A2-A6 scope): the opening names no product, so nothing should be called unconfirmed."
+    },
+    {
+      "type": "media_covers_offered",
+      "turn": 1,
+      "description": "If turn 1 offers both NOVO 2400 4-person and LUMA 9719-4, media includes both.",
+      "items": [
+        {
+          "label": "NOVO 2400 4-person",
+          "offered_pattern": "(?:4|four)[- ]person[^\\n]*NOVO 2400|NOVO 2400[^\\n]*(?:4|four)[- ]person|face[- ]to[- ]face[^\\n]*NOVO 2400",
+          "media_pattern": "Workstation-63LW-1\\.2T-6-white|4 Person Face to Face Table SKYLAND NOVO 2400"
+        },
+        {
+          "label": "LUMA 9719-4",
+          "offered_pattern": "9719-4",
+          "media_pattern": "9719-4"
+        }
+      ]
+    },
+    {
+      "type": "no_price_after_selection",
+      "turns": [
+        4,
+        5,
+        6
+      ],
+      "description": "After LUMA is selected, no reply lists the NOVO 2400 4-person price again unless asked.",
+      "price_patterns": [
+        "1,?813"
+      ],
+      "asked_pattern": "novo|price|cost|compare"
+    }
+  ]
+}

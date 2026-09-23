@@ -32,11 +32,18 @@ from src.dialogue.state import DialogueState
 from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 from src.integrations.messaging.base import MessagingProvider
+from src.llm.catalog_families import (
+    CATALOG_PRODUCT_FAMILIES,
+    CatalogFamily,
+    catalog_text_families,
+    contains_catalog_term,
+)
 from src.llm.money import (
     AMOUNT_TOKEN_PATTERN,
     BUDGET_AED_CURRENCY_PATTERN,
     canonical_amount,
 )
+from src.llm.outbound_reply_guard import looks_like_structured_payload
 from src.llm.response_policy import AskKind, append_required_tool_disclosure
 from src.llm.response_runtime import LLMResponse, ProductMediaPayload
 from src.llm.verified_answers import (
@@ -260,46 +267,11 @@ _CATALOG_UNIT_PRODUCT_TERMS = (
     "desk",
     "stool",
 )
-CatalogFamily = Literal["seating", "workspace", "storage", "privacy"]
 CatalogFactDomain = Literal["acoustic", "footprint"]
 CatalogAmount = Annotated[float, Field(ge=0, le=10_000_000)]
 _ACOUSTIC_FACT_GAP = "acoustic_performance=not_stated"
 _FOOTPRINT_FACT_GAP = "footprint_dimensions=not_stated"
-_CATALOG_PRODUCT_FAMILIES: tuple[tuple[CatalogFamily, tuple[str, ...]], ...] = (
-    ("seating", ("chair", "stool", "seat", "كرسي", "كراسي")),
-    (
-        "workspace",
-        (
-            "desk",
-            "table",
-            "workstation",
-            "bench",
-            "مكتب",
-            "مكاتب",
-            "طاولة",
-            "طاولات",
-            "محطة عمل",
-            "محطات عمل",
-        ),
-    ),
-    (
-        "storage",
-        (
-            "pedestal",
-            "cabinet",
-            "locker",
-            "storage",
-            "shelf",
-            "shelves",
-            "accessory",
-            "accessories",
-            "خزانة",
-            "خزائن",
-            "تخزين",
-        ),
-    ),
-    ("privacy", ("pod", "booth", "كبسولة", "مقصورة")),
-)
+_CATALOG_PRODUCT_FAMILIES = CATALOG_PRODUCT_FAMILIES
 _GENERIC_OFFICE_OPENING_RE = re.compile(
     r"\b(?:small|new|our|the|an?|your)?\s*office\b|(?:مكتب|مكاتب)",
     re.IGNORECASE,
@@ -1145,26 +1117,11 @@ def _catalog_product_capacity(product_text: str) -> int | None:
 
 
 def _contains_catalog_term(normalized: str, term: str) -> bool:
-    arabic = re.search(r"[\u0600-\u06ff]", term) is not None
-    prefix = "(?:و)?(?:ال)?" if arabic else ""
-    suffix = "" if arabic else "(?:s|es)?"
-    return (
-        re.search(
-            rf"(?<!\w){prefix}{re.escape(term.casefold())}{suffix}(?!\w)",
-            normalized,
-            flags=re.UNICODE,
-        )
-        is not None
-    )
+    return contains_catalog_term(normalized, term)
 
 
 def _catalog_product_families(text: str) -> tuple[CatalogFamily, ...]:
-    normalized = _normalize_text(text)
-    return tuple(
-        family
-        for family, terms in _CATALOG_PRODUCT_FAMILIES
-        if any(_contains_catalog_term(normalized, term) for term in terms)
-    )
+    return catalog_text_families(_normalize_text(text))
 
 
 def _catalog_product_family(text: str) -> CatalogFamily | None:
@@ -2531,15 +2488,36 @@ class _ContractedResult:
     call that actually happened.
     """
 
-    def __init__(self, source: Any, output: str) -> None:
+    def __init__(self, source: Any, output: str, *, fell_back: bool = False) -> None:
         self._source = source
         self.output = output
+        # True when the repair produced no usable answer and this carries the
+        # pre-repair draft instead; the usage still belongs to the repair call.
+        self.fell_back = fell_back
 
     def usage(self) -> Any:
         return self._source.usage()
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._source, name)
+
+
+def _unusable_repair(repaired_result: Any, fallback_result: Any | None) -> Any | None:
+    """The pre-repair draft to send when the repair output cannot be used.
+
+    None means the repair output stays as it is: either it is plain prose (the
+    previous behaviour for a model that ignored the contract) or there is no
+    draft to return to.
+    """
+    if fallback_result is None:
+        return None
+    if not looks_like_structured_payload(getattr(repaired_result, "output", "")):
+        return None
+    return _ContractedResult(
+        repaired_result,
+        str(getattr(fallback_result, "output", "") or ""),
+        fell_back=True,
+    )
 
 
 def _parse_claim_payload(
@@ -2623,16 +2601,23 @@ async def _enforce_claim_contract(
     repair_deps: SalesDeps,
     repair_payload: str,
     run_agent: Any,
+    fallback_result: Any | None = None,
 ) -> tuple[Any, ContractResult | None]:
     """Verify the emitted claims and keep unsupported ones off the wire.
 
     One bounded retry: the second attempt is told exactly which field paths the
     rows do not carry, so the answer becomes a useful partial one rather than a
     refusal or a quiet repetition of the same claim.
+
+    `fallback_result` is the pre-repair draft. A repair that returns a JSON
+    envelope the parser cannot read (typically truncated at the completion
+    limit) is never customer text: the draft goes out instead, through the same
+    output guards as any other reply.
     """
     parsed = _parse_claim_payload(getattr(repaired_result, "output", ""))
     if parsed is None:
-        return repaired_result, None
+        fallback = _unusable_repair(repaired_result, fallback_result)
+        return (fallback if fallback is not None else repaired_result), None
     claims, answer = parsed
     contract = apply_contract(claims, repair_deps.claim_rows)
     if not contract.withheld:
@@ -2650,6 +2635,12 @@ async def _enforce_claim_contract(
     retried = await run_agent(retry_deps)
     retried_parsed = _parse_claim_payload(getattr(retried, "output", ""))
     if retried_parsed is None:
+        if looks_like_structured_payload(getattr(retried, "output", "")):
+            fallback = _unusable_repair(retried, fallback_result)
+            if fallback is None:
+                # No draft to return to: the first answer at least parsed.
+                fallback = _ContractedResult(retried, answer)
+            return fallback, contract
         return retried, contract
     retried_claims, retried_answer = retried_parsed
     retried_contract = apply_contract(retried_claims, repair_deps.claim_rows)
@@ -2731,12 +2722,17 @@ async def _verify_volunteered_claims(
     contract = apply_contract(claims, run_deps.claim_rows)
     if not contract.withheld:
         return result, contract
-    return await _enforce_claim_contract(
+    enforced, enforced_contract = await _enforce_claim_contract(
         verified,
         repair_deps=verify_deps,
         repair_payload=verify_payload,
         run_agent=run_agent,
+        fallback_result=result,
     )
+    if getattr(enforced, "fell_back", False):
+        # An unreadable retry leaves the turn exactly as it was.
+        return result, enforced_contract
+    return enforced, enforced_contract
 
 
 def _materialize_verified_catalog_facts(deps: SalesDeps) -> str | None:

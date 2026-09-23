@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 import re
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Iterable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -83,6 +83,25 @@ class ProductMediaPayload:
     product_key: str
     zoho_item_id: str | None = None
     reference_tokens: tuple[str, ...] = ()
+
+
+def dedupe_product_media(
+    items: Iterable[ProductMediaPayload],
+) -> tuple[ProductMediaPayload, ...]:
+    """One image per product per turn, first occurrence kept, order preserved.
+
+    Two searches in one turn can queue the same row twice (replay 2026-09-23,
+    scenario C turn 1); the customer should not receive the same picture twice.
+    """
+    seen: set[str] = set()
+    unique: list[ProductMediaPayload] = []
+    for item in items:
+        key = str(item.product_key or item.url).strip().casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return tuple(unique)
 
 
 def _response_from_rendered_reply(

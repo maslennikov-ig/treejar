@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from src.dialogue.catalog_refs import fold_catalog_homoglyphs
+from src.llm.catalog_families import catalog_text_families
 from src.llm.money import BUDGET_AED_CURRENCY_PATTERN
 from src.services.customer_language import is_arabic_customer_language
 
@@ -1580,14 +1581,24 @@ def _term_variants(term: str) -> set[str]:
 def _is_generic_need_request(
     query: str,
     candidate_tokens: Sequence[set[str]],
+    candidate_families_hint: Sequence[str] = (),
 ) -> bool:
     """Whether the query only states a need that the candidates speak to.
 
     A request naming no product code, brand, finish or other discriminator has
-    no exact item to confirm. It still has to be *about* these candidates: any
-    other word it carries ("pods", "lighting", an unknown brand in lower case)
-    must occur on at least one returned row, otherwise the honest reading stays
-    "nearby" or "missing".
+    no exact item to confirm. It still has to be *about* these candidates, and
+    what decides that is the product family (tj-uz6j, replay 2026-09-23):
+
+    - a product-type word from the catalog family vocabulary ("desks",
+      "workstations", "cabinets") is covered when a returned row carries that
+      word or any other type of the same family, so "desks/workstations"
+      answered by a four-person workstation is the need, not an alternative;
+    - a type declared a distinct nearby item in `_NEARBY_EQUIVALENTS`
+      ("pods" vs "booths", "accessories" vs pedestals) is covered only by its
+      own word, because the family there spans items the customer tells apart;
+    - any other word ("lighting", an unknown brand in lower case) must occur on
+      at least one returned row, otherwise the honest reading stays "nearby"
+      or "missing".
     """
     if query_names_specific_item(query):
         return False
@@ -1601,7 +1612,17 @@ def _is_generic_need_request(
         term for term in terms if term not in _PRODUCT_NEED_TERMS and not term.isdigit()
     }
     candidate_union: set[str] = set().union(*candidate_tokens)
-    if not all(_term_variants(term) & candidate_union for term in open_terms):
+    candidate_families = set(candidate_families_hint)
+
+    def _covered(term: str) -> bool:
+        if _term_variants(term) & candidate_union:
+            return True
+        if term in _NEARBY_EQUIVALENTS:
+            return False
+        term_families = catalog_text_families(term)
+        return bool(term_families) and set(term_families).issubset(candidate_families)
+
+    if not all(_covered(term) for term in open_terms):
         return False
     return bool(open_terms) or bool(terms & _PRODUCT_NEED_TERMS)
 
@@ -1653,7 +1674,12 @@ def classify_product_match(
     ):
         return "exact"
 
-    if _is_generic_need_request(query, candidate_tokens):
+    candidate_families = {
+        family
+        for candidate in candidates
+        for family in catalog_text_families(candidate)
+    }
+    if _is_generic_need_request(query, candidate_tokens, tuple(candidate_families)):
         return "generic"
 
     overlap_terms = set(exact_terms)

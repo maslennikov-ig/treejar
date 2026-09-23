@@ -332,6 +332,13 @@ async def test_consented_selection_switches_to_proceed_mode() -> None:
             "address": "Office 12, Building 3, Dubai Design District",
         },
     }
+    # The quotation gate also requires an email, so the directive must still
+    # ask for it rather than send the model to a refused create_quotation.
+    closed = decision_state_directives(conversation, customer_text="ok")[0]
+    assert "customer email" in closed
+    assert "call create_quotation now" not in closed
+
+    conversation.metadata_["quote_customer_details"]["email"] = "nadia@studio.ae"
     closed = decision_state_directives(conversation, customer_text="ok")[0]
     assert "call create_quotation now" in closed
 

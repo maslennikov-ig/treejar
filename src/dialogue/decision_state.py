@@ -26,7 +26,7 @@ from __future__ import annotations
 import datetime
 import re
 import unicodedata
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -611,6 +611,8 @@ def _missing_quote_details(
         missing.append("company name or individual status")
     if not (known("address") or state.slots.delivery_address):
         missing.append("specific delivery address")
+    if not known("email"):
+        missing.append("customer email")
     return missing
 
 
@@ -618,12 +620,18 @@ def decision_state_directives(
     conversation: Any,
     *,
     customer_text: str,
+    missing_quote_details: Sequence[str] | None = None,
 ) -> tuple[str, ...]:
     """Directives the durable decision state earns on this turn.
 
     Deterministic over typed state and the form of the current message. The
     selection and consent they state were written by validated tools, so they
     are presented as settled facts, not as untrusted history.
+
+    `missing_quote_details` is the quotation gate's own list of missing
+    required details. The runtime passes it so the details the model asks for
+    are exactly the ones `create_quotation` will refuse without; the local
+    reading is only a fallback for callers without the gate.
     """
 
     metadata = getattr(conversation, "metadata_", None)
@@ -646,11 +654,16 @@ def decision_state_directives(
     if selected and not state.slots.quote_sent:
         labels = "; ".join(_item_label(item, names) for item in selected)
         if workflow.consent is QuoteConsent.GRANTED:
-            missing = _missing_quote_details(metadata, state)
+            missing = (
+                list(missing_quote_details)
+                if missing_quote_details is not None
+                else _missing_quote_details(metadata, state)
+            )
             next_step = (
-                "the quotation is agreed: ask only for the missing "
-                + ", ".join(missing)
-                + ", then call create_quotation"
+                "the quotation is agreed: ask for all of the missing details "
+                "together in one sentence -- "
+                + "; ".join(missing)
+                + " -- then call create_quotation"
                 if missing
                 else "the quotation is agreed and its details are known: confirm "
                 "stock with get_stock if needed and call create_quotation now"

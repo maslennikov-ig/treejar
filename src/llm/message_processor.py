@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -46,6 +46,7 @@ from src.dialogue.order_state import (
 from src.dialogue.runner import (
     record_legacy_route,
 )
+from src.dialogue.state import DialogueState
 from src.llm.catalog_planning import (
     CLAIM_CONTRACT_SCOPE_KEY,
     SalesDeps,
@@ -87,6 +88,7 @@ from src.llm.response_runtime import (
     _product_media_is_referenced,
     _referenced_product_media,
     _response_from_rendered_reply,
+    dedupe_product_media,
 )
 from src.llm.safety import (
     PATH_CORE_CHAT,
@@ -273,15 +275,45 @@ class _LazyModelRuntime:
         return self._runtime
 
 
+def _requested_quantities(deps: SalesDepsT) -> dict[str, int]:
+    """The quantity the customer asked for, per SKU, from recorded state.
+
+    Read from the dialogue selection that `record_customer_requirements` writes
+    during the turn, so it is the customer's number, never the draft's.
+    """
+
+    state = DialogueState.from_conversation(deps.conversation)
+    quantities: dict[str, int] = {}
+    for item in state.slots.selected_items:
+        if not isinstance(item, Mapping):
+            continue
+        sku = str(item.get("sku") or "").strip().casefold()
+        quantity = item.get("quantity")
+        if sku and isinstance(quantity, int) and quantity > 0:
+            quantities[sku] = quantity
+    return quantities
+
+
 def _limited_stock_product_references(deps: SalesDepsT) -> tuple[str, ...]:
-    """Names and SKUs for retrieved rows whose verified stock is 1--4."""
+    """Names and SKUs for retrieved rows whose verified stock is 1--4.
+
+    A row is left out when the customer's recorded quantity for it is within
+    the confirmed stock: "larger quantities may need a different option" is
+    noise to someone who asked for exactly what is on the shelf (replay
+    2026-09-23, scenario B). With no recorded quantity the scarcity is still
+    disclosed, because the customer may yet ask for more.
+    """
 
     rows_by_sku = {
         row.sku.strip().casefold(): row for row in deps.claim_rows.values() if row.sku
     }
+    requested = _requested_quantities(deps)
     references: list[str] = []
     for snapshot in deps.stock_snapshots.values():
         if not 1 <= snapshot.available < 5:
+            continue
+        requested_quantity = requested.get(snapshot.sku.strip().casefold())
+        if requested_quantity is not None and requested_quantity <= snapshot.available:
             continue
         references.append(snapshot.sku)
         row = rows_by_sku.get(snapshot.sku.strip().casefold())
@@ -679,7 +711,7 @@ async def _finalize_turn_response(
         else str(getattr(turn.deps.conversation, "language", "en") or "en")
     )
     response.text = finalize_customer_reply_text(response.text, language=language)
-    response.deferred_product_media = tuple(
+    response.deferred_product_media = dedupe_product_media(
         item
         for item in response.deferred_product_media
         if _product_media_is_referenced(item, response.text)
@@ -863,9 +895,28 @@ async def _sales_agent_route(
             repair_deps=repair_deps,
             repair_payload=repair_payload,
             run_agent=turn.run_agent,
+            fallback_result=result,
         )
         _log_claim_contract(contract, run_deps.conversation.id, scope="requested")
         await turn.clear_repair_state()
+        if getattr(repaired_result, "fell_back", False):
+            # The repair returned a JSON envelope nobody can read (usually cut
+            # at the completion limit). The pre-repair draft goes out instead,
+            # through the ordinary output guards, never the raw envelope.
+            logger.warning(
+                "Catalog fact repair returned an unusable payload for "
+                "conversation %s; sending the pre-repair draft",
+                run_deps.conversation.id,
+            )
+            return replace(
+                turn.build_llm_response(
+                    repaired_result,
+                    db_model_main,
+                    response_deps=run_deps,
+                    route_suffix="catalog-fact-repair-fallback",
+                ),
+                tool_traces=recovery_traces,
+            )
         return replace(
             turn.build_llm_response(
                 repaired_result,

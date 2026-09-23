@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from typing import Any
+
 from src.llm.language_guard import enforce_customer_reply_language
 from src.llm.opening_guard import (
     canonical_discovery_question,
@@ -10,6 +13,63 @@ from src.llm.opening_guard import (
     name_question_conjunction,
 )
 from src.services.customer_language import normalize_customer_language
+
+_STRUCTURED_PAYLOAD_FALLBACK = {
+    "en": (
+        "I want to make sure the details I give you are accurate. Which point "
+        "would you like me to confirm first?"
+    ),
+    "ar": "أريد التأكد من دقة التفاصيل التي أقدمها لك. ما النقطة التي تريد أن أؤكدها أولًا؟",
+}
+
+
+def _strip_code_fence(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    stripped = stripped[3:].lstrip()
+    if stripped[:4].casefold() == "json":
+        stripped = stripped[4:].lstrip()
+    if stripped.endswith("```"):
+        stripped = stripped[:-3].rstrip()
+    return stripped
+
+
+def looks_like_structured_payload(output: Any) -> bool:
+    """Whether the text is a JSON object/array rather than customer prose.
+
+    Structural, not lexical: internal model contracts (the claim contract among
+    them) ask for a JSON envelope, and a reasoning model that runs out of
+    completion tokens returns that envelope cut mid-string. Such text parses as
+    nothing, yet it is not a plain-text answer and must never be sent as one.
+    """
+    return _strip_code_fence(str(output or ""))[:1] in {"{", "["}
+
+
+def _replace_structured_payload(text: str, *, language: str) -> str:
+    """Final invariant: a JSON envelope never reaches the customer.
+
+    A readable envelope that carries a prose `answer` gives that answer back;
+    anything else becomes a short neutral notice in the customer's language.
+    """
+    if not looks_like_structured_payload(text):
+        return text
+    try:
+        parsed = json.loads(_strip_code_fence(text))
+    except (TypeError, ValueError):
+        parsed = None
+    if isinstance(parsed, dict):
+        answer = parsed.get("answer")
+        if (
+            isinstance(answer, str)
+            and answer.strip()
+            and not looks_like_structured_payload(answer)
+        ):
+            return answer.strip()
+    normalized = normalize_customer_language(language)
+    return _STRUCTURED_PAYLOAD_FALLBACK.get(
+        normalized, _STRUCTURED_PAYLOAD_FALLBACK["en"]
+    )
 
 
 def _fold_trailing_name_question(text: str, *, language: str) -> str:
@@ -85,7 +145,7 @@ def _restore_lost_discovery(guarded: str, before: str, *, language: str) -> str:
 def finalize_customer_reply_text(text: str, *, language: str) -> str:
     """Enforce the selected language and one first-turn question at send time."""
 
-    original = str(text or "")
+    original = _replace_structured_payload(str(text or ""), language=language)
     folded = _fold_trailing_name_question(original, language=language)
     guarded = enforce_customer_reply_language(folded, language=language)
     if guarded == original:

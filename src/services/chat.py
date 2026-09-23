@@ -26,6 +26,7 @@ from src.integrations.messaging.wazzup import WazzupProvider
 from src.integrations.zoho_oauth import ZohoOAuthError
 from src.llm.conversation_summary import should_enqueue_conversation_summary_refresh
 from src.llm.engine import ProductMediaPayload, process_message
+from src.llm.response_runtime import dedupe_product_media
 from src.models.conversation import Conversation
 from src.models.conversation_summary import ConversationSummary
 from src.models.message import (
@@ -751,7 +752,7 @@ async def _send_deferred_product_media(
     media_items: Sequence[ProductMediaPayload],
 ) -> None:
     """Send queued product images after the customer-facing text reply."""
-    for item in media_items:
+    for item in dedupe_product_media(media_items):
         try:
             send_url = item.url
             if (

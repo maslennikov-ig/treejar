@@ -1,0 +1,80 @@
+{
+  "id": "C",
+  "source_conversation": "fa224cab",
+  "description": "Nadia, 12 people, three LUMA 9719-4 in walnut, AED 6,000; delivery/assembly; then wrong-layout 'yes' and 'keep it'.",
+  "customer": {
+    "phone": "+971500000224",
+    "language": "en"
+  },
+  "fixtures": {
+    "catalog": "tests/fixtures/catalog_snapshot_2026-09-23.json",
+    "live_stock_overrides": {
+      "CH 616 NEW black": 1
+    }
+  },
+  "turns": [
+    {
+      "text": "Hi, I'm Nadia. We're furnishing a new office in Dubai for twelve people and want three LUMA 9719-4 workstations in walnut, budget AED 6,000."
+    },
+    {
+      "text": "Do you provide delivery and assembly in Dubai?"
+    },
+    {
+      "text": "ыгку"
+    },
+    {
+      "text": "keep it"
+    }
+  ],
+  "notes": "Bot replies are not scripted. 'ыгку' is 'yes' typed on a Russian keyboard layout; it only means consent if the preceding reply asked whether to prepare a quotation, which the prior_bot_asked check records.",
+  "checks": [
+    {
+      "type": "no_structured_leak",
+      "description": "No turn sends raw JSON/claim-contract payload as the customer reply."
+    },
+    {
+      "type": "no_unconfirmed_claim",
+      "turns": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "description": "No reply says a named/selected product 'isn't confirmed' / 'not confirmed'."
+    },
+    {
+      "type": "positive_answer",
+      "turn": 2,
+      "description": "Turn 2 answers delivery and installation positively.",
+      "require_patterns": [
+        "deliver",
+        "install|assembl"
+      ],
+      "forbid_patterns": [
+        "(?:do not|don['’]t|cannot|can['’]t|unable to|not able to)\\s+(?:offer|provide|arrange|include|do|handle)",
+        "not (?:available|included|offered|provided)"
+      ]
+    },
+    {
+      "type": "prior_bot_asked",
+      "turn": 3,
+      "description": "Records whether the reply before 'ыгку' asked whether to prepare a quotation.",
+      "pattern": "quot|prepare (?:it|this|them|that)"
+    },
+    {
+      "type": "proceeds_to_quote",
+      "turns": [
+        3,
+        4
+      ],
+      "description": "'ыгку' and 'keep it' proceed to quotation details (or a quotation) with no re-listing of options.",
+      "proceed_pattern": "e-?mail|company|delivery address|full name|quotation SO-|has been prepared",
+      "relist_patterns": [
+        "NOVO",
+        "9719-[12]\\b",
+        "\\boptions\\b",
+        "alternatives?"
+      ]
+    }
+  ]
+}

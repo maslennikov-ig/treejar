@@ -265,7 +265,13 @@ _POLICIES: dict[str, LLMPathPolicy] = {
     PATH_CORE_CHAT: LLMPathPolicy(
         path=PATH_CORE_CHAT,
         scope="core",
-        max_tokens=2200,
+        # Raised from 2200 on 2026-09-23. The same budget serves the claim
+        # contract repair, whose answer is a JSON envelope quoting catalog
+        # source values; on gpt-6-luna at medium effort 1286 of 2200 tokens
+        # went to reasoning and the envelope was cut mid-string (replay
+        # receipt docs/reports/2026-09-23-tester-feedback-replay.json, A2).
+        # Only spent when used; an ordinary reply stays well under it.
+        max_tokens=3200,
         timeout_seconds=90.0,
     ),
     PATH_CORE_FOLLOWUP: LLMPathPolicy(

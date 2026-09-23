@@ -7188,6 +7188,20 @@ def _quote_missing_required_details(
     deps: SalesDeps,
     items: list[QuotationItem],
 ) -> list[str]:
+    missing: list[str] = []
+    if not items or not all(item.quantity > 0 and item.sku.strip() for item in items):
+        missing.append("items and quantities")
+    return [*missing, *_quote_missing_customer_details(deps)]
+
+
+def _quote_missing_customer_details(deps: SalesDeps) -> list[str]:
+    """The customer details the quotation gate still needs, in ask order.
+
+    The single source of truth for "what is missing": `create_quotation`
+    refuses on exactly this list, and the decision-state directive names
+    exactly this list to the model, so the customer is asked for every
+    required detail together instead of discovering the email at the gate.
+    """
     quote_details = _quote_customer_details_from_metadata(deps.conversation)
     metadata = (
         deps.conversation.metadata_
@@ -7205,8 +7219,6 @@ def _quote_missing_required_details(
         _string_value(delivery_address)
     ) and confirmed_brief_address == _string_value(delivery_address)
     missing: list[str] = []
-    if not items or not all(item.quantity > 0 and item.sku.strip() for item in items):
-        missing.append("items and quantities")
     if not _string_value(customer_name):
         missing.append("customer name")
     if not _string_value(
@@ -9401,7 +9413,9 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
     # reply closed on. Rendered per model step, so a selection recorded earlier
     # in this same turn already closes the comparison for the next step.
     decision_directives = decision_state_directives(
-        ctx.deps.conversation, customer_text=ctx.deps.user_query
+        ctx.deps.conversation,
+        customer_text=ctx.deps.user_query,
+        missing_quote_details=_quote_missing_customer_details(ctx.deps),
     )
     if decision_directives:
         base_prompt += (

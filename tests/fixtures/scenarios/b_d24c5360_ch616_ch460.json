@@ -1,0 +1,52 @@
+{
+  "id": "B",
+  "source_conversation": "d24c5360",
+  "description": "Aisha: price/stock for CH 616 NEW black (local stock 0, live Zoho 1), then 1 x CH 616 + 3 x CH 460.",
+  "customer": {
+    "phone": "+971500000245",
+    "language": "en"
+  },
+  "fixtures": {
+    "catalog": "tests/fixtures/catalog_snapshot_2026-09-23.json",
+    "live_stock_overrides": {
+      "CH 616 NEW black": 1
+    }
+  },
+  "turns": [
+    {
+      "text": "Hi, I'm Aisha. Please check the current price and stock for CH 616 NEW black. I need 4 chairs. No quotation yet."
+    },
+    {
+      "text": "I want 1 chair CH 616 NEW black and 3 chairs CH 460 black"
+    }
+  ],
+  "checks": [
+    {
+      "type": "no_structured_leak",
+      "description": "No turn sends raw JSON/claim-contract payload as the customer reply."
+    },
+    {
+      "type": "no_unconfirmed_claim",
+      "turns": [
+        2
+      ],
+      "description": "No reply says a named/selected product 'isn't confirmed' / 'not confirmed'."
+    },
+    {
+      "type": "records_items_without_alternative",
+      "turn": 2,
+      "description": "Turn 2 records both SKUs (decision state) and offers no alternative for CH 616.",
+      "skus": [
+        "CH 616 NEW black",
+        "CH 460 black"
+      ],
+      "alternative_patterns": [
+        "CH 145",
+        "CH 696",
+        "CH 615",
+        "alternative",
+        "instead of"
+      ]
+    }
+  ]
+}

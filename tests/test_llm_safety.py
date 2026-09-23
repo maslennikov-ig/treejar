@@ -20,7 +20,7 @@ class _FakeRunResult:
 @pytest.mark.parametrize(
     ("path", "expected_max_tokens"),
     [
-        ("core_chat", 2200),
+        ("core_chat", 3200),
         ("core_followup", 500),
         ("quality_final", 8000),
         ("quality_red_flags", 900),
@@ -701,7 +701,7 @@ async def test_core_path_does_not_get_outer_retry_or_budget_block(
 
     assert agent.run.await_count == 1
     kwargs = agent.run.await_args.kwargs
-    assert kwargs["model_settings"]["max_tokens"] == 2200
+    assert kwargs["model_settings"]["max_tokens"] == 3200
     assert "usage_limits" not in kwargs
     notify.assert_awaited_once()
 
