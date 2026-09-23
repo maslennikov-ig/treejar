@@ -468,7 +468,7 @@ class LLMUsageTelemetry:
 def model_name_for_path(path: str, override: str | None = None) -> str:
     """Return the default OpenRouter model for an LLM path.
 
-    GLM/main remains the default only for core client-facing paths. Non-core
+    The main model remains the default only for core client-facing paths. Non-core
     background and helper paths default to the fast model unless an explicit
     caller/admin override is supplied.
     """
@@ -493,7 +493,13 @@ def openrouter_supports_prompt_cache_control(model_name: str) -> bool:
 def _openrouter_core_reasoning_effort(
     policy: LLMPathPolicy,
     model_name: str | None,
-) -> Literal["low"] | None:
+) -> Literal["low", "medium"] | None:
+    if (
+        policy.scope == "core"
+        and model_name is not None
+        and model_name.strip().lower() == "openai/gpt-6-luna"
+    ):
+        return "medium"
     if (
         policy.scope == "core"
         and model_name is not None
@@ -509,7 +515,7 @@ def _openrouter_extra_body(
     model_name: str | None,
     cache_telemetry_enabled: bool,
     reasoning_enabled: bool | None = None,
-    reasoning_effort: Literal["low"] | None = None,
+    reasoning_effort: Literal["low", "medium"] | None = None,
 ) -> dict[str, Any]:
     extra_body: dict[str, Any] = {}
     if cache_telemetry_enabled:

@@ -800,3 +800,31 @@ def test_paths_without_a_pinned_temperature_keep_the_provider_default() -> None:
 
     assert policy_for_path(PATH_CORE_CHAT).temperature is None
     assert "temperature" not in model_settings_for_path(PATH_CORE_CHAT)
+
+
+@pytest.mark.parametrize("path", ["core_chat", "core_followup"])
+def test_gpt6_luna_core_reasoning_is_medium(path: str) -> None:
+    from src.llm.safety import model_settings_for_path
+
+    payload = model_settings_for_path(path, model_name="openai/gpt-6-luna")
+    assert payload["extra_body"]["reasoning"] == {"effort": "medium"}
+
+
+def test_gpt6_luna_non_core_reasoning_is_unchanged() -> None:
+    from src.llm.safety import model_settings_for_path
+
+    payload = model_settings_for_path("quality_final", model_name="openai/gpt-6-luna")
+    assert "reasoning" not in payload["extra_body"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_keeps_gpt6_luna_medium(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.llm import safety
+
+    monkeypatch.setattr(safety, "notify_llm_safety_event", AsyncMock())
+    agent = SimpleNamespace(run=AsyncMock(return_value=_FakeRunResult()))
+    await safety.run_agent_with_safety(
+        agent, safety.PATH_CORE_CHAT, "prompt", model_name="openai/gpt-6-luna"
+    )
+    payload = agent.run.await_args.kwargs["model_settings"]
+    assert payload["extra_body"]["reasoning"] == {"effort": "medium"}

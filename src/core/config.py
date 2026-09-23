@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     # `system_configs.openrouter_model_main` value overrides it for DB-backed
     # turns; a missing or failed lookup uses this value. It does not claim what
     # value a deployed database currently holds.
-    openrouter_model_main: str = "z-ai/glm-5.3-flash"
+    openrouter_model_main: str = "openai/gpt-6-luna"
     llm_non_core_budget_blocked: bool = False
     voice_transcription_model: str = Field(
         default=DEFAULT_VOICE_TRANSCRIPTION_MODEL,
