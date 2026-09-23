@@ -150,7 +150,11 @@ if not settings.test_channel_restore_mode:
 else:
     from src.worker import WorkerSettings
     assert not WorkerSettings.cron_jobs, "test worker must have no cron jobs"
-    assert [f.name for f in WorkerSettings.functions] == ["process_incoming_batch", "retry_pending_quotation"]
+    # Allowlist, not an exact list, so the probe passes on both the running
+    # worker and the candidate while a release adds or removes an allowed job.
+    names = [f.name for f in WorkerSettings.functions]
+    assert "process_incoming_batch" in names
+    assert set(names) <= {"process_incoming_batch", "retry_pending_quotation"}
     fields = ("test_channel_restore_mode", "wazzup_channel_id",
               "wazzup_outbound_allowed_channel_id", "telegram_allowed_inbound_phone")
     state = {key: getattr(settings, key) for key in fields}

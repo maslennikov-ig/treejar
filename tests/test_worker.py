@@ -136,8 +136,8 @@ async def test_worker_shutdown_runs() -> None:
     await WorkerSettings.on_shutdown(ctx)
 
 
-def test_deploy_gate_allowlist_matches_restore_mode_functions() -> None:
-    """scripts/vps-deploy.sh refuses a test worker whose functions drift."""
+def test_deploy_gate_allowlist_covers_restore_mode_functions() -> None:
+    """scripts/vps-deploy.sh refuses a test worker with a job outside its allowlist."""
     import ast
     import re
     from pathlib import Path
@@ -145,14 +145,11 @@ def test_deploy_gate_allowlist_matches_restore_mode_functions() -> None:
     from unittest.mock import patch
 
     script = (Path(__file__).parent.parent / "scripts" / "vps-deploy.sh").read_text()
-    match = re.search(
-        r"assert \[f\.name for f in WorkerSettings\.functions\] == (\[[^\]]*\])",
-        script,
-    )
+    match = re.search(r"assert set\(names\) <= (\{[^}]*\})", script)
     assert match is not None
+    allowlist = ast.literal_eval(match.group(1))
     with patch("src.worker.settings", SimpleNamespace(test_channel_restore_mode=True)):
-        functions = build_worker_functions()
+        names = [_function_name(function) for function in build_worker_functions()]
 
-    assert ast.literal_eval(match.group(1)) == [
-        _function_name(function) for function in functions
-    ]
+    assert "process_incoming_batch" in names
+    assert set(names) == allowlist
