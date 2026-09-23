@@ -1,14 +1,20 @@
 # Orchestrator Handoff
 
 Updated: 2026-09-23
-Current branch: `main` (critical-only escalation release pending CI)
+Current branch: `main` (delivered via codex/critical-escalation-only)
 Current stage id: `tj-stwf-test-only-restore` (last operational stage)
-Status: tj-it9r reset remains live; tj-bltw is merged but not deployed after a failed CI test gate.
+Status: tj-bltw critical-only escalation deployed and exact live release verified.
 
 ## Current truth
 
-- Live release: `64a28bd520fce97a998596a652666eb2267d71ee`.
-- CI 35706122529 succeeded: 4,067 passed, 27 skipped; lint/types passed.
+- Live release: `1dd3b05d1fb69c6bf3b19e7ffb24a3d116334ac7`.
+- CI 35825663699 succeeded: 4,108 passed, 27 skipped; lint/types and
+  app-only deploy passed. Public API health returned the exact release SHA
+  with healthy database and Redis.
+- Escalation now requires an explicit human request, current-turn recorded
+  acceptance of a sent quotation, or a customer-evidenced active incident.
+  Ordinary sales, optional add-on refusals, policy questions, catalog gaps,
+  and failed reply repair remain autonomous. Active handoffs are not duplicated.
 - Telegram points directly to the canonical Noor webhook with zero pending
   updates and no delivery error. Restore-mode startup now reconciles the
   webhook without publishing unavailable commands.
@@ -32,6 +38,7 @@ Status: tj-it9r reset remains live; tj-bltw is merged but not deployed after a f
   the answer. Shared-session tools execute sequentially.
 - Existing CI --app-only invocation now safely refreshes an already-running
   verified test-only worker; stopped/non-test workers retain the app-only gate.
+  This release passed the existing/candidate worker safety checks.
 - Reset report: `docs/reports/2026-09-22-telegram-reset-webhook.md`.
 - Quotation repair remains present; its report is
   `docs/reports/2026-09-18-quotation-timeout.md`.
@@ -51,9 +58,10 @@ Status: tj-it9r reset remains live; tj-bltw is merged but not deployed after a f
 
 ## Recovery
 
-- Latest backup: `/opt/noor/.hotfix-backups/tj-it9r-20260922T083204Z`;
-  prior app image tag `noor-app:tj-it9r-before`. Preserve the completed data
-  reset during any code rollback.
+- Latest backup: `/opt/noor/.hotfix-backups/deploy-20260923T061517Z-from-64a28bd520fce97a998596a652666eb2267d71ee.tar.gz`.
+  App-only rollback must preserve the completed Telegram data reset.
+- Prior reset backup: `/opt/noor/.hotfix-backups/tj-it9r-20260922T083204Z`;
+  prior app image tag `noor-app:tj-it9r-before`.
 - Previous quotation-release backup: `/opt/noor/.hotfix-backups/tj-3egt-20260918`.
   Restore source-before.tar.gz and compose-rollback.yml for app/worker only,
   images noor-rollback:tj-3egt-app and noor-rollback:tj-3egt-worker, previous
@@ -65,10 +73,6 @@ Status: tj-it9r reset remains live; tj-bltw is merged but not deployed after a f
 
 ## Explicit defers
 
-- `tj-bltw`: critical-only escalation policy is merged into main at
-  `3faa70296fe249ac4c93a3811565167dab84ab1e`; CI run 35825043070
-  failed tests, so the live runtime remains unchanged while the release gate
-  is corrected. Owner has authorized this deployment once the gate passes.
 - `tj-bgwu`: corpus identity tests assume normal treejar/.git; local full
   acceptance uses an isolated normal clone with canonical remote identity.
 - Existing unrelated product defects stay tracked separately. Wazzup sender
@@ -80,7 +84,8 @@ Status: tj-it9r reset remains live; tj-bltw is merged but not deployed after a f
 Next stage id: `none`
 Recommended action: continue tester-owned testing on test0665. Use Telegram only
 for authenticated admin reset operations. The live quotation scenario remains
-unprobed without new paid-call authority.
+unprobed without new paid-call authority; no synthetic customer messages or
+paid model calls were part of this release verification.
 
 ## Starter prompt for next orchestrator
 
@@ -88,5 +93,5 @@ Use $orchestrator-stage for a newly authorized change. Preserve test-only
 channels, worker restrictions, rollback evidence and unrelated work. The reset
 webhook repair is integrated into main; do not reintroduce the legacy relay.
 
-docs-reviewed: updated - current release, reset evidence and recovery recorded.
+docs-reviewed: updated - critical-only release, CI, backup and recovery recorded.
 graph-reviewed: no-change-needed - no graph is available in this worktree.

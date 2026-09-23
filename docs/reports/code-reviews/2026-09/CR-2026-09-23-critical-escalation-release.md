@@ -44,7 +44,7 @@ existing app-only rollback path; no customer data reset is part of this change.
 - `git diff --check`: PASS
 - `uv run ruff check src/ tests/`: PASS
 - `uv run ruff format --check src/ tests/`: PASS
-- `uv run mypy src/`: PASS (181 source files)
+- `uv run mypy src/`: PASS (182 source files)
 - Focused escalation, intent, engine, and repair tests: PASS (779 tests)
 - `scripts/orchestration/run_process_verification.sh`: PASS
 
@@ -61,5 +61,9 @@ limit. The critical tool implementation was extracted into
 `src/llm/escalation_tools.py` while retaining the engine registration and patch
 seam. Assertions now enforce the critical-only contract; the designated
 re-pin script updated only the mutable handoff source digest. The affected
-gate set passed locally (91 tests). A fresh CI run and actual deployment are
-still required.
+gate set passed locally (91 tests). The subsequent CI run 35825663699 passed
+(4,108 tests passed, 27 skipped; lint and types passed). The app-only deploy
+reported active release `1dd3b05d1fb69c6bf3b19e7ffb24a3d116334ac7`,
+and public API health returned that exact SHA with database and Redis healthy.
+The deploy log recorded backup
+`/opt/noor/.hotfix-backups/deploy-20260923T061517Z-from-64a28bd520fce97a998596a652666eb2267d71ee.tar.gz`.
