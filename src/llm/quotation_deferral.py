@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 PENDING_QUOTATION_KEY = "pending_quotation"
 _PENDING_QUOTATION_VERSION = 1
-_PENDING_QUOTATION_MAX_AGE = datetime.timedelta(days=7)
+PENDING_QUOTATION_MAX_AGE = datetime.timedelta(days=7)
 
 
 class _QuoteItem(Protocol):
@@ -111,7 +111,7 @@ def _failure_reason(exc: BaseException) -> tuple[str, float | None]:
 
 
 def _manager_alert_text(
-    conversation: Any, items: list[dict[str, Any]], reason: str
+    conversation: Any, items: list[dict[str, Any]], reason: str, *, final: bool = False
 ) -> str:
     metadata = getattr(conversation, "metadata_", None)
     details = (
@@ -129,20 +129,33 @@ def _manager_alert_text(
         f"• {html.escape(row['sku'])} × {row['quantity']}" for row in items
     )
     phone = html.escape(_string_value(getattr(conversation, "phone", "")))
+    title = (
+        "⚠️ <b>Quotation not completed automatically: please send it manually</b>"
+        if final
+        else "⏳ <b>Quotation pending: Zoho Inventory temporarily unavailable</b>"
+    )
+    follow_up = (
+        "Automatic retries stopped. The customer was told the quotation is being "
+        "prepared and has not been sent."
+        if final
+        else "The customer was told the quotation is being prepared and has not been "
+        "sent. The bot retries automatically over the next ~2 hours and on the "
+        "customer's next message; send it manually if it is urgent."
+    )
     return (
-        "⏳ <b>Quotation pending: Zoho Inventory temporarily unavailable</b>\n"
+        f"{title}\n"
         f"Reason: {html.escape(reason)}\n"
         f"Conversation: <code>{html.escape(str(getattr(conversation, 'id', '')))}</code>\n"
         f"Phone: {phone}\n"
         f"Customer: {customer or 'details in conversation'}\n"
         f"Items:\n{item_lines}\n"
-        "The customer was told the quotation is being prepared and has not been "
-        "sent. The bot retries on the customer's next message; send it manually "
-        "if it is urgent."
+        f"{follow_up}"
     )
 
 
-async def _alert_managers(deps: Any, items: list[dict[str, Any]], reason: str) -> bool:
+async def alert_managers_for_conversation(
+    deps: Any, items: list[dict[str, Any]], reason: str, *, final: bool = False
+) -> bool:
     """Operational Telegram alert that does not pause the bot."""
     from src.services.inbound_channels import (
         should_send_manager_alert_for_conversation_with_db,
@@ -156,7 +169,7 @@ async def _alert_managers(deps: Any, items: list[dict[str, Any]], reason: str) -
         ):
             return False
         return await send_telegram_message(
-            _manager_alert_text(conversation, items, reason)
+            _manager_alert_text(conversation, items, reason, final=final)
         )
     except Exception:
         logger.exception("Pending-quotation manager alert failed")
@@ -180,7 +193,7 @@ async def defer_quotation(
     same_request = previous.get("items") == rows
     manager_notified = bool(previous.get("manager_notified")) and same_request
     if not manager_notified:
-        manager_notified = await _alert_managers(deps, rows, reason)
+        manager_notified = await alert_managers_for_conversation(deps, rows, reason)
     now = datetime.datetime.now(datetime.UTC).isoformat()
     metadata = dict(getattr(conversation, "metadata_", None) or {})
     metadata[PENDING_QUOTATION_KEY] = {
@@ -197,12 +210,35 @@ async def defer_quotation(
         "attempts": (int(previous.get("attempts") or 0) + 1) if same_request else 1,
         "manager_notified": manager_notified,
     }
+    if same_request:
+        for key in ("retry_scheduled_for", "background_attempt"):
+            if previous.get(key) is not None:
+                metadata[PENDING_QUOTATION_KEY][key] = previous[key]
     conversation.metadata_ = metadata
+    await _schedule_background_retry(deps, retry_after)
     try:
         await deps.db.flush()
     except Exception:
         logger.warning("Could not flush the pending quotation", exc_info=True)
     return deferred_quotation_message(conversation, manager_notified=manager_notified)
+
+
+async def _schedule_background_retry(deps: Any, retry_after: float | None) -> None:
+    """tj-i0n0: finish the quotation without waiting for the customer."""
+    from src.services.quotation_retry import (
+        retry_is_scheduled,
+        schedule_pending_quotation_retry,
+    )
+
+    pending = pending_quotation(deps.conversation)
+    if pending is None or retry_is_scheduled(pending):
+        return
+    await schedule_pending_quotation_retry(
+        getattr(deps, "redis", None),
+        deps.conversation,
+        attempt=int(pending.get("background_attempt") or 0) + 1,
+        retry_after=retry_after,
+    )
 
 
 async def run_quotation_with_inventory_deferral(
@@ -254,7 +290,7 @@ def pending_quotation_directive(deps: Any) -> str | None:
         deferred_at = datetime.datetime.fromisoformat(str(pending.get("deferred_at")))
     except ValueError:
         return None
-    if datetime.datetime.now(datetime.UTC) - deferred_at > _PENDING_QUOTATION_MAX_AGE:
+    if datetime.datetime.now(datetime.UTC) - deferred_at > PENDING_QUOTATION_MAX_AGE:
         return None
     item_text = ", ".join(
         f"{row.get('sku')} x {row.get('quantity')}"

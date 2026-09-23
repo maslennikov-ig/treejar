@@ -82,11 +82,14 @@ Status: Tester-feedback repairs delivered to main and deployed as 9f62d29.
 
 ## Explicit defers
 
-- tj-uz6j.8: replay harness exists (scripts/scenario_replay.py); making it a
-  required release step for model/prompt switches is still open.
-- tj-i0n0: no background retry for deferred quotations; completion happens on
-  the next customer message or via the alerted manager.
-- tj-n4kt catalog stock drift and tj-1baw reply latency are tracked separately.
+- tj-1baw reply latency is tracked separately. Wazzup message times are
+  truncated to the minute, so logged queue_wait overstates waiting by up to 60 s.
+
+Closed after release: tj-uz6j.8 (owner: a mandatory replay gate is
+over-engineering; the harness stays optional), tj-n4kt (not a defect: Zoho
+confirms stock by client decision, docs/questions-for-client.md section 3),
+tj-i0n0 (background retry job `retry_pending_quotation`,
+src/services/quotation_retry.py).
 
 - tj-bgwu: corpus identity tests assume a normal .git directory; local linked
   worktree acceptance uses focused checks and canonical CI for the full suite.

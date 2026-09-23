@@ -26,6 +26,7 @@ from src.services.followup import run_automatic_followups, run_feedback_requests
 from src.services.metrics import calculate_and_store_metrics
 from src.services.notifications import run_daily_summary
 from src.services.proposal_followup import run_proposal_followups
+from src.services.quotation_retry import retry_pending_quotation
 from src.services.reports import run_weekly_report
 from src.services.runtime_monitoring import run_runtime_monitoring
 
@@ -86,12 +87,16 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 def build_worker_functions() -> list[Any]:
     """Build the ARQ function allowlist for the selected runtime mode."""
     inbound = func(process_incoming_batch, max_tries=INBOUND_BATCH_MAX_TRIES)
+    # Acts only on quotations a customer already requested in an accepted
+    # inbound conversation, so it stays on in test-channel restore mode.
+    quotation_retry = func(retry_pending_quotation, max_tries=1)
     if settings.test_channel_restore_mode:
-        return [inbound]
+        return [inbound, quotation_retry]
     return [
         sync_products_from_treejar_catalog,
         sync_products_from_zoho,
         inbound,
+        quotation_retry,
         refresh_conversation_summary,
         run_automatic_followups,
         run_proposal_followups,

@@ -39,7 +39,7 @@ def test_arq_worker_settings_configured() -> None:
     assert "run_runtime_monitoring" in cron_names
 
 
-def test_restore_mode_registers_only_inbound_without_cron() -> None:
+def test_restore_mode_registers_inbound_and_quote_retry_without_cron() -> None:
     from types import SimpleNamespace
     from unittest.mock import patch
 
@@ -49,7 +49,8 @@ def test_restore_mode_registers_only_inbound_without_cron() -> None:
         cron_jobs = build_worker_cron_jobs()
 
     assert [_function_name(function) for function in functions] == [
-        "process_incoming_batch"
+        "process_incoming_batch",
+        "retry_pending_quotation",
     ]
     assert cron_jobs == []
 
