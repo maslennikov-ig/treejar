@@ -316,6 +316,61 @@ def canonical_quote_workflow_metadata_present(
     return isinstance(runtime, Mapping) and QUOTE_WORKFLOW_METADATA_KEY in runtime
 
 
+QUOTATION_EFFECT_METADATA_KEY = "quotation_effect"
+QUOTATION_EFFECT_JOURNAL_METADATA_KEY = "quotation_effect_journal"
+QUOTATION_EFFECT_SENT_STATUS = "pdf_sent"
+
+
+def latest_sent_quotation_effect(
+    metadata: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """The most recent quotation whose PDF actually reached the customer.
+
+    The effect journal is written by `create_quotation` at every step of a
+    quotation (order created, PDF sending, PDF sent), newest last. An entry
+    that never reached `pdf_sent` is not a quotation the customer holds.
+    """
+
+    if not isinstance(metadata, Mapping):
+        return None
+    candidates: list[Mapping[str, Any]] = []
+    raw_journal = metadata.get(QUOTATION_EFFECT_JOURNAL_METADATA_KEY)
+    raw_entries = (
+        raw_journal.get("entries") if isinstance(raw_journal, Mapping) else None
+    )
+    if isinstance(raw_entries, list):
+        candidates.extend(entry for entry in raw_entries if isinstance(entry, Mapping))
+    latest = metadata.get(QUOTATION_EFFECT_METADATA_KEY)
+    if not candidates and isinstance(latest, Mapping):
+        candidates.append(latest)
+    for effect in reversed(candidates):
+        if effect.get("status") == QUOTATION_EFFECT_SENT_STATUS:
+            return dict(effect)
+    return None
+
+
+def quotation_was_sent(metadata: Mapping[str, Any] | None) -> bool:
+    """Whether a quotation document was delivered in this conversation.
+
+    Live check 2026-09-24 (tj-2ey4): Fr4032 was sent, yet the dialogue state
+    still said `quote_sent: false` because it only read the retired quote
+    frame. The decision directive then told the model "call create_quotation
+    now" on the customer's "it's okay", and Fr4033 went out. The delivered
+    PDF is the fact; this reads it.
+    """
+
+    if latest_sent_quotation_effect(metadata) is not None:
+        return True
+    if not isinstance(metadata, Mapping):
+        return False
+    proposal = metadata.get("proposal_followup")
+    return bool(
+        isinstance(proposal, Mapping)
+        and proposal.get("sent_at")
+        and proposal.get("kp_message_id")
+    )
+
+
 def quote_workflow_to_metadata(
     metadata: Mapping[str, Any] | None,
     workflow: QuoteWorkflowState,

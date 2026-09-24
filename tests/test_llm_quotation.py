@@ -164,6 +164,8 @@ async def test_create_quotation_reuses_effect_for_same_source_message() -> None:
 async def test_create_quotation_creates_new_effect_for_distinct_source_message() -> (
     None
 ):
+    """A later message gets a new quotation only when the document changes."""
+
     ctx, mock_inventory, mock_messaging = _quotation_idempotency_context()
 
     with (
@@ -179,17 +181,118 @@ async def test_create_quotation_creates_new_effect_for_distinct_source_message()
     ):
         first = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
         ctx.deps.source_message_id = "provider-message-2"
-        second = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
+        revised = await create_quotation(
+            ctx, [QuotationItem(sku="CHAIR-1", quantity=2)]
+        )
         ctx.deps.source_message_id = "provider-message-1"
-        first_retry_after_second = await create_quotation(
+        first_retry_after_revision = await create_quotation(
             ctx, [QuotationItem(sku="CHAIR-1", quantity=1)]
         )
 
     assert "SA-001" in first
-    assert "SA-002" in second
-    assert "SA-001" in first_retry_after_second
+    assert "SA-002" in revised
+    assert "SA-001" in first_retry_after_revision
     assert mock_inventory.create_sale_order.await_count == 2
     assert mock_messaging.send_media.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_create_quotation_never_reissues_an_unchanged_sent_quotation() -> None:
+    """tj-2ey4: "it's okay" to Fr4032 created Fr4033 with the same content."""
+
+    ctx, mock_inventory, mock_messaging = _quotation_idempotency_context()
+
+    with (
+        patch(
+            "src.services.pdf.generator.generate_pdf",
+            new_callable=AsyncMock,
+            return_value=b"pdf_data",
+        ),
+        patch(
+            "src.services.pdf.generator.render_quotation_html",
+            return_value="<html>",
+        ),
+    ):
+        first = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=2)])
+        ctx.deps.quotation_created = False
+        ctx.deps.source_message_id = "provider-message-2"
+        # A request deferred by Zoho for this same document is moot now.
+        ctx.deps.conversation.metadata_["pending_quotation"] = {
+            "status": "pending",
+            "items": [{"sku": "chair-1", "quantity": 2}],
+        }
+        # Letter case of the SKU is not a change to the document.
+        again = await create_quotation(ctx, [QuotationItem(sku="chair-1", quantity=2)])
+
+    assert "SA-001" in first
+    assert "SA-001" in again
+    assert "no new quotation was created" in again
+    assert ctx.deps.quotation_created is False
+    assert mock_inventory.create_sale_order.await_count == 1
+    assert mock_messaging.send_media.await_count == 1
+    assert mock_inventory.get_stock_bulk.await_count == 1
+    metadata = ctx.deps.conversation.metadata_
+    assert metadata["quotation_effect"]["sale_order_number"] == "SA-001"
+    assert metadata["order_runtime"]["quote_workflow"]["lifecycle"] == "created"
+    assert "pending_quotation" not in metadata
+
+
+@pytest.mark.asyncio
+async def test_create_quotation_reissues_when_customer_details_change() -> None:
+    ctx, mock_inventory, mock_messaging = _quotation_idempotency_context()
+
+    with (
+        patch(
+            "src.services.pdf.generator.generate_pdf",
+            new_callable=AsyncMock,
+            return_value=b"pdf_data",
+        ),
+        patch(
+            "src.services.pdf.generator.render_quotation_html",
+            return_value="<html>",
+        ),
+    ):
+        first = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=2)])
+        ctx.deps.source_message_id = "provider-message-2"
+        ctx.deps.conversation.metadata_["quote_customer_details"]["address"] = (
+            "Business Bay, Bay Square Building 5, Office 204"
+        )
+        revised = await create_quotation(
+            ctx, [QuotationItem(sku="CHAIR-1", quantity=2)]
+        )
+
+    assert "SA-001" in first
+    assert "SA-002" in revised
+    assert mock_inventory.create_sale_order.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_create_quotation_refuses_on_the_turn_acceptance_is_recorded() -> None:
+    ctx, mock_inventory, mock_messaging = _quotation_idempotency_context()
+
+    with (
+        patch(
+            "src.services.pdf.generator.generate_pdf",
+            new_callable=AsyncMock,
+            return_value=b"pdf_data",
+        ),
+        patch(
+            "src.services.pdf.generator.render_quotation_html",
+            return_value="<html>",
+        ),
+    ):
+        await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=2)])
+        ctx.deps.quotation_created = False
+        ctx.deps.source_message_id = "provider-message-2"
+        ctx.deps.quote_acceptance_recorded_this_turn = True
+        # Even a changed line: accepting the sent document is not a revision.
+        result = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=3)])
+
+    assert "acceptance of quotation SA-001 is recorded" in result
+    assert "No new quotation was created" in result
+    assert ctx.deps.quotation_created is False
+    assert mock_inventory.create_sale_order.await_count == 1
+    assert mock_messaging.send_media.await_count == 1
 
 
 @pytest.mark.asyncio

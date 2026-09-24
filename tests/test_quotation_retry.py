@@ -279,3 +279,25 @@ async def test_non_transient_outcome_hands_over_to_managers() -> None:
     send.assert_not_awaited()
     alert.assert_awaited_once()
     assert conversation.metadata_[PENDING_QUOTATION_KEY]["status"] == "needs_manager"
+
+
+@pytest.mark.asyncio
+async def test_retry_of_an_already_sent_quotation_stops_quietly() -> None:
+    """tj-2ey4: the tool drops a pending request whose document was already sent."""
+
+    from src.llm.quotation_deferral import clear_pending_quotation
+
+    conversation = _conversation(_pending())
+
+    async def already_sent(ctx: Any, items: Any) -> str:
+        clear_pending_quotation(ctx.deps.conversation)
+        return "Quotation SO-1, already sent to you, covers exactly these items."
+
+    result, send, alert = await _run(
+        conversation, AsyncMock(side_effect=already_sent), _ArqRedis()
+    )
+
+    assert result == "already_sent"
+    assert PENDING_QUOTATION_KEY not in conversation.metadata_
+    send.assert_not_awaited()
+    alert.assert_not_awaited()

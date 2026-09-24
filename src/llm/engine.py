@@ -68,6 +68,7 @@ from src.dialogue.order_state import (
     age_pending_question_frame,
     canonical_quote_workflow_from_metadata,
     canonical_quote_workflow_metadata_present,
+    latest_sent_quotation_effect,
     pending_question_frame_cleared_metadata,
     pending_question_frame_from_metadata,
     pending_question_frame_to_metadata,
@@ -225,6 +226,8 @@ from src.llm.order_status import format_order_status
 from src.llm.pii import EMAIL_PATTERN, PHONE_PATTERN, mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
 from src.llm.quotation_deferral import (
+    clear_pending_quotation,
+    pending_quotation,
     pending_quotation_directive,
     run_quotation_with_inventory_deferral,
 )
@@ -9152,6 +9155,107 @@ def _quotation_prepared_message(conversation: Conversation, quote_number: str) -
     )
 
 
+def _normalized_quotation_text(value: Any) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+def _quotation_content_fingerprint(
+    *,
+    items: Sequence[QuotationItem],
+    customer: Sequence[Any],
+) -> str:
+    """What the customer would read on the PDF: lines and customer block.
+
+    Unlike the effect fingerprint this carries no inbound message id, so the
+    same document requested again on a later turn has the same value. Prices
+    are left out on purpose: a revision is the customer's to ask for, and a
+    catalog price moving between turns is not one.
+    """
+
+    quantities: dict[str, int] = {}
+    for item in items:
+        sku = _normalized_quotation_text(item.sku)
+        quantities[sku] = quantities.get(sku, 0) + int(item.quantity)
+    material = "\n".join(
+        [
+            "content-v1",
+            *(f"item:{sku}|{quantity}" for sku, quantity in sorted(quantities.items())),
+            *(f"customer:{_normalized_quotation_text(value)}" for value in customer),
+        ]
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _unchanged_sent_quotation_reply(
+    deps: SalesDeps,
+    *,
+    items: Sequence[QuotationItem],
+    content_fingerprint: str,
+    source_message_id: str | None,
+) -> str | None:
+    """Refuse a second quotation for a document the customer already holds.
+
+    Live check 2026-09-24 (tj-2ey4): the customer answered Fr4032 with "it's
+    okay", the acceptance was recorded, and the same turn created Fr4033 with
+    the same items and details, because the effect fingerprint carries the
+    inbound message id and a new message is a new fingerprint. A quotation is
+    re-issued only when what it says changes. Two durable facts decide it:
+    acceptance recorded on this turn, and the content of the latest sent
+    quotation. Nothing here reads the customer's wording.
+    """
+
+    conversation = deps.conversation
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
+    )
+    sent = latest_sent_quotation_effect(metadata)
+    arabic = is_arabic_customer_language(getattr(conversation, "language", "en"))
+    if getattr(deps, "quote_acceptance_recorded_this_turn", False) is True:
+        quote_number = _string_value((sent or {}).get("sale_order_number")) or (
+            _metadata_quotation_number(metadata)
+        )
+        if arabic:
+            return (
+                f"تم تسجيل موافقتك على عرض السعر {quote_number}. لم يتم إنشاء عرض "
+                "سعر جديد."
+                if quote_number
+                else "تم تسجيل موافقتك على عرض السعر. لم يتم إنشاء عرض سعر جديد."
+            )
+        subject = f"quotation {quote_number}" if quote_number else "the quotation"
+        return (
+            f"Your acceptance of {subject} is recorded. No new quotation was "
+            "created: the one you accepted stands as sent."
+        )
+    if sent is None:
+        return None
+    if _string_value(sent.get("content_fingerprint")) != content_fingerprint:
+        return None
+    if not source_message_id or (
+        _string_value(sent.get("source_message_id")) == source_message_id
+    ):
+        # The same inbound message retrying its own quotation, or a direct
+        # call with no message identity: the effect journal below already
+        # answers both with the quotation they created.
+        return None
+    pending = pending_quotation(conversation)
+    if pending is not None and pending.get("items") == [
+        {"sku": str(item.sku).strip(), "quantity": int(item.quantity)} for item in items
+    ]:
+        clear_pending_quotation(conversation)
+    quote_number = _string_value(sent.get("sale_order_number")) or "DRAFT"
+    if arabic:
+        return (
+            f"عرض السعر {quote_number} المرسل إليك يغطي هذه المنتجات والكميات "
+            "والبيانات نفسها، لذلك لم يتم إنشاء عرض جديد. هل يناسبك، أم تود تغيير "
+            "شيء فيه؟"
+        )
+    return (
+        f"Quotation {quote_number}, already sent to you, covers exactly these "
+        "items, quantities and details, so no new quotation was created. Does it "
+        "work for you, or would you like to change anything in it?"
+    )
+
+
 async def _record_catalog_mismatch_and_alert(
     ctx: RunContext[SalesDeps],
     *,
@@ -10864,6 +10968,45 @@ async def _create_quotation(
             language=str(ctx.deps.conversation.language),
         )
 
+    # Customer-facing quotation fields must come from the current quote details,
+    # not stale CRM/test context attached to the WhatsApp number.
+    quote_customer_details = _quote_customer_details_from_metadata(
+        ctx.deps.conversation
+    )
+    customer_name = quote_customer_details.get("name") or _string_value(
+        getattr(ctx.deps.conversation, "customer_name", None)
+    )
+    customer_email = quote_customer_details.get("email", "")
+    explicit_company = _string_value(quote_customer_details.get("company"))
+    if explicit_company and not _is_individual_detail_value(explicit_company):
+        customer_company = explicit_company
+    elif _is_explicit_individual_customer(quote_customer_details):
+        customer_company = "Individual"
+    else:
+        customer_company = explicit_company
+    customer_phone = quote_customer_details.get("phone") or ctx.deps.conversation.phone
+    customer_address = quote_customer_details.get("address", "")
+
+    source_message_id = _quotation_source_message_id(ctx.deps)
+    content_fingerprint = _quotation_content_fingerprint(
+        items=items,
+        customer=(
+            customer_name,
+            customer_company,
+            customer_email,
+            customer_phone,
+            customer_address,
+        ),
+    )
+    unchanged_reply = _unchanged_sent_quotation_reply(
+        ctx.deps,
+        items=items,
+        content_fingerprint=content_fingerprint,
+        source_message_id=source_message_id,
+    )
+    if unchanged_reply is not None:
+        return unchanged_reply
+
     await _store_quote_workflow(
         ctx.deps.db,
         ctx.deps.conversation,
@@ -10959,25 +11102,6 @@ async def _create_quotation(
             }
         )
 
-    # Customer-facing quotation fields must come from the current quote details,
-    # not stale CRM/test context attached to the WhatsApp number.
-    quote_customer_details = _quote_customer_details_from_metadata(
-        ctx.deps.conversation
-    )
-    customer_name = quote_customer_details.get("name") or _string_value(
-        getattr(ctx.deps.conversation, "customer_name", None)
-    )
-    customer_email = quote_customer_details.get("email", "")
-    explicit_company = _string_value(quote_customer_details.get("company"))
-    if explicit_company and not _is_individual_detail_value(explicit_company):
-        customer_company = explicit_company
-    elif _is_explicit_individual_customer(quote_customer_details):
-        customer_company = "Individual"
-    else:
-        customer_company = explicit_company
-    customer_phone = quote_customer_details.get("phone") or ctx.deps.conversation.phone
-    customer_address = quote_customer_details.get("address", "")
-
     customer_id = await resolve_inventory_customer_id(
         phone=ctx.deps.conversation.phone,
         customer_name=customer_name,
@@ -10991,7 +11115,6 @@ async def _create_quotation(
     if customer_id is None:
         return await _fail_closed_exact_quote_request(ctx.deps)
 
-    source_message_id = _quotation_source_message_id(ctx.deps)
     effect_fingerprint = _quotation_effect_fingerprint(
         customer_id=customer_id,
         line_items=zoho_line_items,
@@ -11075,6 +11198,7 @@ async def _create_quotation(
                 {
                     "version": _QUOTATION_EFFECT_VERSION,
                     "fingerprint": effect_fingerprint,
+                    "content_fingerprint": content_fingerprint,
                     "operation_scope": (
                         "inbound_message" if source_message_id else "direct_fallback"
                     ),
@@ -11197,6 +11321,7 @@ async def _create_quotation(
             {
                 "version": _QUOTATION_EFFECT_VERSION,
                 "fingerprint": effect_fingerprint,
+                "content_fingerprint": content_fingerprint,
                 "operation_scope": (
                     "inbound_message" if source_message_id else "direct_fallback"
                 ),
@@ -11264,6 +11389,7 @@ async def _create_quotation(
         {
             "version": _QUOTATION_EFFECT_VERSION,
             "fingerprint": effect_fingerprint,
+            "content_fingerprint": content_fingerprint,
             "operation_scope": (
                 "inbound_message" if source_message_id else "direct_fallback"
             ),

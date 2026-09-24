@@ -25,6 +25,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal
 
+from pydantic_ai import RunContext
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import (
     ModelRequest,
@@ -68,6 +69,12 @@ from src.llm.pii import (
     mask_pii,
     unmask_pii,
 )
+from src.llm.quotation_completion import (
+    QuotationReadiness,
+    quotation_completion_directive,
+    quotation_items_to_complete,
+    quotation_readiness,
+)
 from src.llm.repair_judge import (
     RepairJudgeEvidence,
     RepairJudgeRunner,
@@ -109,6 +116,7 @@ from src.services.customer_language import (
 )
 from src.services.escalation_state import is_active_human_handoff
 from src.services.runtime_execution_evidence import (
+    build_runtime_tool_trace,
     extract_runtime_tool_traces,
 )
 
@@ -857,6 +865,85 @@ async def _read_turn_config(turn: _Turn) -> _TurnConfig:
     )
 
 
+async def _complete_ready_quotation(
+    turn: _Turn,
+    run_deps: SalesDepsT,
+    *,
+    readiness_before: QuotationReadiness,
+    db_model_main: str,
+    dynamic_model: OpenAIChatModelT,
+) -> LLMResponseT | None:
+    """Make the quotation call a ready turn owed and the model skipped.
+
+    tj-2ey4. Readiness is read from typed state only; see
+    `src.llm.quotation_completion`. The skipped turn's draft is discarded --
+    it was written as if nothing had happened -- and the model writes the
+    reply again, without tools, from the call's own result.
+    """
+
+    items = quotation_items_to_complete(readiness_before, run_deps)
+    if not items:
+        return None
+    logger.info(
+        "Quotation completed by the runtime after the model skipped it: "
+        "conversation=%s lines=%d",
+        run_deps.conversation.id,
+        len(items),
+    )
+    quote_ctx = RunContext(
+        deps=run_deps,
+        retry=0,
+        messages=[],
+        prompt=turn.masked_text,
+        model=dynamic_model,
+        usage=RunUsage(),
+    )
+    quote_text = await engine.create_quotation(quote_ctx, list(items))
+    trace = build_runtime_tool_trace(
+        tool_name="create_quotation",
+        arguments=[{"sku": item.sku, "quantity": item.quantity} for item in items],
+        outcome={"quotation_created": run_deps.quotation_created},
+    )
+    await turn.clear_repair_state()
+    rewrite_deps = replace(
+        run_deps,
+        tool_mode="catalog_materialization",
+        runtime_directives=(
+            *run_deps.runtime_directives,
+            quotation_completion_directive(items, quote_text),
+        ),
+    )
+    # Written from the conversation, not on top of the discarded draft.
+    turn.completed_model_history = None
+    try:
+        rewritten = await turn.run_agent(rewrite_deps)
+        response = turn.build_llm_response(
+            rewritten,
+            db_model_main,
+            response_deps=rewrite_deps,
+            allow_product_media=False,
+            route_suffix="quotation-completion",
+        )
+    except Exception:
+        # The quotation call has already happened; its own text is correct.
+        logger.warning(
+            "Quotation-completion reply failed for conversation %s; sending "
+            "the tool result",
+            run_deps.conversation.id,
+            exc_info=True,
+        )
+        response = turn.build_static_response(
+            quote_text,
+            f"{db_model_main}|quotation-completion",
+            response_deps=run_deps,
+            allow_product_media=False,
+        )
+    return replace(
+        response,
+        tool_traces=(*run_deps.recovery_tool_traces, trace),
+    )
+
+
 async def _sales_agent_route(
     turn: _Turn,
     *,
@@ -867,7 +954,17 @@ async def _sales_agent_route(
     """The ordinary turn: the sales agent runs, and its claims are checked."""
 
     run_deps = turn.deps
+    readiness_before = quotation_readiness(run_deps)
     result = await turn.run_agent(run_deps)
+    completed_quotation = await _complete_ready_quotation(
+        turn,
+        run_deps,
+        readiness_before=readiness_before,
+        db_model_main=db_model_main,
+        dynamic_model=dynamic_model,
+    )
+    if completed_quotation is not None:
+        return completed_quotation
     recovery_traces = tuple(run_deps.recovery_tool_traces)
     verified_catalog_facts = _materialize_verified_catalog_facts(run_deps)
     if verified_catalog_facts is not None:

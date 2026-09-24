@@ -312,6 +312,12 @@ async def retry_pending_quotation(
                 )
                 return "created"
 
+            if pending_quotation(conversation) is None:
+                # The same quotation was already sent (tj-2ey4): the tool
+                # dropped the pending request instead of issuing a duplicate.
+                await db.commit()
+                return "already_sent"
+
             # Zoho answered but the quotation cannot be completed automatically
             # (catalog mismatch, missing details, uncertain side effect). The
             # tool's own path already escalated where needed; stop retrying.
