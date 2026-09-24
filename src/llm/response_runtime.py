@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
+from src.dialogue.count_words import parse_count_word
 from src.dialogue.order_state import QuoteConsent
 from src.llm.response_policy import (
     AskKind,
@@ -155,21 +156,9 @@ _PRODUCT_REFERENCE_VARIANT_WORDS = frozenset(
 )
 
 
-_PRODUCT_REFERENCE_NUMBER_WORDS = {
-    "one": "1",
-    "single": "1",
-    "two": "2",
-    "double": "2",
-    "three": "3",
-    "four": "4",
-    "five": "5",
-    "six": "6",
-    "seven": "7",
-    "eight": "8",
-    "nine": "9",
-    "ten": "10",
-    "twelve": "12",
-}
+# Words that name a count only inside a product name; plain number words
+# ("four", "twelve", "twenty") come from the shared count vocabulary.
+_PRODUCT_REFERENCE_NUMBER_WORDS = {"single": "1", "double": "2"}
 _PRODUCT_REFERENCE_STOP_WORDS = frozenset(
     {"a", "an", "and", "for", "in", "of", "on", "the", "to", "with"}
 )
@@ -315,9 +304,16 @@ def _names_another_colour(
     return bool(stated_colours) and not stated_colours & reference_colours
 
 
+def _product_reference_number(word: str) -> str:
+    if word in _PRODUCT_REFERENCE_NUMBER_WORDS:
+        return _PRODUCT_REFERENCE_NUMBER_WORDS[word]
+    count = parse_count_word(word)
+    return str(count) if count is not None else word
+
+
 def _product_reference_words(value: str) -> list[str]:
     return [
-        _canonical_colour_word(word) or _PRODUCT_REFERENCE_NUMBER_WORDS.get(word, word)
+        _canonical_colour_word(word) or _product_reference_number(word)
         for word in _normalized_product_reference(value).split()
     ]
 
