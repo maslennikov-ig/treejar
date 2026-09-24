@@ -1,11 +1,33 @@
 # Orchestrator Handoff
 
 Updated: 2026-09-24
-Current branch: main (delivery branch: codex/tj-uxj0-dev-hardening)
-Current stage id: tj-uxj0-dev-hardening
-Status: Health check, debug/docs hardening and live-check repairs deployed as 33a2b02.
+Current branch: main (delivery branch: codex/tj-polish-0924)
+Current stage id: tj-polish-0924
+Status: Live-check follow-ups (consent grounding, earlier-offer carry-forward,
+colour-sibling media, shared count words) delivered on top of 33a2b02.
 
-## Current stage: tj-uxj0 runtime hardening 2026-09-24
+## Current stage: tj-polish-0924 live-check follow-ups 2026-09-24
+
+- Owner asked for the minor observations too, and for universal fixes rather
+  than per-incident word lists.
+- tj-aq4t: `src/dialogue/count_words.py` is the one vocabulary for spelled-out
+  counts (EN one..ninety-nine, dozen; AR 1..99 with spelling variants) and
+  head counts ("team of six", "فريق من ستة أشخاص"). It replaced the private
+  lists in verified_answers, catalog_planning, order_runtime, engine,
+  claim_contract and response_runtime; each caller keeps its own cap.
+- tj-h34w: quotation consent is recorded only when the quotation is on the
+  table (customer names it in EN/AR/RU, last assistant turn or proposal offered
+  it, or the quote workflow already discussed it);
+  `quotation_consent_is_grounded` in src/dialogue/order_state.py. A product
+  choice is a selection; the quotation is offered next.
+- tj-slzx: search_products carries an earlier offer of the same catalog family
+  forward (offered = product image reached the conversation), unless the
+  customer's selection settled that family.
+- tj-epls: colour siblings sharing a price are told apart by the colour in the
+  reply's own bullet, English or Arabic; a price shared with a fully matched
+  sibling is not evidence.
+
+## Previous stage: tj-uxj0 runtime hardening 2026-09-24
 
 - Health check on live 0f84a70 (Zoho quotation retry job, tj-i0n0): app,
   worker, db, redis, nginx up with zero restarts; no app/worker errors in 16 h;
