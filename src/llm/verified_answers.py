@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from src.dialogue.catalog_refs import fold_catalog_homoglyphs
+from src.dialogue.count_words import head_count, parse_count_word, strip_head_counts
 from src.llm.catalog_families import catalog_text_families
 from src.llm.money import BUDGET_AED_CURRENCY_PATTERN
 from src.services.customer_language import is_arabic_customer_language
@@ -1200,24 +1201,6 @@ def build_quote_or_proposal_clarification_response(language: str) -> str:
     )
 
 
-_CAPACITY_WORD_VALUES = {
-    "one": 1,
-    "two": 2,
-    "three": 3,
-    "four": 4,
-    "five": 5,
-    "six": 6,
-    "seven": 7,
-    "eight": 8,
-    "nine": 9,
-    "ten": 10,
-    "twelve": 12,
-}
-_CAPACITY_RE = re.compile(
-    r"\b(?P<count>\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|twelve)"
-    r"(?:[\s-]+)(?:person|people|staff|employees?|users?|seats?)\b",
-    re.IGNORECASE,
-)
 _WORKSTATION_MATCH_TERMS = frozenset(
     {"desk", "desks", "workstation", "workstations", "bench", "benches"}
 )
@@ -1255,11 +1238,7 @@ _STRUCTURED_DISCRIMINATOR_EXCLUSIONS = frozenset(
 
 
 def _capacity_value(text: str) -> int | None:
-    match = _CAPACITY_RE.search(_normalize(text))
-    if match is None:
-        return None
-    raw_count = match.group("count").casefold()
-    return int(raw_count) if raw_count.isdigit() else _CAPACITY_WORD_VALUES[raw_count]
+    return head_count(_normalize(text))
 
 
 def _explicit_structured_discriminators(query: str) -> set[str]:
@@ -1557,7 +1536,7 @@ _MONEY_AMOUNT_RE = re.compile(
 
 def query_names_specific_item(query: str) -> bool:
     """Whether the query names a code, brand, finish or model number."""
-    without_amounts = _MONEY_AMOUNT_RE.sub(" ", _CAPACITY_RE.sub(" ", query))
+    without_amounts = _MONEY_AMOUNT_RE.sub(" ", strip_head_counts(query))
     named = (
         (
             _explicit_structured_identifiers(query)
@@ -1602,19 +1581,21 @@ def _is_generic_need_request(
     """
     if query_names_specific_item(query):
         return False
-    need_text = _MONEY_AMOUNT_RE.sub(" ", _CAPACITY_RE.sub(" ", _normalize(query)))
+    need_text = _MONEY_AMOUNT_RE.sub(" ", strip_head_counts(_normalize(query)))
     terms = _tokenize(need_text) - _PRODUCT_MATCH_FILLER_TERMS
     if not terms:
         return False
     if terms & _PRODUCT_FINISH_TERMS:
         return False
-    # A head count ("a team of six") states the need, like a digit does.
+    # A head count ("a team of six", "twenty people") states the need, like a
+    # digit does; head-count phrases are stripped above, and any count word
+    # left over is still a count, never an unmet product word.
     open_terms = {
         term
         for term in terms
         if term not in _PRODUCT_NEED_TERMS
         and not term.isdigit()
-        and term not in _CAPACITY_WORD_VALUES
+        and parse_count_word(term) is None
     }
     candidate_union: set[str] = set().union(*candidate_tokens)
     candidate_families = set(candidate_families_hint)

@@ -12624,6 +12624,35 @@ async def test_realistic_opening_always_returns_verified_rows_not_a_form(
         assert rendered.count("?") + rendered.count("؟") <= 1
 
 
+@pytest.mark.parametrize(
+    ("opening", "expected_seats"),
+    [
+        pytest.param("نحتاج مكاتب لفريق من خمسة عشر شخصاً", 15, id="ar-team-of"),
+        pytest.param("نحتاج مكاتب لعشرين موظفاً", 20, id="ar-twenty"),
+        pytest.param("we need desks for a team of fifteen", 15, id="en-team-of"),
+    ],
+)
+def test_spelled_out_head_count_is_read_as_capacity(
+    opening: str,
+    expected_seats: int,
+) -> None:
+    # tj-aq4t: head counts past twelve, or phrased as "a team of N", were not
+    # read, so the catalog search lost the capacity constraint.
+    conversation = SimpleNamespace(id=uuid.uuid4(), metadata_={})
+
+    planning = engine_module._catalog_planning_for_turn(
+        conversation,
+        [f"user: {opening}"],
+        opening,
+    )
+
+    assert planning.requested_seats == expected_seats
+    assert (
+        engine_module._catalog_search_query_with_constraints("desks", opening, planning)
+        == f"desks {expected_seats} person"
+    )
+
+
 def test_catalog_plan_starts_new_epoch_for_independent_product_intent() -> None:
     current = "Now I need an ergonomic chair for my home office."
     conversation = SimpleNamespace(
@@ -14241,3 +14270,12 @@ async def test_a_bare_greeting_never_comes_back_with_a_starting_price(
     # The turn still does its job: the customer is greeted and asked something.
     assert "Are you furnishing a new office" in response.text
     mock_notify.assert_not_awaited()
+
+
+def test_spelled_out_counts_share_one_vocabulary_but_keep_site_caps() -> None:
+    # tj-aq4t: quantities read the shared vocabulary past ten; option ordinals
+    # still stop at ten.
+    assert engine_module._extract_bare_quantity_reply("fifteen") == 15
+    assert engine_module._extract_bare_quantity_reply("a") == 1
+    assert engine_module._ordinal_option_from_reply("option seven") == 7
+    assert engine_module._ordinal_option_from_reply("option twelve") is None

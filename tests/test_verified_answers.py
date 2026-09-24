@@ -889,6 +889,27 @@ def test_spelled_out_head_count_keeps_a_need_request_generic() -> None:
 
 @pytest.mark.parametrize(
     "query",
+    [
+        "comfortable chairs for a team of fifteen",
+        "comfortable office chairs for a team of six",
+        "office chairs for twenty people",
+        "office chairs for a team of 15",
+        "office chairs for twenty-five staff",
+    ],
+)
+def test_any_head_count_keeps_a_need_request_generic(query: str) -> None:
+    # tj-aq4t: head counts past ten or twelve, or phrased as "a team of N",
+    # used to read as unmet product words or as a model number.
+    chairs = [
+        "Executive Office Chair CH 430 Black",
+        "SkyLand Executive Chair CH 950 BLACK",
+        "Visitor Office Chair CH 490 V brown",
+    ]
+    assert classify_product_match(query, chairs) == "generic"
+
+
+@pytest.mark.parametrize(
+    "query",
     ["HERMAN desk for four people", "luma workstation", "Show a LUMA workstation"],
 )
 def test_named_but_absent_brand_stays_nearby(query: str) -> None:

@@ -28,6 +28,7 @@ from src.dialogue.claim_contract import (
     assumption_eligible_paths,
     signals_a_project,
 )
+from src.dialogue.count_words import COUNT_PATTERN, count_value, head_count
 from src.dialogue.state import DialogueState
 from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
@@ -213,53 +214,9 @@ def _explicit_product_option_cap(text: str) -> int | None:
     }[count_match.group("count")]
 
 
-_PLANNING_COUNT_VALUES = {
-    "one": 1,
-    "two": 2,
-    "three": 3,
-    "four": 4,
-    "five": 5,
-    "six": 6,
-    "seven": 7,
-    "eight": 8,
-    "nine": 9,
-    "ten": 10,
-    "eleven": 11,
-    "twelve": 12,
-    "واحد": 1,
-    "واحدة": 1,
-    "اثنان": 2,
-    "اثنين": 2,
-    "ثلاثة": 3,
-    "أربعة": 4,
-    "اربعة": 4,
-    "خمسة": 5,
-    "ستة": 6,
-    "سبعة": 7,
-    "ثمانية": 8,
-    "تسعة": 9,
-    "عشرة": 10,
-    "أحد عشر": 11,
-    "احد عشر": 11,
-    "اثنا عشر": 12,
-    "اثني عشر": 12,
-}
-_PLANNING_CAPACITY_RE = re.compile(
-    r"\b(?P<count>\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|"
-    r"eleven|twelve)(?:[\s-]+)(?:(?:[a-z][\w-]*)\s+){0,2}"
-    r"(?:person|people|staff|employees?|users?|designers?|seats?)\b",
-    re.IGNORECASE,
-)
-_AR_PLANNING_CAPACITY_RE = re.compile(
-    r"(?<!\w)ل?(?P<count>\d{1,3}|واحد(?:ة)?|اثنان|اثنين|ثلاثة|أربعة|اربعة|خمسة|"
-    r"ستة|سبعة|ثمانية|تسعة|عشرة|أحد عشر|احد عشر|اثنا عشر|اثني عشر)\s+"
-    r"(?:موظف(?:ين|ا?[ًٌٍَُِّْٰ]*)|مستخدم(?:ين|ا?[ًٌٍَُِّْٰ]*)|"
-    r"مصمم(?:ين|ا?[ًٌٍَُِّْٰ]*)|مقعد(?:ا?[ًٌٍَُِّْٰ]*)|مقاعد)(?!\w)",
-    re.IGNORECASE,
-)
 _CATALOG_CAPACITY_RE = re.compile(
-    r"\b(?P<count>\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|"
-    r"eleven|twelve)(?:[\s-]+)(?:person|people|staff|employees?|users?|seats?)\b",
+    rf"\b(?P<count>{COUNT_PATTERN})(?:[\s-]+)"
+    r"(?:person|people|staff|employees?|users?|seats?)\b",
     re.IGNORECASE,
 )
 _CATALOG_UNIT_PRODUCT_TERMS = (
@@ -790,19 +747,9 @@ class CatalogBudgetConstraints:
     per_item_cap: float | None = None
 
 
-def _planning_count_value(raw: str) -> int:
-    normalized = raw.casefold()
-    return (
-        int(normalized) if normalized.isdigit() else _PLANNING_COUNT_VALUES[normalized]
-    )
-
-
 def _requested_seat_count(text: str) -> int | None:
-    normalized = _normalize_text(text)
-    match = _PLANNING_CAPACITY_RE.search(normalized)
-    if match is None:
-        match = _AR_PLANNING_CAPACITY_RE.search(normalized)
-    return _planning_count_value(match.group("count")) if match else None
+    # "6 senior designers", "a team of fifteen", "لفريق من ستة أشخاص".
+    return head_count(_normalize_text(text), allow_modifiers=True)
 
 
 @dataclass(frozen=True)
@@ -1107,8 +1054,8 @@ def _turn_owes_the_company_question(deps: SalesDeps) -> bool:
 def _catalog_product_capacity(product_text: str) -> int | None:
     normalized = _normalize_text(product_text)
     match = _CATALOG_CAPACITY_RE.search(normalized)
-    if match:
-        return _planning_count_value(match.group("count"))
+    if match and (value := count_value(match.group("count"))) is not None:
+        return value
     if any(
         _contains_catalog_term(normalized, term) for term in _CATALOG_UNIT_PRODUCT_TERMS
     ):
@@ -4154,7 +4101,6 @@ __all__ = (
     "_ADD_CATALOG_ACTION_RE",
     "_ANCHOR_FAMILIES",
     "_ANCHOR_MIN_STOCK",
-    "_AR_PLANNING_CAPACITY_RE",
     "_BUDGET_CLAUSE_BOUNDARY_RE",
     "_CATALOG_BUDGET_CAP_RE",
     "_CATALOG_BUDGET_CURRENCY",
@@ -4197,8 +4143,6 @@ __all__ = (
     "_NEW_CATALOG_INTENT_RE",
     "_NON_FOOTPRINT_COMPONENT_RE",
     "_PER_ITEM_PRICE_RE",
-    "_PLANNING_CAPACITY_RE",
-    "_PLANNING_COUNT_VALUES",
     "_PRICE_FIGURE_RE",
     "_REPLACE_CATALOG_ACTION_RE",
     "_SKU_HOMOGLYPH_TRANSLATION",
@@ -4260,7 +4204,6 @@ __all__ = (
     "_needs_complete_catalog_coverage",
     "_parse_claim_inputs",
     "_parse_claim_payload",
-    "_planning_count_value",
     "_product_search_call_limit",
     "_product_search_response_contract",
     "_record_recovery_tool_result",
