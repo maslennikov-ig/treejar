@@ -130,15 +130,8 @@ colour-sibling media, shared count words) delivered on top of 33a2b02.
 - Primary model is `openai/gpt-6-luna`, with explicit core reasoning medium.
   DB override and environment fallback agree. Both running containers' settings
   and all four changed source hashes match the accepted code.
-- Curly/modifier apostrophes in introduced names are captured before generation;
-  generation-error replies no longer receive additive customer questions.
-- Agent instructions prohibit deriving price units from packaging counts.
-  Live Arabic/pack-price checks passed after a witnessed unsupported box-price
-  claim was corrected. Original failed/incomplete traces are retained.
-- Five distinct model scenarios checked across bounded runs: original Nadia,
-  exact SKU, declined quotation/order/handoff, Arabic opening, packaging price.
-  Real model/prompt/schemas, intercepted tool results, read-only catalog snapshot.
-  No customer sends or order/CRM mutations. This is not WhatsApp E2E proof.
+- Earlier checks (apostrophes, pack-price units, five bounded model
+  scenarios; not WhatsApp E2E) are in the report below.
 - Report/evidence: `docs/reports/2026-09-23-gpt6-luna-main.md` and its two JSON
   receipts. Tasks tj-qr32, tj-3nvu, tj-pmbv and tj-y1uj are delivered.
 - Prior critical-only escalation, model-owned intent, quotation consent and
