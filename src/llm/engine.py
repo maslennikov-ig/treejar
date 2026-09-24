@@ -4146,6 +4146,23 @@ async def _load_earlier_offered_products(
     return list(result.scalars().all())
 
 
+def _offer_group(product: Any) -> str | None:
+    """The kind of item a catalog row is, for comparing offers across turns.
+
+    The catalog category ("Chairs", "Workstation", "Desks & Tables") is the
+    authority; product text is only a fallback, because a name such as
+    "Workstation Chair" reads as two kinds of item.
+    """
+
+    category = str(getattr(product, "category", None) or "").strip().casefold()
+    if category:
+        return category
+    family = _catalog_product_family(
+        f"{product.name_en}\n{getattr(product, 'description_en', None) or ''}"
+    )
+    return family
+
+
 def _earlier_offer_note(products: Sequence[Any]) -> str:
     """Carry the options already offered into a new search for the same need.
 
@@ -9801,8 +9818,8 @@ async def search_products(
         else set()
     )
     result_product_keys: set[str] = set()
-    result_families: set[CatalogFamily] = set()
-    result_sku_families: list[tuple[str, CatalogFamily | None]] = []
+    result_groups: set[str] = set()
+    result_sku_groups: list[tuple[str, str]] = []
     for result_rank, r in enumerate(results.products):
         sku = str(r.sku).strip()
         sku_key = sku.casefold()
@@ -9861,9 +9878,9 @@ async def search_products(
         product_family = _catalog_product_family(product_text)
         row_product_key = str(getattr(r, "id", None) or r.sku)
         result_product_keys.add(row_product_key)
-        if product_family is not None:
-            result_families.add(product_family)
-            result_sku_families.append((sku, product_family))
+        if (offer_group := _offer_group(r)) is not None:
+            result_groups.add(offer_group)
+            result_sku_groups.append((sku, offer_group))
         if row_product_key in sent_media_product_keys:
             desc += "\nAlready offered to this customer earlier in this conversation."
         catalog_stock = max(int(r.stock or 0), 0)
@@ -10023,36 +10040,32 @@ async def search_products(
 
     if (
         sent_media_product_keys - result_product_keys
-        and result_families
+        and result_groups
         and not complementary_search
     ):
         offered = await _load_earlier_offered_products(
             ctx.deps.db, sent_media_product_keys
         )
-        # A choice the customer has made settles its family; only families
-        # still open carry an earlier offer forward.
+        # A choice the customer has made settles its group; only groups still
+        # open carry an earlier offer forward.
         selected_skus = {
             sku.casefold() for sku in closed_selection_skus(ctx.deps.conversation)
         }
-        open_families = result_families - {
-            family
-            for sku, family in [
-                *result_sku_families,
-                *(
-                    (
-                        str(product.sku),
-                        _catalog_product_family(_product_match_text(product)),
-                    )
-                    for product in offered
-                ),
-            ]
+        offered_sku_groups = [
+            (str(product.sku), group)
+            for product in offered
+            if (group := _offer_group(product)) is not None
+        ]
+        open_groups = result_groups - {
+            group
+            for sku, group in [*result_sku_groups, *offered_sku_groups]
             if sku.casefold() in selected_skus
         }
         earlier_offers = [
             product
             for product in offered
             if str(product.id) not in result_product_keys
-            and _catalog_product_family(_product_match_text(product)) in open_families
+            and _offer_group(product) in open_groups
         ]
         if earlier_offers:
             formatted_results.append(_earlier_offer_note(earlier_offers))

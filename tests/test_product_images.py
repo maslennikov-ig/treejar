@@ -460,13 +460,14 @@ async def test_search_products_skips_zoho_media_when_domain_missing_in_non_produ
     mock_messaging_client.send_media.assert_not_called()
 
 
-def _chair_results() -> Any:
+def _chair_results(category: str | None = None) -> Any:
     product = ProductRead(
         id="11111111-1111-1111-1111-111111111111",
         category_id="22222222-2222-2222-2222-222222222222",
         name_en="Test Chair",
         description_en="A great chair",
         sku="CHAIR-01",
+        category=category,
         price="100.00",
         currency="AED",
         image_url="https://example.com/chair.jpg",
@@ -550,9 +551,11 @@ _EARLIER_CHAIR_MEDIA_ID = (
 def _earlier_chair() -> SimpleNamespace:
     return SimpleNamespace(
         id=_EARLIER_CHAIR_ID,
-        sku="CH 145 M grey NEW",
-        name_en="Operative Office Chair CH 145 M grey NEW",
-        description_en="Office chair",
+        sku="CH 160 Black",
+        # Live check A5: "Workstation Chair" reads as two kinds of item, so the
+        # catalog category, not the name, decides what it is.
+        name_en="Skyland Workstation Chair CH 160 Black",
+        description_en="Workstation chair with adjustable armrests",
         category="Chairs",
         price=557,
         currency="AED",
@@ -570,13 +573,15 @@ async def test_search_products_carries_an_earlier_offer_forward(
         _scalars_result([_EARLIER_CHAIR_MEDIA_ID]),
         _scalars_result([_earlier_chair()]),
     ]
-    monkeypatch.setattr("src.llm.engine.rag_search_products", _chair_results())
+    monkeypatch.setattr(
+        "src.llm.engine.rag_search_products", _chair_results(category="Chairs")
+    )
 
     result = await search_products(run_context, "office chair")
 
     text = result.return_value if isinstance(result, ToolReturn) else result
     assert "Earlier in this conversation you already offered" in text
-    assert "CH 145 M grey NEW" in text
+    assert "CH 160 Black" in text
     assert "Keep that option as your lead recommendation" in text
 
 
@@ -594,7 +599,9 @@ async def test_search_products_does_not_reopen_a_chosen_family(
         _scalars_result([_EARLIER_CHAIR_MEDIA_ID]),
         _scalars_result([_earlier_chair()]),
     ]
-    monkeypatch.setattr("src.llm.engine.rag_search_products", _chair_results())
+    monkeypatch.setattr(
+        "src.llm.engine.rag_search_products", _chair_results(category="Chairs")
+    )
 
     result = await search_products(run_context, "office chair")
 
