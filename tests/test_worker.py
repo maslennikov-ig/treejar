@@ -39,7 +39,7 @@ def test_arq_worker_settings_configured() -> None:
     assert "run_runtime_monitoring" in cron_names
 
 
-def test_restore_mode_registers_conversation_jobs_without_cron() -> None:
+def test_restore_mode_registers_conversation_jobs_and_only_the_stock_cron() -> None:
     from types import SimpleNamespace
     from unittest.mock import patch
 
@@ -52,8 +52,11 @@ def test_restore_mode_registers_conversation_jobs_without_cron() -> None:
         "process_incoming_batch",
         "retry_pending_quotation",
         "refresh_conversation_summary",
+        "refresh_zoho_stock_snapshot",
     ]
-    assert cron_jobs == []
+    assert [c.coroutine.__qualname__ for c in cron_jobs] == [
+        "refresh_zoho_stock_snapshot"
+    ]
 
 
 def test_inbound_batch_job_has_bounded_retries() -> None:
@@ -154,3 +157,18 @@ def test_deploy_gate_allowlist_covers_restore_mode_functions() -> None:
 
     assert "process_incoming_batch" in names
     assert set(names) == allowlist
+
+
+def test_deploy_gate_cron_allowlist_covers_restore_mode_crons() -> None:
+    import re
+    from pathlib import Path
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    script = (Path(__file__).parent.parent / "scripts" / "vps-deploy.sh").read_text()
+    match = re.search(r"assert cron_names <= \{([^}]*)\}", script)
+    assert match is not None
+    with patch("src.worker.settings", SimpleNamespace(test_channel_restore_mode=True)):
+        names = {c.coroutine.__qualname__ for c in build_worker_cron_jobs()}
+
+    assert names == {name.strip().strip('"') for name in match.group(1).split(",")}

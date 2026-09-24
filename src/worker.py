@@ -10,6 +10,7 @@ from arq.cron import cron
 from src.core.config import settings
 from src.core.safe_logging import install_sensitive_url_filter
 from src.integrations.inventory.sync import (
+    refresh_zoho_stock_snapshot,
     sync_products_from_treejar_catalog,
     sync_products_from_zoho,
 )
@@ -92,9 +93,18 @@ def build_worker_functions() -> list[Any]:
     quotation_retry = func(retry_pending_quotation, max_tries=1)
     # Enqueued by the inbound turn itself once a dialogue outgrows the history
     # window; without it long conversations silently lose their early context.
+    # Keeps the shared Zoho stock snapshot fresh so customer turns only read
+    # it; stock is customer-facing in every mode, so it runs in restore mode.
+    stock_snapshot = func(refresh_zoho_stock_snapshot, max_tries=1)
     if settings.test_channel_restore_mode:
-        return [inbound, quotation_retry, func(refresh_conversation_summary)]
+        return [
+            inbound,
+            quotation_retry,
+            func(refresh_conversation_summary),
+            stock_snapshot,
+        ]
     return [
+        stock_snapshot,
         sync_products_from_treejar_catalog,
         sync_products_from_zoho,
         inbound,
@@ -115,10 +125,17 @@ def build_worker_functions() -> list[Any]:
 
 
 def build_worker_cron_jobs() -> list[Any]:
-    """Build scheduled work, leaving recovery mode strictly inbound-only."""
+    """Build scheduled work; recovery mode keeps only the stock snapshot."""
+    stock_snapshot = cron(
+        refresh_zoho_stock_snapshot,
+        minute={1, 6, 11, 16, 21, 26, 31, 36, 41, 46, 51, 56},
+        run_at_startup=True,
+        unique=True,
+    )
     if settings.test_channel_restore_mode:
-        return []
+        return [stock_snapshot]
     return [
+        stock_snapshot,
         cron(
             sync_products_from_treejar_catalog,
             hour={0, 6, 12, 18},

@@ -265,7 +265,22 @@ async def test_snapshot_is_built_from_paged_items_and_serves_later_reads() -> No
     await client.close()
 
 
-async def test_stale_snapshot_is_refreshed_by_the_lock_holder() -> None:
+async def test_customer_turn_reads_an_aging_snapshot_without_refreshing() -> None:
+    # tj-3vz5: the worker job refreshes; a customer turn never waits for it.
+    redis = _FakeRedis(
+        {ZOHO_STOCK_SNAPSHOT_KEY: _snapshot_value([_item("A", 1)], age=1200)},
+        snapshot_lock_held=False,
+    )
+    client = _client(redis)
+    request = AsyncMock()
+    with patch.object(client.client, "request", request):
+        item = await client.get_stock("A")
+    request.assert_not_awaited()
+    assert item is not None and item["stock_on_hand"] == 1
+    await client.close()
+
+
+async def test_background_refresh_rebuilds_the_snapshot() -> None:
     redis = _FakeRedis(
         {ZOHO_STOCK_SNAPSHOT_KEY: _snapshot_value([_item("A", 1)], age=700)},
         snapshot_lock_held=False,
@@ -277,12 +292,29 @@ async def test_stale_snapshot_is_refreshed_by_the_lock_holder() -> None:
     )
     request = AsyncMock(return_value=fresh_page)
     with patch.object(client.client, "request", request):
-        item = await client.get_stock("A")
-    assert item is not None and item["stock_on_hand"] == 9
+        refreshed = await client.refresh_stock_snapshot()
+    assert refreshed is not None
     assert request.await_count == 1
     assert _stored_snapshot(redis)["items"]["A"]["stock_on_hand"] == 9
     assert ZOHO_STOCK_SNAPSHOT_LOCK_KEY not in redis.values
     await client.close()
+
+
+async def test_refresh_job_stores_the_snapshot_and_reports_its_size() -> None:
+    from src.integrations.inventory import sync
+
+    redis = _FakeRedis({}, snapshot_lock_held=False)
+    fresh_page = _response(
+        200,
+        json={
+            "items": [_item("A", 2), _item("B", 3)],
+            "page_context": {"has_more_page": False},
+        },
+    )
+    with patch("httpx.AsyncClient.request", AsyncMock(return_value=fresh_page)):
+        result = await sync.refresh_zoho_stock_snapshot({"redis": redis})
+    assert result == {"skus": 2}
+    assert set(_stored_snapshot(redis)["items"]) == {"A", "B"}
 
 
 async def test_fresh_snapshot_hit_makes_no_zoho_call() -> None:
@@ -344,11 +376,11 @@ async def test_refresh_hitting_a_429_keeps_the_previous_snapshot() -> None:
         patch.object(client.client, "request", request),
         patch("src.integrations.inventory.zoho_inventory.asyncio.sleep", AsyncMock()),
     ):
-        item = await client.get_stock("A")
+        assert await client.refresh_stock_snapshot() is None
         # The cooldown the 429 started blocks the next refresh without a call.
-        again = await client.get_stock("A")
+        assert await client.refresh_stock_snapshot() is None
+        item = await client.get_stock("A")
     assert item is not None and item["stock_on_hand"] == 5
-    assert again is not None and again["stock_on_hand"] == 5
     assert request.await_count == 1
     assert redis.values[ZOHO_STOCK_SNAPSHOT_KEY] == old
     assert ZOHO_STOCK_SNAPSHOT_LOCK_KEY not in redis.values

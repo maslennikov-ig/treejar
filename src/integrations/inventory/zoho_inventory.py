@@ -55,9 +55,10 @@ _process_rate_limited_until = 0.0
 # snapshot cannot answer with a number.
 ZOHO_STOCK_SNAPSHOT_KEY = "zoho:inventory:stock_snapshot:v1"
 ZOHO_STOCK_SNAPSHOT_LOCK_KEY = "zoho:inventory:stock_snapshot:lock"
-# Served as current for this long after it was built.
-STOCK_SNAPSHOT_FRESH_SECONDS = 600.0
-# Still served, instead of per-SKU calls, while a refresh cannot complete.
+# The worker job rebuilds the snapshot this often (tj-3vz5).
+STOCK_SNAPSHOT_FRESH_SECONDS = 300.0
+# Served without a refresh up to this age, so a customer turn never waits for
+# one while the job runs; past it the snapshot has expired from Redis.
 STOCK_SNAPSHOT_STALE_SECONDS = 3600.0
 # Covers a full refresh including the bounded inline 429 waits of each page.
 STOCK_SNAPSHOT_LOCK_TTL_SECONDS = 120
@@ -810,28 +811,30 @@ class ZohoInventoryClient(InventoryProvider):
         return StockSnapshot(as_of=time.time(), items=items)
 
     async def _stock_snapshot(self) -> StockSnapshot | None:
-        """A snapshot fit to serve stock from, refreshing it when stale.
+        """A snapshot fit to serve stock from, read without a Zoho call.
 
-        One process refreshes under a Redis SET NX lock; the others keep
-        serving the previous snapshot while it is inside the stale window. A
-        failed refresh (including a 429 or an active cooldown) keeps the old
-        snapshot. None means stock has to be looked up live.
+        tj-3vz5: the `refresh_zoho_stock_snapshot` worker job keeps the
+        snapshot fresh, so a customer turn only reads it. A turn refreshes it
+        itself only when no snapshot inside the stale window exists (the job
+        is not running yet, or Redis lost the key). None means stock has to be
+        looked up live.
         """
         snapshot, readable = await self._read_stock_snapshot()
         if not readable:
             return None
-        now = time.time()
-        if snapshot is not None and snapshot.age_seconds(now) < (
-            STOCK_SNAPSHOT_FRESH_SECONDS
+        if snapshot is not None and snapshot.age_seconds(time.time()) < (
+            STOCK_SNAPSHOT_STALE_SECONDS
         ):
             return snapshot
-        fallback = (
-            snapshot
-            if snapshot is not None
-            and snapshot.age_seconds(now) < STOCK_SNAPSHOT_STALE_SECONDS
-            else None
-        )
+        return await self.refresh_stock_snapshot()
 
+    async def refresh_stock_snapshot(self) -> StockSnapshot | None:
+        """Rebuild and store the shared snapshot; None if this run did not.
+
+        One process refreshes under a Redis SET NX lock. A failed refresh
+        (including a 429 or an active cooldown) leaves the stored snapshot as
+        it was.
+        """
         lock_owner = uuid.uuid4().hex
         try:
             acquired = await self.redis.set(
@@ -842,21 +845,18 @@ class ZohoInventoryClient(InventoryProvider):
             )
         except Exception:
             logger.warning("Could not take the Zoho stock snapshot refresh lock")
-            return fallback
+            return None
         if not acquired:
-            return fallback
+            return None
 
         try:
             refreshed = await self._build_stock_snapshot()
         except Exception as exc:
             logger.warning(
-                "Zoho stock snapshot refresh failed (%s); %s",
+                "Zoho stock snapshot refresh failed (%s); keeping the previous one",
                 type(exc).__name__,
-                "serving the previous snapshot"
-                if fallback is not None
-                else "looking stock up live",
             )
-            return fallback
+            return None
         finally:
             try:
                 await release_zoho_oauth_lock(

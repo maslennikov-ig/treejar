@@ -458,3 +458,14 @@ async def _generate_missing_embeddings() -> int:
         except Exception as e:
             logger.error("Error generating embeddings: %s", e)
             return 0
+
+
+async def refresh_zoho_stock_snapshot(ctx: dict[str, Any]) -> dict[str, int]:
+    """ARQ cron job: rebuild the shared Zoho stock snapshot (tj-3vz5).
+
+    Customer turns read the snapshot and never wait for its refresh; this job
+    keeps it inside `STOCK_SNAPSHOT_FRESH_SECONDS`.
+    """
+    async with _zoho_client(ctx["redis"]) as client:
+        snapshot = await client.refresh_stock_snapshot()
+    return {"skus": len(snapshot.items) if snapshot is not None else 0}

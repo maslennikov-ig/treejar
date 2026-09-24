@@ -41,8 +41,12 @@ colour-sibling media, shared count words) delivered on top of 33a2b02.
   failed SKU no longer fails the batch, case/Cyrillic duplicate SKUs prefer
   the row with a number. Evidence: per-SKU calls hit Zoho 429 and a 30 min
   cooldown, and every search then showed "unconfirmed". Without a Zoho figure
-  the reply states no number and does not say "unconfirmed". Open: the
-  refresh runs inside the customer turn that finds the snapshot stale.
+  the reply states no number and does not say "unconfirmed".
+- tj-3vz5: the ARQ cron `refresh_zoho_stock_snapshot` rebuilds the snapshot
+  every 5 minutes (also in TEST_CHANNEL_RESTORE_MODE, its only cron there;
+  vps-deploy.sh allowlists it for functions and crons). Customer turns only
+  read the snapshot; they refresh it themselves only when none under an hour
+  old exists.
 
 ## Previous stage: tj-uxj0 runtime hardening 2026-09-24
 
@@ -68,8 +72,9 @@ colour-sibling media, shared count words) delivered on top of 33a2b02.
   registered and allowed by the deploy probe); "a team of six" made a generic
   request "nearby" (tj-rn1r). Live recheck confirmed all three. No quotations,
   escalations or CRM writes were triggered.
-- Worker registers process_incoming_batch, retry_pending_quotation and
-  refresh_conversation_summary.
+- Restore-mode worker registers process_incoming_batch,
+  retry_pending_quotation, refresh_conversation_summary and
+  refresh_zoho_stock_snapshot (cron every 5 min).
 
 ## Previous stage: tj-uz6j tester feedback 2026-09-23
 
