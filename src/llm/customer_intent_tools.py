@@ -119,6 +119,14 @@ async def record_customer_intent(
         d.field == "customer_type" and d.value != "individual" for d in details or []
     ):
         return "Not recorded: customer_type must be individual; use company for a business."
+    if quotation_consent == "deferred" and not _quotation_on_the_table(ctx.deps):
+        # A deferral answers an offer; with none made, the reply would put a
+        # quotation "on hold" the customer never discussed (tj-2ey4).
+        return (
+            "Not recorded: no quotation has been offered or asked for, so there is "
+            "nothing to defer. If the customer chose products, record that with "
+            "record_customer_requirements and offer to prepare the quotation."
+        )
     if quotation_consent == "granted" and not _quotation_on_the_table(ctx.deps):
         return (
             "Not recorded: quotation consent needs the customer to ask for a "

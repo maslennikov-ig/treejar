@@ -48,6 +48,25 @@ colour-sibling media, shared count words) delivered on top of 33a2b02.
   read the snapshot; they refresh it themselves only when none under an hour
   old exists.
 
+- Angela's recheck (79689818825, conversations 76bc49c8 and 7207b4a1, run on
+  33a2b02 before the fixes above): photos, Zoho stock, merged messages and the
+  wrong-layout "yes" were right. Her page notes never reached the store (an
+  outside link viewer holds db level `view`, writes reject invalid_argument);
+  the page now keeps them locally and points to the text report.
+- tj-2ey4: "it's okay" to sent Fr4032 created Fr4033. Cause: `quote_sent`
+  read only the retired quote frame, so the decision directive kept saying
+  "call create_quotation now", and the effect fingerprint includes the source
+  message. `quotation_was_sent` (order_state) now feeds `quote_sent`;
+  `_create_quotation` refuses on an acceptance turn and refuses to re-issue an
+  unchanged sent quotation (items + customer block fingerprint). The turn that
+  completes consent or details with exact items now gets its quotation from the
+  runtime (`src/llm/quotation_completion.py`) when the model did not call it --
+  owner-visible departure from "model owns the next action", same precedent as
+  the retry job. Consent "deferred" needs the quotation on the table too.
+- tj-lbnt: the limited-stock warning is skipped when the reply already states
+  the verified figure; stock lines tell the model to state a shortfall as
+  "only N in stock", never an unconfirmed remainder.
+
 ## Previous stage: tj-uxj0 runtime hardening 2026-09-24
 
 - Health check on live 0f84a70 (Zoho quotation retry job, tj-i0n0): app,

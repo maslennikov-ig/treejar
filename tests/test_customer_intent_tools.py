@@ -433,3 +433,38 @@ async def test_quotation_consent_is_recorded_when_the_quotation_is_on_the_table(
         quote_workflow_from_metadata(ctx.deps.conversation.metadata_).consent
         is QuoteConsent.GRANTED
     )
+
+
+@pytest.mark.asyncio
+async def test_quotation_is_not_deferred_when_none_was_offered() -> None:
+    # Live check 2026-09-24: "LUMA would be perfect" became "I'll leave the
+    # quotation on hold" although nobody had mentioned a quotation.
+    customer_text = "LUMA would be perfect for us."
+    ctx = context(customer_text)
+    ctx.deps.recent_history = [
+        "assistant: Would you like to proceed with NOVO, or would LUMA suit you better?",
+        f"user: {customer_text}",
+    ]
+
+    result = await engine.record_customer_intent(
+        ctx, evidence=customer_text, quotation_consent="deferred"
+    )
+
+    assert result.startswith("Not recorded")
+    assert (
+        quote_workflow_from_metadata(ctx.deps.conversation.metadata_).consent
+        is QuoteConsent.NOT_REQUESTED
+    )
+
+
+@pytest.mark.asyncio
+async def test_quotation_is_deferred_when_the_customer_names_it() -> None:
+    customer_text = "No quotation yet, just the price."
+    ctx = context(customer_text)
+    ctx.deps.recent_history = [f"user: {customer_text}"]
+
+    result = await engine.record_customer_intent(
+        ctx, evidence=customer_text, quotation_consent="deferred"
+    )
+
+    assert result.startswith("Customer intent recorded")
