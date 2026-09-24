@@ -343,6 +343,61 @@ async def test_consented_selection_switches_to_proceed_mode() -> None:
     assert "call create_quotation now" in closed
 
 
+def _live_76bc49c8_metadata_after_fr4032() -> dict[str, Any]:
+    """Conversation 76bc49c8 (2026-09-24) right after Fr4032 reached Nadia."""
+
+    state = DialogueState()
+    state.slots.selected_items = [{"sku": LUMA_4, "quantity": 2}]
+    return {
+        **state.to_metadata(),
+        "order_runtime": {
+            "quote_workflow": {
+                "version": 2,
+                "consent": "granted",
+                "lifecycle": "created",
+            }
+        },
+        "quote_customer_details": {
+            "company": "AIDevTeam",
+            "address": "5, Street 27A, Ad Jafiliya, Bur Dubai, Emirate of Dubai",
+            "email": "Anjela.abramian@mail.ru",
+        },
+        "quotation_effect_journal": {
+            "version": 1,
+            "entries": [
+                {
+                    "version": 2,
+                    "fingerprint": "0e7e",
+                    "source_message_id": "abf85a15",
+                    "sale_order_number": "Fr4032",
+                    "status": "pdf_sent",
+                }
+            ],
+        },
+    }
+
+
+def test_sent_quotation_is_quote_sent_and_is_never_directed_again() -> None:
+    """tj-2ey4: `quote_sent: false` after Fr4032 told the model to create Fr4033."""
+
+    conversation = _conversation(_live_76bc49c8_metadata_after_fr4032())
+
+    assert DialogueState.from_conversation(conversation).slots.quote_sent is True
+    directives = decision_state_directives(
+        conversation, customer_text="it's okay", missing_quote_details=[]
+    )
+    assert not any("create_quotation" in directive for directive in directives)
+    assert not any("CLOSED DECISION" in directive for directive in directives)
+
+
+def test_a_quotation_still_being_sent_is_not_quote_sent() -> None:
+    metadata = _live_76bc49c8_metadata_after_fr4032()
+    metadata["quotation_effect_journal"]["entries"][0]["status"] = "pdf_sending"
+    conversation = _conversation(metadata)
+
+    assert DialogueState.from_conversation(conversation).slots.quote_sent is False
+
+
 # --- Replay: conversation fa224cab ---------------------------------------------
 
 

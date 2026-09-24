@@ -11,6 +11,7 @@ from src.dialogue.order_state import (
     QuoteFrame,
     QuoteLifecycle,
     canonical_quote_workflow_from_metadata,
+    quotation_was_sent,
     quote_frame_from_metadata,
     quote_frame_is_active,
     quote_workflow_from_metadata,
@@ -258,6 +259,7 @@ class DialogueState(BaseModel):
             quote_frame is not None and quote_frame.status == "quoted"
         )
         quote_sent = quote_sent or selection_source == "quotation_sent"
+        quote_sent = quote_sent or quotation_was_sent(metadata)
         if quote_sent:
             slot_updates["quote_sent"] = True
             slot_updates["post_quotation_status"] = quote_status or "sent"
