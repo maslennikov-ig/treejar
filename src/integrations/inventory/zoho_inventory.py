@@ -3,11 +3,15 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import email.utils
+import json
 import logging
 import math
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
+from datetime import UTC, datetime
 from typing import Any, NotRequired, TypedDict
 
 import httpx
@@ -43,6 +47,42 @@ _RATE_LIMIT_INLINE_WAIT_BUDGET_SECONDS = 10.0
 _READ_CACHE_TTL_SECONDS = 60.0
 _READ_CACHE_MAX_ENTRIES = 128
 _process_rate_limited_until = 0.0
+
+# tj-4qtv. Customer-facing stock always comes from Zoho Inventory, but asking
+# Zoho once per SKU on every product search ran the shared organisation quota
+# into 429s (live 2026-09-24). Every process now reads one shared snapshot of
+# the active item list from Redis and only asks Zoho live for SKUs the
+# snapshot cannot answer with a number.
+ZOHO_STOCK_SNAPSHOT_KEY = "zoho:inventory:stock_snapshot:v1"
+ZOHO_STOCK_SNAPSHOT_LOCK_KEY = "zoho:inventory:stock_snapshot:lock"
+# Served as current for this long after it was built.
+STOCK_SNAPSHOT_FRESH_SECONDS = 600.0
+# Still served, instead of per-SKU calls, while a refresh cannot complete.
+STOCK_SNAPSHOT_STALE_SECONDS = 3600.0
+# Covers a full refresh including the bounded inline 429 waits of each page.
+STOCK_SNAPSHOT_LOCK_TTL_SECONDS = 120
+STOCK_SNAPSHOT_PAGE_SIZE = 200
+# 50 x 200 items; the organisation had about 2,100 active items in 2026.
+STOCK_SNAPSHOT_MAX_PAGES = 50
+_STOCK_SNAPSHOT_FIELDS = (
+    "item_id",
+    "sku",
+    "name",
+    "description",
+    "status",
+    "stock_on_hand",
+    "available_stock",
+    "actual_available_stock",
+    "rate",
+    "unit",
+)
+# Zoho holds duplicate items whose SKUs differ only in case or in Cyrillic
+# letters that look like Latin ones ("CH 240 V black" / "CH 240 V Black").
+_SKU_HOMOGLYPHS = str.maketrans(
+    "\u0410\u0412\u0421\u0415\u041d\u0406\u041a\u041c\u041e\u0420\u0422\u0425\u0423"
+    "\u0430\u0435\u043e\u0440\u0441\u0443\u0445\u0456",
+    "ABCEHIKMOPTXYaeopcyxi",
+)
 
 
 class ZohoRateLimitError(httpx.HTTPStatusError):
@@ -86,6 +126,120 @@ def reset_rate_limit_cooldown() -> None:
     """Forget the in-process cooldown (tests and operator tooling)."""
     global _process_rate_limited_until
     _process_rate_limited_until = 0.0
+
+
+def _sku_match_key(sku: str) -> str:
+    return " ".join(sku.translate(_SKU_HOMOGLYPHS).casefold().split())
+
+
+def has_numeric_stock(item: Mapping[str, Any]) -> bool:
+    """Whether Zoho reported an actual stock_on_hand number for the item."""
+    value = item.get("stock_on_hand")
+    if value is None or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def select_stock_item(
+    sku: str, items: Iterable[Mapping[str, Any]]
+) -> dict[str, Any] | None:
+    """Pick the Zoho item for a SKU among candidates.
+
+    An exact SKU wins, then a match that differs only in case or look-alike
+    Cyrillic letters; within each, an item with a numeric stock_on_hand is
+    preferred over one without.
+    """
+    candidates = [item for item in items if isinstance(item, Mapping)]
+    exact = [item for item in candidates if item.get("sku") == sku]
+    key = _sku_match_key(sku)
+    loose = [
+        item
+        for item in candidates
+        if isinstance(item.get("sku"), str) and _sku_match_key(item["sku"]) == key
+    ]
+    for group in (
+        [item for item in exact if has_numeric_stock(item)],
+        [item for item in loose if has_numeric_stock(item)],
+        exact,
+        loose,
+    ):
+        if group:
+            return dict(group[0])
+    return None
+
+
+def _stock_snapshot_record(raw_item: Any) -> dict[str, Any] | None:
+    if not isinstance(raw_item, Mapping):
+        return None
+    sku = raw_item.get("sku")
+    if not isinstance(sku, str) or not sku.strip():
+        return None
+    return {name: raw_item[name] for name in _STOCK_SNAPSHOT_FIELDS if name in raw_item}
+
+
+@dataclass
+class StockSnapshot:
+    """Minimal Zoho item fields keyed by exact SKU, built at ``as_of``."""
+
+    as_of: float
+    items: dict[str, dict[str, Any]]
+    _by_key: dict[str, list[dict[str, Any]]] = dataclass_field(
+        default_factory=dict, init=False, repr=False
+    )
+
+    def __post_init__(self) -> None:
+        for item in self.items.values():
+            key = _sku_match_key(str(item.get("sku", "")))
+            self._by_key.setdefault(key, []).append(item)
+
+    def age_seconds(self, now: float | None = None) -> float:
+        return (time.time() if now is None else now) - self.as_of
+
+    def lookup(self, sku: str) -> dict[str, Any] | None:
+        """The item for a SKU, stamped with the snapshot time, or None."""
+        exact = self.items.get(sku)
+        candidates = [exact] if exact is not None else []
+        candidates.extend(self._by_key.get(_sku_match_key(sku), ()))
+        item = select_stock_item(sku, candidates)
+        if item is None:
+            return None
+        item["stock_as_of"] = datetime.fromtimestamp(self.as_of, UTC).isoformat()
+        return item
+
+    def to_json(self) -> str:
+        return json.dumps({"as_of": self.as_of, "items": self.items})
+
+    @classmethod
+    def from_raw(cls, raw: Any) -> StockSnapshot | None:
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="ignore")
+        if not isinstance(raw, str):
+            return None
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return None
+        if not isinstance(data, dict):
+            return None
+        as_of = data.get("as_of")
+        items = data.get("items")
+        if (
+            not isinstance(as_of, (int, float))
+            or isinstance(as_of, bool)
+            or not isinstance(items, dict)
+        ):
+            return None
+        return cls(
+            as_of=float(as_of),
+            items={
+                str(sku): dict(item)
+                for sku, item in items.items()
+                if isinstance(item, dict)
+            },
+        )
 
 
 def contact_lists_only_other_phones(
@@ -579,57 +733,222 @@ class ZohoInventoryClient(InventoryProvider):
 
         raise RuntimeError("Unreachable")
 
-    async def get_items(self, page: int = 1, per_page: int = 200) -> dict[str, Any]:
+    async def get_items(
+        self,
+        page: int = 1,
+        per_page: int = 200,
+        *,
+        end_products_only: bool = True,
+    ) -> dict[str, Any]:
         """Fetch a page of active items from Zoho Inventory.
 
         Returns the raw dict containing 'items' and 'page_context'.
         """
-        response = await self._request(
-            "GET",
-            "/items",
-            params={
-                "page": page,
-                "per_page": per_page,
-                "status": "active",
-                # Treejar-specific custom field: filters only end products (not raw materials)
-                "cf_end_product": "true",
-            },
-        )
+        params: dict[str, Any] = {
+            "page": page,
+            "per_page": per_page,
+            "status": "active",
+        }
+        if end_products_only:
+            # Treejar-specific custom field: filters only end products (not raw materials)
+            params["cf_end_product"] = "true"
+        response = await self._request("GET", "/items", params=params)
         return dict(response.json())
 
-    async def get_stock(self, sku: str) -> dict[str, Any] | None:
-        """Get stock level for a specific SKU using search_text.
+    async def _read_stock_snapshot(self) -> tuple[StockSnapshot | None, bool]:
+        """The stored snapshot and whether Redis gave a usable answer.
 
-        Returns the item dictionary if found, None otherwise.
+        ``(None, True)`` means no snapshot is stored; ``(None, False)`` means
+        Redis failed or held something unreadable, so callers go live.
         """
+        try:
+            raw = await self.redis.get(ZOHO_STOCK_SNAPSHOT_KEY)
+        except Exception:
+            logger.warning("Could not read the Zoho stock snapshot from Redis")
+            return None, False
+        if raw is None:
+            return None, True
+        snapshot = StockSnapshot.from_raw(raw)
+        return snapshot, snapshot is not None
+
+    async def _build_stock_snapshot(self) -> StockSnapshot:
+        items: dict[str, dict[str, Any]] = {}
+        for page in range(1, STOCK_SNAPSHOT_MAX_PAGES + 1):
+            # All active items, not only end products: the live search_text
+            # lookup this replaces was never limited to end products, and the
+            # catalog is fed from the Treejar site rather than from this list.
+            data = await self.get_items(
+                page=page,
+                per_page=STOCK_SNAPSHOT_PAGE_SIZE,
+                end_products_only=False,
+            )
+            raw_items = data.get("items")
+            if not isinstance(raw_items, list):
+                break
+            for raw_item in raw_items:
+                record = _stock_snapshot_record(raw_item)
+                if record is None:
+                    continue
+                current = items.get(record["sku"])
+                if current is None or (
+                    not has_numeric_stock(current) and has_numeric_stock(record)
+                ):
+                    items[record["sku"]] = record
+            page_context = data.get("page_context")
+            if not (
+                isinstance(page_context, Mapping) and page_context.get("has_more_page")
+            ):
+                break
+        else:
+            logger.warning(
+                "Zoho stock snapshot stopped at the %d-page cap; "
+                "later items are looked up live",
+                STOCK_SNAPSHOT_MAX_PAGES,
+            )
+        if not items:
+            raise ValueError("Zoho returned no items for the stock snapshot")
+        return StockSnapshot(as_of=time.time(), items=items)
+
+    async def _stock_snapshot(self) -> StockSnapshot | None:
+        """A snapshot fit to serve stock from, refreshing it when stale.
+
+        One process refreshes under a Redis SET NX lock; the others keep
+        serving the previous snapshot while it is inside the stale window. A
+        failed refresh (including a 429 or an active cooldown) keeps the old
+        snapshot. None means stock has to be looked up live.
+        """
+        snapshot, readable = await self._read_stock_snapshot()
+        if not readable:
+            return None
+        now = time.time()
+        if snapshot is not None and snapshot.age_seconds(now) < (
+            STOCK_SNAPSHOT_FRESH_SECONDS
+        ):
+            return snapshot
+        fallback = (
+            snapshot
+            if snapshot is not None
+            and snapshot.age_seconds(now) < STOCK_SNAPSHOT_STALE_SECONDS
+            else None
+        )
+
+        lock_owner = uuid.uuid4().hex
+        try:
+            acquired = await self.redis.set(
+                ZOHO_STOCK_SNAPSHOT_LOCK_KEY,
+                lock_owner,
+                ex=STOCK_SNAPSHOT_LOCK_TTL_SECONDS,
+                nx=True,
+            )
+        except Exception:
+            logger.warning("Could not take the Zoho stock snapshot refresh lock")
+            return fallback
+        if not acquired:
+            return fallback
+
+        try:
+            refreshed = await self._build_stock_snapshot()
+        except Exception as exc:
+            logger.warning(
+                "Zoho stock snapshot refresh failed (%s); %s",
+                type(exc).__name__,
+                "serving the previous snapshot"
+                if fallback is not None
+                else "looking stock up live",
+            )
+            return fallback
+        finally:
+            try:
+                await release_zoho_oauth_lock(
+                    self.redis,
+                    lock_key=ZOHO_STOCK_SNAPSHOT_LOCK_KEY,
+                    owner_token=lock_owner,
+                )
+            except Exception:
+                logger.warning("Could not release the Zoho stock snapshot lock")
+
+        try:
+            await self.redis.set(
+                ZOHO_STOCK_SNAPSHOT_KEY,
+                refreshed.to_json(),
+                ex=math.ceil(STOCK_SNAPSHOT_STALE_SECONDS),
+            )
+        except Exception:
+            logger.warning("Could not store the Zoho stock snapshot in Redis")
+        logger.info("Zoho stock snapshot refreshed with %d SKUs", len(refreshed.items))
+        return refreshed
+
+    async def get_stock(self, sku: str) -> dict[str, Any] | None:
+        """Get the Zoho item carrying stock for a SKU.
+
+        Served from the shared snapshot when it holds a numeric stock for the
+        SKU; otherwise looked up live. Returns None if Zoho has no such SKU.
+        """
+        snapshot = await self._stock_snapshot()
+        if snapshot is not None:
+            item = snapshot.lookup(sku)
+            if item is not None and has_numeric_stock(item):
+                return item
+        return await self._live_stock(sku)
+
+    async def _live_stock(self, sku: str) -> dict[str, Any] | None:
         response = await self._request("GET", "/items", params={"search_text": sku})
         data = response.json()
 
         items = data.get("items", [])
+        if not isinstance(items, list):
+            return None
 
-        # Exact match check because search_text is a partial match
-        for item in items:
-            if item.get("sku") == sku:
-                return dict(item)
-
-        return None
+        # search_text is a partial match, so pick the SKU match locally.
+        return select_stock_item(sku, items)
 
     async def get_stock_bulk(self, skus: list[str]) -> list[dict[str, Any]]:
         """Get stock levels for multiple SKUs.
 
-        Zoho API doesn't support bulk search by SKU efficiently,
-        so we batch individual requests concurrently with a semaphore
-        to avoid hitting Zoho rate limits.
+        SKUs the snapshot answers with a number cost no Zoho call; the rest
+        are looked up live, at most five at a time. One failed live lookup
+        only drops that SKU. When nothing could be served and a live lookup
+        raised, the first error is raised, so callers can still tell "Zoho is
+        unavailable" from "these SKUs are not in Zoho".
         """
+        unique_skus = list(dict.fromkeys(skus))
+        snapshot = await self._stock_snapshot()
+        served: list[dict[str, Any]] = []
+        misses: list[str] = []
+        for sku in unique_skus:
+            item = snapshot.lookup(sku) if snapshot is not None else None
+            if item is not None and has_numeric_stock(item):
+                served.append(item)
+            else:
+                misses.append(sku)
+        if not misses:
+            return served
+
         sem = asyncio.Semaphore(5)  # max 5 concurrent requests to Zoho
 
         async def _fetch(sku: str) -> dict[str, Any] | None:
             async with sem:
-                return await self.get_stock(sku)
+                return await self._live_stock(sku)
 
-        unique_skus = list(dict.fromkeys(skus))
-        results = await asyncio.gather(*[_fetch(sku) for sku in unique_skus])
-        return [res for res in results if res is not None]
+        results = await asyncio.gather(
+            *[_fetch(sku) for sku in misses], return_exceptions=True
+        )
+        errors: list[Exception] = []
+        for sku, result in zip(misses, results, strict=True):
+            if isinstance(result, BaseException):
+                if not isinstance(result, Exception):
+                    raise result
+                errors.append(result)
+                logger.warning(
+                    "Zoho live stock lookup failed for SKU %r (%s)",
+                    sku,
+                    type(result).__name__,
+                )
+            elif result is not None:
+                served.append(result)
+        if errors and not served:
+            raise errors[0]
+        return served
 
     async def get_item(self, item_id: str) -> dict[str, Any] | None:
         """Get a specific item by Zoho Inventory item_id."""
