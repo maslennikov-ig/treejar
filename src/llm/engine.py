@@ -10881,7 +10881,8 @@ async def _create_quotation(
     for raw_item in raw_stock_details:
         zoho_item = _coerce_inventory_item(raw_item, require_item_id=True)
         if zoho_item:
-            stock_map[str(zoho_item["sku"])] = zoho_item
+            # Zoho may hold the SKU in another letter case ("CH 240 V Black").
+            stock_map[str(zoho_item["sku"]).strip().casefold()] = zoho_item
 
     zoho_line_items: list[ZohoSaleOrderLineItemPayload] = []
     template_items = []
@@ -10894,7 +10895,7 @@ async def _create_quotation(
     )
 
     for item in items:
-        zoho_item = stock_map.get(item.sku)
+        zoho_item = stock_map.get(item.sku.strip().casefold())
         normalized_sku = item.sku.strip()
         if normalized_sku not in catalog_products:
             catalog_products[normalized_sku] = await _find_catalog_product_by_sku(
@@ -10915,7 +10916,7 @@ async def _create_quotation(
                 if catalog_product:
                     return _catalog_mismatch_customer_message()
                 return f"Failed to create quotation: SKU {item.sku} not found."
-            stock_map[item.sku] = zoho_item
+            stock_map[item.sku.strip().casefold()] = zoho_item
 
         price_decision = _commercial_price_decision(
             catalog_product=catalog_product,
