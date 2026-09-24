@@ -87,7 +87,12 @@ def test_present_stock_confirmation_requires_current_turn_inventory_evidence(
         inventory_confirmed=True,
     )
     assert rejected.action is GroundingOutputAction.REPLACED
-    assert "unconfirmed" in rejected.text.casefold()
+    # A replaced reply carries the fallback; a repaired one keeps the
+    # model's own stock sentence and drops only the unsupported claim.
+    assert any(
+        phrase in rejected.text.casefold()
+        for phrase in ("warehouse system", "unconfirmed")
+    )
     assert confirmed.action is GroundingOutputAction.UNCHANGED
     assert confirmed.text == text
 
@@ -129,7 +134,12 @@ def test_direct_sku_stock_assertion_requires_current_turn_inventory_evidence(
         GroundingOutputAction.REPAIRED,
         GroundingOutputAction.REPLACED,
     }
-    assert "unconfirmed" in rejected.text.casefold()
+    # A replaced reply carries the fallback; a repaired one keeps the
+    # model's own stock sentence and drops only the unsupported claim.
+    assert any(
+        phrase in rejected.text.casefold()
+        for phrase in ("warehouse system", "unconfirmed")
+    )
     assert confirmed.action is GroundingOutputAction.UNCHANGED
     assert confirmed.text == text
 

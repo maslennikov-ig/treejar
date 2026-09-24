@@ -2299,7 +2299,7 @@ async def test_process_message_uses_arabic_grounding_fallback(
         messaging_client=messaging,
     )
 
-    assert "المخزون غير مؤكد" in response.text
+    assert "نظام المخزون" in response.text
     assert "فريقنا" not in response.text
     assert response.model == "mock-model"
     assert response.tokens_in == 29
@@ -2533,7 +2533,12 @@ async def test_process_message_rejects_present_stock_confirmation_without_tool_e
     )
 
     assert response.text != unsupported_reply
-    assert "unconfirmed" in response.text.casefold()
+    # A replaced reply carries the fallback; a repaired one keeps the
+    # model's own stock sentence and drops only the unsupported claim.
+    assert any(
+        phrase in response.text.casefold()
+        for phrase in ("warehouse system", "unconfirmed")
+    )
     mock_run.assert_awaited_once()
 
 
@@ -10648,7 +10653,7 @@ async def test_catalog_search_preserves_capacity_constraint_and_evidence_limits(
     assert materialized is not None
     assert "LUMA Four Person Workstation (SKU: WORK-4)" in materialized
     assert "Price: 1883.00 AED" in materialized
-    assert "Stock: unconfirmed" in materialized
+    assert "Stock:" not in materialized
     assert "Price basis: full 4-seat SKU unit" in materialized
     assert (
         "Catalog description: Screen dividers for each user and four mobile pedestals."
@@ -11003,7 +11008,7 @@ async def test_catalog_search_marks_local_stock_unconfirmed_without_number(
         result = await engine_module.search_products(ctx, "workstation")
 
     result_text = result.return_value if isinstance(result, ToolReturn) else result
-    assert "Current stock: unconfirmed" in result_text
+    assert "do not state a stock number" in result_text.casefold()
     assert "Catalog stock: 30" not in result_text
     assert deps.stock_snapshots["work-4"].source == "catalog"
     assert deps.stock_snapshots["work-4"].provenance == "unconfirmed"

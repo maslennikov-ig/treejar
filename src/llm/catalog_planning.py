@@ -2718,11 +2718,11 @@ def _materialize_verified_catalog_facts(deps: SalesDeps) -> str | None:
             price = "يتطلب التحقق" if arabic else "requires verification"
         lines.append(f"  - {'السعر' if arabic else 'Price'}: {price}")
         snapshot = deps.stock_snapshots.get(product.sku.strip().casefold())
+        # Only a Zoho figure is stated; without one the line is left out.
         if snapshot is not None and snapshot.provenance == "authoritative":
-            stock = str(snapshot.available)
-        else:
-            stock = "غير مؤكد" if arabic else "unconfirmed"
-        lines.append(f"  - {'المخزون' if arabic else 'Stock'}: {stock}")
+            lines.append(
+                f"  - {'المخزون' if arabic else 'Stock'}: {snapshot.available}"
+            )
         if product.capacity is not None and product.capacity > 1:
             basis = (
                 f"وحدة كاملة لـ {product.capacity} مقاعد"

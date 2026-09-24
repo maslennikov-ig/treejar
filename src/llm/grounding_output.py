@@ -219,12 +219,12 @@ _AR_SHOWROOM_FALLBACK = (
     "تأكيد توفر منتج محدد للتجربة."
 )
 _EN_STOCK_FALLBACK = (
-    "Current stock is unconfirmed because no inventory result is available. "
-    "I can only confirm availability from a current inventory result."
+    "The exact stock is checked in our warehouse system, so I won't state a "
+    "number until I have that figure."
 )
 _AR_STOCK_FALLBACK = (
-    "لا تتوفر لدي نتيجة حالية من نظام المخزون، لذلك يبقى المخزون غير مؤكد. "
-    "لا يمكنني تأكيد التوفر إلا بناءً على نتيجة مخزون حالية."
+    "يتم التحقق من الكمية المتوفرة بدقة في نظام المخزون، لذلك لن أذكر رقماً "
+    "قبل الحصول عليه."
 )
 _EN_PRICE_FALLBACK = (
     "I quote only from our own catalog, and I don't have a confirmed price for "

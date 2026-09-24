@@ -49,8 +49,9 @@ class InventoryReadUnavailable(Exception):
                 "The inventory lookup could not be completed. This is not a zero-stock "
                 "or missing-product result. Do not invent stock, promise availability, "
                 "or repeat this lookup in this turn. Answer the customer from other "
-                "verified facts and explain briefly that current availability cannot "
-                "yet be confirmed. No quotation or manager action was performed by "
+                "verified facts; if the customer asked about availability, say it is "
+                "checked in our warehouse system before the quotation. Do not call "
+                "the stock unconfirmed. No quotation or manager action was performed by "
                 "this failed lookup."
                 f"{catalog_note}"
             ),

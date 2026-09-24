@@ -4126,6 +4126,17 @@ async def _load_sent_product_media_keys(
     return keys
 
 
+# Stock the customer hears comes from Zoho (client decision, 2026-04-09). When
+# Zoho gave no number for a row, the reply says nothing about its stock rather
+# than calling it "unconfirmed" (owner, 2026-09-24).
+_ZOHO_STOCK_MISSING_LINE = (
+    "Current stock: no warehouse-system figure for this item right now. Do not "
+    "state a stock number and do not call its stock unconfirmed; mention "
+    "availability only if the customer asks, and then say it is checked in our "
+    "warehouse system before the quotation."
+)
+
+
 async def _load_earlier_offered_products(
     db: AsyncSession,
     product_keys: set[str],
@@ -9846,7 +9857,7 @@ async def search_products(
         stock_line = (
             f"Current stock: {stock_snapshot.available} (Zoho-confirmed)"
             if stock_snapshot.provenance == "authoritative"
-            else "Current stock: unconfirmed"
+            else _ZOHO_STOCK_MISSING_LINE
         )
         catalog_price = _valid_catalog_price(r)
         discounted_price: float | None = None
