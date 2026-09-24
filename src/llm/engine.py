@@ -4138,11 +4138,15 @@ _ZOHO_STOCK_MISSING_LINE = (
     "availability only if the customer asks, and then say it is checked in our "
     "warehouse system before the quotation."
 )
-# The figure is the actual Zoho stock. A customer who wants more is told how
-# many there are, never that the rest is "unconfirmed" (owner, 2026-09-24).
+# The figure is the actual Zoho stock. The customer hears it as a plain count:
+# where it comes from (catalog, Zoho, "confirmed") is not theirs to care about,
+# and a customer who wants more is told how many there are, never that the rest
+# is "unconfirmed" (owner, 2026-09-24).
 _STOCK_SHORTFALL_NOTE = (
-    ". If the customer wants more than this, say how many are in stock "
-    "(e.g. only 1 in stock); never call the remainder unconfirmed"
+    ". Tell the customer only the count (e.g. 30 in stock), without naming "
+    "where it comes from or calling it confirmed. If the customer wants more "
+    "than this, say how many are in stock (e.g. only 1 in stock); never call "
+    "the remainder unconfirmed"
 )
 
 

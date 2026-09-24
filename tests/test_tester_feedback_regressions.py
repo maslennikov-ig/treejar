@@ -551,3 +551,13 @@ def test_deferred_media_is_deduplicated_by_product_in_order() -> None:
     novo = ProductMediaPayload(url="https://x/novo.jpg", caption="N", product_key="k2")
 
     assert dedupe_product_media([luma, novo, luma_again]) == (luma, novo)
+
+
+def test_stock_lines_ask_for_a_plain_count_without_its_source() -> None:
+    # Live check 2026-09-24: "The catalog shows 30 in stock". The customer
+    # needs the count, not where it came from.
+    note = engine._STOCK_SHORTFALL_NOTE
+
+    assert "only the count" in note
+    assert "without naming where it comes from" in note
+    assert "never call the remainder unconfirmed" in note
