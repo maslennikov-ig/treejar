@@ -46,6 +46,7 @@ from src.dialogue.claim_contract import (
     solution_consultation_directive,
     substantive_reply_directive,
 )
+from src.dialogue.count_words import EN_COUNT_WORD_PATTERN, parse_count_word
 from src.dialogue.decision_state import (
     closed_selection_skus,
     decision_state_directives,
@@ -976,21 +977,9 @@ _QUANTITY_ITEM_SIGNAL_RE = re.compile(
     re.IGNORECASE,
 )
 _EXACT_WORD_QUANTITY_ITEM_SIGNAL_RE = re.compile(
-    r"(?<![\w.-])(?P<quantity_word>one|two|three|four|five|six|seven|eight|nine|ten)(?=\s+)",
+    rf"(?<![\w.-])(?P<quantity_word>{EN_COUNT_WORD_PATTERN})(?![\w-])(?=\s+)",
     re.IGNORECASE,
 )
-_EXACT_WORD_QUANTITY_VALUES = {
-    "one": 1,
-    "two": 2,
-    "three": 3,
-    "four": 4,
-    "five": 5,
-    "six": 6,
-    "seven": 7,
-    "eight": 8,
-    "nine": 9,
-    "ten": 10,
-}
 _EXACT_ITEM_FULFILLMENT_BOUNDARY_RE = re.compile(
     r"\s+(?:"
     r"delivered\s+to|deliver\s+to|delivery\s+to|with\s+delivery\s+to|"
@@ -1039,7 +1028,7 @@ _PRODUCT_REFERENCE_SPLIT_RE = re.compile(
     re.IGNORECASE,
 )
 _GENERIC_HYPHENATED_CAPACITY_RE = re.compile(
-    r"^(?:one|two|three|four|five|six|seven|eight|nine|ten)-"
+    rf"^(?:{EN_COUNT_WORD_PATTERN})-"
     r"(?:person|people|seat|seater|position|station|workstation)$",
     re.IGNORECASE,
 )
@@ -1054,7 +1043,7 @@ _NAMED_MODEL_REFERENCE_RE = re.compile(
 )
 _SELECTION_QUANTITY_START_RE = re.compile(r"(?<![\w.-])(?P<quantity>\d{1,4})(?=\s+)")
 _SELECTION_WORD_QUANTITY_START_RE = re.compile(
-    r"(?<![\w.-])(?P<quantity_word>one|two|three|four|five|six|seven|eight|nine|ten|a|an)(?=\s+)",
+    rf"(?<![\w.-])(?P<quantity_word>{EN_COUNT_WORD_PATTERN}|an|a)(?![\w-])(?=\s+)",
     re.IGNORECASE,
 )
 _SELECTION_MEASUREMENT_SUFFIX_RE = re.compile(
@@ -1062,20 +1051,16 @@ _SELECTION_MEASUREMENT_SUFFIX_RE = re.compile(
     r"mm|cm|meters?|metres?|aed|dhs|usd)\b",
     re.IGNORECASE,
 )
-_SELECTION_WORD_QUANTITY_VALUES = {
-    "a": 1,
-    "an": 1,
-    "one": 1,
-    "two": 2,
-    "three": 3,
-    "four": 4,
-    "five": 5,
-    "six": 6,
-    "seven": 7,
-    "eight": 8,
-    "nine": 9,
-    "ten": 10,
-}
+
+
+def _selection_word_quantity(word: str) -> int | None:
+    """A spelled-out selection quantity; the article "a"/"an" means one."""
+    normalized = word.casefold()
+    if normalized in {"a", "an"}:
+        return 1
+    return parse_count_word(normalized)
+
+
 _SELECTION_SKU_RE = re.compile(
     r"\b[a-z0-9]+(?:[-.][a-z0-9]+)+\b",
     re.IGNORECASE,
@@ -1430,7 +1415,7 @@ def _extract_word_quantity_exact_quote_candidate(
 
     for index, match in enumerate(quantity_matches):
         word = match.group("quantity_word").casefold()
-        quantity = _EXACT_WORD_QUANTITY_VALUES.get(word)
+        quantity = parse_count_word(word)
         if quantity is None:
             continue
         start = match.end()
@@ -2498,7 +2483,7 @@ def _extract_word_quantity_purchase_selection(text: str) -> PurchaseSelection | 
         if _SELECTION_MEASUREMENT_SUFFIX_RE.match(text[match.end() :]):
             continue
         word = match.group("quantity_word").casefold()
-        quantity = _SELECTION_WORD_QUANTITY_VALUES.get(word)
+        quantity = _selection_word_quantity(word)
         if quantity is None:
             continue
         start = match.start()
@@ -2577,18 +2562,7 @@ _ORDINAL_WORD_TO_NUMBER: dict[str, int] = {
     "ninth": 9,
     "tenth": 10,
 }
-_CARDINAL_WORD_TO_NUMBER: dict[str, int] = {
-    "one": 1,
-    "two": 2,
-    "three": 3,
-    "four": 4,
-    "five": 5,
-    "six": 6,
-    "seven": 7,
-    "eight": 8,
-    "nine": 9,
-    "ten": 10,
-}
+_MAX_OPTION_ORDINAL = 10
 
 
 def _ordinal_option_from_reply(text: str) -> int | None:
@@ -2605,8 +2579,10 @@ def _ordinal_option_from_reply(text: str) -> int | None:
         value = int(digit_match.group(1) or digit_match.group(2))
         return value if 1 <= value <= 10 else None
     word_match = re.search(r"\b(?:option|number)\s+([a-z]+)\b", normalized)
-    if word_match and word_match.group(1) in _CARDINAL_WORD_TO_NUMBER:
-        return _CARDINAL_WORD_TO_NUMBER[word_match.group(1)]
+    if word_match:
+        cardinal = parse_count_word(word_match.group(1))
+        if cardinal is not None and 1 <= cardinal <= _MAX_OPTION_ORDINAL:
+            return cardinal
     for word, value in _ORDINAL_WORD_TO_NUMBER.items():
         if re.search(rf"\b{word}\b", normalized):
             return value
@@ -3670,7 +3646,7 @@ def _extract_bare_quantity_reply(text: str) -> int | None:
         quantity = int(stripped)
         return quantity if quantity > 0 else None
     normalized = _normalize_text(stripped)
-    word_quantity = _SELECTION_WORD_QUANTITY_VALUES.get(normalized)
+    word_quantity = _selection_word_quantity(normalized)
     return word_quantity if word_quantity and word_quantity > 0 else None
 
 
@@ -6384,7 +6360,7 @@ _SALES_BUDGET_RE = re.compile(
 )
 _DECISION_HORIZON_RE = re.compile(
     r"\b(?:decision|approval)(?:\s+(?:is\s+)?expected)?\s+(?:within|in)\s+"
-    r"(?P<count>\d{1,2}|one|two|three|four)\s+"
+    rf"(?P<count>\d{{1,2}}|{EN_COUNT_WORD_PATTERN})\s+"
     r"(?P<unit>hours?|days?|weeks?|months?)\b",
     re.IGNORECASE,
 )
@@ -6401,11 +6377,9 @@ def _decision_horizon_hours(text: str) -> int | None:
     if match is None:
         return None
     raw_count = match.group("count").casefold()
-    count = (
-        int(raw_count)
-        if raw_count.isdigit()
-        else {"one": 1, "two": 2, "three": 3, "four": 4}[raw_count]
-    )
+    count = int(raw_count) if raw_count.isdigit() else parse_count_word(raw_count)
+    if count is None:
+        return None
     unit = match.group("unit").casefold()
     multiplier = (
         1

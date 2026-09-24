@@ -33,6 +33,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Literal
 
+from src.dialogue.count_words import EN_COUNT_WORD_PATTERN
+
 ClaimType = Literal[
     "catalog_fact",
     "derived_fact",
@@ -681,10 +683,7 @@ _SIZING_PEOPLE_RE = re.compile(
     re.IGNORECASE,
 )
 
-_COUNT_WORD = (
-    r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
-    r"fifteen|twenty|thirty|forty|fifty|hundred)"
-)
+_COUNT_WORD = rf"(?:\d+|{EN_COUNT_WORD_PATTERN}|hundred)"
 
 _SIZING_FIT_RE = re.compile(
     r"(?:\b(?:enough|sufficient|suffice|fits?|accommodates?|"

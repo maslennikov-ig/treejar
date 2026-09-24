@@ -9,6 +9,7 @@ from typing import Any, TypedDict, cast
 
 from langgraph.graph import StateGraph
 
+from src.dialogue.count_words import parse_count_word
 from src.dialogue.order_guards import is_order_selection_blocked
 from src.dialogue.order_state import (
     OrderDecision,
@@ -251,19 +252,8 @@ def _extract_bare_quantity_reply(text: str) -> int | None:
     if re.fullmatch(r"\d{1,4}", stripped):
         quantity = int(stripped)
         return quantity if quantity > 0 else None
-    word_quantities = {
-        "one": 1,
-        "two": 2,
-        "three": 3,
-        "four": 4,
-        "five": 5,
-        "six": 6,
-        "seven": 7,
-        "eight": 8,
-        "nine": 9,
-        "ten": 10,
-    }
-    return word_quantities.get(stripped.casefold())
+    word_quantity = parse_count_word(stripped)
+    return word_quantity if word_quantity and word_quantity > 0 else None
 
 
 def _quantity_frame_from_lines(lines: list[OrderLine]) -> PendingQuestionFrame | None:
