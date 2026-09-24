@@ -2,7 +2,7 @@
   "schema_version": "noor-e2e-traceability/v1",
   "goal_id": "tj-ee5f",
   "scope_source_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
-  "source_set_digest": "9c8a2b307ccb4125afb2efd89234afaee96ab4ddbeddf8f3f897bd8cc319609b",
+  "source_set_digest": "7cbe0fcaf590be0cc645e6e6208e6acb6bc9805c2def9b7bb752fbf581152ca1",
   "precedence_order": [
     "current repository and runtime contracts",
     "original and updated requirements",
@@ -47,12 +47,12 @@
     },
     "runtime-truth": {
       "path": ".codex/handoff.md",
-      "content_digest": "7e6c1da11bb909348b17000521bcb5344c13196a771ffb9bfe4075c05dc35912",
+      "content_digest": "9e1aa478680d88dedf67df108749534f56d3ee182fe7d22a1b45bc323c0986c3",
       "sections": [
         {
           "start_locator": "# Orchestrator Handoff",
           "end_locator": null,
-          "content_digest": "7e6c1da11bb909348b17000521bcb5344c13196a771ffb9bfe4075c05dc35912"
+          "content_digest": "9e1aa478680d88dedf67df108749534f56d3ee182fe7d22a1b45bc323c0986c3"
         }
       ]
     },
