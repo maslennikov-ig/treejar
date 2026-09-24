@@ -876,6 +876,17 @@ def test_needs_only_request_is_generic(query: str) -> None:
     assert classify_product_match(query, [_LUMA_ROW, _NOVO_ROW]) == "generic"
 
 
+def test_spelled_out_head_count_keeps_a_need_request_generic() -> None:
+    # Live check 2026-09-24: "six" read as an unmet product discriminator.
+    chairs = [
+        "Executive Office Chair CH 430 Black",
+        "SkyLand Executive Chair CH 950 BLACK",
+        "Visitor Office Chair CH 490 V brown",
+    ]
+    query = "comfortable ergonomic office chairs for a team of six in Abu Dhabi"
+    assert classify_product_match(query, chairs) == "generic"
+
+
 @pytest.mark.parametrize(
     "query",
     ["HERMAN desk for four people", "luma workstation", "Show a LUMA workstation"],

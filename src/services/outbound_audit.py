@@ -59,6 +59,35 @@ def deterministic_crm_message_id(*parts: object) -> str:
     return f"{raw[:215]}:{digest}"
 
 
+def product_media_crm_message_ids(
+    conversation_id: object,
+    product_key: str,
+    resend_turn_id: str | None = None,
+) -> tuple[str, str]:
+    """Idempotency keys for one product image and its caption.
+
+    A product's image goes out once per conversation; an explicit customer
+    request to see it again adds the triggering inbound message, so the resend
+    is still idempotent across job retries of that turn.
+    """
+    suffix = (resend_turn_id,) if resend_turn_id else ()
+    return (
+        deterministic_crm_message_id(
+            "product", conversation_id, product_key, "media", *suffix
+        ),
+        deterministic_crm_message_id(
+            "product", conversation_id, product_key, "caption", *suffix
+        ),
+    )
+
+
+def product_key_from_media_crm_message_id(crm_message_id: str) -> str | None:
+    parts = crm_message_id.split(":")
+    if len(parts) >= 4 and parts[0] == "product" and parts[3] == "media":
+        return parts[2]
+    return None
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 

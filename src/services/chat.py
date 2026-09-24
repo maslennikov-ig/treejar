@@ -62,6 +62,7 @@ from src.services.inbound_batch import (
 from src.services.inbound_channels import update_conversation_inbound_channel
 from src.services.outbound_audit import (
     deterministic_crm_message_id,
+    product_media_crm_message_ids,
     send_wazzup_media_with_audit,
     send_wazzup_text_with_audit,
 )
@@ -762,24 +763,17 @@ async def _send_deferred_product_media(
             ):
                 send_url = build_signed_product_image_url(item.zoho_item_id)
 
+            media_crm_id, caption_crm_id = product_media_crm_message_ids(
+                conversation_id, item.product_key, item.resend_turn_id
+            )
             await send_wazzup_media_with_audit(
                 db,
                 provider=provider,
                 conversation_id=conversation_id,
                 chat_id=chat_id,
                 source="product_media",
-                crm_message_id=deterministic_crm_message_id(
-                    "product",
-                    conversation_id,
-                    item.product_key,
-                    "media",
-                ),
-                caption_crm_message_id=deterministic_crm_message_id(
-                    "product",
-                    conversation_id,
-                    item.product_key,
-                    "caption",
-                ),
+                crm_message_id=media_crm_id,
+                caption_crm_message_id=caption_crm_id,
                 url=send_url,
                 caption=item.caption,
                 content=None,

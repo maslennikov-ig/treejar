@@ -83,6 +83,9 @@ class ProductMediaPayload:
     product_key: str
     zoho_item_id: str | None = None
     reference_tokens: tuple[str, ...] = ()
+    # Inbound message id of an explicit "send it again" turn; None for the
+    # conversation's first send of this product image.
+    resend_turn_id: str | None = None
 
 
 def dedupe_product_media(

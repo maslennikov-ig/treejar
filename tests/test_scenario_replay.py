@@ -48,9 +48,11 @@ async def test_dry_replay_runs_every_turn_through_the_pipeline() -> None:
     stock_answer = first["model_calls"][1]["tool_results"][0]["content"]
     assert "SKU: CH 616 NEW black" in stock_answer
     assert "Current stock: 1 (Zoho-confirmed)" in stock_answer
-    # Deferred media selected from the final reply and sent through the audit.
-    assert "CH 616 NEW black" in {m["sku"] for m in second["media"]}
-    assert second["media_sends"]
+    # Deferred media selected from the final reply and sent through the audit;
+    # an image already sent in turn one is not sent again in turn two.
+    assert {m["sku"] for m in first["media"]} == {"CH 616 NEW black"}
+    assert {m["sku"] for m in second["media"]} == {"CH 460 black"}
+    assert first["media_sends"] and second["media_sends"]
     # History persists: the second turn is not an opening turn.
     assert "Noor from Treejar" in first["reply"]
     assert "Noor from Treejar" not in second["reply"]

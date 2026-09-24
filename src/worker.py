@@ -90,8 +90,10 @@ def build_worker_functions() -> list[Any]:
     # Acts only on quotations a customer already requested in an accepted
     # inbound conversation, so it stays on in test-channel restore mode.
     quotation_retry = func(retry_pending_quotation, max_tries=1)
+    # Enqueued by the inbound turn itself once a dialogue outgrows the history
+    # window; without it long conversations silently lose their early context.
     if settings.test_channel_restore_mode:
-        return [inbound, quotation_retry]
+        return [inbound, quotation_retry, func(refresh_conversation_summary)]
     return [
         sync_products_from_treejar_catalog,
         sync_products_from_zoho,

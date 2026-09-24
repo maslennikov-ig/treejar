@@ -1608,8 +1608,13 @@ def _is_generic_need_request(
         return False
     if terms & _PRODUCT_FINISH_TERMS:
         return False
+    # A head count ("a team of six") states the need, like a digit does.
     open_terms = {
-        term for term in terms if term not in _PRODUCT_NEED_TERMS and not term.isdigit()
+        term
+        for term in terms
+        if term not in _PRODUCT_NEED_TERMS
+        and not term.isdigit()
+        and term not in _CAPACITY_WORD_VALUES
     }
     candidate_union: set[str] = set().union(*candidate_tokens)
     candidate_families = set(candidate_families_hint)

@@ -4125,6 +4125,31 @@ async def _load_product_media_caption_rows(
     return list(result.scalars().all())
 
 
+async def _load_sent_product_media_keys(
+    db: AsyncSession,
+    conversation_id: UUID,
+) -> set[str]:
+    """Product keys whose image already reached this conversation."""
+    from src.models.outbound_message import OutboundMessageAudit
+    from src.services.outbound_audit import product_key_from_media_crm_message_id
+
+    result = await db.execute(
+        select(OutboundMessageAudit.crm_message_id).where(
+            OutboundMessageAudit.conversation_id == conversation_id,
+            OutboundMessageAudit.source == "product_media",
+            OutboundMessageAudit.message_type == "media",
+            OutboundMessageAudit.status.in_(_ACTIVE_PRODUCT_MEDIA_AUDIT_STATUSES),
+        )
+    )
+    keys: set[str] = set()
+    for crm_message_id in result.scalars().all():
+        if isinstance(crm_message_id, str):
+            key = product_key_from_media_crm_message_id(crm_message_id)
+            if key:
+                keys.add(key)
+    return keys
+
+
 def _text_price_matches(expected: float | None, text: str) -> bool:
     if expected is None:
         return False
@@ -9503,6 +9528,7 @@ async def search_products(
     requested_fact_domains: list[Literal["acoustic", "footprint"]] | None = None,
     require_lumbar_support: bool = False,
     complementary_search: bool = False,
+    resend_images: bool = False,
 ) -> str | ToolReturn:
     """Search for products in the Treejar catalog based on the customer's query.
     Call this whenever a customer asks for recommendations, prices, or product features.
@@ -9521,6 +9547,9 @@ async def search_products(
         require_lumbar_support: Check explicit lumbar-support evidence.
         complementary_search: This search is for a complementary item, not the
             main configuration. No customer wording overrides these parameters.
+        resend_images: The customer's current message explicitly asks to see a
+            product photo or image again. Product images go out once per
+            conversation otherwise.
     """
     logger.info(
         "LLM Tool requested: search_products(query=%r, min_price=%r, max_price=%r, executed_calls=%d)",
@@ -9681,6 +9710,7 @@ async def search_products(
         product_key: str,
         zoho_item_id: str | None = None,
         reference_tokens: tuple[str, ...] = (),
+        resend_turn_id: str | None = None,
     ) -> None:
         if ctx.deps.defer_product_media:
             ctx.deps.pending_product_media.append(
@@ -9690,6 +9720,7 @@ async def search_products(
                     product_key=product_key,
                     zoho_item_id=zoho_item_id,
                     reference_tokens=reference_tokens,
+                    resend_turn_id=resend_turn_id,
                 )
             )
             return
@@ -9700,28 +9731,21 @@ async def search_products(
                 send_url = build_signed_product_image_url(zoho_item_id)
 
             from src.services.outbound_audit import (
-                deterministic_crm_message_id,
+                product_media_crm_message_ids,
                 send_wazzup_media_with_audit,
             )
 
+            media_crm_id, caption_crm_id = product_media_crm_message_ids(
+                ctx.deps.conversation.id, product_key, resend_turn_id
+            )
             await send_wazzup_media_with_audit(
                 ctx.deps.db,
                 provider=ctx.deps.messaging_client,
                 conversation_id=UUID(str(ctx.deps.conversation.id)),
                 chat_id=ctx.deps.conversation.phone,
                 source="product_media",
-                crm_message_id=deterministic_crm_message_id(
-                    "product",
-                    ctx.deps.conversation.id,
-                    product_key,
-                    "media",
-                ),
-                caption_crm_message_id=deterministic_crm_message_id(
-                    "product",
-                    ctx.deps.conversation.id,
-                    product_key,
-                    "caption",
-                ),
+                crm_message_id=media_crm_id,
+                caption_crm_message_id=caption_crm_id,
                 url=send_url,
                 caption=caption,
                 content=None,
@@ -9744,6 +9768,13 @@ async def search_products(
     available_seat_coverage = 0
     has_capacity_evidence = False
     coverage_candidates: list[_CatalogCoverageCandidate] = []
+    sent_media_product_keys = (
+        await _load_sent_product_media_keys(
+            ctx.deps.db, UUID(str(ctx.deps.conversation.id))
+        )
+        if any(product.image_url for product in results.products)
+        else set()
+    )
     for result_rank, r in enumerate(results.products):
         sku = str(r.sku).strip()
         sku_key = sku.casefold()
@@ -9923,6 +9954,17 @@ async def search_products(
                 formatted_results.append(desc)
                 continue
 
+            resend_turn_id: str | None = None
+            if product_key in sent_media_product_keys:
+                resend_turn_id = ctx.deps.source_message_id if resend_images else None
+                if resend_turn_id is None:
+                    desc += (
+                        "\n[Note: The image of this product was already sent "
+                        "earlier in this conversation and is not sent again now. "
+                        "Do not say you are sending or attaching it.]"
+                    )
+                    formatted_results.append(desc)
+                    continue
             image_delivery_text = (
                 "will be sent to the customer's WhatsApp after the text reply"
                 if ctx.deps.defer_product_media
@@ -9939,6 +9981,7 @@ async def search_products(
                 product_key=product_key,
                 zoho_item_id=getattr(r, "zoho_item_id", None),
                 reference_tokens=(r.name_en, r.sku),
+                resend_turn_id=resend_turn_id,
             )
 
         formatted_results.append(desc)

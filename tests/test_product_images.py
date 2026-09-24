@@ -17,6 +17,12 @@ pytestmark = [
 ]
 
 
+def _scalars_result(values: list[Any]) -> MagicMock:
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = values
+    return result
+
+
 @pytest.fixture
 def mock_messaging_client() -> MagicMock:
     client = MagicMock()
@@ -26,8 +32,11 @@ def mock_messaging_client() -> MagicMock:
 
 @pytest.fixture
 def run_context(mock_messaging_client: MagicMock) -> Any:
+    db = AsyncMock()
+    # No product image has been sent in this conversation yet.
+    db.execute.return_value = _scalars_result([])
     deps = SalesDeps(
-        db=AsyncMock(),
+        db=db,
         redis=AsyncMock(),
         conversation=Conversation(
             id="00000000-0000-0000-0000-000000000000",
@@ -448,3 +457,84 @@ async def test_search_products_skips_zoho_media_when_domain_missing_in_non_produ
     result = await search_products(run_context, "acoustic pod")
     assert isinstance(result, ToolReturn)
     mock_messaging_client.send_media.assert_not_called()
+
+
+def _chair_results() -> Any:
+    product = ProductRead(
+        id="11111111-1111-1111-1111-111111111111",
+        category_id="22222222-2222-2222-2222-222222222222",
+        name_en="Test Chair",
+        description_en="A great chair",
+        sku="CHAIR-01",
+        price="100.00",
+        currency="AED",
+        image_url="https://example.com/chair.jpg",
+        created_at="2024-01-01T00:00:00Z",
+        stock=10,
+        is_active=True,
+    )
+
+    class MockResults:
+        products = [product]
+
+    async def mock_rag_search(*args: Any, **kwargs: Any) -> MockResults:
+        return MockResults()
+
+    return mock_rag_search
+
+
+_SENT_CHAIR_MEDIA_ID = (
+    "product:00000000-0000-0000-0000-000000000000:"
+    "11111111-1111-1111-1111-111111111111:media"
+)
+
+
+async def test_search_products_does_not_claim_an_image_already_sent(
+    run_context: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Live check 2026-09-24: the image went out in turn one, the idempotency
+    # key skipped the resend, yet the model was told it "will be sent".
+    run_context.deps.defer_product_media = True
+    run_context.deps.db.execute.return_value = _scalars_result([_SENT_CHAIR_MEDIA_ID])
+    monkeypatch.setattr("src.llm.engine.rag_search_products", _chair_results())
+
+    result = await search_products(run_context, "Test Chair")
+
+    text = result.return_value if isinstance(result, ToolReturn) else result
+    assert "already sent earlier in this conversation" in text
+    assert "will be sent to the customer's WhatsApp" not in text
+    assert run_context.deps.pending_product_media == []
+
+
+async def test_search_products_resends_an_image_on_explicit_request(
+    run_context: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_context.deps.defer_product_media = True
+    run_context.deps.source_message_id = "wamid-turn-5"
+    run_context.deps.db.execute.return_value = _scalars_result([_SENT_CHAIR_MEDIA_ID])
+    monkeypatch.setattr("src.llm.engine.rag_search_products", _chair_results())
+
+    result = await search_products(run_context, "Test Chair", resend_images=True)
+
+    text = result.return_value if isinstance(result, ToolReturn) else result
+    assert "will be sent to the customer's WhatsApp after the text reply" in text
+    [pending] = run_context.deps.pending_product_media
+    assert pending.resend_turn_id == "wamid-turn-5"
+
+
+async def test_product_media_ids_are_per_conversation_unless_resent() -> None:
+    from src.services.outbound_audit import (
+        product_key_from_media_crm_message_id,
+        product_media_crm_message_ids,
+    )
+
+    first = product_media_crm_message_ids("conv", "key")
+    again = product_media_crm_message_ids("conv", "key")
+    resend = product_media_crm_message_ids("conv", "key", "wamid-5")
+    assert first == again == ("product:conv:key:media", "product:conv:key:caption")
+    assert resend[0] != first[0] and resend[1] != first[1]
+    assert product_key_from_media_crm_message_id(first[0]) == "key"
+    assert product_key_from_media_crm_message_id(resend[0]) == "key"
+    assert product_key_from_media_crm_message_id(first[1]) is None
