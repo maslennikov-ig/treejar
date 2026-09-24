@@ -3,7 +3,7 @@
 Updated: 2026-09-24
 Current branch: main (delivery branch: codex/tj-uxj0-dev-hardening)
 Current stage id: tj-uxj0-dev-hardening
-Status: Runtime health check 2026-09-24 and debug/docs hardening.
+Status: Health check, debug/docs hardening and live-check repairs deployed as 33a2b02.
 
 ## Current stage: tj-uxj0 runtime hardening 2026-09-24
 
@@ -19,7 +19,18 @@ Status: Runtime health check 2026-09-24 and debug/docs hardening.
 - Expected noise, not defects: "unexpected Wazzup channel" warnings are the
   Treejar Trading channel dropped by TEST_CHANNEL_RESTORE_MODE; 47 pending
   escalations come from test dialogues.
-- Worker registers process_incoming_batch and retry_pending_quotation.
+- Live WhatsApp check (owner's number 79262810921#tj-check-0924-*, 16 turns
+  over routes A-E: LUMA/NOVO, CH 616 named SKU, delivery/assembly with wrong
+  layout "yes"/"keep it", Arabic opening, box price) found three defects,
+  fixed in 33a2b02 (CI 35989320784, deployed): repeat photo request claimed an
+  image that the per-conversation idempotency key skipped (tj-nwkl;
+  search_products now reports already-sent images and takes resend_images);
+  restore-mode worker dropped refresh_conversation_summary (tj-um4o; now
+  registered and allowed by the deploy probe); "a team of six" made a generic
+  request "nearby" (tj-rn1r). Live recheck confirmed all three. No quotations,
+  escalations or CRM writes were triggered.
+- Worker registers process_incoming_batch, retry_pending_quotation and
+  refresh_conversation_summary.
 
 ## Previous stage: tj-uz6j tester feedback 2026-09-23
 
