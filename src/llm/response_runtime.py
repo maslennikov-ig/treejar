@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 import re
-from collections.abc import AsyncIterator, Iterable, Mapping
+from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -216,9 +216,108 @@ def _product_model_reference(raw_reference: str) -> tuple[str, ...]:
     return ()
 
 
+# Catalog names carry English colour words while an Arabic reply names the
+# colour in Arabic, so both are folded onto one English colour before a reply
+# is compared with a catalog name. Masculine, feminine and plural forms are
+# listed; the article and attached prepositions are stripped first.
+_ARABIC_COLOUR_WORDS = {
+    "أسود": "black",
+    "اسود": "black",
+    "سوداء": "black",
+    "سود": "black",
+    "أبيض": "white",
+    "ابيض": "white",
+    "بيضاء": "white",
+    "بيض": "white",
+    "بني": "brown",
+    "بنية": "brown",
+    "بنيه": "brown",
+    "رمادي": "grey",
+    "رمادية": "grey",
+    "رماديه": "grey",
+    "أزرق": "blue",
+    "ازرق": "blue",
+    "زرقاء": "blue",
+    "أحمر": "red",
+    "احمر": "red",
+    "حمراء": "red",
+    "أخضر": "green",
+    "اخضر": "green",
+    "خضراء": "green",
+    "أصفر": "yellow",
+    "اصفر": "yellow",
+    "صفراء": "yellow",
+    "برتقالي": "orange",
+    "برتقالية": "orange",
+    "بيج": "beige",
+    "جوزي": "walnut",
+    "الجوز": "walnut",
+}
+_COLOUR_WORD_ALIASES = {"gray": "grey"}
+_ARABIC_ATTACHED_PREFIXES = ("وبال", "بال", "وال", "لل", "ال", "و", "ب")
+
+
+def _canonical_colour_word(word: str) -> str | None:
+    if word in _COLOUR_WORD_ALIASES:
+        return _COLOUR_WORD_ALIASES[word]
+    if word in _ARABIC_COLOUR_WORDS:
+        return _ARABIC_COLOUR_WORDS[word]
+    for prefix in _ARABIC_ATTACHED_PREFIXES:
+        if word.startswith(prefix) and word[len(prefix) :] in _ARABIC_COLOUR_WORDS:
+            return _ARABIC_COLOUR_WORDS[word[len(prefix) :]]
+    return None
+
+
+_COLOUR_WORDS = frozenset(
+    {
+        "beige",
+        "black",
+        "blue",
+        "brown",
+        "green",
+        "grey",
+        "orange",
+        "red",
+        "walnut",
+        "white",
+        "yellow",
+    }
+)
+
+
+def _colours(words: Iterable[str]) -> set[str]:
+    return {
+        colour
+        for word in words
+        if (colour := _canonical_colour_word(word) or word) in _COLOUR_WORDS
+    }
+
+
+def _lines_mentioning(response_text: str, words: Sequence[str]) -> list[str]:
+    """Reply lines naming every one of `words`: the bullet a product sits in."""
+
+    return [
+        line
+        for line in response_text.splitlines()
+        if all(word in _product_reference_words(line) for word in words)
+    ]
+
+
+def _names_another_colour(
+    reference: str, reference_words: Sequence[str], response_text: str
+) -> bool:
+    reference_colours = _colours(reference.split())
+    if not reference_colours:
+        return False
+    stated_colours: set[str] = set()
+    for line in _lines_mentioning(response_text, reference_words):
+        stated_colours |= _colours(_product_reference_words(line))
+    return bool(stated_colours) and not stated_colours & reference_colours
+
+
 def _product_reference_words(value: str) -> list[str]:
     return [
-        _PRODUCT_REFERENCE_NUMBER_WORDS.get(word, word)
+        _canonical_colour_word(word) or _PRODUCT_REFERENCE_NUMBER_WORDS.get(word, word)
         for word in _normalized_product_reference(value).split()
     ]
 
@@ -248,6 +347,11 @@ def _product_media_reference_strength(
             and any(_has_digit(word) for word in reference_words)
             and all(word in response_words for word in reference_words)
         ):
+            if _names_another_colour(reference, reference_words, response_text):
+                # "CH 490 V" named as brown is not the black sibling; leave it
+                # to the sibling rules instead of calling it a full match.
+                model_match = True
+                continue
             return "full"
 
         model_reference = _product_model_reference(raw_reference)
@@ -314,22 +418,43 @@ def _disambiguate_model_siblings(
     model_key: tuple[str, ...],
     has_full_sibling: bool,
     response_text: str,
+    full_sibling_prices: frozenset[float] = frozenset(),
 ) -> list[ProductMediaPayload]:
-    reply_numbers = _reply_numbers(response_text)
+    # A price shared with a sibling the reply names in full is that sibling's
+    # price, not evidence for this one.
+    reply_numbers = _reply_numbers(response_text) - full_sibling_prices
     priced = [
         item
         for item in candidates
         if (price := _product_media_caption_price(item)) is not None
         and round(price, 2) in reply_numbers
     ]
+    response_words = set(_product_reference_words(response_text))
     if priced:
-        return priced
+        if len(priced) == 1:
+            return priced
+        # Read the descriptors from the bullet that names this model, so a
+        # colour belonging to another product in the reply does not count.
+        model_lines = _lines_mentioning(response_text, model_key)
+        if model_lines:
+            response_words = {
+                word for line in model_lines for word in _product_reference_words(line)
+            }
+        # Colour siblings often share a price ("CH 490 V" black and brown both
+        # AED 909); the price then says nothing, and the reply's colour decides.
+        scored_priced = [
+            (_product_media_descriptor_score(item, model_key, response_words), item)
+            for item in priced
+        ]
+        best_priced = max(score for score, _item in scored_priced)
+        if best_priced == 0:
+            return priced
+        return [item for score, item in scored_priced if score == best_priced]
     if has_full_sibling:
         # The model code in the reply is already explained by a sibling named
         # in full; a bare code is not evidence for the other siblings.
         return []
 
-    response_words = set(_product_reference_words(response_text))
     scored = [
         (_product_media_descriptor_score(item, model_key, response_words), item)
         for item in candidates
@@ -380,16 +505,21 @@ def _referenced_product_media(
             groups.setdefault(key, []).append(index)
 
     for key, indexes in groups.items():
-        has_full_sibling = any(
-            strengths[index] == "full"
+        full_siblings = [
+            items[index]
             for index, other_key in enumerate(model_keys)
-            if other_key == key
-        )
+            if other_key == key and strengths[index] == "full"
+        ]
         chosen = _disambiguate_model_siblings(
             [items[index] for index in indexes],
             model_key=key,
-            has_full_sibling=has_full_sibling,
+            has_full_sibling=bool(full_siblings),
             response_text=response_text,
+            full_sibling_prices=frozenset(
+                round(price, 2)
+                for item in full_siblings
+                if (price := _product_media_caption_price(item)) is not None
+            ),
         )
         chosen_ids = {id(item) for item in chosen}
         kept_model_only.update(

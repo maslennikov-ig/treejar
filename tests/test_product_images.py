@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -538,3 +539,64 @@ async def test_product_media_ids_are_per_conversation_unless_resent() -> None:
     assert product_key_from_media_crm_message_id(first[0]) == "key"
     assert product_key_from_media_crm_message_id(resend[0]) == "key"
     assert product_key_from_media_crm_message_id(first[1]) is None
+
+
+_EARLIER_CHAIR_ID = "33333333-3333-3333-3333-333333333333"
+_EARLIER_CHAIR_MEDIA_ID = (
+    f"product:00000000-0000-0000-0000-000000000000:{_EARLIER_CHAIR_ID}:media"
+)
+
+
+def _earlier_chair() -> SimpleNamespace:
+    return SimpleNamespace(
+        id=_EARLIER_CHAIR_ID,
+        sku="CH 145 M grey NEW",
+        name_en="Operative Office Chair CH 145 M grey NEW",
+        description_en="Office chair",
+        category="Chairs",
+        price=557,
+        currency="AED",
+    )
+
+
+async def test_search_products_carries_an_earlier_offer_forward(
+    run_context: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Live check 2026-09-24: CH 145 M was offered in the opening, then "a chair
+    # for each person?" was answered with a different chair at twice the price.
+    run_context.deps.defer_product_media = True
+    run_context.deps.db.execute.side_effect = [
+        _scalars_result([_EARLIER_CHAIR_MEDIA_ID]),
+        _scalars_result([_earlier_chair()]),
+    ]
+    monkeypatch.setattr("src.llm.engine.rag_search_products", _chair_results())
+
+    result = await search_products(run_context, "office chair")
+
+    text = result.return_value if isinstance(result, ToolReturn) else result
+    assert "Earlier in this conversation you already offered" in text
+    assert "CH 145 M grey NEW" in text
+    assert "Keep that option as your lead recommendation" in text
+
+
+async def test_search_products_does_not_reopen_a_chosen_family(
+    run_context: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.dialogue.state import DialogueState
+
+    state = DialogueState()
+    state.slots.selected_items = [{"sku": "CHAIR-01", "quantity": 4}]
+    run_context.deps.conversation.metadata_ = state.to_metadata()
+    run_context.deps.defer_product_media = True
+    run_context.deps.db.execute.side_effect = [
+        _scalars_result([_EARLIER_CHAIR_MEDIA_ID]),
+        _scalars_result([_earlier_chair()]),
+    ]
+    monkeypatch.setattr("src.llm.engine.rag_search_products", _chair_results())
+
+    result = await search_products(run_context, "office chair")
+
+    text = result.return_value if isinstance(result, ToolReturn) else result
+    assert "Earlier in this conversation you already offered" not in text

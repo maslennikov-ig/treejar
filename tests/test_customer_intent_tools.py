@@ -366,3 +366,70 @@ async def test_model_proposal_pause_restores_neutral_stopped_chain() -> None:
         ctx.deps.conversation.metadata_["proposal_followup"]["chain_stopped"] is False
     )
     assert ctx.deps.conversation.metadata_["quotation_decision_status"] == "pending"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("last_assistant", "customer_text"),
+    [
+        # Live check 2026-09-24: a product choice recorded as quote consent.
+        (
+            "Should I take NOVO forward as your preferred option?",
+            "yes, LUMA would be perfect",
+        ),
+        # The verb in the greeting is not an offer of a quotation.
+        (
+            "Hello, I'm Noor. I quote from our own catalog with confirmed prices.",
+            "yes",
+        ),
+    ],
+)
+async def test_product_choice_is_not_quotation_consent(
+    last_assistant: str, customer_text: str
+) -> None:
+    ctx = context(customer_text)
+    ctx.deps.recent_history = [
+        f"assistant: {last_assistant}",
+        f"user: {customer_text}",
+    ]
+
+    result = await engine.record_customer_intent(
+        ctx, evidence=customer_text, quotation_consent="granted"
+    )
+
+    assert result.startswith("Not recorded")
+    assert "offer to prepare the quotation" in result
+    assert (
+        quote_workflow_from_metadata(ctx.deps.conversation.metadata_).consent
+        is QuoteConsent.NOT_REQUESTED
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("last_assistant", "customer_text"),
+    [
+        ("Would you like me to prepare a quotation for it?", "ыгку"),
+        ("هل ترغب أن أجهز عرض سعر رسمي؟", "نعم"),
+        ("Here are two chairs.", "Please send me a quote for both"),
+        ("Here are two chairs.", "Пришлите КП на оба"),
+    ],
+)
+async def test_quotation_consent_is_recorded_when_the_quotation_is_on_the_table(
+    last_assistant: str, customer_text: str
+) -> None:
+    ctx = context(customer_text)
+    ctx.deps.recent_history = [
+        f"assistant: {last_assistant}",
+        f"user: {customer_text}",
+    ]
+
+    result = await engine.record_customer_intent(
+        ctx, evidence=customer_text, quotation_consent="granted"
+    )
+
+    assert result.startswith("Customer intent recorded")
+    assert (
+        quote_workflow_from_metadata(ctx.deps.conversation.metadata_).consent
+        is QuoteConsent.GRANTED
+    )

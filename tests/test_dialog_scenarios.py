@@ -1148,6 +1148,11 @@ async def test_model_can_record_consent_then_observe_quotation_data_gate() -> No
     conv.metadata_ = {}
     deps = _mock_deps(conv)
     deps.user_query = "sure"
+    # "sure" is consent only because it answers a quotation offer.
+    deps.recent_history = [
+        "assistant: Would you like me to prepare a formal quotation for it?",
+        "user: sure",
+    ]
     step = 0
 
     def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:

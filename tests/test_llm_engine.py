@@ -1991,6 +1991,43 @@ def test_product_media_reference_drops_model_siblings_by_descriptor() -> None:
     assert _referenced_product_media(pending, reply) == (media["novo_four"],)
 
 
+def _colour_sibling_media() -> tuple[ProductMediaPayload, ProductMediaPayload]:
+    def payload(colour: str) -> ProductMediaPayload:
+        name = f"Visitor Office Chair CH 490 V {colour}"
+        return ProductMediaPayload(
+            url=f"https://example.com/ch-490-v-{colour}.jpg",
+            caption=f"{name} — 909.00 AED",
+            product_key=f"ch-490-v-{colour}",
+            reference_tokens=(name, f"CH 490 V {colour}"),
+        )
+
+    return payload("black"), payload("brown")
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "• *CH 490 V بني* — 909 دراهم، والمخزون 3.",
+        "• *CH 490 V* in brown — AED 909, 3 in stock.",
+    ],
+)
+def test_product_media_reference_price_tie_falls_back_to_the_colour(
+    reply: str,
+) -> None:
+    # Live check 2026-09-24: both colours cost AED 909, so the price named in
+    # the reply could not tell them apart and the black photo went out too.
+    black, brown = _colour_sibling_media()
+
+    assert _referenced_product_media((black, brown), reply) == (brown,)
+
+
+def test_product_media_reference_keeps_both_colours_when_both_are_named() -> None:
+    black, brown = _colour_sibling_media()
+    reply = "CH 490 V comes in black or brown, AED 909 each."
+
+    assert _referenced_product_media((black, brown), reply) == (black, brown)
+
+
 def test_product_media_reference_bare_model_code_does_not_add_siblings() -> None:
     media = _novo_luma_media()
     reply = (

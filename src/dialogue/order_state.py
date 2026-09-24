@@ -34,6 +34,39 @@ class QuoteConsent(StrEnum):
     GRANTED = "granted"
 
 
+# A quotation named as a thing: "a quote", "the quotation", "عرض سعر", "КП".
+# The bare verb in "I quote from our own catalog" is not an offer of one.
+_QUOTATION_NOUN_RE = re.compile(
+    r"\bquotations?\b|"
+    r"\b(?:a|the|formal|your|this|my|our|that)\s+quotes?\b|"
+    r"\bquote\s+(?:for|please|now|request)\b|"
+    r"\b(?:pro[\s-]?forma|commercial\s+(?:offer|proposal))\b|"
+    r"عرض\s+(?:ال)?سعر|عرض\s+(?:ال)?أسعار|عرض\s+تجاري|فاتورة|"
+    r"(?<![а-яё])кп(?![а-яё])|коммерческ\w*\s+предложени\w*|сч[её]т(?![а-яё])",
+    re.IGNORECASE,
+)
+
+
+def mentions_quotation(text: str) -> bool:
+    """Whether `text` names a quotation, in English, Arabic or Russian."""
+
+    return bool(text and _QUOTATION_NOUN_RE.search(text))
+
+
+def quotation_consent_is_grounded(customer_text: str, last_assistant_text: str) -> bool:
+    """Whether a "yes" can be read as permission to prepare a quotation.
+
+    Live check 2026-09-24: "yes, LUMA would be perfect", answering "Should I
+    take NOVO forward?", was recorded as quotation consent, and the next reply
+    asked for company, address and email nobody had agreed to give. Consent
+    needs the quotation to be on the table: the customer names one, or the
+    assistant's previous turn offered one and this message answers it. Choosing
+    a product is a selection; the quotation is offered next.
+    """
+
+    return mentions_quotation(customer_text) or mentions_quotation(last_assistant_text)
+
+
 class QuoteLifecycle(StrEnum):
     CONSULTATION = "consultation"
     QUOTE_OFFERED = "quote_offered"

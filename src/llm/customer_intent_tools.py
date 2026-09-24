@@ -13,6 +13,12 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from pydantic_ai import RunContext
 
+from src.dialogue.order_state import (
+    QuoteConsent,
+    QuoteLifecycle,
+    quotation_consent_is_grounded,
+    quote_workflow_from_metadata,
+)
 from src.llm.catalog_planning import SalesDeps
 
 logger = logging.getLogger("src.llm.engine")
@@ -36,6 +42,35 @@ class CustomerDetailEvidence(BaseModel):
     field: Literal["name", "company", "customer_type", "address", "email", "phone"]
     value: str = Field(min_length=1, max_length=500)
     evidence: str = Field(min_length=1, max_length=2000)
+
+
+def _quotation_on_the_table(deps: SalesDeps) -> bool:
+    """Whether the current message can be consent to a quotation at all.
+
+    The quotation is on the table when the customer names it, when the last
+    assistant turn (or its recorded proposal) offered it, or when an earlier
+    turn already discussed it and it was put on hold or declined.
+    """
+
+    from src.dialogue.state import DialogueState
+    from src.llm.engine import _last_assistant_message
+
+    workflow = quote_workflow_from_metadata(deps.conversation.metadata_)
+    if (
+        workflow.consent is not QuoteConsent.NOT_REQUESTED
+        or workflow.lifecycle is not QuoteLifecycle.CONSULTATION
+    ):
+        return True
+    proposal = DialogueState.from_conversation(deps.conversation).last_proposal
+    last_offer = " ".join(
+        text
+        for text in (
+            _last_assistant_message(deps.recent_history),
+            proposal.question if proposal else "",
+        )
+        if text
+    )
+    return quotation_consent_is_grounded(deps.user_query, last_offer)
 
 
 async def record_customer_intent(
@@ -84,6 +119,13 @@ async def record_customer_intent(
         d.field == "customer_type" and d.value != "individual" for d in details or []
     ):
         return "Not recorded: customer_type must be individual; use company for a business."
+    if quotation_consent == "granted" and not _quotation_on_the_table(ctx.deps):
+        return (
+            "Not recorded: quotation consent needs the customer to ask for a "
+            "quotation or to answer your offer of one. This message chooses or "
+            "confirms products; record that with record_customer_requirements and "
+            "offer to prepare the quotation. Do not ask for quotation details yet."
+        )
     pii_map = ctx.deps.pii_map
     evidence = unmask_pii(evidence, pii_map)
     details = [

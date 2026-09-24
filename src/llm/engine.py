@@ -4150,6 +4150,54 @@ async def _load_sent_product_media_keys(
     return keys
 
 
+async def _load_earlier_offered_products(
+    db: AsyncSession,
+    product_keys: set[str],
+) -> list[Any]:
+    """Active catalog rows for products already offered in this conversation."""
+
+    ids: list[UUID] = []
+    for key in product_keys:
+        try:
+            ids.append(UUID(key))
+        except ValueError:
+            continue
+    if not ids:
+        return []
+    result = await db.execute(
+        select(Product).where(Product.id.in_(ids), Product.is_active.is_(True))
+    )
+    return list(result.scalars().all())
+
+
+def _earlier_offer_note(products: Sequence[Any]) -> str:
+    """Carry the options already offered into a new search for the same need.
+
+    Live check 2026-09-24: the opening offered CH 145 M (AED 557) as the chair
+    for a four-person office; "and a chair for each person?" ran a new search
+    and the reply offered CH 970 at AED 1,210 as if the first chair had never
+    been mentioned. A product the customer has already been shown for this
+    kind of item stays the lead option unless the customer asks for something
+    different.
+    """
+
+    lines = [
+        f"- {product.name_en} (SKU: {product.sku}; catalog price "
+        f"{float(product.price):.2f} {product.currency})"
+        for product in products
+    ]
+    return (
+        "Earlier in this conversation you already offered the customer, for "
+        "this kind of item:\n"
+        + "\n".join(lines)
+        + "\nKeep that option as your lead recommendation and say it is the one "
+        "you suggested before, unless the customer's current message asks for "
+        "something different, a criterion it fails, or alternatives. If you add "
+        "another option, say how it differs from the earlier one. Confirm its "
+        "stock with get_stock before stating availability."
+    )
+
+
 def _text_price_matches(expected: float | None, text: str) -> bool:
     if expected is None:
         return False
@@ -9768,6 +9816,9 @@ async def search_products(
     available_seat_coverage = 0
     has_capacity_evidence = False
     coverage_candidates: list[_CatalogCoverageCandidate] = []
+    # A product whose image reached this conversation was offered in it: the
+    # image goes out only when the reply names the product. Catalog rows carry
+    # images, so results without any have no media history worth loading.
     sent_media_product_keys = (
         await _load_sent_product_media_keys(
             ctx.deps.db, UUID(str(ctx.deps.conversation.id))
@@ -9775,6 +9826,9 @@ async def search_products(
         if any(product.image_url for product in results.products)
         else set()
     )
+    result_product_keys: set[str] = set()
+    result_families: set[CatalogFamily] = set()
+    result_sku_families: list[tuple[str, CatalogFamily | None]] = []
     for result_rank, r in enumerate(results.products):
         sku = str(r.sku).strip()
         sku_key = sku.casefold()
@@ -9831,6 +9885,13 @@ async def search_products(
         product_text = _product_match_text(r)
         product_capacity = _catalog_product_capacity(product_text)
         product_family = _catalog_product_family(product_text)
+        row_product_key = str(getattr(r, "id", None) or r.sku)
+        result_product_keys.add(row_product_key)
+        if product_family is not None:
+            result_families.add(product_family)
+            result_sku_families.append((sku, product_family))
+        if row_product_key in sent_media_product_keys:
+            desc += "\nAlready offered to this customer earlier in this conversation."
         catalog_stock = max(int(r.stock or 0), 0)
         product_stock = (
             stock_snapshot.available
@@ -9985,6 +10046,42 @@ async def search_products(
             )
 
         formatted_results.append(desc)
+
+    if (
+        sent_media_product_keys - result_product_keys
+        and result_families
+        and not complementary_search
+    ):
+        offered = await _load_earlier_offered_products(
+            ctx.deps.db, sent_media_product_keys
+        )
+        # A choice the customer has made settles its family; only families
+        # still open carry an earlier offer forward.
+        selected_skus = {
+            sku.casefold() for sku in closed_selection_skus(ctx.deps.conversation)
+        }
+        open_families = result_families - {
+            family
+            for sku, family in [
+                *result_sku_families,
+                *(
+                    (
+                        str(product.sku),
+                        _catalog_product_family(_product_match_text(product)),
+                    )
+                    for product in offered
+                ),
+            ]
+            if sku.casefold() in selected_skus
+        }
+        earlier_offers = [
+            product
+            for product in offered
+            if str(product.id) not in result_product_keys
+            and _catalog_product_family(_product_match_text(product)) in open_families
+        ]
+        if earlier_offers:
+            formatted_results.append(_earlier_offer_note(earlier_offers))
 
     if cross_sell_candidates:
         candidate_cap = ctx.deps.catalog_planning.budget_cap

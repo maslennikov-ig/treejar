@@ -11,6 +11,7 @@ from langgraph.graph import StateGraph
 
 from src.dialogue.catalog_refs import CatalogParsedRef, extract_catalog_references
 from src.dialogue.order_guards import is_order_selection_blocked
+from src.dialogue.order_state import quotation_consent_is_grounded
 from src.dialogue.reducer import (
     append_trace_bounded,
     apply_extracted_details,
@@ -638,10 +639,15 @@ def quote_consent_signal(
         "okay",
         "نعم",
     }
-    if affirmative and any(
-        term in " ".join(recent_history).casefold()
-        for term in ("quote", "quotation", "عرض سعر")
-    ):
+    last_assistant = next(
+        (
+            entry.removeprefix("assistant: ")
+            for entry in reversed(recent_history)
+            if entry.startswith("assistant: ")
+        ),
+        "",
+    )
+    if affirmative and quotation_consent_is_grounded("", last_assistant):
         return QuoteConsent.GRANTED
     return None
 
