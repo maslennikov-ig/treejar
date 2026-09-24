@@ -20,12 +20,19 @@ colour-sibling media, shared count words) delivered on top of 33a2b02.
   it, or the quote workflow already discussed it);
   `quotation_consent_is_grounded` in src/dialogue/order_state.py. A product
   choice is a selection; the quotation is offered next.
-- tj-slzx: search_products carries an earlier offer of the same catalog family
-  forward (offered = product image reached the conversation), unless the
-  customer's selection settled that family.
+- tj-slzx: search_products carries an earlier offer of the same catalog
+  category forward (offered = product image reached the conversation), unless
+  the customer's selection settled that category. Category, not name text,
+  decides the kind of item ("Workstation Chair" reads as two).
 - tj-epls: colour siblings sharing a price are told apart by the colour in the
   reply's own bullet, English or Arabic; a price shared with a fully matched
   sibling is not evidence.
+- Delivered: CI 35996126798 and 35998070670 (deployed). Live recheck on the
+  owner's number (79262810921#tj-check-0924-A3..A6, D3, F): a product choice
+  now gets "Shall I prepare the quotation?" instead of a details request; the
+  opening's CH 160 was carried forward "as I mentioned earlier"; one photo per
+  named product; "team of fifteen" has no false no-match disclaimer. No
+  quotations, escalations or CRM writes.
 
 ## Previous stage: tj-uxj0 runtime hardening 2026-09-24
 
