@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     app_name: str = "treejar-ai-bot"
     app_env: str = "development"
     app_debug: bool = False
+    # Swagger/ReDoc/OpenAPI routes expose the full API map; opt-in only.
+    app_docs_enabled: bool = False
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     app_log_level: str = "INFO"

@@ -1,11 +1,27 @@
 # Orchestrator Handoff
 
-Updated: 2026-09-23
-Current branch: main (delivery branch: codex/tj-uz6j-tester-0923)
-Current stage id: tj-uz6j-tester-0923
-Status: Tester-feedback repairs delivered to main and deployed as 9f62d29.
+Updated: 2026-09-24
+Current branch: main (delivery branch: codex/tj-uxj0-dev-hardening)
+Current stage id: tj-uxj0-dev-hardening
+Status: Runtime health check 2026-09-24 and debug/docs hardening.
 
-## Current stage: tj-uz6j tester feedback 2026-09-23
+## Current stage: tj-uxj0 runtime hardening 2026-09-24
+
+- Health check on live 0f84a70 (Zoho quotation retry job, tj-i0n0): app,
+  worker, db, redis, nginx up with zero restarts; no app/worker errors in 16 h;
+  nginx 502s only during deploy windows; ARQ queue empty; alembic head matches.
+- Found: prod ran APP_DEBUG=true (SQLAlchemy echo flooded logs) and served
+  /docs, /redoc, /openapi.json publicly. Fix: APP_DEBUG=false in
+  /opt/noor/.env (backup `.hotfix-backups/tj-uxj0-20260924/.env`); API docs
+  now opt-in via APP_DOCS_ENABLED (default false). APP_ENV stays
+  `development` by owner intent (project still in development); it drives
+  Telegram, public-media and auth behavior, so it was not changed.
+- Expected noise, not defects: "unexpected Wazzup channel" warnings are the
+  Treejar Trading channel dropped by TEST_CHANNEL_RESTORE_MODE; 47 pending
+  escalations come from test dialogues.
+- Worker registers process_incoming_batch and retry_pending_quotation.
+
+## Previous stage: tj-uz6j tester feedback 2026-09-23
 
 - Source: Angela's WhatsApp test of demo routes A/B on test0665 against live
   release 071b0e3; conversations 207f7c10, fa224cab, d24c5360. Plan:
@@ -99,7 +115,7 @@ src/services/quotation_retry.py).
 
 ## Next recommended
 
-Next stage id: none (tj-uz6j delivered)
+Next stage id: none (tj-uxj0 delivered)
 Recommended action: tester reruns routes A and B on test0665 after /reset.
 
 ## Starter prompt for next orchestrator
@@ -108,5 +124,5 @@ Use $orchestrator-stage only for a newly authorized change. Use
 scripts/scenario_replay.py before any model or prompt switch.
 Preserve the test0665-only boundary.
 
-docs-reviewed: updated - tester-feedback stage and defers recorded.
+docs-reviewed: updated - health check and debug/docs hardening recorded.
 graph-reviewed: no-change-needed - no graph used.
