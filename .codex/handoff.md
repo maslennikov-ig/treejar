@@ -34,6 +34,16 @@ colour-sibling media, shared count words) delivered on top of 33a2b02.
   named product; "team of fifteen" has no false no-match disclaimer. No
   quotations, escalations or CRM writes.
 
+- tj-4qtv (owner: stock always from Zoho, actual figure, never "unconfirmed"):
+  ZohoInventoryClient serves stock from a shared Redis snapshot
+  (`zoho:inventory:stock_snapshot:v1`, fresh 600 s, stale fallback 3600 s,
+  SET NX refresh lock, all active items ~11 pages); only misses go live, one
+  failed SKU no longer fails the batch, case/Cyrillic duplicate SKUs prefer
+  the row with a number. Evidence: per-SKU calls hit Zoho 429 and a 30 min
+  cooldown, and every search then showed "unconfirmed". Without a Zoho figure
+  the reply states no number and does not say "unconfirmed". Open: the
+  refresh runs inside the customer turn that finds the snapshot stale.
+
 ## Previous stage: tj-uxj0 runtime hardening 2026-09-24
 
 - Health check on live 0f84a70 (Zoho quotation retry job, tj-i0n0): app,
