@@ -4135,6 +4135,12 @@ _ZOHO_STOCK_MISSING_LINE = (
     "availability only if the customer asks, and then say it is checked in our "
     "warehouse system before the quotation."
 )
+# The figure is the actual Zoho stock. A customer who wants more is told how
+# many there are, never that the rest is "unconfirmed" (owner, 2026-09-24).
+_STOCK_SHORTFALL_NOTE = (
+    ". If the customer wants more than this, say how many are in stock "
+    "(e.g. only 1 in stock); never call the remainder unconfirmed"
+)
 
 
 async def _load_earlier_offered_products(
@@ -4700,13 +4706,13 @@ def _variant_options_response(
             lines.append(
                 "الكمية المطلوبة متوفرة بالسعر المؤكد."
                 if enough_stock
-                else "المخزون المؤكد لا يغطي الكمية المطلوبة بالكامل."
+                else "المخزون الحالي أقل من الكمية المطلوبة؛ اذكر العدد المتوفر فقط."
             )
         else:
             lines.append(
                 "The requested quantity is available at the confirmed unit price."
                 if enough_stock
-                else "The confirmed stock does not cover the full requested quantity."
+                else "Current stock is below the requested quantity."
             )
     elif arabic:
         lines.append("أي خيار تفضل؟ أستطيع بعدها تجهيز عرض سعر رسمي.")
@@ -9856,6 +9862,7 @@ async def search_products(
         ctx.deps.stock_snapshots[sku_key] = stock_snapshot
         stock_line = (
             f"Current stock: {stock_snapshot.available} (Zoho-confirmed)"
+            + _STOCK_SHORTFALL_NOTE
             if stock_snapshot.provenance == "authoritative"
             else _ZOHO_STOCK_MISSING_LINE
         )
@@ -10265,7 +10272,8 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
         )
 
     stock_text = (
-        f"Zoho-confirmed stock for {sku}: {available_int} items available. {price_text}"
+        f"Zoho-confirmed stock for {sku}: {available_int} items available"
+        f"{_STOCK_SHORTFALL_NOTE}. {price_text}"
     )
     if ctx.deps.product_results_seen:
         return ToolReturn(

@@ -50,6 +50,7 @@ from src.dialogue.state import DialogueState
 from src.llm.catalog_planning import (
     CLAIM_CONTRACT_SCOPE_KEY,
     SalesDeps,
+    StockSnapshot,
     _claim_contract_directive,
     _claim_contract_runs_every_catalog_turn,
     _enforce_claim_contract,
@@ -294,6 +295,27 @@ def _requested_quantities(deps: SalesDepsT) -> dict[str, int]:
     return quantities
 
 
+def _limited_stock_snapshots(deps: SalesDepsT) -> list[StockSnapshot]:
+    requested = _requested_quantities(deps)
+    snapshots: list[StockSnapshot] = []
+    for snapshot in deps.stock_snapshots.values():
+        if not 1 <= snapshot.available < 5:
+            continue
+        requested_quantity = requested.get(snapshot.sku.strip().casefold())
+        if requested_quantity is not None and requested_quantity <= snapshot.available:
+            continue
+        snapshots.append(snapshot)
+    return snapshots
+
+
+def _limited_stock_figures(deps: SalesDepsT) -> tuple[int, ...]:
+    """The verified figures behind `_limited_stock_product_references`."""
+
+    return tuple(
+        dict.fromkeys(snapshot.available for snapshot in _limited_stock_snapshots(deps))
+    )
+
+
 def _limited_stock_product_references(deps: SalesDepsT) -> tuple[str, ...]:
     """Names and SKUs for retrieved rows whose verified stock is 1--4.
 
@@ -307,14 +329,8 @@ def _limited_stock_product_references(deps: SalesDepsT) -> tuple[str, ...]:
     rows_by_sku = {
         row.sku.strip().casefold(): row for row in deps.claim_rows.values() if row.sku
     }
-    requested = _requested_quantities(deps)
     references: list[str] = []
-    for snapshot in deps.stock_snapshots.values():
-        if not 1 <= snapshot.available < 5:
-            continue
-        requested_quantity = requested.get(snapshot.sku.strip().casefold())
-        if requested_quantity is not None and requested_quantity <= snapshot.available:
-            continue
+    for snapshot in _limited_stock_snapshots(deps):
         references.append(snapshot.sku)
         row = rows_by_sku.get(snapshot.sku.strip().casefold())
         if row is None:
@@ -454,6 +470,7 @@ class _Turn:
                 limited_stock_product_references=(
                     _limited_stock_product_references(response_deps)
                 ),
+                limited_stock_figures=_limited_stock_figures(response_deps),
                 company=engine._string_value(quote_details.get("company")) or None,
                 customer_type=(
                     engine._string_value(quote_details.get("customer_type")) or None

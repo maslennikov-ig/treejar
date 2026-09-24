@@ -106,6 +106,7 @@ class ReplyPolicyState:
     anchor_line: str | None = None
     anchor_has_limited_stock: bool = False
     limited_stock_product_references: tuple[str, ...] = ()
+    limited_stock_figures: tuple[int, ...] = ()
     company: str | None = None
     customer_type: str | None = None
     delivery_address: str | None = None
@@ -719,6 +720,7 @@ def render_reply(
             disclose_limited_stock,
             product_references=state.limited_stock_product_references,
             language=state.language,
+            stock_figures=state.limited_stock_figures,
         ),
     )
     raised_flags.extend(flags)

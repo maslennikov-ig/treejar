@@ -30,6 +30,7 @@ import re
 from collections.abc import Sequence
 from typing import NamedTuple
 
+from src.dialogue.count_words import COUNT_PATTERN, count_value
 from src.llm.closed_question_guard import response_asks_customer_name
 from src.services.customer_language import is_arabic_customer_language
 
@@ -101,6 +102,30 @@ _LIMITED_STOCK_SIGNALS = (
     "مخزون محدود",
     "المخزون محدود",
 )
+# A sentence that talks about stock. With a verified low figure in it, the
+# customer already knows exactly how scarce the item is.
+_STOCK_TERM_RE = re.compile(
+    r"\b(?:in\s+stock|stock|available|availability|left|on\s+hand)\b"
+    r"|(?:المخزون|مخزون|متوفر|متوفرة|متاح|متاحة)",
+    re.IGNORECASE,
+)
+_STATED_COUNT_RE = re.compile(rf"(?<!\w){COUNT_PATTERN}(?!\w)", re.IGNORECASE)
+_STOCK_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?\u061f;])\s+|\n+")
+
+
+def _states_stock_figure(text: str, figures: Sequence[int]) -> bool:
+    """Whether a stock sentence of the reply names one of the verified figures."""
+
+    wanted = {figure for figure in figures if figure > 0}
+    if not wanted:
+        return False
+    for sentence in _STOCK_SENTENCE_SPLIT_RE.split(text):
+        if not _STOCK_TERM_RE.search(sentence):
+            continue
+        for match in _STATED_COUNT_RE.finditer(sentence.replace("*", " ")):
+            if count_value(match.group(0)) in wanted:
+                return True
+    return False
 
 
 class _FoldedAsk(NamedTuple):
@@ -160,16 +185,23 @@ def disclose_limited_stock(
     *,
     product_references: Sequence[str],
     language: str,
+    stock_figures: Sequence[int] = (),
 ) -> str:
     """Disclose scarcity only when the reply names a verified low-stock row.
 
     The references come from retrieved catalog state, never from the draft's
     own claims.  The warning sits before the first question so the customer
     sees the volume qualification before being asked to continue.
+
+    A reply that already states the verified figure ("1 in stock") has told
+    the customer more than the generic warning would, so it is left alone
+    (tester recheck 2026-09-24, CH 616 NEW black).
     """
 
     normalized = text.casefold()
     if any(signal in normalized for signal in _LIMITED_STOCK_SIGNALS):
+        return text
+    if _states_stock_figure(text, stock_figures):
         return text
     references = tuple(
         reference.strip().casefold()

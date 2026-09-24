@@ -37,6 +37,7 @@ from src.llm.catalog_planning import (
     _verify_volunteered_claims,
 )
 from src.llm.message_processor import (
+    _limited_stock_figures,
     _limited_stock_product_references,
     _sales_agent_route,
     _Turn,
@@ -46,6 +47,7 @@ from src.llm.outbound_reply_guard import (
     looks_like_structured_payload,
 )
 from src.llm.response_runtime import ProductMediaPayload, dedupe_product_media
+from src.llm.sales_turn_guard import disclose_limited_stock
 from src.llm.verified_answers import classify_product_match
 from src.models.conversation import Conversation
 
@@ -427,6 +429,54 @@ def test_limited_stock_is_silent_when_stock_covers_the_ask() -> None:
 
 def test_limited_stock_is_disclosed_when_no_quantity_is_recorded() -> None:
     assert "CH 616 NEW black" in _limited_stock_product_references(_stock_deps(None))
+
+
+def test_limited_stock_figures_follow_the_disclosed_rows() -> None:
+    assert _limited_stock_figures(
+        _stock_deps([{"sku": "CH 616 NEW black", "quantity": 4}])
+    ) == (1,)
+    assert (
+        _limited_stock_figures(
+            _stock_deps([{"sku": "CH 616 NEW black", "quantity": 1}])
+        )
+        == ()
+    )
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "CH 616 NEW black is *AED 295 per chair*; current stock is *1 chair*. "
+        "Would you like me to check the remaining 3?",
+        "CH 616 NEW black is AED 295 each, with *1 in stock*, so only one is "
+        "available. Would you like to proceed?",
+        "CH 616 NEW black: only one left in stock. Shall I add CH 460 instead?",
+    ],
+)
+def test_limited_stock_warning_is_skipped_when_the_reply_states_the_figure(
+    reply: str,
+) -> None:
+    rendered = disclose_limited_stock(
+        reply,
+        product_references=("CH 616 NEW black",),
+        language="en",
+        stock_figures=(1,),
+    )
+
+    assert rendered == reply
+
+
+def test_limited_stock_warning_stays_when_the_figure_is_not_stated() -> None:
+    reply = "CH 616 NEW black is AED 295 per chair. Would you like 4?"
+
+    rendered = disclose_limited_stock(
+        reply,
+        product_references=("CH 616 NEW black",),
+        language="en",
+        stock_figures=(1,),
+    )
+
+    assert "limited stock" in rendered
 
 
 # --- 4. The details the model asks for are the gate's own list ---------------
