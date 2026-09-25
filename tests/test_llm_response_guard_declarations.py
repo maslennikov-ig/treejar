@@ -27,6 +27,7 @@ EXPECTED_MODES = {
     "name_chase": GuardMode.REDUCING,
     "company_question": GuardMode.REPLACING,
     "deferred_commitment": GuardMode.REPLACING,
+    "repeated_sentence": GuardMode.REDUCING,
     "grounding_output": GuardMode.REMOVING,
 }
 

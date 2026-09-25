@@ -561,3 +561,50 @@ def test_stock_lines_ask_for_a_plain_count_without_its_source() -> None:
     assert "only the count" in note
     assert "without naming where it comes from" in note
     assert "never call the remainder unconfirmed" in note
+
+
+# Angela, round 3 (2026-09-25): two turns running ended with the same promise.
+_PREVIOUS_REPLY = (
+    "CH 460 black is *AED 801 each*, and *28 are in stock*. Three would total "
+    "*AED 2,403*.\n\nI've kept your selection as *1 × CH 616 NEW black*. Would you "
+    "like me to note *3 × CH 460 black* as well? No quotation will be prepared "
+    "unless you ask."
+)
+
+
+def test_a_statement_from_the_previous_reply_is_not_repeated() -> None:
+    from src.llm.response_policy import drop_repeated_sentences
+
+    reply = (
+        "I've noted *2 × CH 460 black* and *2 × CH 616 NEW black*.\n\n"
+        "Would you like me to keep the request at 2 of each? No quotation will "
+        "be prepared unless you ask."
+    )
+
+    assert drop_repeated_sentences(reply, previous_reply=_PREVIOUS_REPLY) == (
+        "I've noted *2 × CH 460 black* and *2 × CH 616 NEW black*.\n\n"
+        "Would you like me to keep the request at 2 of each?"
+    )
+
+
+def test_figures_and_questions_may_be_repeated() -> None:
+    from src.llm.response_policy import drop_repeated_sentences
+
+    reply = (
+        "CH 460 black is *AED 801 each*, and *28 are in stock*. Would you like me "
+        "to note *3 × CH 460 black* as well?"
+    )
+
+    assert drop_repeated_sentences(reply, previous_reply=_PREVIOUS_REPLY) == reply
+
+
+def test_the_repeat_guard_runs_in_the_reply_policy() -> None:
+    from src.llm.response_policy import ReplyPolicyState, render_reply
+
+    rendered = render_reply(
+        "Noted. No quotation will be prepared unless you ask.",
+        state=ReplyPolicyState(language="en", previous_reply=_PREVIOUS_REPLY),
+        provenance="model",
+    )
+
+    assert rendered.text == "Noted."

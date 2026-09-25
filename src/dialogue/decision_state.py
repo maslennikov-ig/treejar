@@ -685,7 +685,9 @@ def decision_state_directives(
             "rejects the choice. Stage rules and search results that say to "
             "present options do not reopen it: use a search only to confirm "
             "facts about the chosen items. Restate price or stock only when the "
-            "customer asks, when a figure changed, or in the quotation summary. "
+            "customer asks, when a figure changed, or in the quotation summary, "
+            "and do not describe the chosen items' features again once you have "
+            "described them. "
             f"Next step: {next_step}."
         )
         if len(selected) == 1:

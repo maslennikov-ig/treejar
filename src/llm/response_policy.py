@@ -116,6 +116,7 @@ class ReplyPolicyState:
     inventory_confirmed: bool = False
     grounded_amounts: tuple[object, ...] | None = None
     required_tool_disclosure: str | None = None
+    previous_reply: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -424,6 +425,57 @@ def _additive_replacement_covers(before: str, after: str) -> bool:
     return _words_appear_in_order(_normalized_words(before), _normalized_words(after))
 
 
+_REPLY_SENTENCE_RE = re.compile(r"[^.!?\u061f\n]+(?:[.!?\u061f]+|$)")
+
+
+def _sentence_key(sentence: str) -> str:
+    return " ".join(_normalized_words(sentence))
+
+
+def drop_repeated_sentences(text: str, *, previous_reply: str | None) -> str:
+    """Drop sentences the previous reply already said, word for word.
+
+    A statement the customer has just read carries nothing the second time
+    ("No quotation will be prepared unless you ask." on two turns running).
+    Only plain statements go: a sentence with a figure may be a price or stock
+    the customer asked for again, and a question may be the ask still owed.
+    """
+
+    previous_keys = {
+        _sentence_key(match.group())
+        for match in _REPLY_SENTENCE_RE.finditer(previous_reply or "")
+    }
+    previous_keys.discard("")
+    if not previous_keys:
+        return text
+
+    def keep(match: re.Match[str]) -> str:
+        sentence = match.group()
+        key = _sentence_key(sentence)
+        repeated = (
+            len(key.split()) >= 3
+            and key in previous_keys
+            and not any(character.isdigit() for character in sentence)
+            and not sentence.rstrip().endswith(("?", "\u061f"))
+        )
+        return "" if repeated else sentence
+
+    candidate = _REPLY_SENTENCE_RE.sub(keep, text)
+    if candidate == text:
+        return text
+    lines = [" ".join(line.split()) for line in candidate.split("\n")]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+def _only_repeats_were_dropped(before: str, after: str) -> bool:
+    after_words = _normalized_words(after)
+    return (
+        _has_meaningful_reply(after)
+        and _words_appear_in_order(after_words, _normalized_words(before))
+        and re.findall(r"\d", before) == re.findall(r"\d", after)
+    )
+
+
 RESPONSE_GUARD_DECLARATIONS: dict[str, GuardDeclaration] = {
     "closed_question": GuardDeclaration(
         name="closed_question",
@@ -472,6 +524,12 @@ RESPONSE_GUARD_DECLARATIONS: dict[str, GuardDeclaration] = {
         mode=GuardMode.REPLACING,
         reason="Only inserts a named follow-up commitment and preserves the original reply.",
         replacement_covers=_additive_replacement_covers,
+    ),
+    "repeated_sentence": GuardDeclaration(
+        name="repeated_sentence",
+        mode=GuardMode.REDUCING,
+        reason="Drops a plain statement the previous reply already made word for word.",
+        reduction_preserves=_only_repeats_were_dropped,
     ),
     "grounding_output": GuardDeclaration(
         name="grounding_output",
@@ -724,6 +782,13 @@ def render_reply(
         ),
     )
     raised_flags.extend(flags)
+    if not state.is_first_turn:
+        rendered, flags = _render_declared_guard(
+            rendered,
+            guard_name="repeated_sentence",
+            guard=partial(drop_repeated_sentences, previous_reply=state.previous_reply),
+        )
+        raised_flags.extend(flags)
     rendered_before_grounding = rendered
     violations = classify_grounding_output(
         rendered,

@@ -495,6 +495,9 @@ class _Turn:
                     engine._string_value(response_deps.required_cross_sell_disclosure)
                     or None
                 ),
+                previous_reply=(
+                    engine._last_assistant_message(response_deps.recent_history) or None
+                ),
             ),
             provenance=provenance,
         )
