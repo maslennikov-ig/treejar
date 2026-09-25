@@ -11,6 +11,7 @@ from urllib.parse import urljoin, urlsplit
 
 import httpx
 
+from src.core.chat_id import base_chat_id
 from src.core.config import settings
 from src.integrations.messaging.base import MessagingProvider
 from src.services.inbound_channels import normalize_channel_phone
@@ -254,14 +255,14 @@ class WazzupProvider(MessagingProvider):
         storage. Wazzup only accepts the real WhatsApp chat id, so outbound
         delivery must use the base part before ``#``.
         """
-        base_chat_id, _, suffix = chat_id.partition("#")
-        if suffix and base_chat_id:
+        base = base_chat_id(chat_id)
+        if base != chat_id.strip():
             logger.info(
                 "Using base Wazzup chatId %s for synthetic profile suffix %s",
-                base_chat_id,
-                suffix,
+                base,
+                chat_id.partition("#")[2],
             )
-            return base_chat_id
+            return base
         return chat_id
 
     def outbound_chat_id(self, chat_id: str) -> str:

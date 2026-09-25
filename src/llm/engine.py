@@ -28,6 +28,7 @@ from pydantic_ai.usage import RunUsage
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.chat_id import base_chat_id
 from src.core.config import settings
 from src.dialogue.catalog_refs import extract_catalog_references
 from src.dialogue.claim_contract import (
@@ -10996,7 +10997,9 @@ async def _create_quotation(
         customer_company = "Individual"
     else:
         customer_company = explicit_company
-    customer_phone = quote_customer_details.get("phone") or ctx.deps.conversation.phone
+    customer_phone = quote_customer_details.get("phone") or base_chat_id(
+        ctx.deps.conversation.phone
+    )
     customer_address = quote_customer_details.get("address", "")
 
     source_message_id = _quotation_source_message_id(ctx.deps)

@@ -191,10 +191,17 @@ class StockSnapshot:
         default_factory=dict, init=False, repr=False
     )
 
+    _by_item_id: dict[str, dict[str, Any]] = dataclass_field(
+        default_factory=dict, init=False, repr=False
+    )
+
     def __post_init__(self) -> None:
         for item in self.items.values():
             key = _sku_match_key(str(item.get("sku", "")))
             self._by_key.setdefault(key, []).append(item)
+            item_id = str(item.get("item_id") or "").strip()
+            if item_id:
+                self._by_item_id[item_id] = item
 
     def age_seconds(self, now: float | None = None) -> float:
         return (time.time() if now is None else now) - self.as_of
@@ -205,6 +212,14 @@ class StockSnapshot:
         candidates = [exact] if exact is not None else []
         candidates.extend(self._by_key.get(_sku_match_key(sku), ()))
         item = select_stock_item(sku, candidates)
+        if item is None:
+            return None
+        item["stock_as_of"] = datetime.fromtimestamp(self.as_of, UTC).isoformat()
+        return item
+
+    def lookup_item_id(self, item_id: str) -> dict[str, Any] | None:
+        """The item with a Zoho item_id, stamped with the snapshot time, or None."""
+        item = self._by_item_id.get(item_id.strip())
         if item is None:
             return None
         item["stock_as_of"] = datetime.fromtimestamp(self.as_of, UTC).isoformat()
@@ -951,7 +966,17 @@ class ZohoInventoryClient(InventoryProvider):
         return served
 
     async def get_item(self, item_id: str) -> dict[str, Any] | None:
-        """Get a specific item by Zoho Inventory item_id."""
+        """Get a specific item by Zoho Inventory item_id.
+
+        Served from the shared snapshot when it holds a numeric stock for the
+        item, like `get_stock`; otherwise looked up live. Every caller reads
+        it for stock, so a Zoho rate limit must not hide a snapshot figure.
+        """
+        snapshot = await self._stock_snapshot()
+        if snapshot is not None:
+            item = snapshot.lookup_item_id(item_id)
+            if item is not None and has_numeric_stock(item):
+                return item
         try:
             response = await self._request("GET", f"/items/{item_id}")
         except httpx.HTTPStatusError as e:

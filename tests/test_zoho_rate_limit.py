@@ -353,6 +353,23 @@ async def test_stale_snapshot_is_served_while_another_worker_refreshes() -> None
     await client.close()
 
 
+async def test_item_by_id_is_served_from_the_snapshot() -> None:
+    # Round 4, 2026-09-25: get_stock resolved a catalog product by its Zoho
+    # item_id with a live call, so a 429 hid a 13-minute-old snapshot figure.
+    redis = _FakeRedis(
+        {ZOHO_STOCK_SNAPSHOT_KEY: _snapshot_value([_item("A", 1)], age=780)}
+    )
+    client = _client(redis)
+    request = AsyncMock()
+    with patch.object(client.client, "request", request):
+        item = await client.get_item("id-A")
+    request.assert_not_awaited()
+    assert item is not None
+    assert item["sku"] == "A" and item["stock_on_hand"] == 1
+    assert item["stock_as_of"]
+    await client.close()
+
+
 async def test_snapshot_past_the_stale_window_falls_back_to_live_lookup() -> None:
     redis = _FakeRedis(
         {ZOHO_STOCK_SNAPSHOT_KEY: _snapshot_value([_item("A", 5)], age=4000)}

@@ -145,6 +145,32 @@ async def test_reset_archives_conversations_and_creates_blank_active_conversatio
 
 
 @pytest.mark.asyncio
+async def test_reset_replacement_keeps_the_inbound_channel() -> None:
+    # Round 4, 2026-09-25: inbound lookup matches phone and inbound channel, so a
+    # replacement without the channel was skipped and a second one was opened.
+    from src.services.conversation_reset import execute_conversation_reset
+
+    latest = _conversation(
+        phone="15550001111",
+        updated_at=datetime.now(UTC),
+        metadata={"inbound_channel_id": "channel-1"},
+    )
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.execute.side_effect = [
+        _ScalarResult([latest]),
+        _ScalarResult([]),
+        _ScalarResult([]),
+    ]
+
+    result = await execute_conversation_reset(
+        db, "15550001111", requested_by_telegram_user_id=None
+    )
+
+    assert result.new_conversation.metadata_["inbound_channel_id"] == "channel-1"
+
+
+@pytest.mark.asyncio
 async def test_reset_is_noop_when_no_conversations_exist() -> None:
     from src.services.conversation_reset import execute_conversation_reset
 

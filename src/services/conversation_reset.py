@@ -201,6 +201,11 @@ async def execute_conversation_reset(
     }
     if requested_by_telegram_user_id is not None:
         new_metadata["reset_by_telegram_user_id"] = requested_by_telegram_user_id
+    # Inbound lookup matches a conversation by phone and inbound channel, so
+    # without the channel the next message would open a second conversation.
+    inbound_channel_id = (conversations[0].metadata_ or {}).get("inbound_channel_id")
+    if inbound_channel_id:
+        new_metadata["inbound_channel_id"] = inbound_channel_id
 
     new_conversation = Conversation(
         id=uuid.uuid4(),

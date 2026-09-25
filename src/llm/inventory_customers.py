@@ -18,6 +18,7 @@ from typing import Any, cast
 
 import httpx
 
+from src.core.chat_id import base_chat_id
 from src.integrations.inventory.zoho_inventory import (
     ZohoContactAddressPayload,
     ZohoContactPersonPayload,
@@ -53,11 +54,7 @@ def _split_contact_name(name: str) -> tuple[str, str]:
 
 
 def _external_inventory_phone(phone: str) -> str:
-    phone_value = _string_value(phone)
-    base_phone, _, suffix = phone_value.partition("#")
-    if suffix and base_phone:
-        return base_phone
-    return phone_value
+    return base_chat_id(_string_value(phone))
 
 
 def _inventory_contact_id(contact: Mapping[str, Any] | None) -> str | None:
