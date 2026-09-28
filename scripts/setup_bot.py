@@ -1,8 +1,11 @@
 import asyncio
+import os
 
 import httpx
 
-TOKEN = "8651031074:AAG5OJ5KHUOiXZz0v8s6hGXEK5HiuNfg02o"
+# Never commit the token: this repository is public and a committed token
+# let outsiders delete the webhook (2026-09-28).
+TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
 
 
