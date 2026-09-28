@@ -7,13 +7,9 @@ Status: Live-check follow-ups (consent grounding, earlier-offer carry-forward,
 colour-sibling media, shared count words) delivered on top of 33a2b02.
 
 ## Telegram webhook drift 2026-09-28
-
-- Third `/reset` failure: the bot webhook was deleted by an outside token
-  holder (legacy relay / old server). Re-registered live; the queued reset was
-  delivered. Worker cron `reconcile_telegram_webhook` (every minute, also in
-  restore mode) now repairs drift and alerts the admin chat hourly at most.
-  Owner action still open: revoke the token in @BotFather.
-  Report: `docs/reports/2026-09-28-telegram-webhook-drift.md`.
+- Outside token holder deleted the webhook (third /reset failure). Worker cron
+  reconcile_telegram_webhook repairs drift each minute, alerts hourly at most.
+  Owner to revoke the token in @BotFather. docs/reports/2026-09-28-telegram-webhook-drift.md
 
 ## Current stage: tj-polish-0924 live-check follow-ups 2026-09-24
 
