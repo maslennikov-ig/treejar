@@ -6,6 +6,15 @@ Current stage id: tj-polish-0924
 Status: Live-check follow-ups (consent grounding, earlier-offer carry-forward,
 colour-sibling media, shared count words) delivered on top of 33a2b02.
 
+## Telegram webhook drift 2026-09-28
+
+- Third `/reset` failure: the bot webhook was deleted by an outside token
+  holder (legacy relay / old server). Re-registered live; the queued reset was
+  delivered. Worker cron `reconcile_telegram_webhook` (every minute, also in
+  restore mode) now repairs drift and alerts the admin chat hourly at most.
+  Owner action still open: revoke the token in @BotFather.
+  Report: `docs/reports/2026-09-28-telegram-webhook-drift.md`.
+
 ## Current stage: tj-polish-0924 live-check follow-ups 2026-09-24
 
 - Owner asked for the minor observations too, and for universal fixes rather
@@ -143,7 +152,7 @@ colour-sibling media, shared count words) delivered on top of 33a2b02.
 
 - TEST_CHANNEL_RESTORE_MODE=true; WhatsApp limited to ending0665. Sender and
   outbound allowlist match. Telegram remains authenticated admin reset only.
-- Worker registers only process_incoming_batch; cron and embedding warmup off.
+- Restore-mode worker crons: stock snapshot and Telegram webhook reconcile.
 - No resets, customer data repairs, held-message inspection/replay, or outbound
   test messages were performed in this acceptance.
 - Owner authorized Push, Merge, Deploy and bounded post-deployment model tests.

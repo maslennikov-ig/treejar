@@ -916,3 +916,107 @@ async def test_api_notifications_config() -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert "telegram_configured" in data
+
+
+def _reconcile_client(url: str, last_error: str = "") -> AsyncMock:
+    mock_client = AsyncMock()
+    mock_client.get_webhook_info = AsyncMock(
+        return_value={
+            "ok": True,
+            "result": {"url": url, "last_error_message": last_error},
+        }
+    )
+    mock_client.set_webhook = AsyncMock(return_value={"ok": True, "result": True})
+    mock_client.send_message = AsyncMock(return_value={"ok": True})
+    return mock_client
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("registered", "last_error", "expected"),
+    [
+        ("https://example.com/api/v1/webhook/telegram", "", "ok"),
+        # 2026-09-28: the webhook was deleted outside Noor.
+        ("", "", "restored"),
+        # 2026-09-22: the webhook was pointed at a legacy relay.
+        ("https://tele.goldenherd.com/tg/webhook/1", "", "restored"),
+        (
+            "https://example.com/api/v1/webhook/telegram",
+            "Wrong response from the webhook: 403 Forbidden",
+            "restored",
+        ),
+    ],
+)
+async def test_reconcile_restores_webhook_moved_outside_noor(
+    registered: str, last_error: str, expected: str
+) -> None:
+    from src.core.config import settings
+    from src.integrations.notifications.telegram_webhook import (
+        expected_telegram_webhook_secret,
+        reconcile_telegram_webhook,
+    )
+
+    original = (settings.telegram_bot_token, settings.domain, settings.app_secret_key)
+    settings.telegram_bot_token = "123456:TEST-TOKEN"
+    settings.domain = "https://example.com"
+    settings.app_secret_key = "runtime-secret"
+    redis = AsyncMock()
+    redis.set = AsyncMock(return_value=True)
+
+    try:
+        with patch(
+            "src.integrations.notifications.telegram_webhook.TelegramClient"
+        ) as MockClient:
+            mock_client = _reconcile_client(registered, last_error)
+            MockClient.return_value = mock_client
+
+            result = await reconcile_telegram_webhook({"redis": redis})
+
+        assert result == {"status": expected}
+        if expected == "ok":
+            mock_client.set_webhook.assert_not_awaited()
+            mock_client.send_message.assert_not_awaited()
+        else:
+            call = mock_client.set_webhook.await_args
+            assert (
+                call.kwargs["webhook_url"]
+                == "https://example.com/api/v1/webhook/telegram"
+            )
+            assert call.kwargs["secret_token"] == expected_telegram_webhook_secret()
+            mock_client.send_message.assert_awaited_once()
+            assert "BotFather" in mock_client.send_message.await_args.args[0]
+    finally:
+        (
+            settings.telegram_bot_token,
+            settings.domain,
+            settings.app_secret_key,
+        ) = original
+
+
+@pytest.mark.asyncio
+async def test_reconcile_alerts_admin_chat_at_most_once_per_window() -> None:
+    from src.core.config import settings
+    from src.integrations.notifications.telegram_webhook import (
+        reconcile_telegram_webhook,
+    )
+
+    original = (settings.telegram_bot_token, settings.domain)
+    settings.telegram_bot_token = "123456:TEST-TOKEN"
+    settings.domain = "https://example.com"
+    redis = AsyncMock()
+    redis.set = AsyncMock(return_value=None)  # alert key already present
+
+    try:
+        with patch(
+            "src.integrations.notifications.telegram_webhook.TelegramClient"
+        ) as MockClient:
+            mock_client = _reconcile_client("")
+            MockClient.return_value = mock_client
+
+            result = await reconcile_telegram_webhook({"redis": redis})
+
+        assert result == {"status": "restored"}
+        mock_client.set_webhook.assert_awaited_once()
+        mock_client.send_message.assert_not_awaited()
+    finally:
+        settings.telegram_bot_token, settings.domain = original

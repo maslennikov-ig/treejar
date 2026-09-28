@@ -39,7 +39,7 @@ def test_arq_worker_settings_configured() -> None:
     assert "run_runtime_monitoring" in cron_names
 
 
-def test_restore_mode_registers_conversation_jobs_and_only_the_stock_cron() -> None:
+def test_restore_mode_registers_conversation_jobs_and_only_safe_crons() -> None:
     from types import SimpleNamespace
     from unittest.mock import patch
 
@@ -53,9 +53,11 @@ def test_restore_mode_registers_conversation_jobs_and_only_the_stock_cron() -> N
         "retry_pending_quotation",
         "refresh_conversation_summary",
         "refresh_zoho_stock_snapshot",
+        "reconcile_telegram_webhook",
     ]
     assert [c.coroutine.__qualname__ for c in cron_jobs] == [
-        "refresh_zoho_stock_snapshot"
+        "refresh_zoho_stock_snapshot",
+        "reconcile_telegram_webhook",
     ]
 
 

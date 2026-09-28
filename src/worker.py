@@ -14,6 +14,7 @@ from src.integrations.inventory.sync import (
     sync_products_from_treejar_catalog,
     sync_products_from_zoho,
 )
+from src.integrations.notifications.telegram_webhook import reconcile_telegram_webhook
 from src.llm.conversation_summary import refresh_conversation_summary
 from src.quality.job import (
     evaluate_mature_conversations_quality,
@@ -96,15 +97,20 @@ def build_worker_functions() -> list[Any]:
     # Keeps the shared Zoho stock snapshot fresh so customer turns only read
     # it; stock is customer-facing in every mode, so it runs in restore mode.
     stock_snapshot = func(refresh_zoho_stock_snapshot, max_tries=1)
+    # Keeps the admin /reset path reachable when an outside token holder moves
+    # the webhook; restore mode depends on that path, so it runs there too.
+    webhook_reconcile = func(reconcile_telegram_webhook, max_tries=1)
     if settings.test_channel_restore_mode:
         return [
             inbound,
             quotation_retry,
             func(refresh_conversation_summary),
             stock_snapshot,
+            webhook_reconcile,
         ]
     return [
         stock_snapshot,
+        webhook_reconcile,
         sync_products_from_treejar_catalog,
         sync_products_from_zoho,
         inbound,
@@ -125,17 +131,23 @@ def build_worker_functions() -> list[Any]:
 
 
 def build_worker_cron_jobs() -> list[Any]:
-    """Build scheduled work; recovery mode keeps only the stock snapshot."""
+    """Build scheduled work; recovery mode keeps the stock and webhook checks."""
     stock_snapshot = cron(
         refresh_zoho_stock_snapshot,
         minute={1, 6, 11, 16, 21, 26, 31, 36, 41, 46, 51, 56},
         run_at_startup=True,
         unique=True,
     )
+    webhook_reconcile = cron(
+        reconcile_telegram_webhook,
+        run_at_startup=True,
+        unique=True,
+    )
     if settings.test_channel_restore_mode:
-        return [stock_snapshot]
+        return [stock_snapshot, webhook_reconcile]
     return [
         stock_snapshot,
+        webhook_reconcile,
         cron(
             sync_products_from_treejar_catalog,
             hour={0, 6, 12, 18},
