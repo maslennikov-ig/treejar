@@ -34,6 +34,14 @@ from src.services.runtime_monitoring import run_runtime_monitoring
 
 logger = logging.getLogger(__name__)
 
+# On SIGTERM the worker stops taking jobs and lets a running customer turn
+# finish before it is cancelled. Without this, a deploy that landed mid-turn
+# cancelled it, and the at-most-once guard then quarantined the message with
+# no reply sent (2026-09-28). A turn is bounded by its 90 s core deadline plus
+# tool and send time; docker-compose.yml stop_grace_period and the deploy
+# script's stop timeout must exceed this value.
+WORKER_JOB_COMPLETION_WAIT_SECONDS = 170
+
 
 async def startup(ctx: dict[str, Any]) -> None:
     """Worker startup — initialize shared resources.
@@ -200,5 +208,6 @@ class WorkerSettings:
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     job_timeout = 600  # 10 min — accommodate large catalogs (856+ SKU)
+    job_completion_wait = WORKER_JOB_COMPLETION_WAIT_SECONDS
     max_jobs = 2
     keep_result = 3600  # keep results for 1 hour for debugging

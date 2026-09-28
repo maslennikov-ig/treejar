@@ -246,7 +246,7 @@ if [ "$REFRESH_TEST_WORKER" = true ]; then
         exit 1
     fi
     docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" \
-        up -d --no-build --no-deps --timeout 180 app worker
+        up -d --no-build --no-deps --timeout 200 app worker
     NEW_WORKER_ID="$(docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" \
         ps --status running --quiet worker)"
     if [ -z "$NEW_WORKER_ID" ] || \

@@ -345,7 +345,7 @@ def test_preserve_refreshes_only_existing_verified_test_worker(tmp_path: Path) -
     assert result.returncode == 0, result.stderr
     assert "build app worker" in calls
     assert "run --rm --no-deps --entrypoint python worker" in calls
-    assert "up -d --no-build --no-deps --timeout 180 app worker" in calls
+    assert "up -d --no-build --no-deps --timeout 200 app worker" in calls
     assert "stop worker" not in calls
 
 

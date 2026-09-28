@@ -40,3 +40,19 @@ Noor only registered the webhook at app startup, so any outside change broke
 
 Focused tests: 182 passed (telegram, reset, webhook, worker, deploy);
 Ruff, format and Mypy passed.
+
+## Follow-up: token rotation and deploy-interrupted turn
+
+- Owner rotated the bot token. The old one was hardcoded in the public
+  repository (`scripts/setup_bot.py`, since 2026-03-18), which explains the
+  outside holders; the script now reads `TELEGRAM_BOT_TOKEN`. Production and
+  local env files updated (backup `/opt/noor/.hotfix-backups/tj-gurp-*`), app
+  and worker recreated, old token rejected by Telegram, webhook re-registered.
+- The 09:26 deploy cancelled the tester's turn ("LUMA would be better for us.")
+  mid-reply; the at-most-once guard quarantined it as `uncertain_replay`. With
+  no outbound audit row and no assistant message, the batch was re-queued
+  through the normal path and answered at 09:35:51 (sent).
+- Permanent: the worker sets arq `job_completion_wait` (170 s): on SIGTERM it
+  stops taking jobs and lets a running turn finish. Worker `stop_grace_period`
+  is 200 s and the deploy stop timeout 200 s. Verified with a real arq worker
+  and Redis: without the wait a 6 s job was cancelled; with it, it finished.

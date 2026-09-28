@@ -174,3 +174,26 @@ def test_deploy_gate_cron_allowlist_covers_restore_mode_crons() -> None:
         names = {c.coroutine.__qualname__ for c in build_worker_cron_jobs()}
 
     assert names == {name.strip().strip('"') for name in match.group(1).split(",")}
+
+
+def test_worker_lets_a_running_turn_finish_before_deploy_stops_it() -> None:
+    """A deploy must not cancel a customer turn midway (2026-09-28 incident)."""
+    import re
+    from pathlib import Path
+
+    from src.worker import WORKER_JOB_COMPLETION_WAIT_SECONDS
+
+    wait = WorkerSettings.job_completion_wait
+    assert wait == WORKER_JOB_COMPLETION_WAIT_SECONDS
+    # Longer than the 90 s core completion deadline of a turn.
+    assert wait > 90
+
+    root = Path(__file__).resolve().parents[1]
+    compose = (root / "docker-compose.yml").read_text()
+    worker_block = compose.split("\n  worker:\n", 1)[1].split("\n  redis:", 1)[0]
+    grace = re.search(r"stop_grace_period:\s*(\d+)s", worker_block)
+    assert grace is not None and int(grace.group(1)) > wait
+
+    deploy = (root / "scripts" / "vps-deploy.sh").read_text()
+    timeouts = [int(t) for t in re.findall(r"--timeout (\d+)[^\n]*worker", deploy)]
+    assert timeouts and all(t > wait for t in timeouts)

@@ -24,6 +24,8 @@ services:
   worker:
     build: .
     command: worker
+    # Longer than WORKER_JOB_COMPLETION_WAIT_SECONDS so a running turn finishes.
+    stop_grace_period: 200s
     env_file:
       - .env
     volumes:
