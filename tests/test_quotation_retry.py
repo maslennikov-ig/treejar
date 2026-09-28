@@ -301,3 +301,53 @@ async def test_retry_of_an_already_sent_quotation_stops_quietly() -> None:
     assert PENDING_QUOTATION_KEY not in conversation.metadata_
     send.assert_not_awaited()
     alert.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_rejected_zoho_credentials_defer_the_quotation_not_fail_the_turn() -> (
+    None
+):
+    """2026-09-28: invalid Inventory credentials made the whole turn fail and the
+    customer got a generic apology after sending address and email."""
+    from src.integrations.zoho_oauth import ZohoOAuthError
+    from src.llm.quotation_deferral import run_quotation_with_inventory_deferral
+
+    redis = _ArqRedis()
+    conversation = _conversation()
+    deps = SimpleNamespace(
+        conversation=conversation, db=AsyncMock(), redis=redis, source_message_id="m1"
+    )
+    items = [SimpleNamespace(sku=_SKU, quantity=2)]
+    create = AsyncMock(
+        side_effect=ZohoOAuthError("invalid_credentials", retryable=False)
+    )
+    with patch.object(
+        quotation_deferral,
+        "alert_managers_for_conversation",
+        AsyncMock(return_value=True),
+    ):
+        reply = await run_quotation_with_inventory_deferral(
+            SimpleNamespace(deps=deps), items, create
+        )
+
+    assert "quotation" in reply.lower()
+    pending = conversation.metadata_[PENDING_QUOTATION_KEY]
+    assert pending["reason"] == "inventory_credentials_rejected"
+    assert redis.jobs and redis.jobs[0]["name"] == "retry_pending_quotation"
+
+
+@pytest.mark.asyncio
+async def test_background_retry_keeps_waiting_while_credentials_are_rejected() -> None:
+    from src.integrations.zoho_oauth import ZohoOAuthError
+
+    conversation = _conversation(_pending())
+    redis = _ArqRedis()
+    create = AsyncMock(
+        side_effect=ZohoOAuthError("invalid_credentials", retryable=False)
+    )
+
+    result, send, alert = await _run(conversation, create, redis, attempt=1)
+
+    assert result == "rescheduled"
+    assert redis.jobs[0]["args"] == (_CONV_ID, 2)
+    send.assert_not_awaited()

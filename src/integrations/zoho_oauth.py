@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 ZohoOAuthFailureKind = Literal[
     "http_status",
@@ -170,3 +173,41 @@ async def release_zoho_oauth_lock(
         owner_token,
     )
     return bool(released)
+
+
+_REJECTED_ALERT_KEY_PREFIX = "zoho:oauth:rejected_alerted:"
+_REJECTED_ALERT_TTL_SECONDS = 3600
+
+
+async def report_rejected_zoho_credentials(redis: Any, *, service: str) -> None:
+    """Tell the admin chat, at most hourly, that Zoho rejected a refresh token.
+
+    Zoho deletes a refresh token when it is revoked, the password is reset, or
+    a 21st token is issued for the same user and client. Only a person can
+    issue a new one, and the stock snapshot cron hits the failure every five
+    minutes, so the alert usually lands before a customer turn needs Zoho.
+    """
+    try:
+        first = await redis.set(
+            f"{_REJECTED_ALERT_KEY_PREFIX}{service}",
+            "1",
+            ex=_REJECTED_ALERT_TTL_SECONDS,
+            nx=True,
+        )
+        if not first:
+            return
+        from src.services.notifications import send_telegram_message
+
+        env_prefix = f"ZOHO_{service.upper()}"
+        await send_telegram_message(
+            f"⚠️ <b>Zoho {service} credentials rejected</b>\n"
+            f"Zoho no longer accepts {env_prefix}_REFRESH_TOKEN (revoked, password "
+            "reset, or pushed out by a 21st token for the same user and client).\n"
+            f"Issue a new refresh token for the same client in the Zoho API "
+            f"Console and put it in {env_prefix}_REFRESH_TOKEN. Until then "
+            "quotations are deferred and retried; stock serves the last snapshot."
+        )
+    except Exception:
+        logger.warning(
+            "Could not report rejected Zoho %s credentials", service, exc_info=True
+        )

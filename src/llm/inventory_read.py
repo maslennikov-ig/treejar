@@ -76,8 +76,11 @@ async def inventory_read(operation: Callable[..., Awaitable[Any]], *args: Any) -
 def is_transient_inventory_error(exc: BaseException) -> bool:
     """A Zoho failure that says "not now" rather than "no".
 
-    Rate limits, gateway errors, timeouts and retryable token-refresh failures
-    are worth retrying later; a 400/404 or a malformed answer is not.
+    Rate limits, gateway errors, timeouts and token-refresh failures are worth
+    retrying later; a 400/404 or a malformed answer is not. Rejected OAuth
+    credentials count too: they say nothing about the customer's request and
+    come back once an operator replaces the token, so the quotation is deferred
+    and retried instead of failing the whole turn (2026-09-28).
     """
     if isinstance(exc, InventoryReadUnavailable):
         return True
@@ -85,4 +88,4 @@ def is_transient_inventory_error(exc: BaseException) -> bool:
         return exc.response.status_code in _TRANSIENT_STATUS_CODES
     if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError)):
         return True
-    return isinstance(exc, ZohoOAuthError) and exc.retryable
+    return isinstance(exc, ZohoOAuthError)

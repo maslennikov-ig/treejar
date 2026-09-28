@@ -469,3 +469,36 @@ async def test_request_raises_after_repeated_429_exhausts_retries() -> None:
     calls = [c.args[0] for c in mock_sleep.call_args_list]
     assert calls == [2, 4]
     await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_rejected_refresh_token_alerts_admin_once_per_hour() -> None:
+    """2026-09-28: a deleted Inventory refresh token failed a customer turn
+    before anyone knew; the first rejection now reaches the admin chat."""
+    redis = AsyncMock()
+    redis.get.return_value = None
+    redis.set.return_value = True
+    client = ZohoInventoryClient(redis)
+    rejected = _make_response(200, {"error": "invalid_code"})
+    send = AsyncMock(return_value=True)
+
+    with (
+        patch("httpx.AsyncClient") as mock_httpx_client,
+        patch("src.services.notifications.send_telegram_message", send),
+    ):
+        mock_httpx_client.return_value.__aenter__.return_value.post = AsyncMock(
+            return_value=rejected
+        )
+        with pytest.raises(ZohoOAuthError):
+            await client._ensure_token()
+        # The alert key is now held: later rejections stay quiet.
+        redis.set.side_effect = lambda key, *a, **kw: (
+            not key.startswith("zoho:oauth:rejected_alerted:")
+        )
+        with pytest.raises(ZohoOAuthError):
+            await client._ensure_token()
+
+    send.assert_awaited_once()
+    assert "ZOHO_INVENTORY_REFRESH_TOKEN" in send.await_args.args[0]
+    await client.close()

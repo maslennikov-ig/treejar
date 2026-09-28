@@ -27,6 +27,7 @@ from src.integrations.zoho_oauth import (
     ZohoOAuthError,
     parse_zoho_oauth_response,
     release_zoho_oauth_lock,
+    report_rejected_zoho_credentials,
     zoho_oauth_transport_error,
 )
 
@@ -575,7 +576,14 @@ class ZohoInventoryClient(InventoryProvider):
                 except httpx.RequestError as exc:
                     raise zoho_oauth_transport_error() from exc
 
-                token_response = parse_zoho_oauth_response(response)
+                try:
+                    token_response = parse_zoho_oauth_response(response)
+                except ZohoOAuthError as exc:
+                    if exc.kind == "invalid_credentials":
+                        await report_rejected_zoho_credentials(
+                            self.redis, service="inventory"
+                        )
+                    raise
                 await self.redis.set(
                     token_key,
                     token_response.access_token,

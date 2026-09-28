@@ -20,6 +20,7 @@ from typing import Any, Protocol
 import httpx
 
 from src.dialogue.order_state import QuoteConsent, quote_workflow_from_metadata
+from src.integrations.zoho_oauth import ZohoOAuthError
 from src.llm.inventory_read import (
     InventoryReadUnavailable,
     is_transient_inventory_error,
@@ -100,6 +101,8 @@ def deferred_quotation_message(conversation: Any, *, manager_notified: bool) -> 
 
 
 def _failure_reason(exc: BaseException) -> tuple[str, float | None]:
+    if isinstance(exc, ZohoOAuthError) and not exc.retryable:
+        return "inventory_credentials_rejected", None
     retry_after = getattr(exc, "retry_after_seconds", None)
     status_code: int | None = None
     if isinstance(exc, InventoryReadUnavailable):
