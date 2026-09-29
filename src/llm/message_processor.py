@@ -1105,12 +1105,22 @@ async def _load_turn(
     if crm_client and conv.phone:
         crm_context = await get_cached_crm_profile(redis, conv.phone)
         if not crm_context:
-            contact = await crm_client.find_contact_by_phone(conv.phone)
-            if contact:
-                crm_context = build_bounded_returning_customer_context(contact)
-                await set_cached_crm_profile(redis, conv.phone, crm_context)
+            try:
+                contact = await crm_client.find_contact_by_phone(conv.phone)
+            except Exception as exc:
+                # The profile only enriches the turn. A CRM outage or rejected
+                # credentials (2026-09-29) must not cost the customer a reply;
+                # leave the context unknown rather than claim a new customer.
+                logger.warning(
+                    "CRM profile lookup failed; replying without it: %s",
+                    type(exc).__name__,
+                )
             else:
-                crm_context = build_bounded_returning_customer_context(None)
+                if contact:
+                    crm_context = build_bounded_returning_customer_context(contact)
+                    await set_cached_crm_profile(redis, conv.phone, crm_context)
+                else:
+                    crm_context = build_bounded_returning_customer_context(None)
 
     # Optional shared dict for PII placeholders across history.
     pii_map: dict[str, str] = {}

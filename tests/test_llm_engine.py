@@ -14284,3 +14284,79 @@ def test_spelled_out_counts_share_one_vocabulary_but_keep_site_caps() -> None:
     assert engine_module._extract_bare_quantity_reply("a") == 1
     assert engine_module._ordinal_option_from_reply("option seven") == 7
     assert engine_module._ordinal_option_from_reply("option twelve") is None
+
+
+@pytest.mark.asyncio
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_replies_when_crm_rejects_credentials(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """2026-09-29: a deleted CRM refresh token failed the turn before the model
+    ran; the CRM profile is only enrichment, so the customer still gets a reply."""
+    from src.integrations.zoho_oauth import ZohoOAuthError
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    zoho_crm.find_contact_by_phone.side_effect = ZohoOAuthError(
+        "invalid_credentials", retryable=False
+    )
+    text = "Which chairs do you have?"
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_run.return_value = _FakeAgentResult("We have several office chairs.")
+    mock_get_system_config.side_effect = lambda _db, _key, default: default
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+        crm_client=zoho_crm,
+    )
+
+    assert response.text
+    mock_run.assert_awaited_once()
+    assert mock_run.await_args.kwargs["deps"].crm_context is None
+
+
+@pytest.mark.asyncio
+async def test_tools_lookup_customer_reports_crm_outage(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.integrations.zoho_oauth import ZohoOAuthError
+    from src.llm.engine import lookup_customer
+
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+    zoho_crm.find_contact_by_phone.side_effect = ZohoOAuthError(
+        "invalid_credentials", retryable=False
+    )
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await lookup_customer(ctx, "+971501234567")
+
+    assert "temporarily unavailable" in result

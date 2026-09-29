@@ -10462,7 +10462,14 @@ async def lookup_customer(ctx: RunContext[SalesDeps], phone: str) -> str:
     if not ctx.deps.zoho_crm:
         return "CRM Client is not available in the current context."
 
-    contact = await ctx.deps.zoho_crm.find_contact_by_phone(phone)
+    try:
+        contact = await ctx.deps.zoho_crm.find_contact_by_phone(phone)
+    except Exception as exc:
+        logger.warning("CRM lookup_customer failed: %s", type(exc).__name__)
+        return (
+            "The CRM is temporarily unavailable; the customer's record could not "
+            "be checked. Continue without it."
+        )
     if not contact:
         return f"Customer with phone {phone} was NOT found in the CRM."
 
