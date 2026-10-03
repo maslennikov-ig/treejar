@@ -2,6 +2,8 @@
 
 Scope: AC01–AC12, one cohesive local candidate; Beads tj-uvld stays open.
 Base36c86137a51d2e6485db92c28ec057fe26f03339, dedicated branch/worktree.
+Implementation SHA:0b5c723eeb96c240d2c1654f6b570d951aa782eb.
+Report:docs/reports/2026-10-03-zoho-stock-sync-optimization.md.
 Local review and root final focused acceptance passed. External gates remain open.
 
 Implementation includes gated hybrid scheduling, versioned48h stock retention,
@@ -34,6 +36,10 @@ shortfall deferred-consent/guard, inactive direct-ID rejection, direct/bulk
 mapping retirement, repeated-page/set detection, clean-runner Redis startup.
 No child source edits, no paid reader. Auxiliary clean worktrees can be removed;
 root candidate retained pending external authority.
+Clean auxiliary docs/review worktrees and branches removed; disposable Redis
+containers stopped/removed. Canonical Beads reread:in_progress, local_verified
+true, provider_coverage_verified/live_activated/live_24h_verified false.
+GitHub sync trigger enqueuedtj-uvld; completion not independently claimed.
 
 ## Verification and delivery
 

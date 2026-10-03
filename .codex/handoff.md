@@ -22,6 +22,7 @@ Delivery: local commits only; main/live remains outside this task's authority.
 - Source observation and successful dataset coverage are distinct. Multi-page
   delta requires two identical complete reads; changed pages abort publication.
   This safeguard does not establish provider paging/operation completeness.
+- Code SHA:0b5c723eeb96c240d2c1654f6b570d951aa782eb.
 - Report: docs/reports/2026-10-03-zoho-stock-sync-optimization.md.
 - Stage: .codex/stages/tj-uvld-stock-sync/summary.md.
 

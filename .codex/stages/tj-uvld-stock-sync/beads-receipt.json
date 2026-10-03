@@ -1,0 +1,12 @@
+{
+  "snapshot_of": "Beads canonical reread; not an independent tracker",
+  "id": "tj-uvld",
+  "status": "in_progress",
+  "metadata": {
+    "live_activated": false,
+    "local_verified": true,
+    "live_24h_verified": false,
+    "local_implementation_sha": "0b5c723eeb96c240d2c1654f6b570d951aa782eb",
+    "provider_coverage_verified": false
+  }
+}

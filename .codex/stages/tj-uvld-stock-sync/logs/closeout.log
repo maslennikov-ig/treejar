@@ -1,60 +1,19 @@
 orchestration contract OK (balanced-v2.19 via orchestration-setup)
 git diff --check OK
 git status --short
-A  .codex/goals/tj-uvld/scope-criterion-snapshot.json
-M  .codex/handoff.md
-M  .codex/orchestrator.toml
-M  .codex/project-index.md
-M  .codex/stages/tj-ee5f/traceability-manifest.json
-AM .codex/stages/tj-uvld-stock-sync/artifacts/tj-uvld.md
-A  .codex/stages/tj-uvld-stock-sync/closeout-result.json
-A  .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-19cc3964ed2892d2601d4f11b48d3886807a08416485b61bd6b7a8f25cdf7c72.json
-A  .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-466c2f308b48c7661d646fdd068fbecea974c665fe65dbf8ed508f224180ce0b.json
-A  .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-474e6488a59f4b6bea0595d8dd5e5091126211b3ceeaf15c8cb4f9697762f027.json
-A  .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-880f700a104b0ba97c9d9aff3d9c3a7d69ce403138402078f8e556c9045d5b29.json
-A  .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-d52b04faae9e6403d88fb98d988e9dcd984d6f8a1281de9c9e6a9f0cbca8e015.json
-A  .codex/stages/tj-uvld-stock-sync/logs/closeout.log
-A  .codex/stages/tj-uvld-stock-sync/logs/code-acceptance.log
-A  .codex/stages/tj-uvld-stock-sync/stage-manifest.json
-A  .codex/stages/tj-uvld-stock-sync/summary.md
-A  docs/reports/2026-10-03-zoho-api-statistics.json
-A  docs/research/2026-10-03-zoho-stock/README.md
-A  docs/research/2026-10-03-zoho-stock/literal-z.json
-A  docs/research/2026-10-03-zoho-stock/mapping.json
-A  docs/research/2026-10-03-zoho-stock/offset-bulk.json
-A  docs/research/2026-10-03-zoho-stock/sorted-offset.json
-M  docs/specs/zoho-stock-sync-optimization/spec.md
-M  scripts/orchestration/run_stage_closeout.py
-M  scripts/vps-deploy.sh
-A  scripts/zoho_stock_preflight.py
-A  scripts/zoho_stock_report.py
-M  src/core/config.py
-M  src/integrations/inventory/base.py
-A  src/integrations/inventory/stock_state.py
-M  src/integrations/inventory/sync.py
-M  src/integrations/inventory/zoho_inventory.py
-M  src/llm/customer_intent_tools.py
-M  src/llm/engine.py
-M  src/services/quotation_retry.py
-M  src/worker.py
-M  tests/conftest.py
-A  tests/integrations/test_zoho_stock_sync_redis.py
-A  tests/stock_sync_support.py
-M  tests/test_customer_intent_tools.py
-M  tests/test_llm_quotation.py
-M  tests/test_quotation_inventory_deferral.py
-M  tests/test_worker.py
-M  tests/test_zoho_client.py
-M  tests/test_zoho_rate_limit.py
-A  tests/test_zoho_stock_bulk.py
-A  tests/test_zoho_stock_incremental.py
+ M .codex/handoff.md
+ M .codex/stages/tj-ee5f/traceability-manifest.json
+ M .codex/stages/tj-uvld-stock-sync/artifacts/tj-uvld.md
+ M .codex/stages/tj-uvld-stock-sync/summary.md
+?? .codex/stages/tj-uvld-stock-sync/beads-receipt.json
+?? docs/reports/2026-10-03-zoho-stock-sync-optimization.md
 artifact validation OK
 stage tj-uvld-stock-sync ready
 process verification OK
 blocking review findings OK
 child acceptance cleanup OK
-project index review OK (index updated)
-documentation review OK (structural)
+project index review OK (no structural changes detected)
+documentation review OK (docs-only)
 debt marker scan OK
 == verification group: root_selected_commands ==
 evidence reuse: root_selected_commands 8f85dc2040fe8b80983f6a0a1233c493089942b94ab40c9a2a25133650fe8b09

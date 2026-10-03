@@ -103,7 +103,7 @@ explicit_defers:
 # Summary
 
 Root accepted local implementation content with eligibility closed. External
-acceptance remains owned by tj-uvld; final tests are recorded below after run.
+acceptance remains owned by tj-uvld; final tests and source-bound receipts are recorded below.
 
 # Scope / Routing
 
@@ -125,6 +125,7 @@ and intercepted quotation effects do not prove live transaction coverage.
 # Delivery / Cleanup
 
 No main merge/push/deploy. Root worktree retained pending owner authorization.
+Clean auxiliary docs/review worktrees/branches and disposable Redis removed.
 
 # Risks / Follow-ups
 
