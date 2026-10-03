@@ -11134,10 +11134,7 @@ async def _create_quotation(
                 ctx.deps.db, item.sku
             )
         catalog_product = catalog_products[normalized_sku]
-        if not zoho_item:
-            # Critical reads cannot fall back to discovery, a stale ID or a
-            # website quantity. The existing retry path preserves details.
-            raise InventoryReadUnavailable(status_code=None)
+        assert zoho_item is not None  # All selected rows were verified above.
 
         price_decision = _commercial_price_decision(
             catalog_product=catalog_product,

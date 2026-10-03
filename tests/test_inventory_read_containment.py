@@ -1,5 +1,6 @@
 """Unavailable reads remain tool evidence; mutations are never retried blindly."""
 
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -101,14 +102,24 @@ async def test_only_idempotent_inventory_reads_are_retried(method, attempts, fai
         if failure == "429"
         else httpx.ReadTimeout("unknown outcome")
     )
+    clock = [time.time()]
+
+    async def wait(seconds: float) -> None:
+        clock[0] += seconds
+
     try:
         with (
             patch.object(
                 client.client, "request", AsyncMock(side_effect=error)
             ) as request,
             patch(
-                "src.integrations.inventory.zoho_inventory.asyncio.sleep", AsyncMock()
+                "src.integrations.inventory.zoho_inventory.asyncio.sleep",
+                AsyncMock(side_effect=wait),
             ) as sleep,
+            patch(
+                "src.integrations.inventory.zoho_inventory.time.time",
+                side_effect=lambda: clock[0],
+            ),
             pytest.raises(type(error)),
         ):
             await client._request(method, "/items")
