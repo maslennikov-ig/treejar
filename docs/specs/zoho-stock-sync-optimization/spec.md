@@ -25,30 +25,30 @@ Preparing this specification does not activate the feature or start an agent.
 - Base/main/live at the readiness audit:
   `36c86137a51d2e6485db92c28ec057fe26f03339`; refresh before implementation.
 - `src/worker.py::build_worker_cron_jobs` schedules a full stock refresh
-  at minutes1,6,...,56, including restore mode and startup.
+  at minutes 1, 6,..., 56, including restore mode and startup.
 - `src/integrations/inventory/zoho_inventory.py::_build_stock_snapshot`
-  requests200 records/page, all active items, with no end-product filter.
-- Current full list: about2557 SKUs /13 pages. Nominal background load:
-  13 ×288 =3744 calls/day. Measured24h:3459 calls,3445 HTTP200,14 HTTP429,
-  265 complete refreshes,23 unsuccessful refreshes including9 local skips.
+  requests 200 records/page, all active items, with no end-product filter.
+- Current full list: about 2557 SKUs / 13 pages. Nominal background load:
+  13 × 288 = 3744 calls/day. Measured 24h: 3459 calls, 3445 HTTP 200, 14 HTTP 429,
+  265 complete refreshes, 23 unsuccessful refreshes including 9 local skips.
   Evidence: `docs/reports/2026-10-03-zoho-api-statistics.json`.
-- Current Redis snapshot has a3600s retention TTL and one dataset-wide
+- Current Redis snapshot has a 3600s retention TTL and one dataset-wide
   `as_of`; misses can initiate a full refresh in the customer path.
 - `_create_quotation` calls `get_stock_bulk`, which can return the snapshot.
   A fresh critical read therefore needs an explicit cache bypass.
-- Read-only mapping audit2026-10-03T12:14:30Z:343 active catalog products,
-  250 stored Zoho IDs,306 SKU matches in the snapshot. These counts can drift;
-  refresh them. Do not assume343 catalog rows are343 uniquely mapped IDs.
+- Read-only mapping audit 2026-10-03T12:14:30Z: 343 active catalog products,
+  250 stored Zoho IDs, 306 SKU matches in the snapshot. These counts can drift;
+  refresh them. Do not assume 343 catalog rows are 343 uniquely mapped IDs.
   API capability probes were skipped because the shared cooldown was active;
   bulk size and live delta behavior were **not** verified.
-- Related `tj-4kot`: provider Retry-After1800 was persisted as300 seconds.
+- Related `tj-4kot`: provider Retry-After 1800 was persisted as 300 seconds.
   Local accepted fix:
   `07591b8b1dba05c2124af0468a089adc26efa717`, branch
   `codex/tj-4kot-zoho-cooldown`. Reuse that commit if absent from the new base;
   inspect ancestry and do not duplicate it. The external account-load incident
   stays open. `tj-535g` monitoring is a separate fix, outside this task.
 
-Official sources checked2026-10-03:
+Official sources checked 2026-10-03:
 
 - [Items API](https://www.zoho.com/inventory/api/v1/items/#list-all-the-items):
   `last_modified_time` query filter, pagination and status filtering.
@@ -79,9 +79,9 @@ modification timestamps for every stock-affecting operation.
 - Use the existing application, worker and Redis. No new dependency, paid
   integration, event platform or mandatory second model reader.
 - Mapping-aware scoping is optional within the optimization, after all needed
-  mappings are verified. Do not lose the37 currently unmatched catalog rows,
+  mappings are verified. Do not lose the 37 currently unmatched catalog rows,
   alternative SKUs, direct item-ID reads or future products.
-- Do not change `TEST_CHANNEL_RESTORE_MODE`, test0665 allowlists, Telegram
+- Do not change `TEST_CHANNEL_RESTORE_MODE`, test 0665 allowlists, Telegram
   reconciliation, monitoring activation, CRM flows or customer data.
 
 ## 4. Provider preflight and eligibility
@@ -101,28 +101,28 @@ actual operation and field semantics. Record operations which do not affect
 that field separately from missing delta coverage.
 
 Local fixtures must cover these shapes immediately. Provider completeness
-needs a authorized test organization or owner-approved bounded transaction
+needs an authorized test organization or owner-approved bounded transaction
 diagnostic. Existing redacted production history may support a read-only
 check but is not a substitute for otherwise unobserved operation coverage.
 Record provenance, timestamps, operation and old/new quantities; avoid
 customer payloads and secrets in tracked evidence.
 
 Read-only provider preflight: reuse a cached token, honor an active cooldown,
-stop on429/401 and record unavailable evidence; do not refresh OAuth or expand
+stop on 429/401 and record unavailable evidence; do not refresh OAuth or expand
 scopes as a convenience. Verify bulk boundaries with a small bounded series
 of GETs and confirm that all requested IDs and stock fields are returned.
-Never assume the list page size200 is the bulk endpoint's limit.
+Never assume the list page size 200 is the bulk endpoint's limit.
 
 If coverage is unknown or fails, keep the proven full mode operational and
 finish the local implementation/tests behind the gate. Report exactly what
 live evidence or alternative design needs owner input. Do not enable the
-optimized mode, claim the157-call result, or close the task as fully accepted.
+optimized mode, claim the 157-call result, or close the task as fully accepted.
 
 ## 5. Synchronization contract
 
 ### 5.1 Scheduling and startup
 
-- Incremental mode: one delta job per600s and one full reconciliation per86400s.
+- Incremental mode: one delta job per 600s and one full reconciliation per 86400s.
   Use the repository's worker timezone explicitly; select a configurable daily
   slot offset from other full catalog jobs. Scheduling must be inspectable.
 - Both stock jobs must remain registered and allowed in restore mode; update
@@ -137,7 +137,7 @@ optimized mode, claim the157-call result, or close the task as fully accepted.
 
 - Store a UTC successful coverage watermark alongside the accepted cache
   generation, last successful full reconciliation and last successful delta.
-  Query with a small configurable overlap, initially120s, and merge by stable
+  Query with a small configurable overlap, initially 120s, and merge by stable
   Zoho item_id. Preserve canonical SKU aliases and resolve renames explicitly.
 - Bind a cycle to its start time, query boundary and generation. Do not advance
   the next watermark to response completion time: changes during a long read
@@ -161,8 +161,8 @@ optimized mode, claim the157-call result, or close the task as fully accepted.
 
 - Separate storage retention from permitted customer staleness. The current
   one-hour Redis TTL cannot support a once-daily full reconciliation. Choose a
-  retention window of at least48h without treating that retained data as fresh.
-- Healthy sync interval:10min. Preserve the existing one-hour degraded read
+  retention window of at least 48h without treating that retained data as fresh.
+- Healthy sync interval: 10min. Preserve the existing one-hour degraded read
   ceiling unless an explicit owner decision changes it. Past that ceiling use
   bounded live resolution or the existing unavailable/deferred behavior.
 - Track source observation for records separately from successful dataset
@@ -191,7 +191,7 @@ optimized mode, claim the157-call result, or close the task as fully accepted.
   using stale fallback for the missing rows.
   Any such cache update must respect generation/observation ordering; a late
   full or delta writer cannot overwrite a newer critical read.
-- On429, unavailable or incomplete critical reads, preserve customer details
+- On 429, unavailable or incomplete critical reads, preserve customer details
   and use the existing quotation deferral/retry path. Never blindly retry a
   POST/write, create a duplicate quote, report a quote as created before its
   external ID is persisted, or add a manager escalation outside existing policy.
@@ -208,14 +208,14 @@ optimized mode, claim the157-call result, or close the task as fully accepted.
   No credentials, customer text, raw URLs or business item IDs in metrics logs.
 - Counters must be shared and reproducible for an explicit UTC interval, with
   Moscow conversion for user reports. Counting cron invocations is insufficient.
-- Baseline nominal3744/day. Reference scenario:144 single-page delta checks
-  +13 full pages =157 background attempts/day, excluding bootstrap, retries,
+- Baseline nominal 3744/day. Reference scenario: 144 single-page delta checks
+  + 13 full pages = 157 background attempts/day, excluding bootstrap, retries,
   additional delta pages and quotation verification. This is a conditional
   model, not a live promise. Report all these components and actual reductions.
-- A script/fixture running a simulated24h schedule must assert request counts
-  and zero per-turn full downloads. A real24h measurement is required after
+- A script/fixture running a simulated 24h schedule must assert request counts
+  and zero per-turn full downloads. A real 24h measurement is required after
   authorized activation to claim actual production savings. External account
-  consumers remain outside Noor's counters and can still cause429s.
+  consumers remain outside Noor's counters and can still cause 429s.
 
 ## 8. Acceptance ledger and required tests
 
@@ -225,26 +225,26 @@ intercept all model, business-write and messaging calls.
 
 | ID | Observable requirement | Verification |
 |---|---|---|
-| AC01 | Delta600s + daily full, normal/restore modes, controlled startup | Worker schedule/registration, deploy allowlist and repeated-start tests |
+| AC01 | Delta 600s + daily full, normal/restore modes, controlled startup | Worker schedule/registration, deploy allowlist and repeated-start tests |
 | AC02 | Eligible modified-since interface and stock-operation completeness | Local operation fixtures + named provider coverage evidence; gate remains closed when absent |
-| AC03 | Complete paged merge and consistent data/cursor | Empty delta, zero, overlap, equal timestamps, page2 failure, caps, restart/crash tests |
+| AC03 | Complete paged merge and consistent data/cursor | Empty delta, zero, overlap, equal timestamps, page 2 failure, caps, restart/crash tests |
 | AC04 | One valid writer, no stale overwrites | Concurrent full/delta, lease expiry, Redis commit failure and lock-owner tests using disposable local Redis |
 | AC05 | Truthful retention, coverage age and cache compatibility | >24h synthetic idle catalog, failed sync, >1h degraded coverage, legacy/corrupt/missing state and rollback tests |
-| AC06 | Selected-SKU fresh bulk reads before quote | Stale cached10 vs live2; actual HTTP bypass, chunking, identity, SKU aliases, unknown mapping and incomplete bulk tests |
-| AC07 | Quote consent/idempotency/deferral unchanged | No-consent and already-sent turns make no critical read/write;429 defers; retry freshly reads and creates at most once |
-| AC08 | Inactive/removed/new/renamed items stay truthful | No false0, no stale alias resurrection, new mapping discovered, no website product/price/embedding mutations |
-| AC09 | Rate limits are respected across processes | Retry-After1800, small inline retry, concurrent cooldown extension, skipped-job and recovery tests |
-| AC10 | Reduction is measured, not guessed | Simulated24h157-call scenario and burst/multi-page scenarios, shared counters and no redundant customer full scans |
+| AC06 | Selected-SKU fresh bulk reads before quote | Stale cached 10 vs live 2; actual HTTP bypass, chunking, identity, SKU aliases, unknown mapping and incomplete bulk tests |
+| AC07 | Quote consent/idempotency/deferral unchanged | No-consent and already-sent turns make no critical read/write; 429 defers; retry freshly reads and creates at most once |
+| AC08 | Inactive/removed/new/renamed items stay truthful | No false 0, no stale alias resurrection, new mapping discovered, no website product/price/embedding mutations |
+| AC09 | Rate limits are respected across processes | Retry-After 1800, small inline retry, concurrent cooldown extension, skipped-job and recovery tests |
+| AC10 | Reduction is measured, not guessed | Simulated 24h 157-call scenario and burst/multi-page scenarios, shared counters and no redundant customer full scans |
 | AC11 | Local quality and user-path integration pass | Focused pytest acceptance, real local Redis race tests, Ruff/format, mypy; no provider writes or paid model calls |
 | AC12 | Exact source and remaining live gates are reviewable | Commit-bound report, Beads/handoff, rollback instructions; provider coverage/activation/24h proof listed separately |
 
 Representative Given/When/Then scenarios:
 
-- Given cachedA=10,B=5, when a complete delta returnsA=0 only, thenA=0,B=5;
-  an empty delta changes neither; a page2 failure changes neither cache nor cursor.
-- Given discovery cached10, when the fresh quote read returns2 for selected
-  quantity5, then the existing stock-shortfall policy uses2 and nevercached10.
-  On429, no quote/customer business POST or message is emitted by the test.
+- Given cached A=10, B=5, when a complete delta returns A=0 only, then A=0, B=5;
+  an empty delta changes neither; a page 2 failure changes neither cache nor cursor.
+- Given discovery cached 10, when the fresh quote read returns 2 for selected
+  quantity 5, then the existing stock-shortfall policy uses 2 and never cached 10.
+  On 429, no quote/customer business POST or message is emitted by the test.
 - Given consent missing or an unchanged already-sent quotation, then no new
   fresh inventory request and no external quotation creation occurs.
 - Given an old writer's lease expired and another generation committed, then
@@ -311,11 +311,11 @@ are not part of the synchronization change.
 | Failure symptom | Evidence/mechanism | Detection and mitigation |
 |---|---|---|
 | Quantity changed but delta missed it | Plausible; provider operation coverage unproved | AC02 named operation evidence blocks activation; preserve full mode |
-| Daily cache disappears after1h | Confirmed current3600s TTL | AC05; separate retention and coverage freshness |
+| Daily cache disappears after 1h | Confirmed current 3600s TTL | AC05; separate retention and coverage freshness |
 | Stale quote passes despite fresh-read feature | Confirmed current bulk path reads snapshot | AC06 HTTP interception proves explicit bypass |
 | Partial cycle skips changes forever | Plausible cursor/page/commit ordering | AC03/04; atomic generation and replay same cursor |
 | Lock released before publication permits old overwrite | Confirmed current refresh releases before Redis snapshot set | AC04; own lease through fenced publication |
-| Scope filtering loses catalog rows | Confirmed306/343 snapshot matches at audit | AC08; scoped mode requires verified mapping, bounded resolution |
+| Scope filtering loses catalog rows | Confirmed 306/343 snapshot matches at audit | AC08; scoped mode requires verified mapping, bounded resolution |
 | Executor invents bulk limit or treats mocks as provider proof | Plausible execution error | Source-linked preflight, measured chunk limit, explicit gated evidence |
 
 Rollback: disable incremental activation and resume proven full mode with the
@@ -340,6 +340,6 @@ user behavior, and recovery. Keep Beads open when required acceptance is pending
 
 Explicit defers: workflow webhooks (plan/event coverage not established),
 outside account consumer attribution (`tj-4kot`), separate monitoring fix
-(`tj-535g`), production delivery and post-activation24h proof until approved.
+(`tj-535g`), production delivery and post-activation 24h proof until approved.
 No scope reduction or substituted design without explaining the evidence and
 obtaining a decision where the resulting stock freshness/coverage changes.

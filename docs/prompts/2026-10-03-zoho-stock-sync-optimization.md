@@ -1,7 +1,7 @@
 # Executor handoff: tj-uvld
 
 Target: `/home/me/code/treejar`, Beads `tj-uvld`; implement in a dedicated
-`codex/tj-uvld-*` worktree based on current main. Audit base was36c8613;
+`codex/tj-uvld-*` worktree based on current main. Audit base was 36c8613;
 refresh ancestry/ownership first. Preserve the dirty primary checkout.
 Audience: a new Codex executor in this repository; native model/effort controls
 remain unchanged. Do not create a new chat or goal automatically.
@@ -9,7 +9,7 @@ remain unchanged. Do not create a new chat or goal automatically.
 ## Goal
 
 Implement and immediately test the owner-approved Zoho stock optimization:
-changed-item reads every10min, one daily full reconciliation, and explicit
+changed-item reads every 10min, one daily full reconciliation, and explicit
 fresh selected-item reads before actual quotation creation. Complete the
 cohesive local implementation, tests, review and local commits; prepare live
 coverage/activation evidence at the authorized boundary.
@@ -20,21 +20,21 @@ Read AGENTS.md, .codex/orchestrator.toml and .codex/handoff.md first, then:
 
 - `/home/me/code/treejar/docs/specs/zoho-stock-sync-optimization/spec.md`;
 - `bd show tj-uvld`, related `bd show tj-4kot`;
-- `docs/reports/2026-10-03-zoho-api-statistics.json` and the2026-10-03
+- `docs/reports/2026-10-03-zoho-api-statistics.json` and the 2026-10-03
   Zoho/monitoring code-review report named in the handoff.
 
 The approved spec is the outcome/acceptance contract, AC01–AC12. Beads owns
-status. Main/live was36c8613 at audit; no delivery approval was granted by the
-planning request. Existing local cooldown fix07591b8b1dba05c2124af0468a089adc26efa717
+status. Main/live was 36c8613 at audit; no delivery approval was granted by the
+planning request. Existing local cooldown fix 07591b8b1dba05c2124af0468a089adc26efa717
 is on codex/tj-4kot-zoho-cooldown. Reuse if absent; do not duplicate or close
 the outside account-load incident. Monitoring tj-535g is a separate stream.
 
-Baseline:13 pages every5min =3744 nominal calls/day.157/day is only the
-single-page-delta + daily-full model.343 catalog products,306 snapshot matches
-and250 stored IDs were measured; validate mapping completeness before narrowing scope. Current cache
-expires in1h and quotation get_stock_bulk can serve cached data.
+Baseline: 13 pages every 5min = 3744 nominal calls/day. 157/day is only the
+single-page-delta + daily-full model. 343 catalog products, 306 snapshot matches
+and 250 stored IDs were measured; validate mapping completeness before narrowing scope. Current cache
+expires in 1h and quotation get_stock_bulk can serve cached data.
 
-Official API sources and unresolved provider checks are in spec section2.
+Official API sources and unresolved provider checks are in spec section 2.
 Modified-since and bulk interfaces are documented; stock-operation coverage
 and actual bulk size are unverified. An earlier live preflight respected an
 active cooldown and made no API calls. Do not invent results or endpoint limits.
@@ -45,8 +45,8 @@ active cooldown and made no API calls. Do not invent results or endpoint limits.
   lock fencing, restart/cache lifecycle, unknown-vs-zero and stock lifecycle.
 - Integrate real cache-bypass reads at the quotation path without changing
   consent, already-sent guards, business POST idempotency or deferral policy.
-- Prove local user-path behavior and request counts, including fresh2 vs
-  cached10, page2 failure, lost lease and429; mocks intercept all side effects.
+- Prove local user-path behavior and request counts, including fresh 2 vs
+  cached 10, page 2 failure, lost lease and 429; mocks intercept all side effects.
 - Run the spec's focused acceptance plus real disposable local Redis race
   tests; use repo stage closeout when a stage is opened. Reuse matching passing
   evidence; full suite/CI is for release. No disabled failing tests.
@@ -56,12 +56,12 @@ active cooldown and made no API calls. Do not invent results or endpoint limits.
 
 ## Constraints
 
-Write zone: spec section9. Preserve unrelated changes, catalog/price/embedding
-ownership and test0665 isolation. No new paid service, model/prompt rewrite,
+Write zone: spec section 9. Preserve unrelated changes, catalog/price/embedding
+ownership and test 0665 isolation. No new paid service, model/prompt rewrite,
 webhook setup, monitoring activation or production data cleanup.
 
 Local edits, tests, read-only checks and local commits are authorized. Honor
-cooldown; cached-token GET probes stop on429/401 without OAuth refresh.
+cooldown; cached-token GET probes stop on 429/401 without OAuth refresh.
 Merge/deploy, stock test transactions in external organizations, access changes,
 paid calls and real-user sends need current permission. Prepare runnable local
 work and a concrete bounded diagnostic/activation packet before requesting it.
@@ -76,7 +76,7 @@ outrank skill guidelines; if a skill requires stopping, identify the exact rule.
 Commit locally and write `docs/reports/<completion-date>-zoho-stock-sync-optimization.md`
 with exact SHA, commands/results, request-count evidence, provider coverage,
 measured batch limit, user behavior on normal/error paths and rollback.
-Update Beads and current handoff (<=200lines), repin mutable-source digests,
+Update Beads and current handoff (<= 200 lines), repin mutable-source digests,
 trigger enrolled GitHub sync. Preserve task status while required gates remain.
 Copy the approved spec/prompt into your owned branch if needed; the primary
 checkout contains these newly authored files and unrelated untracked work.
