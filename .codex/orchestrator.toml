@@ -287,12 +287,15 @@ allowed_producers = ["root-orchestrator"]
 
 [evidence.source_paths]
 root_selected_commands = ["src", "tests", "pyproject.toml", "uv.lock", "scripts/orchestration", "scripts/vps-deploy.sh", "scripts/zoho_stock_preflight.py", "scripts/zoho_stock_report.py"]
+release_commands = ["src", "tests", "pyproject.toml", "uv.lock", "scripts/orchestration", "scripts/vps-deploy.sh", "scripts/zoho_stock_preflight.py", "scripts/zoho_stock_report.py"]
 
 [evidence.artifact_paths]
 root_selected_commands = []
+release_commands = []
 
 [evidence.environment_digests]
 root_selected_commands = "f9480c95301820271f042e45fe7f536e7013e63e23c2d7df81c3b41ce9a6d16f"
+release_commands = "1d729f38f8528a565ace39339361e04deb67382858c2b0eba6e2b2cc77cd960c"
 
 [cost_guard]
 enabled = true

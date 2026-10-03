@@ -1,0 +1,15 @@
+{
+  "schema_version": "treejar-stock-release-check/v1",
+  "code_and_tests_commit": "5f9e992",
+  "source_digest": "1c4aeb8b8a8b9b5b38c43ef7fa7a46db62ab3c00b77068c4702732ca07a84a2b",
+  "canonical_command": "run_stage_closeout.py --stage tj-uvld-stock-sync --level release",
+  "result": "passed",
+  "full_suite": {
+    "passed": 4458,
+    "skipped": 20,
+    "duration_seconds": 118.25
+  },
+  "log_sha256": "3e746c60a6399ddf5af38e51e5f1dba1ceba78af0f15a080ebcce3d5ce602e78",
+  "live_deployed": false,
+  "delta_enabled": false
+}

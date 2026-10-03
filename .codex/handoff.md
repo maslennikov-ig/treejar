@@ -3,8 +3,8 @@
 Updated: 2026-10-03
 Current branch: codex/tj-uvld-stock-sync
 Current stage id: tj-uvld-stock-sync
-Status: local stock optimization verified;241 tests/Ruff/mypy/process passed.
-Delivery: local commits only; main/live remains outside this task's authority.
+Status: full release verified;4458 passed,20 gated skips; Ruff/mypy/process passed.
+Delivery: owner authorized Push, Merge, Deploy2026-10-03; release verification passed; push/deploy pending.
 
 ## Current work
 
@@ -22,7 +22,7 @@ Delivery: local commits only; main/live remains outside this task's authority.
 - Source observation and successful dataset coverage are distinct. Multi-page
   delta requires two identical complete reads; changed pages abort publication.
   This safeguard does not establish provider paging/operation completeness.
-- Code SHA:0b5c723eeb96c240d2c1654f6b570d951aa782eb.
+- Main implementation:0b5c723; release-code/tests:5f9e992 (b30096a guards/clock).
 - Report: docs/reports/2026-10-03-zoho-stock-sync-optimization.md.
 - Stage: .codex/stages/tj-uvld-stock-sync/summary.md.
 
@@ -43,9 +43,9 @@ Delivery: local commits only; main/live remains outside this task's authority.
 - Readiness audit reported live/main36c8613, TEST_CHANNEL_RESTORE_MODE=true,
   WhatsApp sender/outbound allowlist limited to ending0665, Telegram webhook
   healthy after token rotation. This task did not change those settings.
-- Earlier stage's push/deploy/model-test authority does not cover tj-uvld.
-- Merge/push/deploy, external stock mutations, OAuth/access changes and real
-  messages need fresh owner approval. No paid model reader/calls were used.
+- Current owner authority covers tj-uvld push/merge/deploy with delta gate off.
+- External stock mutations, OAuth/access changes and real messages still need
+  separate approval. No paid model reader/calls were used.
 - Website products.is_active, catalog prices and embeddings remain owned by
   their existing sync; stock state never writes those fields.
 
@@ -63,8 +63,8 @@ Delivery: local commits only; main/live remains outside this task's authority.
 
 - tj-uvld: AC02 provider stock/lifecycle coverage and paging stability need an
   approved test organization or bounded owner-authorized transactions.
-- tj-uvld: merge/release checks/deploy/activation and real24h counters require
-  separate delivery authority; no claim of actual production savings yet.
+- tj-uvld: provider-gated delta activation and real24h optimized counters are
+  still pending; delivery now authorized, no claim of production savings yet.
 - tj-4kot: outside account consumer (~50requests/min) incident remains open;
   reused cooldown fix does not prove external load resolved or authorize deploy.
 - tj-535g: monitoring fixa4cc1a7 remains separate and undeployed; monitoring
@@ -80,7 +80,8 @@ Recommended action: continue the same boundary after approved provider evidence.
 
 After local acceptance/commits, request one concrete approved test organization
 and a bounded stock-operation diagnostic. Prove AC02 before considering delta
-activation. Then obtain separate merge/deployment authority and collect24h
+activation. Delivery is now authorized. After proven coverage, authorize delta activation
+and collect24h
 UTC [start,end) counters with Moscow conversion. Do not close tj-uvld early.
 
 ## Starter prompt for next orchestrator

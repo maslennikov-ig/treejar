@@ -117,6 +117,11 @@
       "task_id": "tj-uvld",
       "stream_owner": "root-stock-implementation",
       "artifact_path": ".codex/stages/tj-uvld-stock-sync/artifacts/tj-uvld.md"
+    },
+    {
+      "task_id": "tj-uvld-release-quote-tests",
+      "stream_owner": "release-quote-tests",
+      "artifact_path": ".codex/stages/tj-uvld-stock-sync/artifacts/release-quote-tests.md"
     }
   ]
 }

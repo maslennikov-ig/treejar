@@ -1,0 +1,22 @@
+{
+  "artifact_digests": [],
+  "command_digest": "1e4189dc71160be994dcf52a17661a5e120caa5c4f715294967c5708d04f5f90",
+  "environment_digest": "1d729f38f8528a565ace39339361e04deb67382858c2b0eba6e2b2cc77cd960c",
+  "group": "release_commands",
+  "level": "release",
+  "producer": "root-orchestrator",
+  "result": "passed",
+  "schema_version": "verification-evidence/v1",
+  "source_digest": "1c4aeb8b8a8b9b5b38c43ef7fa7a46db62ab3c00b77068c4702732ca07a84a2b",
+  "source_paths": [
+    "src",
+    "tests",
+    "pyproject.toml",
+    "uv.lock",
+    "scripts/orchestration",
+    "scripts/vps-deploy.sh",
+    "scripts/zoho_stock_preflight.py",
+    "scripts/zoho_stock_report.py"
+  ],
+  "timestamp": "2026-10-03T14:38:02.296294+00:00"
+}

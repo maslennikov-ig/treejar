@@ -1,15 +1,18 @@
 # Оптимизация остатков Zoho — проверенный локальный результат
 
 Дата:2026-10-03. Задача: **tj-uvld**, остаётся `in_progress`.
-Код: **0b5c723eeb96c240d2c1654f6b570d951aa782eb**.
+Основная реализация: **0b5c723eeb96c240d2c1654f6b570d951aa782eb**.
+Release-код и тесты: **5f9e992** (включая b30096a и обновлённые legacy fixtures).
 Ветка: `codex/tj-uvld-stock-sync`.
 Worktree: `/home/me/code/treejar/.worktrees/tj-uvld-stock-sync`.
 База main: `36c86137a51d2e6485db92c28ec057fe26f03339`.
-Код и тесты после этого SHA не изменялись; следующий коммит фиксирует отчёт.
+После основной реализации release-проверки исправили тестовые часы, подмены
+свежего чтения и повторную проверку уже подтверждённой строки в engine.py.
 
 Локальная реализация и проверки завершены. Delta не активирована: полнота
-изменений после складских операций ещё не доказана. Merge/push/deploy,
-складские изменения, OAuth и реальные сообщения в этой работе не выполнялись.
+изменений после складских операций ещё не доказана. Владелец разрешил
+Push, Merge, Deploy 2026-10-03; release-проверки и доставка выполняются.
+Складские изменения, OAuth и реальные сообщения не выполнялись.
 Чужая работа в основном checkout сохранена.
 
 ## Что работает
@@ -63,7 +66,7 @@ eligibility. Точечное fresh-чтение не передвигает о�
 | AC08 | Inactive/removal/new/rename, direct/bulk remap retirement, numeric alias precedence | Lifecycle операции не выполнялись |
 | AC09 | 1800s, short retry, max concurrent cooldown, shared read-slot/skip/recovery | Существующий внешний account-load incident открыт |
 | AC10 | Суточные 157/589/167; HTTP-счётчики realRedis, UTC interval,0 customer full scans | Настоящие 24 ч после активации отсутствуют |
-| AC11 | **241 passed**,0 skipped;8 специализированных Redis integration; Ruff/format, mypy193 файлов | Release suite/CI не запускались |
+| AC11 | **241 passed**,0 skipped;8 специализированных Redis integration; Ruff/format, mypy193 файлов | Full release:4458 passed,20 gated skips; CI/доставка следуют |
 | AC12 | SHA, отчёт/receipts, handoff/stage/Beads, rollback и конкретные оставшиеся действия | Полная приёмка задачи остаётся открытой |
 
 Root acceptance выполнен через `run_stage_closeout.py --stage tj-uvld-stock-sync
@@ -158,8 +161,9 @@ ID-consistency full/delta/bulk и следующий modified-since с overlap. 
 временами и количеством, достаточная для read-only сопоставления. Иначе gate
 остаётся закрытым и решение по другой архитектуре требует владельца.
 
-Только после AC02: отдельное разрешение merge/release/deploy; release suite/CI,
-exact app+worker SHA и сохранение 0665/Telegram, затем 24 ч метрик. Флаги:
+Доставка кода с закрытым delta gate разрешена владельцем 2026-10-03.
+Перед включением оптимизированного расписания требуется AC02 и отдельное
+разрешение активации; затем 24 ч реальных метрик. Флаги:
 `ZOHO_STOCK_INCREMENTAL_ENABLED=true` и непустой `ZOHO_STOCK_COVERAGE_EVIDENCE`
 со ссылкой на подтверждённое покрытие этой организации. Для измеренного bulk
 можно явно задать `ZOHO_STOCK_BULK_SIZE=8` и `ZOHO_STOCK_BULK_EVIDENCE` со ссылкой
@@ -180,3 +184,32 @@ incident и tj-535g monitoring не закрывались и не объеди�
 
 Вспомогательные clean worktrees docs/review и task-owned Redis удалены.
 Основной worktree с коммитами сохранён для продолжения; primary не изменён.
+
+## Разрешённая доставка и полная проверка
+
+Владелец разрешил Push, Merge, Deploy2026-10-03. Canonical release выполнен:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=$PWD UV_PROJECT_ENVIRONMENT=/home/me/code/treejar/.venv uv run --no-sync python scripts/orchestration/run_stage_closeout.py --stage tj-uvld-stock-sync --level release
+```
+
+**4458 passed,20 skipped in118.25s**, Ruff/format/mypy193/process passed.
+Пропуски — существующие явно включаемые live-интеграции/реальные модели,
+отдельный semantic pgvector и три PostgreSQL admin-проверки; не новые skips.
+Runner также выполнил настроенные risk groups concurrency/migration/API/e2e.
+Release sidecars и logs/release-acceptance.log сохранены; старый
+closeout-result.json относится к slice_acceptance, не к новой delivery-проверке.
+Source digest1c4aeb8b8a8b9b5b38c43ef7fa7a46db62ab3c00b77068c4702732ca07a84a2b.
+
+Среда — обычный isolated clone с basename treejar и каноническим HTTPS remote:
+этого требуют существующие registry/corpus проверки. Первый запуск обнаружил
+этот environmental gate и21 старый quote mock, retry clock и предел размера
+engine; причины исправлены, тесты не отключались. Четыре legacy quote файла
+прошли747 focused tests; root clock/structure checks —10.
+Python3.12.13, Node24.19.0/npm11.17.0; CI использует Python3.13/Node22.
+Release-environment.json фиксирует lock/image digests.
+
+Перед выкладкой read-only runtime показал36c8613, здоровые app/worker/DB/Redis,
+2557 legacy entries, отсутствие v2 и cooldown. SHA .env и safety fingerprint
+сохранены для сравнения; UUID канала не интерпретируется как номер телефона.
+Delta и bulk-size overrides не включаются этой доставкой.

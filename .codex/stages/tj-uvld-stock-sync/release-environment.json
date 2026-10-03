@@ -1,0 +1,12 @@
+{
+  "environment_digest": "1d729f38f8528a565ace39339361e04deb67382858c2b0eba6e2b2cc77cd960c",
+  "python": "Python 3.12.13",
+  "node": "v24.19.0",
+  "npm": "11.17.0",
+  "redis_image": "sha256:dfa18828cbc07b3ae6a95ec7343f6c214fdee2d836197b4be8e9904420762cd8",
+  "uv_lock": "add4351765e06bcca85540c423fcfba1509225084c9ac9bdccfff2277ce96539",
+  "admin_lock": "82bd6ab12bcb1434e7181ccb179ff66d138633368b1660a8a207c272ca2e6da7",
+  "checkout": "ordinary_clone",
+  "paid_calls": false,
+  "external_business_side_effects": "intercepted"
+}

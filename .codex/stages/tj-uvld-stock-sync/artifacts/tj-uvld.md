@@ -9,7 +9,7 @@ immediate_consumer: quotation creation and discovery stock
 public_facade: ZohoInventoryClient
 bounded_acceptance: AC01–AC12 local acceptance; external gates explicit
 non_goals:
-  - deployment and external business writes
+  - external stock mutations and real messages
   - website catalog scoping and webhooks
 evidence:
   - none
@@ -61,7 +61,7 @@ status: accepted
 delivery_method: manual integration
 accepted_by_orchestrator: yes
 cleanup_status: blocked
-cleanup_notes: root candidate intentionally retained for review; delivery lacks authority
+cleanup_notes: root retained pending provider coverage and optimized24h proof; delivery authorized
 risk_level: high
 verification_tier: slice_acceptance
 risk_tags:
@@ -131,3 +131,12 @@ Clean auxiliary docs/review worktrees/branches and disposable Redis removed.
 
 AC02 requires approved stock/lifecycle diagnostics and paging semantics.
 Actual production reduction requires approved activation and24h evidence.
+
+## Authorized release follow-up
+
+Owner authorized Push, Merge, Deploy2026-10-03. Legacy quote doubles accepted
+as5f9e992 after747 focused checks; root b30096a advances retry fixture clock
+and removes a redundant post-validation guard. Full canonical release passed:
+4458 tests,20 expected gated skips; Ruff/format/mypy/process passed.
+Release receipt and logs/release-acceptance.log are retained; code inputs are
+bound to source digest1c4aeb8b8a8b9b5b38c43ef7fa7a46db62ab3c00b77068c4702732ca07a84a2b.

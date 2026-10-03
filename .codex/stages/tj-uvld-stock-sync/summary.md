@@ -50,17 +50,29 @@ source files; process verification and canonical closeout passed.
 Source digest:8f85dc2040fe8b80983f6a0a1233c493089942b94ab40c9a2a25133650fe8b09.
 The first final attempt found two old retry-clock fixtures; corrected and
 rerun. A handoff-only process failure was corrected; code evidence reused.
-No main integration, push, deploy, flag activation, provider business writes,
-OAuth changes or real outbound messages. Next external action: approved test
-organization and bounded stock-operation coverage diagnostic, then separate
-release/deployment approval and real24h measurement. Task remains in_progress.
+Owner authorized push/merge/deploy2026-10-03. Full canonical release now passed:
+4458 tests,20 existing gated skips; Ruff/format/mypy/process passed. Code/tests
+5f9e992 include b30096a clock/structure fixes. No provider business writes,
+OAuth changes, flag activation or real outbound messages. Delivery pending;
+provider coverage and optimized24h proof remain separate. Task stays in_progress.
 
 ## Explicit defers
 
 - tj-uvld: AC02 operation/lifecycle/paging provider evidence.
-- tj-uvld: authorized release/activation and actual24h counters (AC10/AC12).
+- tj-uvld: provider-gated activation and actual24h optimized counters (AC10/AC12).
 - tj-4kot outside account load and tj-535g monitoring remain separate.
 
 docs-reviewed: updated - provider research/receipts, spec clarification, report,
 entrypoints, current handoff and rollback instructions.
 graph-reviewed: no-change-needed - no enabled task-owned graph; file navigation sufficient.
+
+Owner authorized Push, Merge, Deploy2026-10-03. Full release checks run in an
+ordinary isolated clone; linked-worktree corpus assumptions remain tj-bgwu.
+project-index: reviewed-no-change - release evidence configuration only;
+stock runtime and CLI entrypoints are already indexed.
+
+Release quote-test stream accepted as5f9e992; delegated commitd773bf4 patch
+equivalence and four file identities verified; clean worker tree/branch removed.
+Root reviewed all test changes;747 focused checks preserved consent/idempotency.
+Canonical release used ordinary clone; logs/release-acceptance.log and exact
+release_commands sidecars carry the proof. Primary dirty work remains intact.
