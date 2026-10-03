@@ -4,16 +4,16 @@ Updated: 2026-10-03
 Current branch: codex/tj-uvld-stock-sync
 Current stage id: tj-uvld-stock-sync
 Status: full release verified;4458 passed,20 gated skips; Ruff/mypy/process passed.
-Delivery: owner authorized Push, Merge, Deploy2026-10-03; release verification passed; push/deploy pending.
+Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI37130777663 passed.
 
 ## Current work
 
 - Beads tj-uvld owns AC01–AC12 and remains in_progress until provider coverage,
-  authorized delivery and real 24h measurement are accepted.
+  delta activation and real 24h optimized measurement are accepted.
 - Worktree: /home/me/code/treejar/.worktrees/tj-uvld-stock-sync.
 - Base: main 36c86137a51d2e6485db92c28ec057fe26f03339; prepared docs and
   tj-4kot cooldown07591b8 reused by cherry-pick. Primary dirty work preserved.
-- Candidate: gated 600s delta + daily03:17UTC full, owned lock/CAS generations,
+- Installed: gated 600s delta + daily03:17UTC full, owned lock/CAS generations,
   48h retention with1h customer ceiling, selected-SKU fresh quotation checks,
   shared HTTP counters and read concurrency/cooldown.
 - Owner decision: stock2 vs agreed5 stops quotation, states only2 available,
@@ -22,7 +22,12 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; release verification p
 - Source observation and successful dataset coverage are distinct. Multi-page
   delta requires two identical complete reads; changed pages abort publication.
   This safeguard does not establish provider paging/operation completeness.
-- Main implementation:0b5c723; release-code/tests:5f9e992 (b30096a guards/clock).
+- Live app+worker:25a8c080e9b014333380b8e62be7d5e981daefe7;
+  CI4451 passed/27 gated skips; local4458/20. Zero restarts, health/deps OK.
+- .env/safety fingerprints unchanged; DB/Redis/nginx containers retained.
+- New v2/legacy:2557 rows,48h TTL. UTC[14:50:52,14:53:10):
+ 13GET/13HTTP200,1successful full cycle; not optimized24h evidence.
+- Delivery receipt:docs/reports/2026-10-03-zoho-stock-sync-delivery.md.
 - Report: docs/reports/2026-10-03-zoho-stock-sync-optimization.md.
 - Stage: .codex/stages/tj-uvld-stock-sync/summary.md.
 
@@ -40,9 +45,9 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; release verification p
 
 ## Operating boundary
 
-- Readiness audit reported live/main36c8613, TEST_CHANNEL_RESTORE_MODE=true,
-  WhatsApp sender/outbound allowlist limited to ending0665, Telegram webhook
-  healthy after token rotation. This task did not change those settings.
+- Live25a8c08, TEST_CHANNEL_RESTORE_MODE=true; .env and app/worker safety
+  fingerprints equal predeploy. Approved0665 sender/allowlist and Telegram
+  phone isolation unchanged; no new messaging/webhook configuration.
 - Current owner authority covers tj-uvld push/merge/deploy with delta gate off.
 - External stock mutations, OAuth/access changes and real messages still need
   separate approval. No paid model reader/calls were used.
@@ -64,9 +69,9 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; release verification p
 - tj-uvld: AC02 provider stock/lifecycle coverage and paging stability need an
   approved test organization or bounded owner-authorized transactions.
 - tj-uvld: provider-gated delta activation and real24h optimized counters are
-  still pending; delivery now authorized, no claim of production savings yet.
+  still pending; code delivered, no claim of optimized production savings yet.
 - tj-4kot: outside account consumer (~50requests/min) incident remains open;
-  reused cooldown fix does not prove external load resolved or authorize deploy.
+  cooldown fix delivered in25a8c08; external load resolution remains unproved.
 - tj-535g: monitoring fixa4cc1a7 remains separate and undeployed; monitoring
   activation was not changed. Primary handoff retains its independent truth.
 - Zoho quotation live E2E remains unverified; no real messages were sent here.
@@ -78,11 +83,10 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; release verification p
 Next stage id: tj-uvld-stock-sync
 Recommended action: continue the same boundary after approved provider evidence.
 
-After local acceptance/commits, request one concrete approved test organization
-and a bounded stock-operation diagnostic. Prove AC02 before considering delta
-activation. Delivery is now authorized. After proven coverage, authorize delta activation
-and collect24h
-UTC [start,end) counters with Moscow conversion. Do not close tj-uvld early.
+Code delivery completed. Next needs one concrete approved test organization
+and a bounded stock-operation diagnostic, or sufficient redacted operation
+history. Prove AC02, then authorize delta activation and collect24h UTC
+[start,end) counters with Moscow conversion. Do not close tj-uvld early.
 
 ## Starter prompt for next orchestrator
 

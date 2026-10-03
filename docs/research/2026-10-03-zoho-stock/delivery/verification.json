@@ -1,0 +1,38 @@
+{
+  "expected_release_sha": "25a8c080e9b014333380b8e62be7d5e981daefe7",
+  "before_measured_at_utc": "2026-10-03T14:32:12.206077+00:00",
+  "after_measured_at_utc": "2026-10-03T14:51:51.808169+00:00",
+  "checks": {
+    "host_release_exact": true,
+    "env_unchanged": true,
+    "https_health_exact": true,
+    "database_and_redis_health": true,
+    "db_container_preserved": true,
+    "redis_container_preserved": true,
+    "nginx_container_preserved": true,
+    "app_new_running_container": true,
+    "app_release_exact": true,
+    "app_safety_unchanged": true,
+    "app_delta_gate_closed": true,
+    "app_unmodified_bulk_configuration": true,
+    "app_eight_source_hashes_exact": true,
+    "app_restore_functions_exact": true,
+    "app_fallback_crons_exact": true,
+    "worker_new_running_container": true,
+    "worker_release_exact": true,
+    "worker_safety_unchanged": true,
+    "worker_delta_gate_closed": true,
+    "worker_unmodified_bulk_configuration": true,
+    "worker_eight_source_hashes_exact": true,
+    "worker_restore_functions_exact": true,
+    "worker_fallback_crons_exact": true,
+    "v2_generation_live": true,
+    "legacy_last_full_mirror": true
+  },
+  "passed": true,
+  "limitations": [
+    "No live customer quotation or business mutation.",
+    "Delta eligibility is unproved and disabled.",
+    "This is a bounded rollout check, not optimized24h savings evidence."
+  ]
+}

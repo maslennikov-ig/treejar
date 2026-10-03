@@ -1,0 +1,20 @@
+{
+  "schema_version": "treejar-ci-test-receipt/v1",
+  "run_id": 37130777663,
+  "release_sha": "25a8c080e9b014333380b8e62be7d5e981daefe7",
+  "url": "https://github.com/maslennikov-ig/treejar/actions/runs/37130777663",
+  "passed": 4451,
+  "skipped": 27,
+  "duration_seconds": 96.5,
+  "test_job_id": 111225269070,
+  "summary": [
+    "2026-10-03T14:48:05.5695492Z ================= 4451 passed, 27 skipped in 96.50s (0:01:36) =================="
+  ],
+  "python": "3.13",
+  "node": "22",
+  "real_disposable_redis_tests": "passed",
+  "limitations": [
+    "Provider operation fixtures remain synthetic.",
+    "Existing live/database/semantic checks stay gated; semantic-evidence job is skipped because its source paths did not change."
+  ]
+}

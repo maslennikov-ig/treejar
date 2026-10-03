@@ -53,7 +53,7 @@ rerun. A handoff-only process failure was corrected; code evidence reused.
 Owner authorized push/merge/deploy2026-10-03. Full canonical release now passed:
 4458 tests,20 existing gated skips; Ruff/format/mypy/process passed. Code/tests
 5f9e992 include b30096a clock/structure fixes. No provider business writes,
-OAuth changes, flag activation or real outbound messages. Delivery pending;
+OAuth changes, flag activation or real outbound messages. Delivery completed in25a8c080e9b014333380b8e62be7d5e981daefe7;
 provider coverage and optimized24h proof remain separate. Task stays in_progress.
 
 ## Explicit defers
@@ -76,3 +76,11 @@ equivalence and four file identities verified; clean worker tree/branch removed.
 Root reviewed all test changes;747 focused checks preserved consent/idempotency.
 Canonical release used ordinary clone; logs/release-acceptance.log and exact
 release_commands sidecars carry the proof. Primary dirty work remains intact.
+
+CI37130777663 success:4451 passed/27 gated skips, deploy completed.
+Exact app+worker SHA, eight source hashes each, safety/.env invariants and
+DB/Redis/nginx preservation verified;25 checks passed. Live counters prove
+13HTTP200/13pages/2557items/1full in UTC[14:50:52,14:53:10). Delta remains
+disabled; provider coverage, live quotation and optimized24h proof unverified.
+Delivery receipt docs/reports/2026-10-03-zoho-stock-sync-delivery.md.
+Root worktree stays for the open provider/activation boundary.

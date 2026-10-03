@@ -1,0 +1,63 @@
+{
+  "release_sha": "25a8c080e9b014333380b8e62be7d5e981daefe7",
+  "run_id": 37130777663,
+  "url": "https://github.com/maslennikov-ig/treejar/actions/runs/37130777663",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "name": "changes",
+      "databaseId": 111225268853,
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-03T14:45:50Z",
+      "completedAt": "2026-10-03T14:45:55Z",
+      "url": "https://github.com/maslennikov-ig/treejar/actions/runs/37130777663/job/111225268853"
+    },
+    {
+      "name": "lint",
+      "databaseId": 111225269022,
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-03T14:45:50Z",
+      "completedAt": "2026-10-03T14:46:08Z",
+      "url": "https://github.com/maslennikov-ig/treejar/actions/runs/37130777663/job/111225269022"
+    },
+    {
+      "name": "type-check",
+      "databaseId": 111225269027,
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-03T14:45:51Z",
+      "completedAt": "2026-10-03T14:47:32Z",
+      "url": "https://github.com/maslennikov-ig/treejar/actions/runs/37130777663/job/111225269027"
+    },
+    {
+      "name": "test",
+      "databaseId": 111225269070,
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-03T14:45:51Z",
+      "completedAt": "2026-10-03T14:48:11Z",
+      "url": "https://github.com/maslennikov-ig/treejar/actions/runs/37130777663/job/111225269070"
+    },
+    {
+      "name": "semantic-evidence",
+      "databaseId": 111225288880,
+      "status": "completed",
+      "conclusion": "skipped",
+      "startedAt": "2026-10-03T14:45:55Z",
+      "completedAt": "2026-10-03T14:45:55Z",
+      "url": "https://github.com/maslennikov-ig/treejar/actions/runs/37130777663/job/111225288880"
+    },
+    {
+      "name": "deploy",
+      "databaseId": 111225700157,
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-03T14:48:14Z",
+      "completedAt": "2026-10-03T14:51:13Z",
+      "url": "https://github.com/maslennikov-ig/treejar/actions/runs/37130777663/job/111225700157"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-# Оптимизация остатков Zoho — проверенный локальный результат
+# Оптимизация остатков Zoho — код выложен, delta gate закрыт
 
 Дата:2026-10-03. Задача: **tj-uvld**, остаётся `in_progress`.
 Основная реализация: **0b5c723eeb96c240d2c1654f6b570d951aa782eb**.
@@ -11,7 +11,9 @@ Worktree: `/home/me/code/treejar/.worktrees/tj-uvld-stock-sync`.
 
 Локальная реализация и проверки завершены. Delta не активирована: полнота
 изменений после складских операций ещё не доказана. Владелец разрешил
-Push, Merge, Deploy 2026-10-03; release-проверки и доставка выполняются.
+Push, Merge, Deploy 2026-10-03; релиз25a8c080e9b014333380b8e62be7d5e981daefe7
+выложен в app+worker. Полная проверка и [delivery receipt](2026-10-03-zoho-stock-sync-delivery.md)
+подтверждают результат. Последующий docs-only коммит не меняет live SHA.
 Складские изменения, OAuth и реальные сообщения не выполнялись.
 Чужая работа в основном checkout сохранена.
 
@@ -56,17 +58,17 @@ eligibility. Точечное fresh-чтение не передвигает о�
 
 | Критерий | Локальное доказательство | Live-граница |
 |---|---|---|
-| AC01 | normal/restore schedule, UTC slot, регистрация/allowlist, повторный startup | Не выложено |
+| AC01 | normal/restore schedule, UTC slot, регистрация/allowlist, повторный startup | App/worker выложены; hybrid gate закрыт |
 | AC02 | fixtures складских/lifecycle форм и закрытый gate | Интерфейс GET частично подтверждён; полнота операций отсутствует |
 | AC03 | zero/empty/overlap/ties, длинное чтение, page2 error/cap/restart, move/delete page shift | Стабильность страниц/границ Zoho ещё требуется |
 | AC04 | Настоящий Redis: параллельные full/delta, истёкшая lease, owner release, commit failure, fresh CAS | Production race не запускалась |
-| AC05 | >24 ч idle, daily full, >1 ч degraded, legacy/corrupt/missing cursor, rollback baseline | Флаги не менялись |
+| AC05 | >24 ч idle, daily full, >1 ч degraded, legacy/corrupt/missing cursor, rollback baseline | Live v2/legacy2557 с TTL48h; flags не менялись |
 | AC06 | Реальный вызов HTTP-адаптера через MockTransport: cached10/fresh2, bypass, chunking, aliases, partial/unknown | Bulk1/2/4/8 прочитан live; КП live не создавалось |
 | AC07 | Consent/sent guards, 429, actual background retry, shortage wait/new decision, максимум одно создание | POST/PDF/send перехвачены; не live КП |
 | AC08 | Inactive/removal/new/rename, direct/bulk remap retirement, numeric alias precedence | Lifecycle операции не выполнялись |
 | AC09 | 1800s, short retry, max concurrent cooldown, shared read-slot/skip/recovery | Существующий внешний account-load incident открыт |
-| AC10 | Суточные 157/589/167; HTTP-счётчики realRedis, UTC interval,0 customer full scans | Настоящие 24 ч после активации отсутствуют |
-| AC11 | **241 passed**,0 skipped;8 специализированных Redis integration; Ruff/format, mypy193 файлов | Full release:4458 passed,20 gated skips; CI/доставка следуют |
+| AC10 | Суточные 157/589/167; HTTP-счётчики realRedis, UTC interval,0 customer full scans | Live full13GET/2557 rows подтверждён;24h optimized proof отсутствует |
+| AC11 | **241 passed**,0 skipped;8 специализированных Redis integration; Ruff/format, mypy193 файлов | Full release4458/20 skips; CI4451/27 skips, deploy success |
 | AC12 | SHA, отчёт/receipts, handoff/stage/Beads, rollback и конкретные оставшиеся действия | Полная приёмка задачи остаётся открытой |
 
 Root acceptance выполнен через `run_stage_closeout.py --stage tj-uvld-stock-sync
@@ -213,3 +215,8 @@ Release-environment.json фиксирует lock/image digests.
 2557 legacy entries, отсутствие v2 и cooldown. SHA .env и safety fingerprint
 сохранены для сравнения; UUID канала не интерпретируется как номер телефона.
 Delta и bulk-size overrides не включаются этой доставкой.
+
+Delivery completed:25a8c080e9b014333380b8e62be7d5e981daefe7;25 live readback
+checks passed. UTC[14:50:52,14:53:10):13GET/13HTTP200,1full/2557rows.
+[Подробный отчёт доставки](2026-10-03-zoho-stock-sync-delivery.md).
+Delta disabled; no provider coverage/optimized24h/live quotation claim.

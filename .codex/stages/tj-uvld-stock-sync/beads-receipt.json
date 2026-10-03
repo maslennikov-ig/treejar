@@ -2,9 +2,14 @@
   "snapshot_of": "Beads canonical reread; not an independent tracker",
   "id": "tj-uvld",
   "status": "in_progress",
+  "updated_at": "2026-10-03T15:00:00Z",
   "metadata": {
+    "ci_run": 37130777663,
+    "live_deployed": true,
+    "deployment_sha": "25a8c080e9b014333380b8e62be7d5e981daefe7",
     "live_activated": false,
     "local_verified": true,
+    "live_24h_measured": false,
     "live_24h_verified": false,
     "local_implementation_sha": "0b5c723eeb96c240d2c1654f6b570d951aa782eb",
     "provider_coverage_verified": false
