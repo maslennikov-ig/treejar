@@ -28,6 +28,8 @@ from httpx import ASGITransport, AsyncClient
 from src.core.config import settings
 from src.main import app
 
+pytest_plugins = ("tests.stock_sync_support",)
+
 
 @pytest.fixture
 def authorized_outbound_unit_path() -> Generator[None, None, None]:

@@ -1674,12 +1674,15 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--stage", dest="stage_id")
     parser.add_argument("--level")
     parser.add_argument("--verify-group", action="append", default=[])
+    parser.add_argument("--command", action="append", default=[])
     parser.add_argument("--include-optional", action="store_true")
     parser.add_argument("--include-e2e", action="store_true")
     parser.add_argument("--skip-process-check", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--must-run-reason", choices=sorted(MUST_RUN_REASONS))
     args = parser.parse_args(argv[1:])
+    if args.command and args.verify_group:
+        parser.error("Select exact --command values or --verify-group, not both")
 
     repo_root = pathlib.Path.cwd()
     contract = tomllib.loads((repo_root / ".codex" / "orchestrator.toml").read_text())
@@ -1715,6 +1718,9 @@ def main(argv: list[str]) -> int:
     verification = contract.get("verification", {})
     if not isinstance(verification, dict):
         verification = {}
+    if args.command:
+        verification["root_selected_commands"] = args.command
+        args.verify_group = ["root_selected_commands"]
     verification_policy = contract.get("verification_policy")
     reuse_unchanged_evidence = not (
         isinstance(verification_policy, dict)

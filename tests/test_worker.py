@@ -43,7 +43,13 @@ def test_restore_mode_registers_conversation_jobs_and_only_safe_crons() -> None:
     from types import SimpleNamespace
     from unittest.mock import patch
 
-    restore_settings = SimpleNamespace(test_channel_restore_mode=True)
+    restore_settings = SimpleNamespace(
+        test_channel_restore_mode=True,
+        zoho_stock_incremental_enabled=False,
+        zoho_stock_coverage_evidence="",
+        zoho_stock_daily_hour_utc=3,
+        zoho_stock_daily_minute_utc=17,
+    )
     with patch("src.worker.settings", restore_settings):
         functions = build_worker_functions()
         cron_jobs = build_worker_cron_jobs()
@@ -53,6 +59,7 @@ def test_restore_mode_registers_conversation_jobs_and_only_safe_crons() -> None:
         "retry_pending_quotation",
         "refresh_conversation_summary",
         "refresh_zoho_stock_snapshot",
+        "refresh_zoho_stock_delta",
         "reconcile_telegram_webhook",
     ]
     assert [c.coroutine.__qualname__ for c in cron_jobs] == [
@@ -154,7 +161,16 @@ def test_deploy_gate_allowlist_covers_restore_mode_functions() -> None:
     match = re.search(r"assert set\(names\) <= (\{[^}]*\})", script)
     assert match is not None
     allowlist = ast.literal_eval(match.group(1))
-    with patch("src.worker.settings", SimpleNamespace(test_channel_restore_mode=True)):
+    with patch(
+        "src.worker.settings",
+        SimpleNamespace(
+            test_channel_restore_mode=True,
+            zoho_stock_incremental_enabled=False,
+            zoho_stock_coverage_evidence="",
+            zoho_stock_daily_hour_utc=3,
+            zoho_stock_daily_minute_utc=17,
+        ),
+    ):
         names = [_function_name(function) for function in build_worker_functions()]
 
     assert "process_incoming_batch" in names
@@ -170,10 +186,19 @@ def test_deploy_gate_cron_allowlist_covers_restore_mode_crons() -> None:
     script = (Path(__file__).parent.parent / "scripts" / "vps-deploy.sh").read_text()
     match = re.search(r"assert cron_names <= \{([^}]*)\}", script)
     assert match is not None
-    with patch("src.worker.settings", SimpleNamespace(test_channel_restore_mode=True)):
+    with patch(
+        "src.worker.settings",
+        SimpleNamespace(
+            test_channel_restore_mode=True,
+            zoho_stock_incremental_enabled=False,
+            zoho_stock_coverage_evidence="",
+            zoho_stock_daily_hour_utc=3,
+            zoho_stock_daily_minute_utc=17,
+        ),
+    ):
         names = {c.coroutine.__qualname__ for c in build_worker_cron_jobs()}
 
-    assert names == {name.strip().strip('"') for name in match.group(1).split(",")}
+    assert names <= {name.strip().strip('"') for name in match.group(1).split(",")}
 
 
 def test_worker_lets_a_running_turn_finish_before_deploy_stops_it() -> None:

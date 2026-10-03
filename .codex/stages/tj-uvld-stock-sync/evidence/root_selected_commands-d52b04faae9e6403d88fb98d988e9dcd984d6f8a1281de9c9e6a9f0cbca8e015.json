@@ -1,0 +1,22 @@
+{
+  "artifact_digests": [],
+  "command_digest": "d52b04faae9e6403d88fb98d988e9dcd984d6f8a1281de9c9e6a9f0cbca8e015",
+  "environment_digest": "f9480c95301820271f042e45fe7f536e7013e63e23c2d7df81c3b41ce9a6d16f",
+  "group": "root_selected_commands",
+  "level": "slice_acceptance",
+  "producer": "root-orchestrator",
+  "result": "passed",
+  "schema_version": "verification-evidence/v1",
+  "source_digest": "8f85dc2040fe8b80983f6a0a1233c493089942b94ab40c9a2a25133650fe8b09",
+  "source_paths": [
+    "src",
+    "tests",
+    "pyproject.toml",
+    "uv.lock",
+    "scripts/orchestration",
+    "scripts/vps-deploy.sh",
+    "scripts/zoho_stock_preflight.py",
+    "scripts/zoho_stock_report.py"
+  ],
+  "timestamp": "2026-10-03T13:53:28.452750+00:00"
+}

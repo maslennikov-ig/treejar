@@ -1,0 +1,262 @@
+{
+  "measured_at_utc": "2026-10-03T08:32:00.053920+00:00",
+  "window_start_utc": "2026-10-02T08:00:00+00:00",
+  "window_end_exclusive_utc": "2026-10-03T08:00:00+00:00",
+  "source": "Noor app and worker timestamped container logs; customer payloads excluded",
+  "totals": {
+    "http_200": 3445,
+    "http_429": 14,
+    "refresh_succeeded": 265,
+    "refresh_failed": 23,
+    "local_cooldown_skips": 9
+  },
+  "http_requests": 3459,
+  "peak_requests_per_calendar_minute": 13,
+  "peak_requests_per_rolling_60_seconds": 13,
+  "snapshot_sku_counts": {
+    "2554": 15,
+    "2555": 1,
+    "2556": 29,
+    "2557": 220
+  },
+  "http_429_timestamps_utc": [
+    "2026-10-02T08:16:00.477784+00:00",
+    "2026-10-02T08:21:00.641881+00:00",
+    "2026-10-02T08:36:00.936476+00:00",
+    "2026-10-02T12:26:00.765066+00:00",
+    "2026-10-02T12:36:00.695859+00:00",
+    "2026-10-02T16:11:00.646563+00:00",
+    "2026-10-02T16:36:00.750425+00:00",
+    "2026-10-02T20:16:00.628662+00:00",
+    "2026-10-02T20:36:00.432302+00:00",
+    "2026-10-03T00:16:00.583389+00:00",
+    "2026-10-03T00:26:00.427581+00:00",
+    "2026-10-03T00:31:00.604742+00:00",
+    "2026-10-03T04:11:00.413600+00:00",
+    "2026-10-03T04:36:00.473446+00:00"
+  ],
+  "hourly": [
+    {
+      "hour_start_utc": "2026-10-02T08:00:00+00:00",
+      "hour_start_moscow": "2026-10-02T11:00:00+03:00",
+      "http_200": 91,
+      "http_429": 3,
+      "refresh_succeeded": 7,
+      "refresh_failed": 5,
+      "local_cooldown_skips": 2
+    },
+    {
+      "hour_start_utc": "2026-10-02T09:00:00+00:00",
+      "hour_start_moscow": "2026-10-02T12:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-02T10:00:00+00:00",
+      "hour_start_moscow": "2026-10-02T13:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-02T11:00:00+00:00",
+      "hour_start_moscow": "2026-10-02T14:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-02T12:00:00+00:00",
+      "hour_start_moscow": "2026-10-02T15:00:00+03:00",
+      "http_200": 104,
+      "http_429": 2,
+      "refresh_succeeded": 8,
+      "refresh_failed": 4,
+      "local_cooldown_skips": 2
+    },
+    {
+      "hour_start_utc": "2026-10-02T13:00:00+00:00",
+      "hour_start_moscow": "2026-10-02T16:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-02T14:00:00+00:00",
+      "hour_start_moscow": "2026-10-02T17:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-02T15:00:00+00:00",
+      "hour_start_moscow": "2026-10-02T18:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-02T16:00:00+00:00",
+      "hour_start_moscow": "2026-10-02T19:00:00+03:00",
+      "http_200": 104,
+      "http_429": 2,
+      "refresh_succeeded": 8,
+      "refresh_failed": 4,
+      "local_cooldown_skips": 2
+    },
+    {
+      "hour_start_utc": "2026-10-02T17:00:00+00:00",
+      "hour_start_moscow": "2026-10-02T20:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-02T18:00:00+00:00",
+      "hour_start_moscow": "2026-10-02T21:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-02T19:00:00+00:00",
+      "hour_start_moscow": "2026-10-02T22:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-02T20:00:00+00:00",
+      "hour_start_moscow": "2026-10-02T23:00:00+03:00",
+      "http_200": 104,
+      "http_429": 2,
+      "refresh_succeeded": 8,
+      "refresh_failed": 4,
+      "local_cooldown_skips": 2
+    },
+    {
+      "hour_start_utc": "2026-10-02T21:00:00+00:00",
+      "hour_start_moscow": "2026-10-03T00:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-02T22:00:00+00:00",
+      "hour_start_moscow": "2026-10-03T01:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-02T23:00:00+00:00",
+      "hour_start_moscow": "2026-10-03T02:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-03T00:00:00+00:00",
+      "hour_start_moscow": "2026-10-03T03:00:00+03:00",
+      "http_200": 104,
+      "http_429": 3,
+      "refresh_succeeded": 8,
+      "refresh_failed": 4,
+      "local_cooldown_skips": 1
+    },
+    {
+      "hour_start_utc": "2026-10-03T01:00:00+00:00",
+      "hour_start_moscow": "2026-10-03T04:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-03T02:00:00+00:00",
+      "hour_start_moscow": "2026-10-03T05:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-03T03:00:00+00:00",
+      "hour_start_moscow": "2026-10-03T06:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-03T04:00:00+00:00",
+      "hour_start_moscow": "2026-10-03T07:00:00+03:00",
+      "http_200": 130,
+      "http_429": 2,
+      "refresh_succeeded": 10,
+      "refresh_failed": 2,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-03T05:00:00+00:00",
+      "hour_start_moscow": "2026-10-03T08:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-03T06:00:00+00:00",
+      "hour_start_moscow": "2026-10-03T09:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    },
+    {
+      "hour_start_utc": "2026-10-03T07:00:00+00:00",
+      "hour_start_moscow": "2026-10-03T10:00:00+03:00",
+      "http_200": 156,
+      "http_429": 0,
+      "refresh_succeeded": 12,
+      "refresh_failed": 0,
+      "local_cooldown_skips": 0
+    }
+  ],
+  "limitations": [
+    "Includes only requests logged by Noor, not other consumers of the Zoho organization.",
+    "URL paths are redacted by the runtime log; requests counted by Zoho API host, excluding OAuth token requests.",
+    "HTTP 429 alone does not distinguish minute, daily and concurrent limit reasons.",
+    "Quota probes returned no remaining-quota headers; total account usage could not be measured."
+  ]
+}

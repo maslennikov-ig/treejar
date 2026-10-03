@@ -1,0 +1,17 @@
+{
+  "measured_at_utc": "2026-10-03T13:09:18.656415+00:00",
+  "read_only": true,
+  "requests": [
+    {
+      "operation": "delta_interface_sorted_offset",
+      "status": 200,
+      "items": 0,
+      "numeric_top_level_stock": 0,
+      "has_valid_page_context": true
+    }
+  ],
+  "provider_coverage_verified": false,
+  "bulk_numeric_verified_size": 0,
+  "organization_fingerprint": "544f8528f9db448a",
+  "stopped": "sorted_delta_interface_verified_coverage_unproved"
+}

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import time
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -405,6 +406,10 @@ async def test_request_backs_off_on_429_then_succeeds() -> None:
     redis.get.return_value = b"valid_token"
 
     client = ZohoInventoryClient(redis)
+    clock = [time.time()]
+
+    async def wait(seconds: float) -> None:
+        clock[0] += seconds
 
     response_200 = _make_response(200, {"ok": True})
 
@@ -414,12 +419,18 @@ async def test_request_backs_off_on_429_then_succeeds() -> None:
             "Rate limited", request=resp_429.request, response=resp_429
         )
 
-    with patch.object(client.client, "request", new_callable=AsyncMock) as mock_request:
+    with (
+        patch.object(client.client, "request", new_callable=AsyncMock) as mock_request,
+        patch(
+            "src.integrations.inventory.zoho_inventory.time.time",
+            side_effect=lambda: clock[0],
+        ),
+    ):
         mock_request.side_effect = [_make_429_error(), response_200]
 
         with patch(
             "src.integrations.inventory.zoho_inventory.asyncio.sleep",
-            new_callable=AsyncMock,
+            AsyncMock(side_effect=wait),
         ) as mock_sleep:
             response = await client._request("GET", "/items")
 
@@ -439,6 +450,10 @@ async def test_request_raises_after_repeated_429_exhausts_retries() -> None:
     redis.get.return_value = b"valid_token"
 
     client = ZohoInventoryClient(redis)
+    clock = [time.time()]
+
+    async def wait(seconds: float) -> None:
+        clock[0] += seconds
 
     def _make_429_error() -> httpx.HTTPStatusError:
         resp_429 = _make_response(429)
@@ -446,7 +461,13 @@ async def test_request_raises_after_repeated_429_exhausts_retries() -> None:
             "Rate limited", request=resp_429.request, response=resp_429
         )
 
-    with patch.object(client.client, "request", new_callable=AsyncMock) as mock_request:
+    with (
+        patch.object(client.client, "request", new_callable=AsyncMock) as mock_request,
+        patch(
+            "src.integrations.inventory.zoho_inventory.time.time",
+            side_effect=lambda: clock[0],
+        ),
+    ):
         mock_request.side_effect = [
             _make_429_error(),
             _make_429_error(),
@@ -456,7 +477,7 @@ async def test_request_raises_after_repeated_429_exhausts_retries() -> None:
         with (
             patch(
                 "src.integrations.inventory.zoho_inventory.asyncio.sleep",
-                new_callable=AsyncMock,
+                AsyncMock(side_effect=wait),
             ) as mock_sleep,
             pytest.raises(httpx.HTTPStatusError) as exc_info,
         ):

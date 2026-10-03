@@ -467,5 +467,19 @@ async def refresh_zoho_stock_snapshot(ctx: dict[str, Any]) -> dict[str, int]:
     keeps it inside `STOCK_SNAPSHOT_FRESH_SECONDS`.
     """
     async with _zoho_client(ctx["redis"]) as client:
-        snapshot = await client.refresh_stock_snapshot()
+        snapshot = await client.refresh_stock_snapshot(
+            startup=bool(ctx.get("stock_startup"))
+        )
+    return {"skus": len(snapshot.items) if snapshot is not None else 0}
+
+
+async def refresh_zoho_stock_delta(ctx: dict[str, Any]) -> dict[str, int]:
+    """Hybrid polling/bootstrap; remains a no-op when coverage is unproved."""
+    async with _zoho_client(ctx["redis"]) as client:
+        if not client.incremental_eligible():
+            await client.metrics.record("skipped", "delta", "eligibility")
+            return {"skus": 0}
+        snapshot = await client.refresh_stock_snapshot(
+            incremental=True, startup=bool(ctx.get("stock_startup"))
+        )
     return {"skus": len(snapshot.items) if snapshot is not None else 0}

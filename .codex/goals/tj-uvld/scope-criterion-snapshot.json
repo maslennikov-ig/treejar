@@ -1,0 +1,69 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-uvld",
+  "source_kind": "beads",
+  "source_id": "tj-uvld",
+  "source_digest": "2ff769db8321ed9fe4f2685a1d8ec8e28d4a6bb8d2ad8434b9bdcd40d84d0238",
+  "criteria": [
+    {
+      "criterion_id": "AC01",
+      "text": "Delta 600s + daily full, normal/restore modes, controlled startup; verification: Worker schedule/registration, deploy allowlist and repeated-start tests",
+      "text_digest": "7901aef10a03a37188ce742ce5519e66a6c4fd94e425cf2989fe45f7b5ba9981"
+    },
+    {
+      "criterion_id": "AC02",
+      "text": "Eligible modified-since interface and stock-operation completeness; verification: Local operation fixtures + named provider coverage evidence; gate remains closed when absent",
+      "text_digest": "78c63a32f13dc1225b89233c49efcae700b1ce6b223999a0136bd12a9a511b5c"
+    },
+    {
+      "criterion_id": "AC03",
+      "text": "Complete paged merge and consistent data/cursor; verification: Empty delta, zero, overlap, equal timestamps, page 2 failure, caps, restart/crash tests",
+      "text_digest": "1b9dc73d23ca36b58226752fc56b1a073306ff1ccae0131957aa087140832f6b"
+    },
+    {
+      "criterion_id": "AC04",
+      "text": "One valid writer, no stale overwrites; verification: Concurrent full/delta, lease expiry, Redis commit failure and lock-owner tests using disposable local Redis",
+      "text_digest": "455afc485e6a047afb42e7c6a0a45b274b159f2c24581908cf523a7b0aeaf2af"
+    },
+    {
+      "criterion_id": "AC05",
+      "text": "Truthful retention, coverage age and cache compatibility; verification: >24h synthetic idle catalog, failed sync, >1h degraded coverage, legacy/corrupt/missing state and rollback tests",
+      "text_digest": "674efc4f3cafd50e851c57dcc1fb4cfe31024d75a934c301afcf372443ab7d36"
+    },
+    {
+      "criterion_id": "AC06",
+      "text": "Selected-SKU fresh bulk reads before quote; verification: Stale cached 10 vs live 2; actual HTTP bypass, chunking, identity, SKU aliases, unknown mapping and incomplete bulk tests",
+      "text_digest": "c117475e682e1541e163f85c2436bcc055f951592abd0387325fb3206fafc9a7"
+    },
+    {
+      "criterion_id": "AC07",
+      "text": "Quote consent/idempotency/deferral unchanged; verification: No-consent and already-sent turns make no critical read/write; 429 defers; retry freshly reads and creates at most once",
+      "text_digest": "1080e67d3f9f43b2b5600531d58d8b6e1cb1d84762d3c598ab5fd98158f9b375"
+    },
+    {
+      "criterion_id": "AC08",
+      "text": "Inactive/removed/new/renamed items stay truthful; verification: No false 0, no stale alias resurrection, new mapping discovered, no website product/price/embedding mutations",
+      "text_digest": "7fe90a7287d855dfd468833fd56580d73f2d4215f5e9f5ce92eaab855fcd7345"
+    },
+    {
+      "criterion_id": "AC09",
+      "text": "Rate limits are respected across processes; verification: Retry-After 1800, small inline retry, concurrent cooldown extension, skipped-job and recovery tests",
+      "text_digest": "47ac75b2583a31ba9e6066172245f691c817ff8485c1091e1ec0bfee892db284"
+    },
+    {
+      "criterion_id": "AC10",
+      "text": "Reduction is measured, not guessed; verification: Simulated 24h 157-call scenario and burst/multi-page scenarios, shared counters and no redundant customer full scans",
+      "text_digest": "6dffe9aa2bb229d653d4df8d309ab1214497ab124dd2fb9cac329e1f6aa6b48b"
+    },
+    {
+      "criterion_id": "AC11",
+      "text": "Local quality and user-path integration pass; verification: Focused pytest acceptance, real local Redis race tests, Ruff/format, mypy; no provider writes or paid model calls",
+      "text_digest": "a6a48463c484db6a8a509ea069377f8652787807c9745f57c7b269a04fcd6169"
+    },
+    {
+      "criterion_id": "AC12",
+      "text": "Exact source and remaining live gates are reviewable; verification: Commit-bound report, Beads/handoff, rollback instructions; provider coverage/activation/24h proof listed separately",
+      "text_digest": "d8ebdc7a823304232d21ef85ca5d0a4d44162545480e10707a5bc8b7388d23a1"
+    }
+  ]
+}

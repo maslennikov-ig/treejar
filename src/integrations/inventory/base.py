@@ -18,6 +18,10 @@ class InventoryProvider(Protocol):
         """Get stock levels for multiple SKUs."""
         ...
 
+    async def get_stock_bulk_fresh(self, skus: list[str]) -> list[dict[str, Any]]:
+        """Fresh selected-item reads for a quotation; incomplete reads fail."""
+        ...
+
     async def get_item(self, item_id: str) -> dict[str, Any] | None:
         """Get a specific Zoho item by item_id."""
         ...

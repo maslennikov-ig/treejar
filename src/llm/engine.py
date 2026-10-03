@@ -100,6 +100,8 @@ from src.integrations.inventory.zoho_inventory import (
     ZohoRateLimitError,
     ZohoSaleOrderLineItemPayload,
     extract_sale_order_data,
+    has_numeric_stock,
+    select_stock_item,
 )
 from src.integrations.messaging.base import MessagingProvider
 from src.llm import catalog_planning as _catalog_planning_runtime
@@ -9244,10 +9246,12 @@ def _unchanged_sent_quotation_reply(
     if not source_message_id or (
         _string_value(sent.get("source_message_id")) == source_message_id
     ):
-        # The same inbound message retrying its own quotation, or a direct
-        # call with no message identity: the effect journal below already
-        # answers both with the quotation they created.
-        return None
+        # The exact completed document already has a persisted external ID.
+        # Answer before critical Inventory reads or business writes.
+        deps.quotation_created = True
+        return _quotation_prepared_message(
+            conversation, _string_value(sent.get("sale_order_number")) or "DRAFT"
+        )
     pending = pending_quotation(conversation)
     if pending is not None and pending.get("items") == [
         {"sku": str(item.sku).strip(), "quantity": int(item.quantity)} for item in items
@@ -10959,12 +10963,24 @@ async def create_quotation(
     return await run_quotation_with_inventory_deferral(ctx, items, _create_quotation)
 
 
+def _quotation_stock_shortfall_message(
+    conversation: Any, shortfall: Mapping[str, Any]
+) -> str:
+    sku, available = shortfall.get("sku"), shortfall.get("available")
+    if is_arabic_customer_language(str(getattr(conversation, "language", "en"))):
+        return f"المتوفر من {sku} هو {available} فقط. لم يتم إنشاء عرض السعر. هل تريد تعديل الكمية؟"
+    return f"Only {available} in stock for {sku}. No quotation was created. Would you like to change the quantity?"
+
+
 async def _create_quotation(
     ctx: RunContext[SalesDeps], items: list[QuotationItem]
 ) -> str:
     logger.info(f"LLM Tool called: create_quotation(items={items})")
 
     metadata = ctx.deps.conversation.metadata_
+    shortfall = (metadata or {}).get("quotation_stock_shortfall")
+    if isinstance(shortfall, dict):
+        return _quotation_stock_shortfall_message(ctx.deps.conversation, shortfall)
     workflow = quote_workflow_from_metadata(metadata)
     canonical_workflow = canonical_quote_workflow_from_metadata(metadata)
     invalid_canonical_workflow = (
@@ -11040,14 +11056,65 @@ async def _create_quotation(
 
     # Needs to fetch item details from Zoho Inventory
     skus_to_fetch = [item.sku for item in items]
-    raw_stock_details = await ctx.deps.zoho_inventory.get_stock_bulk(skus_to_fetch)
-    stock_map: dict[str, dict[str, Any]] = {}
+    raw_stock_details = await ctx.deps.zoho_inventory.get_stock_bulk_fresh(
+        skus_to_fetch
+    )
+    stock_rows: list[dict[str, Any]] = []
     catalog_products: dict[str, Any | None] = {}
     for raw_item in raw_stock_details:
-        zoho_item = _coerce_inventory_item(raw_item, require_item_id=True)
+        zoho_item = (
+            _coerce_inventory_item(raw_item, require_item_id=True)
+            if isinstance(raw_item, Mapping) and has_numeric_stock(raw_item)
+            else None
+        )
         if zoho_item:
-            # Zoho may hold the SKU in another letter case ("CH 240 V Black").
-            stock_map[str(zoho_item["sku"]).strip().casefold()] = zoho_item
+            stock_rows.append(zoho_item)
+
+    metadata = dict(ctx.deps.conversation.metadata_ or {})
+    metadata.pop("quotation_stock_shortfall", None)
+    ctx.deps.conversation.metadata_ = metadata
+
+    # All selected rows must be fresh and numeric before any business write.
+    requested_by_id: dict[str, int] = {}
+    for selected in items:
+        verified = select_stock_item(selected.sku, stock_rows)
+        if verified is None:
+            raise InventoryReadUnavailable(status_code=None)
+        item_id = str(verified["item_id"])
+        requested_by_id[item_id] = requested_by_id.get(item_id, 0) + selected.quantity
+        snapshot_as_of = datetime.datetime.now(datetime.UTC)
+        ctx.deps.stock_snapshots[selected.sku.strip().casefold()] = StockSnapshot(
+            sku=selected.sku,
+            available=int(verified["stock_on_hand"]),
+            source="zoho",
+            as_of=snapshot_as_of,
+        )
+    for selected in items:
+        verified = select_stock_item(selected.sku, stock_rows)
+        assert verified is not None
+        available = int(verified["stock_on_hand"])
+        if requested_by_id[str(verified["item_id"])] > available:
+            clear_pending_quotation(ctx.deps.conversation)
+            metadata = dict(ctx.deps.conversation.metadata_ or {})
+            metadata["quotation_stock_shortfall"] = {
+                "sku": selected.sku,
+                "requested": requested_by_id[str(verified["item_id"])],
+                "available": available,
+                "stock_as_of": verified.get("stock_as_of"),
+                "source_message_id": source_message_id,
+            }
+            ctx.deps.conversation.metadata_ = metadata
+            await _store_quote_workflow(
+                ctx.deps.db,
+                ctx.deps.conversation,
+                QuoteWorkflowState(
+                    consent=QuoteConsent.DEFERRED,
+                    lifecycle=QuoteLifecycle.QUOTE_REQUESTED,
+                ),
+            )
+            return _quotation_stock_shortfall_message(
+                ctx.deps.conversation, metadata["quotation_stock_shortfall"]
+            )
 
     zoho_line_items: list[ZohoSaleOrderLineItemPayload] = []
     template_items = []
@@ -11060,7 +11127,7 @@ async def _create_quotation(
     )
 
     for item in items:
-        zoho_item = stock_map.get(item.sku.strip().casefold())
+        zoho_item = select_stock_item(item.sku, stock_rows)
         normalized_sku = item.sku.strip()
         if normalized_sku not in catalog_products:
             catalog_products[normalized_sku] = await _find_catalog_product_by_sku(
@@ -11068,20 +11135,9 @@ async def _create_quotation(
             )
         catalog_product = catalog_products[normalized_sku]
         if not zoho_item:
-            resolved_item, catalog_product = await _resolve_inventory_item(
-                ctx, item.sku
-            )
-            catalog_products[normalized_sku] = catalog_product
-            zoho_item = (
-                _coerce_inventory_item(resolved_item, require_item_id=True)
-                if resolved_item
-                else None
-            )
-            if not zoho_item:
-                if catalog_product:
-                    return _catalog_mismatch_customer_message()
-                return f"Failed to create quotation: SKU {item.sku} not found."
-            stock_map[item.sku.strip().casefold()] = zoho_item
+            # Critical reads cannot fall back to discovery, a stale ID or a
+            # website quantity. The existing retry path preserves details.
+            raise InventoryReadUnavailable(status_code=None)
 
         price_decision = _commercial_price_decision(
             catalog_product=catalog_product,

@@ -19,6 +19,12 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError
 
 from src.core.config import settings
 from src.integrations.inventory.base import InventoryProvider
+from src.integrations.inventory.stock_state import (
+    COOLDOWN_SCRIPT,
+    StockMetrics,
+    StockState,
+    StockStore,
+)
 from src.integrations.zoho_oauth import (
     ZOHO_OAUTH_LOCK_POLL_ATTEMPTS,
     ZOHO_OAUTH_LOCK_POLL_INTERVAL_SECONDS,
@@ -30,6 +36,7 @@ from src.integrations.zoho_oauth import (
     report_rejected_zoho_credentials,
     zoho_oauth_transport_error,
 )
+from src.llm.inventory_read import InventoryReadUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +86,7 @@ _STOCK_SNAPSHOT_FIELDS = (
     "actual_available_stock",
     "rate",
     "unit",
+    "last_modified_time",
 )
 # Zoho holds duplicate items whose SKUs differ only in case or in Cyrillic
 # letters that look like Latin ones ("CH 240 V black" / "CH 240 V Black").
@@ -175,6 +183,21 @@ def select_stock_item(
     return None
 
 
+def _stock_identity_group(
+    sku: str, candidates: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    exact = [row for row in candidates if row["sku"] == sku]
+    for group in (
+        [row for row in exact if has_numeric_stock(row)],
+        [row for row in candidates if has_numeric_stock(row)],
+        exact,
+        candidates,
+    ):
+        if group:
+            return group
+    return []
+
+
 def _stock_snapshot_record(raw_item: Any) -> dict[str, Any] | None:
     if not isinstance(raw_item, Mapping):
         return None
@@ -217,7 +240,9 @@ class StockSnapshot:
         item = select_stock_item(sku, candidates)
         if item is None:
             return None
-        item["stock_as_of"] = datetime.fromtimestamp(self.as_of, UTC).isoformat()
+        item.setdefault(
+            "stock_as_of", datetime.fromtimestamp(self.as_of, UTC).isoformat()
+        )
         return item
 
     def lookup_item_id(self, item_id: str) -> dict[str, Any] | None:
@@ -225,7 +250,9 @@ class StockSnapshot:
         item = self._by_item_id.get(item_id.strip())
         if item is None:
             return None
-        item["stock_as_of"] = datetime.fromtimestamp(self.as_of, UTC).isoformat()
+        item.setdefault(
+            "stock_as_of", datetime.fromtimestamp(self.as_of, UTC).isoformat()
+        )
         return item
 
     def to_json(self) -> str:
@@ -247,6 +274,7 @@ class StockSnapshot:
         items = data.get("items")
         if (
             not isinstance(as_of, (int, float))
+            or not math.isfinite(as_of)
             or isinstance(as_of, bool)
             or not isinstance(items, dict)
         ):
@@ -516,6 +544,8 @@ class ZohoInventoryClient(InventoryProvider):
         self.redis = redis_client
         self.base_url = settings.zoho_inventory_api_url
         self.org_id = settings.zoho_inventory_org_id
+        self.stock_store = StockStore(redis_client)
+        self.metrics = StockMetrics(redis_client)
 
         # We use a single httpx AsyncClient for the instance to pool connections
         self.client = httpx.AsyncClient(
@@ -622,10 +652,11 @@ class ZohoInventoryClient(InventoryProvider):
         deadline = time.time() + seconds
         _process_rate_limited_until = max(_process_rate_limited_until, deadline)
         try:
-            await self.redis.set(
-                ZOHO_RATE_LIMIT_COOLDOWN_KEY,
-                f"{deadline:.3f}",
-                ex=max(math.ceil(seconds), 1),
+            stored = await self.redis.eval(
+                COOLDOWN_SCRIPT, 1, ZOHO_RATE_LIMIT_COOLDOWN_KEY, deadline, time.time()
+            )
+            _process_rate_limited_until = max(
+                _process_rate_limited_until, float(stored)
             )
         except Exception:
             logger.warning("Could not share the Zoho rate-limit cooldown via Redis")
@@ -654,19 +685,98 @@ class ZohoInventoryClient(InventoryProvider):
             return None
         return path, tuple(sorted((str(k), str(v)) for k, v in params.items()))
 
+    async def _send_with_read_limit(
+        self,
+        *,
+        method: str,
+        path: str,
+        params: dict[str, Any],
+        payload: dict[str, Any] | None,
+        headers: dict[str, str],
+        operation: str,
+        attempt: int,
+    ) -> httpx.Response:
+        """Two owned read slots per organization across app and worker."""
+        owner = uuid.uuid4().hex
+        slot: str | None = None
+        if method.upper() in {"GET", "HEAD", "OPTIONS"}:
+            for _ in range(20):
+                for number in range(2):
+                    key = f"zoho:inventory:read_slot:{number}"
+                    if await self.redis.set(key, owner, nx=True, ex=35):
+                        slot = key
+                        break
+                if slot:
+                    break
+                await asyncio.sleep(0.05)
+            if slot is None:
+                await self.metrics.record("skipped", operation, "read_slots_busy")
+                raise InventoryReadUnavailable(status_code=None)
+        try:
+            remaining = await self._cooldown_remaining()
+            if remaining > 0:
+                await self.metrics.record("skipped", operation, "cooldown")
+                raise self._cooldown_error(method, path, remaining)
+
+            async def send() -> httpx.Response:
+                await self.metrics.record(
+                    "attempt",
+                    operation,
+                    "sent",
+                    detail="retry" if attempt > 1 else "initial",
+                )
+                return await self.client.request(
+                    method=method,
+                    url=path,
+                    params=params,
+                    json=payload,
+                    headers=headers,
+                )
+
+            if slot:
+                try:
+                    async with asyncio.timeout(30):
+                        return await send()
+                except TimeoutError as exc:
+                    raise httpx.ReadTimeout(
+                        "Inventory read deadline exceeded",
+                        request=httpx.Request(method, f"{self.base_url}{path}"),
+                    ) from exc
+            return await send()
+        except asyncio.CancelledError:
+            await self.metrics.record("http", operation, "cancelled")
+            raise
+        finally:
+            if slot:
+                with contextlib.suppress(Exception):
+                    await release_zoho_oauth_lock(
+                        self.redis, lock_key=slot, owner_token=owner
+                    )
+
     async def _request(
         self,
         method: str,
         path: str,
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
+        *,
+        bypass_cache: bool = False,
+        operation: str = "other",
     ) -> httpx.Response:
         """Make an authenticated request to Zoho Inventory API with retries."""
         params = dict(params) if params else {}
         params["organization_id"] = self.org_id
+        if operation == "other":
+            family = path.strip("/").split("/")[0]
+            family = (
+                family
+                if family in {"items", "contacts", "salesorders", "itemdetails"}
+                else "other"
+            )
+            operation = f"{family}_{'read' if method.upper() in {'GET', 'HEAD', 'OPTIONS'} else 'write'}"
 
         cache = self._read_cache
-        cache_key = self._read_cache_key(method, path, params)
+        cache_key = None if bypass_cache else self._read_cache_key(method, path, params)
         if cache_key is None:
             cache.clear()
         else:
@@ -674,16 +784,17 @@ class ZohoInventoryClient(InventoryProvider):
             if cached is not None and time.monotonic() - cached[0] < (
                 _READ_CACHE_TTL_SECONDS
             ):
+                await self.metrics.record("skipped", operation, "read_cache")
                 return cached[1]
 
         remaining = await self._cooldown_remaining()
         if remaining > 0:
             logger.warning(
-                "Zoho Inventory %s %s skipped: rate-limit cooldown %.1fs",
-                method.upper(),
-                path,
+                "Zoho Inventory operation=%s skipped: rate-limit cooldown %.1fs",
+                operation,
                 remaining,
             )
+            await self.metrics.record("skipped", operation, "cooldown")
             raise self._cooldown_error(method.upper(), path, remaining)
 
         # Retry mechanism (3 attempts with backoff)
@@ -692,16 +803,29 @@ class ZohoInventoryClient(InventoryProvider):
         waited = 0.0
 
         for attempt in range(1, max_retries + 1):
+            if attempt > 1:
+                await self.metrics.record("retry", operation, "attempt")
             token = await self._ensure_token()
             headers = {"Authorization": f"Zoho-oauthtoken {token}"}
 
             try:
-                response = await self.client.request(
+                response = await self._send_with_read_limit(
                     method=method,
-                    url=path,
+                    path=path,
                     params=params,
-                    json=json,
+                    payload=json,
                     headers=headers,
+                    operation=operation,
+                    attempt=attempt,
+                )
+
+                reason = "unknown"
+                if response.status_code == 429:
+                    with contextlib.suppress(ValueError, TypeError):
+                        code = response.json().get("code")
+                        reason = "minute" if code == 44 else "unknown"
+                await self.metrics.record(
+                    "http", operation, str(response.status_code), detail=reason
                 )
 
                 # If Unauthorized, token might be invalid/expired, force refresh next time
@@ -720,6 +844,8 @@ class ZohoInventoryClient(InventoryProvider):
             except httpx.HTTPStatusError as e:
                 if e.response.status_code != 429:
                     raise
+                if isinstance(e, ZohoRateLimitError) and e.local_cooldown:
+                    raise
                 retry_after = parse_retry_after(e.response.headers.get("retry-after"))
                 wait = retry_after if retry_after is not None else float(2**attempt)
                 if (
@@ -728,6 +854,7 @@ class ZohoInventoryClient(InventoryProvider):
                     and wait <= _RATE_LIMIT_MAX_INLINE_WAIT_SECONDS
                     and waited + wait <= _RATE_LIMIT_INLINE_WAIT_BUDGET_SECONDS
                 ):
+                    await self._start_cooldown(wait)
                     waited += wait
                     await asyncio.sleep(wait)
                     continue
@@ -738,21 +865,21 @@ class ZohoInventoryClient(InventoryProvider):
                 )
                 cooldown = await self._start_cooldown(cooldown)
                 logger.warning(
-                    "Zoho Inventory rate limit on %s %s after %d attempt(s); "
+                    "Zoho Inventory rate limit operation=%s after %d attempt(s); "
                     "cooldown %.0fs",
-                    method.upper(),
-                    path,
+                    operation,
                     attempt,
                     cooldown,
                 )
                 raise ZohoRateLimitError(
-                    str(e),
+                    "Zoho Inventory rate limited",
                     request=e.request,
                     response=e.response,
                     retry_after_seconds=retry_after,
                 ) from e
 
             except (httpx.TimeoutException, httpx.NetworkError):
+                await self.metrics.record("http", operation, "transport_error")
                 if retry_read and attempt < max_retries:
                     await asyncio.sleep(2**attempt)
                     continue
@@ -782,127 +909,219 @@ class ZohoInventoryClient(InventoryProvider):
         response = await self._request("GET", "/items", params=params)
         return dict(response.json())
 
+    @staticmethod
+    def incremental_eligible() -> bool:
+        return bool(
+            settings.zoho_stock_incremental_enabled
+            and settings.zoho_stock_coverage_evidence.strip()
+        )
+
     async def _read_stock_snapshot(self) -> tuple[StockSnapshot | None, bool]:
-        """The stored snapshot and whether Redis gave a usable answer.
-
-        ``(None, True)`` means no snapshot is stored; ``(None, False)`` means
-        Redis failed or held something unreadable, so callers go live.
-        """
         try:
-            raw = await self.redis.get(ZOHO_STOCK_SNAPSHOT_KEY)
+            state, raw = await self.stock_store.read()
+            if state is not None:
+                evidence = (
+                    settings.zoho_stock_coverage_evidence
+                    if self.incremental_eligible()
+                    else ""
+                )
+                items = state.stock_items(evidence)
+                return StockSnapshot(as_of=state.full_at or 0, items=items), True
+            # Never reinterpret corrupt v2 as a new covered generation. Legacy
+            # data is safe only at its original full observation time.
+            legacy = await self.redis.get(ZOHO_STOCK_SNAPSHOT_KEY)
+            snapshot = StockSnapshot.from_raw(legacy)
+            return snapshot, not raw and (legacy is None or snapshot is not None)
         except Exception:
-            logger.warning("Could not read the Zoho stock snapshot from Redis")
+            logger.warning("Could not read Zoho stock state")
             return None, False
-        if raw is None:
-            return None, True
-        snapshot = StockSnapshot.from_raw(raw)
-        return snapshot, snapshot is not None
-
-    async def _build_stock_snapshot(self) -> StockSnapshot:
-        items: dict[str, dict[str, Any]] = {}
-        for page in range(1, STOCK_SNAPSHOT_MAX_PAGES + 1):
-            # All active items, not only end products: the live search_text
-            # lookup this replaces was never limited to end products, and the
-            # catalog is fed from the Treejar site rather than from this list.
-            data = await self.get_items(
-                page=page,
-                per_page=STOCK_SNAPSHOT_PAGE_SIZE,
-                end_products_only=False,
-            )
-            raw_items = data.get("items")
-            if not isinstance(raw_items, list):
-                break
-            for raw_item in raw_items:
-                record = _stock_snapshot_record(raw_item)
-                if record is None:
-                    continue
-                current = items.get(record["sku"])
-                if current is None or (
-                    not has_numeric_stock(current) and has_numeric_stock(record)
-                ):
-                    items[record["sku"]] = record
-            page_context = data.get("page_context")
-            if not (
-                isinstance(page_context, Mapping) and page_context.get("has_more_page")
-            ):
-                break
-        else:
-            logger.warning(
-                "Zoho stock snapshot stopped at the %d-page cap; "
-                "later items are looked up live",
-                STOCK_SNAPSHOT_MAX_PAGES,
-            )
-        if not items:
-            raise ValueError("Zoho returned no items for the stock snapshot")
-        return StockSnapshot(as_of=time.time(), items=items)
 
     async def _stock_snapshot(self) -> StockSnapshot | None:
-        """A snapshot fit to serve stock from, read without a Zoho call.
+        # Recovery is worker-owned. A customer never downloads the catalog.
+        snapshot, _ = await self._read_stock_snapshot()
+        return snapshot
 
-        tj-3vz5: the `refresh_zoho_stock_snapshot` worker job keeps the
-        snapshot fresh, so a customer turn only reads it. A turn refreshes it
-        itself only when no snapshot inside the stale window exists (the job
-        is not running yet, or Redis lost the key). None means stock has to be
-        looked up live.
-        """
-        snapshot, readable = await self._read_stock_snapshot()
-        if not readable:
-            return None
-        if snapshot is not None and snapshot.age_seconds(time.time()) < (
-            STOCK_SNAPSHOT_STALE_SECONDS
+    @staticmethod
+    def _usable_stock(item: dict[str, Any] | None) -> bool:
+        if (
+            item is None
+            or not has_numeric_stock(item)
+            or item.get("status", "active") != "active"
         ):
-            return snapshot
-        return await self.refresh_stock_snapshot()
-
-    async def refresh_stock_snapshot(self) -> StockSnapshot | None:
-        """Rebuild and store the shared snapshot; None if this run did not.
-
-        One process refreshes under a Redis SET NX lock. A failed refresh
-        (including a 429 or an active cooldown) leaves the stored snapshot as
-        it was.
-        """
-        lock_owner = uuid.uuid4().hex
+            return False
         try:
-            acquired = await self.redis.set(
-                ZOHO_STOCK_SNAPSHOT_LOCK_KEY,
-                lock_owner,
-                ex=STOCK_SNAPSHOT_LOCK_TTL_SECONDS,
-                nx=True,
+            age = time.time() - datetime.fromisoformat(item["stock_as_of"]).timestamp()
+            # ISO timestamps round floats to microseconds. Ignore that tiny
+            # representation error, while rejecting genuinely future evidence.
+            return -0.001 <= age < STOCK_SNAPSHOT_STALE_SECONDS
+        except (KeyError, ValueError, TypeError):
+            return False
+
+    async def refresh_stock_snapshot(
+        self, *, incremental: bool = False, startup: bool = False
+    ) -> StockSnapshot | None:
+        owner: str | None = None
+        operation = "delta" if incremental and self.incremental_eligible() else "full"
+        try:
+            if await self._cooldown_remaining() > 0:
+                await self.metrics.record("skipped", operation, "cooldown")
+                return None
+            owner = await self.stock_store.acquire()
+            if owner is None:
+                await self.metrics.record("skipped", operation, "lock")
+                return None
+            state, raw = await self.stock_store.read()
+            started = time.time()
+            eligible = self.incremental_eligible()
+            if startup and state and state.coverage and state.full_at:
+                freshness = (
+                    state.coverage
+                    if eligible
+                    and state.coverage_evidence == settings.zoho_stock_coverage_evidence
+                    else state.full_at
+                )
+                if 0 <= started - freshness < STOCK_SNAPSHOT_STALE_SECONDS:
+                    await self.metrics.record("skipped", operation, "startup_fresh")
+                    return None
+            # A missing/unusable cursor or overdue reconciliation always needs
+            # a complete baseline. No delta may be merged into a legacy file.
+            delta = bool(
+                incremental
+                and eligible
+                and state
+                and state.coverage
+                and state.full_at
+                and started - state.full_at < 86400
             )
-        except Exception:
-            logger.warning("Could not take the Zoho stock snapshot refresh lock")
-            return None
-        if not acquired:
-            return None
+            operation = "delta" if delta else "full"
+            previous = state if delta and state else StockState()
+            boundary = (
+                previous.coverage or started
+            ) - settings.zoho_stock_overlap_seconds
 
-        try:
-            refreshed = await self._build_stock_snapshot()
+            async def read_pages() -> tuple[dict[str, dict[str, Any]], int]:
+                records: dict[str, dict[str, Any]] = {}
+                previous_page_ids: set[str] = set()
+                for page in range(1, STOCK_SNAPSHOT_MAX_PAGES + 1):
+                    await self.stock_store.renew(owner)
+                    params: dict[str, Any] = {
+                        "page": page,
+                        "per_page": STOCK_SNAPSHOT_PAGE_SIZE,
+                    }
+                    if delta:
+                        # No status filter: deactivation and SKU changes must arrive.
+                        params["last_modified_time"] = datetime.fromtimestamp(
+                            boundary, UTC
+                        ).strftime("%Y-%m-%dT%H:%M:%S%z")
+                        params["sort_column"] = "last_modified_time"
+                        params["sort_order"] = "A"
+                    else:
+                        params["status"] = "active"
+                    response = await self._request(
+                        "GET",
+                        "/items",
+                        params=params,
+                        bypass_cache=True,
+                        operation=operation,
+                    )
+                    data = response.json()
+                    if (
+                        not isinstance(data, dict)
+                        or data.get("code", 0) != 0
+                        or not isinstance(data.get("items"), list)
+                    ):
+                        raise ValueError("Invalid Zoho stock page")
+                    context = data.get("page_context")
+                    if not isinstance(context, dict) or not isinstance(
+                        context.get("has_more_page"), bool
+                    ):
+                        raise ValueError("Missing Zoho stock continuation")
+                    if context.get("page", page) != page:
+                        raise ValueError("Wrong Zoho stock page")
+                    page_ids: set[str] = set()
+                    for row in data["items"]:
+                        if (
+                            not isinstance(row, dict)
+                            or not isinstance(row.get("item_id"), str)
+                            or not row["item_id"]
+                            or not isinstance(row.get("sku"), str)
+                        ):
+                            raise ValueError("Invalid Zoho stock identity")
+                        record = {k: row[k] for k in _STOCK_SNAPSHOT_FIELDS if k in row}
+                        # Valid unknown quantities replace the old figure with
+                        # unknown. They never silently preserve a stale number.
+                        if row["item_id"] in previous_page_ids:
+                            raise ValueError(
+                                "Unstable stock pagination repeated an identity across pages"
+                            )
+                        page_ids.add(row["item_id"])
+                        records[row["item_id"]] = record
+                    previous_page_ids.update(page_ids)
+                    await self.metrics.record("pages", operation, "processed")
+                    await self.metrics.record(
+                        "items", operation, "processed", count=len(data["items"])
+                    )
+                    if not context["has_more_page"]:
+                        return records, page
+                else:
+                    raise ValueError("Stock page cap reached")
+
+            records, pages = await read_pages()
+            if delta and pages > 1:
+                # Offset pages can shift after deletion as well as updates.
+                # Verify the complete set twice; any change fails this cycle.
+                # This safeguard does not replace the provider coverage gate.
+                confirmation, _ = await read_pages()
+                if confirmation != records:
+                    raise ValueError("Stock pagination changed between complete reads")
+            previous.items.update(records)
+            previous.observed.update(dict.fromkeys(records, started))
+            previous.coverage = started
+            previous.coverage_evidence = (
+                settings.zoho_stock_coverage_evidence if eligible else ""
+            )
+            previous.generation = uuid.uuid4().hex
+            if delta:
+                previous.delta_at = started
+            else:
+                previous.full_at = started
+            snapshot = StockSnapshot(
+                started, previous.stock_items(previous.coverage_evidence)
+            )
+            # v1 is a last-full rollback baseline, never relabelled by deltas.
+            legacy_items: dict[str, dict[str, Any]] = {}
+            for row in snapshot.items.values():
+                sku = row["sku"]
+                current = legacy_items.get(sku)
+                if (
+                    current is None
+                    or not has_numeric_stock(current)
+                    and has_numeric_stock(row)
+                ):
+                    legacy_items[sku] = row
+            legacy = StockSnapshot(started, legacy_items).to_json() if not delta else ""
+            await self.stock_store.renew(owner)
+            if not await self.stock_store.commit(owner, raw, previous, legacy):
+                raise RuntimeError("Stock generation changed before publication")
+            await self.metrics.record("cycle", operation, "success")
+            logger.info(
+                "Zoho stock cycle operation=%s items=%d coverage_age=0",
+                operation,
+                len(previous.items),
+            )
+            return snapshot
         except Exception as exc:
+            await self.metrics.record("cycle", operation, "failed")
             logger.warning(
-                "Zoho stock snapshot refresh failed (%s); keeping the previous one",
+                "Zoho stock cycle failed operation=%s error=%s; retained previous generation",
+                operation,
                 type(exc).__name__,
             )
             return None
         finally:
-            try:
-                await release_zoho_oauth_lock(
-                    self.redis,
-                    lock_key=ZOHO_STOCK_SNAPSHOT_LOCK_KEY,
-                    owner_token=lock_owner,
-                )
-            except Exception:
-                logger.warning("Could not release the Zoho stock snapshot lock")
-
-        try:
-            await self.redis.set(
-                ZOHO_STOCK_SNAPSHOT_KEY,
-                refreshed.to_json(),
-                ex=math.ceil(STOCK_SNAPSHOT_STALE_SECONDS),
-            )
-        except Exception:
-            logger.warning("Could not store the Zoho stock snapshot in Redis")
-        logger.info("Zoho stock snapshot refreshed with %d SKUs", len(refreshed.items))
-        return refreshed
+            if owner:
+                with contextlib.suppress(Exception):
+                    await self.stock_store.release(owner)
 
     async def get_stock(self, sku: str) -> dict[str, Any] | None:
         """Get the Zoho item carrying stock for a SKU.
@@ -913,7 +1132,7 @@ class ZohoInventoryClient(InventoryProvider):
         snapshot = await self._stock_snapshot()
         if snapshot is not None:
             item = snapshot.lookup(sku)
-            if item is not None and has_numeric_stock(item):
+            if item is not None and self._usable_stock(item):
                 return item
         return await self._live_stock(sku)
 
@@ -926,7 +1145,17 @@ class ZohoInventoryClient(InventoryProvider):
             return None
 
         # search_text is a partial match, so pick the SKU match locally.
-        return select_stock_item(sku, items)
+        item = select_stock_item(
+            sku,
+            (
+                row
+                for row in items
+                if isinstance(row, Mapping) and row.get("status", "active") == "active"
+            ),
+        )
+        if item is not None and not has_numeric_stock(item):
+            return None
+        return item
 
     async def get_stock_bulk(self, skus: list[str]) -> list[dict[str, Any]]:
         """Get stock levels for multiple SKUs.
@@ -943,14 +1172,14 @@ class ZohoInventoryClient(InventoryProvider):
         misses: list[str] = []
         for sku in unique_skus:
             item = snapshot.lookup(sku) if snapshot is not None else None
-            if item is not None and has_numeric_stock(item):
+            if item is not None and self._usable_stock(item):
                 served.append(item)
             else:
                 misses.append(sku)
         if not misses:
             return served
 
-        sem = asyncio.Semaphore(5)  # max 5 concurrent requests to Zoho
+        sem = asyncio.Semaphore(2)  # shared Redis slots bound all process reads too
 
         async def _fetch(sku: str) -> dict[str, Any] | None:
             async with sem:
@@ -960,14 +1189,13 @@ class ZohoInventoryClient(InventoryProvider):
             *[_fetch(sku) for sku in misses], return_exceptions=True
         )
         errors: list[Exception] = []
-        for sku, result in zip(misses, results, strict=True):
+        for _sku, result in zip(misses, results, strict=True):
             if isinstance(result, BaseException):
                 if not isinstance(result, Exception):
                     raise result
                 errors.append(result)
                 logger.warning(
-                    "Zoho live stock lookup failed for SKU %r (%s)",
-                    sku,
+                    "Zoho live stock lookup failed (%s)",
                     type(result).__name__,
                 )
             elif result is not None:
@@ -975,6 +1203,200 @@ class ZohoInventoryClient(InventoryProvider):
         if errors and not served:
             raise errors[0]
         return served
+
+    async def _resolve_fresh_identity(self, sku: str) -> str:
+        candidates: list[dict[str, Any]] = []
+        for page in range(1, 3):
+            response = await self._request(
+                "GET",
+                "/items",
+                params={"search_text": sku, "page": page, "per_page": 200},
+                bypass_cache=True,
+                operation="fresh_resolve",
+            )
+            data = response.json()
+            if (
+                not isinstance(data, dict)
+                or data.get("code", 0) != 0
+                or not isinstance(data.get("items"), list)
+            ):
+                raise InventoryReadUnavailable(status_code=None)
+            candidates.extend(
+                row
+                for row in data["items"]
+                if isinstance(row, dict)
+                and row.get("status", "active") == "active"
+                and isinstance(row.get("sku"), str)
+                and _sku_match_key(row["sku"]) == _sku_match_key(sku)
+            )
+            context = data.get("page_context")
+            if not isinstance(context, dict) or not isinstance(
+                context.get("has_more_page"), bool
+            ):
+                raise InventoryReadUnavailable(status_code=None)
+            if not context["has_more_page"]:
+                break
+        else:
+            raise InventoryReadUnavailable(status_code=None)
+        matching = _stock_identity_group(sku, candidates)
+        ids = {row.get("item_id") for row in matching}
+        if (
+            len(ids) != 1
+            or not isinstance(next(iter(ids), None), str)
+            or not next(iter(ids))
+        ):
+            await self.metrics.record("mapping", "fresh", "missing_or_ambiguous")
+            raise InventoryReadUnavailable(status_code=None)
+        return str(next(iter(ids)))
+
+    async def get_stock_bulk_fresh(self, skus: list[str]) -> list[dict[str, Any]]:
+        """Selected items only, bypassing both caches. Incomplete means defer.
+
+        Without a measured bulk limit, use direct ID GETs; do not infer the
+        bulk limit from the list page size. Rows are validated again after
+        resolution, including renames and inactive items.
+        """
+        selected = list(dict.fromkeys(skus))
+        try:
+            state, _ = await self.stock_store.read()
+        except Exception:
+            state = None
+        snapshot = StockSnapshot(0, state.items) if state else None
+        identities: dict[str, str] = {}
+        verified: list[tuple[dict[str, Any], float]] = []
+        try:
+            for sku in selected:
+                candidates = [
+                    row
+                    for row in (state.items.values() if state else ())
+                    if isinstance(row.get("sku"), str)
+                    and _sku_match_key(row["sku"]) == _sku_match_key(sku)
+                    and row.get("status", "active") == "active"
+                ]
+                group = _stock_identity_group(sku, candidates)
+                ids = {row["item_id"] for row in group}
+                if snapshot and len(ids) == 1:
+                    identities[sku] = next(iter(ids))
+                else:
+                    identities[sku] = await self._resolve_fresh_identity(sku)
+            item_ids = list(dict.fromkeys(identities.values()))
+            size = (
+                settings.zoho_stock_bulk_size
+                if settings.zoho_stock_bulk_evidence
+                else 0
+            )
+            by_id: dict[str, dict[str, Any]] = {}
+            for start in range(0, len(item_ids), size or 1):
+                chunk = item_ids[start : start + (size or 1)]
+                observed_at = time.time()
+                raw_rows: Any
+                try:
+                    response = await self._request(
+                        "GET",
+                        "/itemdetails" if size else f"/items/{chunk[0]}",
+                        params={"item_ids": ",".join(chunk)} if size else None,
+                        bypass_cache=True,
+                        operation="fresh_bulk" if size else "fresh_item",
+                    )
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code != 404:
+                        raise
+                    raw_rows = []  # Removed ID: resolve only selected SKUs below.
+                    if not size and state and chunk[0] in state.items:
+                        removed = dict(state.items[chunk[0]])
+                        removed["status"] = "inactive"
+                        verified.append((removed, observed_at))
+                else:
+                    data = response.json()
+                    if not isinstance(data, dict) or data.get("code", 0) != 0:
+                        raise InventoryReadUnavailable(status_code=None)
+                    raw_rows = data.get("items") if size else [data.get("item")]
+                if not isinstance(raw_rows, list):
+                    raise InventoryReadUnavailable(status_code=None)
+                for row in raw_rows:
+                    if (
+                        not isinstance(row, dict)
+                        or row.get("item_id") not in chunk
+                        or not isinstance(row.get("sku"), str)
+                    ):
+                        raise InventoryReadUnavailable(status_code=None)
+                    item_id = row["item_id"]
+                    if item_id in by_id:
+                        raise InventoryReadUnavailable(status_code=None)
+                    # Identity records are preserved even for an inactive or
+                    # renamed item, preventing resurrection of old aliases.
+                    record = {k: row[k] for k in _STOCK_SNAPSHOT_FIELDS if k in row}
+                    verified.append((record, observed_at))
+                    if row.get("status", "active") != "active" or not has_numeric_stock(
+                        row
+                    ):
+                        continue
+                    by_id[item_id] = {
+                        **record,
+                        "stock_as_of": datetime.fromtimestamp(
+                            observed_at, UTC
+                        ).isoformat(),
+                    }
+            result = []
+            for sku in selected:
+                row = by_id.get(identities[sku])
+                if row is None or _sku_match_key(row["sku"]) != _sku_match_key(sku):
+                    # A mapping can be renamed between reads. Resolve the
+                    # selected SKU once, with no snapshot/direct fallback.
+                    replacement = await self._resolve_fresh_identity(sku)
+                    observed_at = time.time()
+                    try:
+                        response = await self._request(
+                            "GET",
+                            f"/items/{replacement}",
+                            bypass_cache=True,
+                            operation="fresh_item",
+                        )
+                    except httpx.HTTPStatusError as exc:
+                        if exc.response.status_code == 404:
+                            raise InventoryReadUnavailable(status_code=404) from exc
+                        raise
+                    data = response.json()
+                    row = (
+                        data.get("item")
+                        if isinstance(data, dict) and data.get("code", 0) == 0
+                        else None
+                    )
+                    if (
+                        not isinstance(row, dict)
+                        or row.get("item_id") != replacement
+                        or not isinstance(row.get("sku"), str)
+                        or _sku_match_key(row["sku"]) != _sku_match_key(sku)
+                        or not has_numeric_stock(row)
+                        or row.get("status", "active") != "active"
+                    ):
+                        raise InventoryReadUnavailable(status_code=None)
+                    original_id = identities[sku]
+                    if (
+                        replacement != original_id
+                        and state
+                        and original_id in state.items
+                        and not any(
+                            record["item_id"] == original_id for record, _ in verified
+                        )
+                    ):
+                        # Unique live SKU resolution replaced an omitted old
+                        # mapping. Retire its cached alias in the same CAS;
+                        # a confirmed rename/unknown row above already does so.
+                        retired = dict(state.items[original_id])
+                        retired["status"] = "inactive"
+                        verified.append((retired, observed_at))
+                    verified.append((row, observed_at))
+                result.append(row)
+            await self.metrics.record("fresh", "quotation", "complete")
+            return result
+        except Exception:
+            await self.metrics.record("fresh", "quotation", "unavailable")
+            raise
+        finally:
+            if verified:
+                with contextlib.suppress(Exception):
+                    await self.stock_store.update_fresh(verified)
 
     async def get_item(self, item_id: str) -> dict[str, Any] | None:
         """Get a specific item by Zoho Inventory item_id.
@@ -986,7 +1408,7 @@ class ZohoInventoryClient(InventoryProvider):
         snapshot = await self._stock_snapshot()
         if snapshot is not None:
             item = snapshot.lookup_item_id(item_id)
-            if item is not None and has_numeric_stock(item):
+            if item is not None and self._usable_stock(item):
                 return item
         try:
             response = await self._request("GET", f"/items/{item_id}")
@@ -997,10 +1419,13 @@ class ZohoInventoryClient(InventoryProvider):
 
         data = response.json()
         item = data.get("item")
-        if isinstance(item, dict):
+        if (
+            isinstance(item, dict)
+            and str(item.get("item_id", "")) == item_id
+            and item.get("status", "active") == "active"
+            and has_numeric_stock(item)
+        ):
             return dict(item)
-        if isinstance(data, dict):
-            return dict(data)
         return None
 
     async def search_contacts(self, **filters: Any) -> list[dict[str, Any]]:

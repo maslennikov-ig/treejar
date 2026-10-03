@@ -146,6 +146,16 @@ async def record_customer_intent(
         for d in details or []
     ]
     conversation = ctx.deps.conversation
+    shortfall = (conversation.metadata_ or {}).get("quotation_stock_shortfall")
+    if (
+        quotation_consent == "granted"
+        and isinstance(shortfall, dict)
+        and (
+            not ctx.deps.source_message_id
+            or shortfall.get("source_message_id") == ctx.deps.source_message_id
+        )
+    ):
+        return "Not recorded: stock is short. Wait for a new customer decision after the shortage message; do not reuse consent from this turn."
     if (
         accept_sent_quotation
         and _has_sent_proposal(conversation)
@@ -186,6 +196,10 @@ async def record_customer_intent(
                 if "name" in values:
                     conversation.customer_name = values["name"]
             if quotation_consent is not None:
+                if shortfall and quotation_consent in {"granted", "declined"}:
+                    metadata = dict(conversation.metadata_ or {})
+                    metadata.pop("quotation_stock_shortfall", None)
+                    conversation.metadata_ = metadata
                 lifecycle = {
                     "granted": QuoteLifecycle.QUOTE_REQUESTED,
                     "declined": QuoteLifecycle.CONSULTATION,

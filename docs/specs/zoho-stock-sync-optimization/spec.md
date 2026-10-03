@@ -1,6 +1,6 @@
 # Zoho stock synchronization: selective refresh and truthful quotation reads
 
-Date: 2026-10-03. Status: owner-approved outcome; implementation not started.
+Date: 2026-10-03. Status: local candidate implemented; provider coverage and delivery gates open.
 Owner/task: **tj-uvld**, P1 feature. Beads owns status and remaining gates.
 Executor: `docs/prompts/2026-10-03-zoho-stock-sync-optimization.md`.
 
@@ -191,6 +191,10 @@ optimized mode, claim the 157-call result, or close the task as fully accepted.
   using stale fallback for the missing rows.
   Any such cache update must respect generation/observation ordering; a late
   full or delta writer cannot overwrite a newer critical read.
+- Owner decision2026-10-03: if fresh stock2 is below agreed quantity5, stop
+  quotation creation, state only2 available and wait for a new customer
+  decision. Do not silently reduce quantities. Defer consent and prevent the
+  same turn or automatic retry from reusing pre-shortfall consent.
 - On 429, unavailable or incomplete critical reads, preserve customer details
   and use the existing quotation deferral/retry path. Never blindly retry a
   POST/write, create a duplicate quote, report a quote as created before its

@@ -9,7 +9,7 @@ artifact_path_template = ".codex/stages/{stage_id}/artifacts/{task_id}.md"
 [workspace]
 multi_repo = false
 launch_mode = "direct_or_orchestrated"
-current_stage_id = "tj-stwf-test-only-restore"
+current_stage_id = "tj-uvld-stock-sync"
 
 [baseline]
 profile = "balanced-v2.19"
@@ -48,7 +48,7 @@ hard_limit_lines = 500
 tracked_in_git = true
 format = "frontmatter_plus_short_note"
 sensitivity = "internal_no_secrets"
-current_stage_summary = ".codex/stages/tj-stwf-test-only-restore/summary.md"
+current_stage_summary = ".codex/stages/tj-uvld-stock-sync/summary.md"
 
 [completion_inbox]
 scope = "git_common_dir"
@@ -281,6 +281,18 @@ source_paths_are_repo_relative = true
 reject_symlinks_and_path_escape = true
 exact_identity_required_for_reuse = true
 release_requires_release_level_evidence = true
+directory = ".codex/stages/tj-uvld-stock-sync/evidence"
+producer = "root-orchestrator"
+allowed_producers = ["root-orchestrator"]
+
+[evidence.source_paths]
+root_selected_commands = ["src", "tests", "pyproject.toml", "uv.lock", "scripts/orchestration", "scripts/vps-deploy.sh", "scripts/zoho_stock_preflight.py", "scripts/zoho_stock_report.py"]
+
+[evidence.artifact_paths]
+root_selected_commands = []
+
+[evidence.environment_digests]
+root_selected_commands = "f9480c95301820271f042e45fe7f536e7013e63e23c2d7df81c3b41ce9a6d16f"
 
 [cost_guard]
 enabled = true

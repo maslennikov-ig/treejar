@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC
 from typing import Any
 
 from arq import func
@@ -10,6 +11,7 @@ from arq.cron import cron
 from src.core.config import settings
 from src.core.safe_logging import install_sensitive_url_filter
 from src.integrations.inventory.sync import (
+    refresh_zoho_stock_delta,
     refresh_zoho_stock_snapshot,
     sync_products_from_treejar_catalog,
     sync_products_from_zoho,
@@ -72,9 +74,21 @@ async def startup(ctx: dict[str, Any]) -> None:
         settings.app_log_level,
     )
 
+    # Bootstrap once under the owned lease, in both runtime modes. Repeated
+    # starts with valid state are read-only and do not redownload the catalog.
+    if ctx.get("redis") is not None and settings.zoho_inventory_org_id:
+        startup_ctx = {**ctx, "stock_startup": True}
+        if (
+            settings.zoho_stock_incremental_enabled
+            and settings.zoho_stock_coverage_evidence.strip()
+        ):
+            await refresh_zoho_stock_delta(startup_ctx)
+        else:
+            await refresh_zoho_stock_snapshot(startup_ctx)
+
     if settings.test_channel_restore_mode:
         logger.warning(
-            "Test-channel restore mode active: embedding warmup and cron jobs disabled"
+            "Test-channel restore mode active: embedding warmup disabled; approved stock cron jobs remain enabled"
         )
         return
 
@@ -105,6 +119,7 @@ def build_worker_functions() -> list[Any]:
     # Keeps the shared Zoho stock snapshot fresh so customer turns only read
     # it; stock is customer-facing in every mode, so it runs in restore mode.
     stock_snapshot = func(refresh_zoho_stock_snapshot, max_tries=1)
+    stock_delta = func(refresh_zoho_stock_delta, max_tries=1)
     # Keeps the admin /reset path reachable when an outside token holder moves
     # the webhook; restore mode depends on that path, so it runs there too.
     webhook_reconcile = func(reconcile_telegram_webhook, max_tries=1)
@@ -114,10 +129,12 @@ def build_worker_functions() -> list[Any]:
             quotation_retry,
             func(refresh_conversation_summary),
             stock_snapshot,
+            stock_delta,
             webhook_reconcile,
         ]
     return [
         stock_snapshot,
+        stock_delta,
         webhook_reconcile,
         sync_products_from_treejar_catalog,
         sync_products_from_zoho,
@@ -140,21 +157,35 @@ def build_worker_functions() -> list[Any]:
 
 def build_worker_cron_jobs() -> list[Any]:
     """Build scheduled work; recovery mode keeps the stock and webhook checks."""
+    eligible = bool(
+        settings.zoho_stock_incremental_enabled
+        and settings.zoho_stock_coverage_evidence.strip()
+    )
     stock_snapshot = cron(
         refresh_zoho_stock_snapshot,
-        minute={1, 6, 11, 16, 21, 26, 31, 36, 41, 46, 51, 56},
-        run_at_startup=True,
+        hour={settings.zoho_stock_daily_hour_utc} if eligible else None,
+        minute={settings.zoho_stock_daily_minute_utc}
+        if eligible
+        else set(range(1, 60, 5)),
+        run_at_startup=False,
         unique=True,
     )
+    stock_delta = cron(
+        refresh_zoho_stock_delta,
+        minute=set(range(1, 60, 10)),
+        run_at_startup=False,
+        unique=True,
+    )
+    stock_crons = [stock_snapshot, stock_delta] if eligible else [stock_snapshot]
     webhook_reconcile = cron(
         reconcile_telegram_webhook,
         run_at_startup=True,
         unique=True,
     )
     if settings.test_channel_restore_mode:
-        return [stock_snapshot, webhook_reconcile]
+        return [*stock_crons, webhook_reconcile]
     return [
-        stock_snapshot,
+        *stock_crons,
         webhook_reconcile,
         cron(
             sync_products_from_treejar_catalog,
@@ -207,6 +238,7 @@ class WorkerSettings:
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
+    timezone = UTC
     job_timeout = 600  # 10 min — accommodate large catalogs (856+ SKU)
     job_completion_wait = WORKER_JOB_COMPLETION_WAIT_SECONDS
     max_jobs = 2

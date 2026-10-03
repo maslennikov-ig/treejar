@@ -1,0 +1,52 @@
+{
+  "measured_at_utc": "2026-10-03T13:07:49.935555+00:00",
+  "read_only": true,
+  "requests": [
+    {
+      "operation": "list_sample",
+      "status": 200,
+      "items": 8,
+      "numeric_top_level_stock": 8,
+      "has_valid_page_context": true
+    },
+    {
+      "operation": "delta_interface",
+      "status": 200,
+      "items": 0,
+      "numeric_top_level_stock": 0,
+      "has_valid_page_context": true
+    },
+    {
+      "operation": "bulk_size_1",
+      "status": 200,
+      "items": 1,
+      "numeric_top_level_stock": 1,
+      "has_valid_page_context": false
+    },
+    {
+      "operation": "bulk_size_2",
+      "status": 200,
+      "items": 2,
+      "numeric_top_level_stock": 2,
+      "has_valid_page_context": false
+    },
+    {
+      "operation": "bulk_size_4",
+      "status": 200,
+      "items": 4,
+      "numeric_top_level_stock": 4,
+      "has_valid_page_context": false
+    },
+    {
+      "operation": "bulk_size_8",
+      "status": 200,
+      "items": 8,
+      "numeric_top_level_stock": 8,
+      "has_valid_page_context": false
+    }
+  ],
+  "provider_coverage_verified": false,
+  "bulk_numeric_verified_size": 8,
+  "organization_fingerprint": "544f8528f9db448a",
+  "stopped": "bounded_interface_probe_complete_coverage_still_unproved"
+}

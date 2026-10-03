@@ -103,6 +103,15 @@ class Settings(BaseSettings):
     zoho_inventory_refresh_token: str = ""
     zoho_inventory_api_url: str = "https://www.zohoapis.eu/inventory/v1"
     zoho_inventory_org_id: str = ""
+    # Activation requires owner-approved provider evidence, never a mock result.
+    zoho_stock_incremental_enabled: bool = False
+    zoho_stock_coverage_evidence: str = ""
+    zoho_stock_overlap_seconds: int = Field(default=120, ge=1, le=3600)
+    zoho_stock_daily_hour_utc: int = Field(default=3, ge=0, le=23)
+    zoho_stock_daily_minute_utc: int = Field(default=17, ge=0, le=59)
+    # 0 uses direct selected-ID reads until a bounded account probe verifies bulk.
+    zoho_stock_bulk_size: int = Field(default=0, ge=0, le=200)
+    zoho_stock_bulk_evidence: str = ""
 
     # Catalog source of truth
     catalog_source_name: str = "treejar_catalog_api"

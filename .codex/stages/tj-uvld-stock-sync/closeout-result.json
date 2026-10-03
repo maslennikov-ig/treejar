@@ -1,0 +1,11 @@
+{
+  "groups": [
+    "root_selected_commands"
+  ],
+  "idempotency_key": "46bab031d38bcc386e982cd8067cc0b4afabfb0b3a98ee11ffa256aeb224ca11",
+  "orchestration_level": "slice_acceptance",
+  "result": "passed",
+  "schema_version": "stage-closeout-result/v1",
+  "stage_id": "tj-uvld-stock-sync",
+  "verification_fingerprint": "f18c2be8af806b2d59be68d2dbbe9236d9a7eb9f4d5d5a3be94591153ed19b10"
+}

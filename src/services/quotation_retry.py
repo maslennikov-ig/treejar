@@ -313,6 +313,14 @@ async def retry_pending_quotation(
                 return "created"
 
             if pending_quotation(conversation) is None:
+                if (conversation.metadata_ or {}).get("quotation_stock_shortfall"):
+                    await db.commit()
+                    await _send_confirmation(
+                        deps,
+                        result,
+                        f"stock-shortfall-{pending.get('first_deferred_at')}",
+                    )
+                    return "stock_shortfall"
                 # The same quotation was already sent (tj-2ey4): the tool
                 # dropped the pending request instead of issuing a duplicate.
                 await db.commit()

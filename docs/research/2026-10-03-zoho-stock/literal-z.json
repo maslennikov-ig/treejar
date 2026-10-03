@@ -1,0 +1,21 @@
+{
+  "measured_at_utc": "2026-10-03T13:06:19.583707+00:00",
+  "read_only": true,
+  "requests": [
+    {
+      "operation": "list_sample",
+      "status": 200,
+      "items": 8,
+      "numeric_top_level_stock": 8,
+      "has_valid_page_context": true
+    },
+    {
+      "operation": "delta_interface",
+      "status": 400
+    }
+  ],
+  "provider_coverage_verified": false,
+  "bulk_numeric_verified_size": 0,
+  "organization_fingerprint": "544f8528f9db448a",
+  "stopped": "provider_interface_unavailable"
+}

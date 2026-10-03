@@ -62,7 +62,7 @@ def test_inventory_contact_payload_preserves_delivery_address() -> None:
 
 def _quotation_idempotency_context() -> tuple[MagicMock, AsyncMock, AsyncMock]:
     mock_inventory = AsyncMock()
-    mock_inventory.get_stock_bulk.return_value = [
+    mock_inventory.get_stock_bulk_fresh.return_value = [
         {
             "sku": "CHAIR-1",
             "item_id": "123",
@@ -122,6 +122,7 @@ def _quotation_idempotency_context() -> tuple[MagicMock, AsyncMock, AsyncMock]:
     mock_db.execute.return_value = execute_result
 
     deps = MagicMock(spec=SalesDeps)
+    deps.stock_snapshots = {}
     deps.zoho_inventory = mock_inventory
     deps.messaging_client = mock_messaging
     deps.conversation = mock_conversation
@@ -230,7 +231,7 @@ async def test_create_quotation_never_reissues_an_unchanged_sent_quotation() -> 
     assert ctx.deps.quotation_created is False
     assert mock_inventory.create_sale_order.await_count == 1
     assert mock_messaging.send_media.await_count == 1
-    assert mock_inventory.get_stock_bulk.await_count == 1
+    assert mock_inventory.get_stock_bulk_fresh.await_count == 1
     metadata = ctx.deps.conversation.metadata_
     assert metadata["quotation_effect"]["sale_order_number"] == "SA-001"
     assert metadata["order_runtime"]["quote_workflow"]["lifecycle"] == "created"
@@ -413,7 +414,7 @@ async def test_create_quotation_retry_after_lost_response_sends_pdf_once() -> No
 async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     # Setup mocks
     mock_inventory = AsyncMock()
-    mock_inventory.get_stock_bulk.return_value = [
+    mock_inventory.get_stock_bulk_fresh.return_value = [
         {
             "sku": "CHAIR-1",
             "item_id": "123",
@@ -460,6 +461,7 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     mock_db.execute.return_value = execute_result
 
     deps = MagicMock(spec=SalesDeps)
+    deps.stock_snapshots = {}
     deps.zoho_inventory = mock_inventory
     deps.messaging_client = mock_messaging
     deps.conversation = mock_conversation
@@ -509,8 +511,8 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     assert "SA-001" in repeated_result
 
     # Verify Inventory calls
-    assert mock_inventory.get_stock_bulk.await_count == 2
-    mock_inventory.get_stock_bulk.assert_awaited_with(["CHAIR-1"])
+    assert mock_inventory.get_stock_bulk_fresh.await_count == 1
+    mock_inventory.get_stock_bulk_fresh.assert_awaited_with(["CHAIR-1"])
     mock_inventory.create_sale_order.assert_called_once()
     _, kwargs = mock_inventory.create_sale_order.call_args
     assert kwargs["customer_id"] == "inventory-contact-001"
@@ -559,7 +561,7 @@ async def test_create_quotation_skips_pdf_image_when_catalog_image_missing(
     mock_notify: AsyncMock,
 ) -> None:
     mock_inventory = AsyncMock()
-    mock_inventory.get_stock_bulk.return_value = [
+    mock_inventory.get_stock_bulk_fresh.return_value = [
         {
             "sku": "CHAIR-1",
             "item_id": "123",
@@ -599,6 +601,7 @@ async def test_create_quotation_skips_pdf_image_when_catalog_image_missing(
     mock_db.execute.return_value = execute_result
 
     deps = MagicMock(spec=SalesDeps)
+    deps.stock_snapshots = {}
     deps.zoho_inventory = mock_inventory
     mock_messaging = AsyncMock()
     deps.messaging_client = mock_messaging
@@ -648,7 +651,7 @@ async def test_create_quotation_preserves_real_sale_order_identifiers_from_flat_
     mock_notify: AsyncMock,
 ) -> None:
     mock_inventory = AsyncMock()
-    mock_inventory.get_stock_bulk.return_value = [
+    mock_inventory.get_stock_bulk_fresh.return_value = [
         {
             "sku": "CHAIR-1",
             "item_id": "123",
@@ -685,6 +688,7 @@ async def test_create_quotation_preserves_real_sale_order_identifiers_from_flat_
     mock_db.execute.return_value = execute_result
 
     deps = MagicMock(spec=SalesDeps)
+    deps.stock_snapshots = {}
     deps.zoho_inventory = mock_inventory
     mock_messaging = AsyncMock()
     deps.messaging_client = mock_messaging
@@ -739,7 +743,7 @@ async def test_create_quotation_keeps_draft_only_when_sale_order_number_missing(
     mock_notify: AsyncMock,
 ) -> None:
     mock_inventory = AsyncMock()
-    mock_inventory.get_stock_bulk.return_value = [
+    mock_inventory.get_stock_bulk_fresh.return_value = [
         {
             "sku": "CHAIR-1",
             "item_id": "123",
@@ -773,6 +777,7 @@ async def test_create_quotation_keeps_draft_only_when_sale_order_number_missing(
     mock_db.execute.return_value = execute_result
 
     deps = MagicMock(spec=SalesDeps)
+    deps.stock_snapshots = {}
     deps.zoho_inventory = mock_inventory
     mock_messaging = AsyncMock()
     deps.messaging_client = mock_messaging
@@ -817,12 +822,13 @@ async def test_create_quotation_keeps_draft_only_when_sale_order_number_missing(
 
 
 @pytest.mark.asyncio
-async def test_create_quotation_sku_not_found() -> None:
+async def test_create_quotation_missing_fresh_sku_defers() -> None:
     mock_inventory = AsyncMock()
-    mock_inventory.get_stock_bulk.return_value = []  # SKU not found
+    mock_inventory.get_stock_bulk_fresh.return_value = []  # SKU not found
     mock_inventory.get_stock.return_value = None
 
     deps = MagicMock(spec=SalesDeps)
+    deps.stock_snapshots = {}
     deps.zoho_inventory = mock_inventory
     deps.conversation = SimpleNamespace(
         id="00000000-0000-0000-0000-000000000001",
@@ -845,8 +851,12 @@ async def test_create_quotation_sku_not_found() -> None:
     items = [QuotationItem(sku="NON_EXISTENT", quantity=1)]
 
     result = await create_quotation(ctx, items)
-    assert "Failed to create quotation" in result
-    assert "NON_EXISTENT" in result
+    assert "has not been sent yet" in result
+    assert (
+        deps.conversation.metadata_["pending_quotation"]["items"][0]["sku"]
+        == "NON_EXISTENT"
+    )
+    mock_inventory.get_stock.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -858,7 +868,7 @@ async def test_create_quotation_without_company_email_uses_temp_customer(
     mock_notify: AsyncMock,
 ) -> None:
     mock_inventory = AsyncMock()
-    mock_inventory.get_stock_bulk.return_value = [
+    mock_inventory.get_stock_bulk_fresh.return_value = [
         {
             "sku": "CHAIR-1",
             "item_id": "123",
@@ -890,6 +900,7 @@ async def test_create_quotation_without_company_email_uses_temp_customer(
     mock_db.flush = AsyncMock()
 
     deps = MagicMock(spec=SalesDeps)
+    deps.stock_snapshots = {}
     deps.zoho_inventory = mock_inventory
     mock_messaging = AsyncMock()
     deps.messaging_client = mock_messaging
@@ -932,7 +943,7 @@ async def test_create_quotation_inventory_contact_failure_stays_autonomous(
     mock_notify: AsyncMock,
 ) -> None:
     mock_inventory = AsyncMock()
-    mock_inventory.get_stock_bulk.return_value = [
+    mock_inventory.get_stock_bulk_fresh.return_value = [
         {
             "sku": "CHAIR-1",
             "item_id": "123",
@@ -956,6 +967,7 @@ async def test_create_quotation_inventory_contact_failure_stays_autonomous(
     mock_db = AsyncMock()
 
     deps = MagicMock(spec=SalesDeps)
+    deps.stock_snapshots = {}
     deps.zoho_inventory = mock_inventory
     deps.messaging_client = AsyncMock()
     deps.conversation = mock_conversation
@@ -1170,12 +1182,12 @@ async def test_resolve_inventory_customer_id_rejects_stale_reactivated_readback(
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
 )
-async def test_create_quotation_catalog_mismatch_alerts_without_escalating(
+async def test_create_quotation_incomplete_fresh_result_defers_without_escalating(
     mock_notify_manager: AsyncMock,
     mock_notify_mismatch: AsyncMock,
 ) -> None:
     mock_inventory = AsyncMock()
-    mock_inventory.get_stock_bulk.return_value = []
+    mock_inventory.get_stock_bulk_fresh.return_value = []
     mock_inventory.get_stock.return_value = None
 
     mock_conversation = SimpleNamespace(
@@ -1196,6 +1208,7 @@ async def test_create_quotation_catalog_mismatch_alerts_without_escalating(
     mock_db.execute.return_value = execute_result
 
     deps = MagicMock(spec=SalesDeps)
+    deps.stock_snapshots = {}
     deps.zoho_inventory = mock_inventory
     deps.messaging_client = AsyncMock()
     deps.conversation = mock_conversation
@@ -1212,9 +1225,9 @@ async def test_create_quotation_catalog_mismatch_alerts_without_escalating(
 
     result = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
 
-    assert "couldn't confirm exact price and availability" in result.lower()
+    assert "has not been sent yet" in result.lower()
     assert "manager" not in result.lower()
-    mock_notify_mismatch.assert_awaited_once()
+    mock_notify_mismatch.assert_not_awaited()
     mock_notify_manager.assert_not_awaited()
     mock_inventory.create_sale_order.assert_not_called()
 
@@ -1225,12 +1238,12 @@ async def test_create_quotation_catalog_mismatch_alerts_without_escalating(
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
 )
-async def test_create_quotation_malformed_inventory_payload_stays_autonomous(
+async def test_create_quotation_never_falls_back_to_malformed_discovery(
     mock_notify_manager: AsyncMock,
     mock_notify_mismatch: AsyncMock,
 ) -> None:
     mock_inventory = AsyncMock()
-    mock_inventory.get_stock_bulk.return_value = []
+    mock_inventory.get_stock_bulk_fresh.return_value = []
     mock_inventory.get_item.return_value = "bad-get-item-payload"
     mock_inventory.get_stock.return_value = {"sku": "CHAIR-1", "rate": "oops"}
 
@@ -1252,6 +1265,7 @@ async def test_create_quotation_malformed_inventory_payload_stays_autonomous(
     mock_db.execute.return_value = execute_result
 
     deps = MagicMock(spec=SalesDeps)
+    deps.stock_snapshots = {}
     deps.zoho_inventory = mock_inventory
     deps.messaging_client = AsyncMock()
     deps.conversation = mock_conversation
@@ -1268,9 +1282,9 @@ async def test_create_quotation_malformed_inventory_payload_stays_autonomous(
 
     result = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
 
-    assert "couldn't confirm exact price and availability" in result.lower()
+    assert "has not been sent yet" in result.lower()
     assert "manager" not in result.lower()
-    assert deps.catalog_mismatch_alerted is True
-    mock_notify_mismatch.assert_awaited_once()
+    assert deps.catalog_mismatch_alerted is False
+    mock_notify_mismatch.assert_not_awaited()
     mock_notify_manager.assert_not_awaited()
     mock_inventory.create_sale_order.assert_not_called()

@@ -1,0 +1,49 @@
+All checks passed!
+432 files already formatted
+Success: no issues found in 193 source files
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.4.2, pluggy-1.6.0
+rootdir: /home/me/code/treejar/.worktrees/tj-uvld-stock-sync
+configfile: pyproject.toml
+plugins: anyio-4.12.1, asyncio-0.26.0, timeout-2.4.0, logfire-4.25.0, cov-6.3.0, langsmith-0.8.5
+asyncio: mode=Mode.AUTO, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=function
+collected 241 items
+
+tests/test_zoho_stock_incremental.py ..............................      [ 12%]
+tests/test_zoho_stock_bulk.py .........................                  [ 22%]
+tests/test_zoho_rate_limit.py .........................                  [ 33%]
+tests/test_zoho_client.py ..................                             [ 40%]
+tests/test_zoho_sync.py ..                                               [ 41%]
+tests/test_worker.py ............                                        [ 46%]
+tests/test_llm_quotation.py .....................                        [ 55%]
+tests/test_quotation_inventory_deferral.py ...............               [ 61%]
+tests/test_quotation_retry.py ...........                                [ 65%]
+tests/integrations/test_zoho_inventory.py ...........                    [ 70%]
+tests/integrations/test_zoho_stock_sync_redis.py ........                [ 73%]
+tests/test_customer_intent_tools.py .........................            [ 84%]
+tests/test_decision_state.py .................................           [ 97%]
+tests/test_dialogue_order_state.py .....                                 [100%]
+
+============================= 241 passed in 15.78s =============================
+.codex/handoff.md is missing required next-stage handoff fields: ## Next recommended, Next stage id:, Recommended action:, ## Starter prompt for next orchestrator, Use $orchestrator-stage
+blocking review findings OK
+child acceptance cleanup OK
+project index review OK (index updated)
+documentation review OK (structural)
+debt marker scan OK
+== verification group: root_selected_commands ==
+$ uv run --no-sync ruff check src/ tests/ scripts/zoho_stock_preflight.py scripts/zoho_stock_report.py scripts/orchestration/run_stage_closeout.py
+$ uv run --no-sync ruff format --check src/ tests/ scripts/zoho_stock_preflight.py scripts/zoho_stock_report.py scripts/orchestration/run_stage_closeout.py
+$ uv run --no-sync mypy src/
+$ uv run --no-sync pytest tests/test_zoho_stock_incremental.py tests/test_zoho_stock_bulk.py tests/test_zoho_rate_limit.py tests/test_zoho_client.py tests/test_zoho_sync.py tests/test_worker.py tests/test_llm_quotation.py tests/test_quotation_inventory_deferral.py tests/test_quotation_retry.py tests/integrations/test_zoho_inventory.py tests/integrations/test_zoho_stock_sync_redis.py tests/test_customer_intent_tools.py tests/test_decision_state.py tests/test_dialogue_order_state.py -q --tb=short
+$ git diff --check
+$ /home/me/code/treejar/.worktrees/tj-uvld-stock-sync/scripts/orchestration/run_process_verification.sh --stage tj-uvld-stock-sync
+Traceback (most recent call last):
+  File "/home/me/code/treejar/.worktrees/tj-uvld-stock-sync/scripts/orchestration/run_stage_closeout.py", line 1996, in <module>
+    raise SystemExit(main(sys.argv))
+                     ^^^^^^^^^^^^^^
+  File "/home/me/code/treejar/.worktrees/tj-uvld-stock-sync/scripts/orchestration/run_stage_closeout.py", line 1960, in main
+    subprocess.run(cmd, cwd=repo_root, check=True)
+  File "/home/me/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/me/code/treejar/.worktrees/tj-uvld-stock-sync/scripts/orchestration/run_process_verification.sh', '--stage', 'tj-uvld-stock-sync']' returned non-zero exit status 1.

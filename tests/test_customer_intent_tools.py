@@ -38,6 +38,46 @@ def context(text: str, metadata: dict[str, Any] | None = None) -> Any:
 
 
 @pytest.mark.asyncio
+async def test_stock_shortfall_requires_new_customer_decision() -> None:
+    ctx = context(
+        "Please prepare the quotation",
+        {
+            "quotation_stock_shortfall": {
+                "sku": "A",
+                "available": 2,
+                "source_message_id": "source-1",
+            },
+            "order_runtime": {
+                "quote_workflow": {
+                    "version": 2,
+                    "consent": "deferred",
+                    "lifecycle": "quote_requested",
+                }
+            },
+        },
+    )
+    first = await engine.record_customer_intent(
+        ctx, evidence=ctx.deps.user_query, quotation_consent="granted"
+    )
+    assert first.startswith("Not recorded: stock is short")
+    assert (
+        quote_workflow_from_metadata(ctx.deps.conversation.metadata_).consent
+        is QuoteConsent.DEFERRED
+    )
+    ctx.deps.source_message_id = "source-2"
+    ctx.deps.user_query = "Prepare the quotation for only two"
+    second = await engine.record_customer_intent(
+        ctx, evidence=ctx.deps.user_query, quotation_consent="granted"
+    )
+    assert "Not recorded" not in second
+    assert "quotation_stock_shortfall" not in ctx.deps.conversation.metadata_
+    assert (
+        quote_workflow_from_metadata(ctx.deps.conversation.metadata_).consent
+        is QuoteConsent.GRANTED
+    )
+
+
+@pytest.mark.asyncio
 async def test_invented_evidence_cannot_change_consent_or_details() -> None:
     ctx = context("sure")
     result = await engine.record_customer_intent(

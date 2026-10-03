@@ -1,200 +1,92 @@
 # Orchestrator Handoff
 
-Updated: 2026-09-24
-Current branch: main (delivery branch: codex/tj-polish-0924)
-Current stage id: tj-polish-0924
-Status: Live-check follow-ups (consent grounding, earlier-offer carry-forward,
-colour-sibling media, shared count words) delivered on top of 33a2b02.
+Updated: 2026-10-03
+Current branch: codex/tj-uvld-stock-sync
+Current stage id: tj-uvld-stock-sync
+Status: local stock optimization verified;241 tests/Ruff/mypy/process passed.
+Delivery: local commits only; main/live remains outside this task's authority.
 
-## Telegram webhook drift 2026-09-28
-- Outside token holder deleted the webhook (third /reset failure). Worker cron
-  reconcile_telegram_webhook repairs drift each minute, alerts hourly at most.
-  Owner to revoke the token in @BotFather. docs/reports/2026-09-28-telegram-webhook-drift.md
+## Current work
 
-## Current stage: tj-polish-0924 live-check follow-ups 2026-09-24
+- Beads tj-uvld owns AC01–AC12 and remains in_progress until provider coverage,
+  authorized delivery and real 24h measurement are accepted.
+- Worktree: /home/me/code/treejar/.worktrees/tj-uvld-stock-sync.
+- Base: main 36c86137a51d2e6485db92c28ec057fe26f03339; prepared docs and
+  tj-4kot cooldown07591b8 reused by cherry-pick. Primary dirty work preserved.
+- Candidate: gated 600s delta + daily03:17UTC full, owned lock/CAS generations,
+  48h retention with1h customer ceiling, selected-SKU fresh quotation checks,
+  shared HTTP counters and read concurrency/cooldown.
+- Owner decision: stock2 vs agreed5 stops quotation, states only2 available,
+  and awaits a new customer decision. Consent becomes deferred; unchanged
+  shortage state cannot trigger another automatic/background creation.
+- Source observation and successful dataset coverage are distinct. Multi-page
+  delta requires two identical complete reads; changed pages abort publication.
+  This safeguard does not establish provider paging/operation completeness.
+- Report: docs/reports/2026-10-03-zoho-stock-sync-optimization.md.
+- Stage: .codex/stages/tj-uvld-stock-sync/summary.md.
 
-- Owner asked for the minor observations too, and for universal fixes rather
-  than per-incident word lists.
-- tj-aq4t: `src/dialogue/count_words.py` is the one vocabulary for spelled-out
-  counts (EN one..ninety-nine, dozen; AR 1..99 with spelling variants) and
-  head counts ("team of six", "فريق من ستة أشخاص"). It replaced the private
-  lists in verified_answers, catalog_planning, order_runtime, engine,
-  claim_contract and response_runtime; each caller keeps its own cap.
-- tj-h34w: quotation consent is recorded only when the quotation is on the
-  table (customer names it in EN/AR/RU, last assistant turn or proposal offered
-  it, or the quote workflow already discussed it);
-  `quotation_consent_is_grounded` in src/dialogue/order_state.py. A product
-  choice is a selection; the quotation is offered next.
-- tj-slzx: search_products carries an earlier offer of the same catalog
-  category forward (offered = product image reached the conversation), unless
-  the customer's selection settled that category. Category, not name text,
-  decides the kind of item ("Workstation Chair" reads as two).
-- tj-epls: colour siblings sharing a price are told apart by the colour in the
-  reply's own bullet, English or Arabic; a price shared with a fully matched
-  sibling is not evidence.
-- Delivered: CI 35996126798 and 35998070670 (deployed). Live recheck on the
-  owner's number (79262810921#tj-check-0924-A3..A6, D3, F): a product choice
-  now gets "Shall I prepare the quotation?" instead of a details request; the
-  opening's CH 160 was carried forward "as I mentioned earlier"; one photo per
-  named product; "team of fifteen" has no false no-match disclaimer. No
-  quotations, escalations or CRM writes.
+## Provider evidence and eligibility
 
-- tj-4qtv (owner: stock always from Zoho, actual figure, never "unconfirmed"):
-  ZohoInventoryClient serves stock from a shared Redis snapshot
-  (`zoho:inventory:stock_snapshot:v1`, fresh 600 s, stale fallback 3600 s,
-  SET NX refresh lock, all active items ~11 pages); only misses go live, one
-  failed SKU no longer fails the batch, case/Cyrillic duplicate SKUs prefer
-  the row with a number. Evidence: per-SKU calls hit Zoho 429 and a 30 min
-  cooldown, and every search then showed "unconfirmed". Without a Zoho figure
-  the reply states no number and does not say "unconfirmed".
-- tj-3vz5: the ARQ cron `refresh_zoho_stock_snapshot` rebuilds the snapshot
-  every 5 minutes (also in TEST_CHANNEL_RESTORE_MODE, its only cron there;
-  vps-deploy.sh allowlists it for functions and crons). Customer turns only
-  read the snapshot; they refresh it themselves only when none under an hour
-  old exists.
-
-- Angela's recheck (79689818825, conversations 76bc49c8 and 7207b4a1, run on
-  33a2b02 before the fixes above): photos, Zoho stock, merged messages and the
-  wrong-layout "yes" were right. Her page notes never reached the store (an
-  outside link viewer holds db level `view`, writes reject invalid_argument);
-  the page now keeps them locally and points to the text report.
-- tj-2ey4: "it's okay" to sent Fr4032 created Fr4033. Cause: `quote_sent`
-  read only the retired quote frame, so the decision directive kept saying
-  "call create_quotation now", and the effect fingerprint includes the source
-  message. `quotation_was_sent` (order_state) now feeds `quote_sent`;
-  `_create_quotation` refuses on an acceptance turn and refuses to re-issue an
-  unchanged sent quotation (items + customer block fingerprint). The turn that
-  completes consent or details with exact items now gets its quotation from the
-  runtime (`src/llm/quotation_completion.py`) when the model did not call it --
-  owner-visible departure from "model owns the next action", same precedent as
-  the retry job. Consent "deferred" needs the quotation on the table too.
-- tj-lbnt: the limited-stock warning is skipped when the reply already states
-  the verified figure; stock lines tell the model to state a shortfall as
-  "only N in stock", never an unconfirmed remainder.
-
-## Previous stage: tj-uxj0 runtime hardening 2026-09-24
-
-- Health check on live 0f84a70 (Zoho quotation retry job, tj-i0n0): app,
-  worker, db, redis, nginx up with zero restarts; no app/worker errors in 16 h;
-  nginx 502s only during deploy windows; ARQ queue empty; alembic head matches.
-- Found: prod ran APP_DEBUG=true (SQLAlchemy echo flooded logs) and served
-  /docs, /redoc, /openapi.json publicly. Fix: APP_DEBUG=false in
-  /opt/noor/.env (backup `.hotfix-backups/tj-uxj0-20260924/.env`); API docs
-  now opt-in via APP_DOCS_ENABLED (default false). APP_ENV stays
-  `development` by owner intent (project still in development); it drives
-  Telegram, public-media and auth behavior, so it was not changed.
-- Expected noise, not defects: "unexpected Wazzup channel" warnings are the
-  Treejar Trading channel dropped by TEST_CHANNEL_RESTORE_MODE; 47 pending
-  escalations come from test dialogues.
-- Live WhatsApp check (owner's number 79262810921#tj-check-0924-*, 16 turns
-  over routes A-E: LUMA/NOVO, CH 616 named SKU, delivery/assembly with wrong
-  layout "yes"/"keep it", Arabic opening, box price) found three defects,
-  fixed in 33a2b02 (CI 35989320784, deployed): repeat photo request claimed an
-  image that the per-conversation idempotency key skipped (tj-nwkl;
-  search_products now reports already-sent images and takes resend_images);
-  restore-mode worker dropped refresh_conversation_summary (tj-um4o; now
-  registered and allowed by the deploy probe); "a team of six" made a generic
-  request "nearby" (tj-rn1r). Live recheck confirmed all three. No quotations,
-  escalations or CRM writes were triggered.
-- Restore-mode worker registers process_incoming_batch,
-  retry_pending_quotation, refresh_conversation_summary and
-  refresh_zoho_stock_snapshot (cron every 5 min).
-
-## Previous stage: tj-uz6j tester feedback 2026-09-23
-
-- Source: Angela's WhatsApp test of demo routes A/B on test0665 against live
-  release 071b0e3; conversations 207f7c10, fa224cab, d24c5360. Plan:
-  `docs/plans/toasty-munching-ritchie.md`.
-- Regressions surfaced after the glm-5.3-flash -> gpt-6-luna switch (6ae4c0e):
-  Luna follows tool contracts literally, exposing contract/state defects.
-- Live release: `9f62d293e40ddc3835e1cf6d7c36016475e681d9`, CI 35895035121
-  (lint, types, tests, deploy passed). Post-deploy: app/worker up, health 200,
-  model openai/gpt-6-luna, TEST_CHANNEL_RESTORE_MODE=true, worker registers
-  only process_incoming_batch.
-- Live replay (real gpt-6-luna, intercepted tools, catalog snapshot) cost
-  USD 0.036 total: first run found a raw-JSON repair leak (fixed), rerun of
-  scenario A clean. Receipts: docs/reports/2026-09-23-tester-feedback-replay*.json.
-- Delivered: T1 media for products named by short model
-  reference; T2 exact/generic match kinds, no false "exact item not confirmed";
-  T3/T7 persisted decision state (selection/quote consent close the choice,
-  proposal-bound affirmatives incl. wrong keyboard layout, reply supersession
-  for messages arriving mid-generation); T4 named SKU direct lookup regardless
-  of local stock; T5 negated quotation statements; T6 delivery/installation per
-  docs/faq.md Q9-Q10 (owner decision 2026-09-23, supersedes 2026-08-11 assembly
-  rule; grounding capability registry changed accordingly); T9 Zoho 429
-  resilience and quotation deferral.
-- Production data was read only (DB SELECTs, logs); the only server change is
-  the standard CI deployment of 9f62d29.
-
-## Previous release truth
-
-- Live code release: `071b0e32f35bec5474ba4b7e4d1b651f85d45295`.
-- CI35855524010 passed: 4,115 tests, 27 skipped; Ruff/format, Mypy and standard
-  app-only deployment passed. App/worker are running with zero restarts;
-  exact SHA health and healthy database/Redis confirmed.
-- Primary model is `openai/gpt-6-luna`, with explicit core reasoning medium.
-  DB override and environment fallback agree. Both running containers' settings
-  and all four changed source hashes match the accepted code.
-- Earlier checks (apostrophes, pack-price units, five bounded model
-  scenarios; not WhatsApp E2E) are in the report below.
-- Report/evidence: `docs/reports/2026-09-23-gpt6-luna-main.md` and its two JSON
-  receipts. Tasks tj-qr32, tj-3nvu, tj-pmbv and tj-y1uj are delivered.
-- Prior critical-only escalation, model-owned intent, quotation consent and
-  35-second completion/90-second core deadline protections remain present.
-- Prior reports: `docs/reports/2026-09-22-telegram-reset-webhook.md` and
-  `docs/reports/2026-09-18-quotation-timeout.md`.
+- Read-only probes2026-10-03:9 InventoryGETs,8HTTP200+1HTTP400.
+  Literal trailingZ rejected; +0000 accepted, including sorted empty delta.
+  Bulk1/2/4/8 returned all requested IDs with numeric stock;8 is a verified
+  lower bound, not the endpoint maximum. No business write/OAuth refresh.
+- Stock-operation coverage, nonempty paged delta semantics/equal timestamps
+  and lifecycle completeness remain unproved. Incremental activation stays off.
+- Current read-only mapping:343 active catalog rows,250 stored IDs,306 matches,
+ 2557 snapshot entries. Optional catalog scoping stays off.
+- Retained receipts: docs/research/2026-10-03-zoho-stock/.
 
 ## Operating boundary
 
-- TEST_CHANNEL_RESTORE_MODE=true; WhatsApp limited to ending0665. Sender and
-  outbound allowlist match. Telegram remains authenticated admin reset only.
-- Restore-mode worker crons: stock snapshot and Telegram webhook reconcile.
-- No resets, customer data repairs, held-message inspection/replay, or outbound
-  test messages were performed in this acceptance.
-- Owner authorized Push, Merge, Deploy and bounded post-deployment model tests.
-  The completed smoke set cost USD0.00813352; the earlier compatibility check
-  cost USD0.0000155. No further paid tests or broader activation are queued.
-- Frozen general grounding policy is unchanged; price-unit clarification is in
-  the sales-agent instructions. Runtime readback safeguards remain unchanged.
+- Readiness audit reported live/main36c8613, TEST_CHANNEL_RESTORE_MODE=true,
+  WhatsApp sender/outbound allowlist limited to ending0665, Telegram webhook
+  healthy after token rotation. This task did not change those settings.
+- Earlier stage's push/deploy/model-test authority does not cover tj-uvld.
+- Merge/push/deploy, external stock mutations, OAuth/access changes and real
+  messages need fresh owner approval. No paid model reader/calls were used.
+- Website products.is_active, catalog prices and embeddings remain owned by
+  their existing sync; stock state never writes those fields.
 
 ## Recovery
 
-- Latest source backup:
-  `/opt/noor/.hotfix-backups/deploy-20260923T113912Z-from-e325c63fd7cf687d15d738cea2a20fd4a98a8f6b.tar.gz`.
-- Original model-switch rollback: `/opt/noor/.hotfix-backups/tj-qr32-20260923`,
-  prior main-model DB/env value z-ai/glm-5.3-flash; tagged app/worker images.
-- Preserve all subsequent customer data and unrelated environment changes.
-  Model rollback requires both the DB setting and environment fallback.
-- Prior reset/data recovery pointers remain in the dated reports; no historical
-  customer data or held messages were changed by this delivery.
+- Disable ZOHO_STOCK_INCREMENTAL_ENABLED and clear the coverage evidence in
+  app+worker environment, recreate only app+worker under approved delivery.
+  Proven five-minute full mode remains available; this restores higher API use.
+- Keep v2 state and the last-full v1 snapshot; do not flush Redis/ARQ/customer
+  data. Previous binary reads original v1 as_of with its one-hour ceiling.
+- Rollback/deployment commands and measurement packet are in the current report.
+- Preserve unrelated environment, live DB, queued/held messages and test0665.
 
 ## Explicit defers
 
-- tj-1baw reply latency is tracked separately. Wazzup message times are
-  truncated to the minute, so logged queue_wait overstates waiting by up to 60 s.
-
-Closed after release: tj-uz6j.8 (owner: a mandatory replay gate is
-over-engineering; the harness stays optional), tj-n4kt (not a defect: Zoho
-confirms stock by client decision, docs/questions-for-client.md section 3),
-tj-i0n0 (background retry job `retry_pending_quotation`,
-src/services/quotation_retry.py).
-
-- tj-bgwu: corpus identity tests assume a normal .git directory; local linked
-  worktree acceptance uses focused checks and canonical CI for the full suite.
-- Existing unrelated product tasks remain tracked separately. Wazzup sender
-  authentication enforcement is backlog; referral activation remains excluded.
-- Paid second reader remains off; reader-gap drift stays tracked in tj-4q79.
+- tj-uvld: AC02 provider stock/lifecycle coverage and paging stability need an
+  approved test organization or bounded owner-authorized transactions.
+- tj-uvld: merge/release checks/deploy/activation and real24h counters require
+  separate delivery authority; no claim of actual production savings yet.
+- tj-4kot: outside account consumer (~50requests/min) incident remains open;
+  reused cooldown fix does not prove external load resolved or authorize deploy.
+- tj-535g: monitoring fixa4cc1a7 remains separate and undeployed; monitoring
+  activation was not changed. Primary handoff retains its independent truth.
+- Zoho quotation live E2E remains unverified; no real messages were sent here.
+- tj-1baw latency and tj-bgwu linked-worktree corpus assumptions remain separate.
+- Paid second reader stays off; reader-gap drift tracked in tj-4q79.
 
 ## Next recommended
 
-Next stage id: none (tj-uxj0 delivered)
-Recommended action: tester reruns routes A and B on test0665 after /reset.
+Next stage id: tj-uvld-stock-sync
+Recommended action: continue the same boundary after approved provider evidence.
+
+After local acceptance/commits, request one concrete approved test organization
+and a bounded stock-operation diagnostic. Prove AC02 before considering delta
+activation. Then obtain separate merge/deployment authority and collect24h
+UTC [start,end) counters with Moscow conversion. Do not close tj-uvld early.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage only for a newly authorized change. Use
-scripts/scenario_replay.py before any model or prompt switch.
-Preserve the test0665-only boundary.
+Use $orchestrator-stage for the same authorized tj-uvld boundary.
+Read docs/prompts/2026-10-03-zoho-stock-sync-optimization.md and the current
+report/Beads notes to continue. Preserve the dirty primary checkout.
 
-docs-reviewed: updated - health check and debug/docs hardening recorded.
-graph-reviewed: no-change-needed - no graph used.
+docs-reviewed: updated - state/entrypoints, provider receipts, rollback and pending gates.
+graph-reviewed: no-change-needed - no enabled task-owned graph; ordinary code navigation used.

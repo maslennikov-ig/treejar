@@ -54,9 +54,31 @@ class _FakeRedis:
     async def delete(self, key: str) -> None:
         self.values.pop(key, None)
 
-    async def eval(self, script: str, numkeys: int, key: str, owner: str) -> int:
-        if self.values.get(key) == owner:
-            del self.values[key]
+    async def eval(self, script: str, numkeys: int, *args: Any) -> Any:
+        import math
+
+        keys = args[:numkeys]
+        values = args[numkeys:]
+        if "stock-cooldown-max" in script:
+            deadline = max(float(self.values.get(keys[0], 0)), float(values[0]))
+            await self.set(
+                keys[0],
+                str(deadline),
+                ex=max(1, math.ceil(deadline - float(values[1]))),
+            )
+            return str(deadline)
+        if "stock-lease-renew" in script:
+            return int(self.values.get(keys[0]) == values[0])
+        if "stock-generation-commit" in script:
+            owner, old, new, legacy, ttl = values
+            if self.values.get(keys[0]) != owner or self.values.get(keys[1], "") != old:
+                return 0
+            await self.set(keys[1], new, ex=ttl)
+            if legacy:
+                await self.set(keys[2], legacy, ex=ttl)
+            return 1
+        if self.values.get(keys[0]) == values[0]:
+            del self.values[keys[0]]
             return 1
         return 0
 
@@ -81,10 +103,20 @@ async def test_short_retry_after_is_honored_then_the_read_succeeds() -> None:
     client = _client(_FakeRedis())
     ok = _response(200, json={"items": [{"sku": "A", "stock_on_hand": 2}]})
     request = AsyncMock(side_effect=[_response(429, headers={"Retry-After": "3"}), ok])
+    clock = [time.time()]
+
+    async def wait(seconds: float) -> None:
+        clock[0] += seconds
+
     with (
         patch.object(client.client, "request", request),
         patch(
-            "src.integrations.inventory.zoho_inventory.asyncio.sleep", AsyncMock()
+            "src.integrations.inventory.zoho_inventory.time.time",
+            side_effect=lambda: clock[0],
+        ),
+        patch(
+            "src.integrations.inventory.zoho_inventory.asyncio.sleep",
+            AsyncMock(side_effect=wait),
         ) as sleep,
     ):
         item = await client.get_stock("A")
@@ -291,7 +323,7 @@ async def test_snapshot_is_built_from_paged_items_and_serves_later_reads() -> No
         json={
             "items": [
                 {**_item("A", 3), "name": "Chair A", "extra_field": "dropped"},
-                {"name": "no sku"},
+                {"item_id": "no-sku", "sku": "", "name": "no sku"},
             ],
             "page_context": {"has_more_page": True},
         },
@@ -302,6 +334,7 @@ async def test_snapshot_is_built_from_paged_items_and_serves_later_reads() -> No
     )
     request = AsyncMock(side_effect=[page_one, page_two])
     with patch.object(client.client, "request", request):
+        assert await client.refresh_stock_snapshot() is not None
         item = await client.get_stock("A")
         assert await client.get_stock_bulk(["B", "A"]) == [
             {**_item("B", 0), "stock_as_of": ANY},
@@ -321,7 +354,7 @@ async def test_snapshot_is_built_from_paged_items_and_serves_later_reads() -> No
     assert sorted(stored["items"]) == ["A", "B"]
     assert stored["as_of"] == pytest.approx(time.time(), abs=5)
     snapshot_set = next(c for c in redis.set_calls if c[0] == ZOHO_STOCK_SNAPSHOT_KEY)
-    assert snapshot_set[2] == 3600
+    assert snapshot_set[2] == 172800
     assert ZOHO_STOCK_SNAPSHOT_LOCK_KEY not in redis.values
     await client.close()
 

@@ -23,6 +23,7 @@ Stable navigation map for this repository. Keep operational state in
 - `src/dialogue/` - LangGraph dialogue-state kernel, side-effect-free typed order-state runtime, slot state, trace reducer, expected-answer frame matcher, and catalog reference parsing.
 - `src/services/customer_memory.py` and `src/models/customer_memory.py` - durable customer profile facts, current-order memory, past-order history, and compact prompt context.
 - `scripts/orchestration/run_process_verification.sh` - process-contract verification entrypoint.
+- `src/integrations/inventory/stock_state.py` - versioned stock generations, owned Redis publication and shared API counters.
 
 ## Core Subsystems
 
@@ -71,6 +72,9 @@ Stable navigation map for this repository. Keep operational state in
   evidence publication, and redacted report generation. Live/provider use
   remains separately authorized and fail-closed.
 
+- `scripts/zoho_stock_preflight.py` - bounded cached-token, read-only Inventory interface diagnostic.
+- `scripts/zoho_stock_report.py` - shared Inventory HTTP counters for UTC [start,end), with Moscow timestamps and evidence-gap labels.
+
 ## Verification
 
 - Process contract: `scripts/orchestration/run_process_verification.sh`.
@@ -79,7 +83,7 @@ Stable navigation map for this repository. Keep operational state in
 - `uv run ruff format --check src/ tests/`
 - `uv run mypy src/`
 - `env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" uv run pytest tests/ -v --tb=short`
-- Stage closeout: `scripts/orchestration/run_stage_closeout.py --stage <stage_id>`.
+- Stage closeout: `scripts/orchestration/run_stage_closeout.py --stage <stage_id> --level slice_acceptance --command '<focused command>'`.
 
 ## Conventions And Boundaries
 

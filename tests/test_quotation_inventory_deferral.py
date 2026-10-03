@@ -103,6 +103,7 @@ def _ctx(inventory: AsyncMock, *, source_message_id: str = "wa-msg-1") -> MagicM
     execute_result.scalar_one_or_none.return_value = None
     db.execute.return_value = execute_result
     deps = MagicMock(spec=SalesDeps)
+    deps.stock_snapshots = {}
     deps.zoho_inventory = inventory
     deps.messaging_client = AsyncMock()
     deps.conversation = conversation
@@ -120,7 +121,7 @@ def _ctx(inventory: AsyncMock, *, source_message_id: str = "wa-msg-1") -> MagicM
 
 def _inventory_with_item() -> AsyncMock:
     inventory = AsyncMock()
-    inventory.get_stock_bulk.return_value = [
+    inventory.get_stock_bulk_fresh.return_value = [
         {
             "sku": _SKU,
             "item_id": "item-1",
@@ -344,7 +345,7 @@ async def test_incident_chain_defers_the_quote_with_an_honest_status(
 @pytest.mark.asyncio
 async def test_same_turn_retry_makes_no_further_zoho_calls(manager_alert: Any) -> None:
     inventory = _inventory_with_item()
-    inventory.get_stock_bulk.side_effect = _rate_limit()
+    inventory.get_stock_bulk_fresh.side_effect = _rate_limit()
     ctx = _ctx(inventory)
     items = [QuotationItem(sku=_SKU, quantity=3)]
 
@@ -352,7 +353,7 @@ async def test_same_turn_retry_makes_no_further_zoho_calls(manager_alert: Any) -
     second = await create_quotation(ctx, items)
 
     assert first == second
-    assert inventory.get_stock_bulk.await_count == 1
+    assert inventory.get_stock_bulk_fresh.await_count == 1
     manager_alert.send.assert_awaited_once()
 
 
@@ -384,7 +385,7 @@ async def test_unalerted_deferral_does_not_claim_a_manager_was_told(
 ) -> None:
     manager_alert.send.return_value = False
     inventory = _inventory_with_item()
-    inventory.get_stock_bulk.side_effect = _rate_limit()
+    inventory.get_stock_bulk_fresh.side_effect = _rate_limit()
     ctx = _ctx(inventory)
 
     result = await create_quotation(ctx, [QuotationItem(sku=_SKU, quantity=3)])
@@ -396,7 +397,7 @@ async def test_unalerted_deferral_does_not_claim_a_manager_was_told(
 @pytest.mark.asyncio
 async def test_non_transient_failures_still_raise() -> None:
     inventory = _inventory_with_item()
-    inventory.get_stock_bulk.side_effect = RuntimeError("bug")
+    inventory.get_stock_bulk_fresh.side_effect = RuntimeError("bug")
     with pytest.raises(RuntimeError):
         await create_quotation(_ctx(inventory), [QuotationItem(sku=_SKU, quantity=1)])
 
@@ -406,7 +407,7 @@ async def test_next_turn_is_told_to_finish_and_success_clears_the_pending_quote(
     manager_alert: Any,
 ) -> None:
     inventory = _inventory_with_item()
-    inventory.get_stock_bulk.side_effect = _rate_limit()
+    inventory.get_stock_bulk_fresh.side_effect = _rate_limit()
     ctx = _ctx(inventory)
     items = [QuotationItem(sku=_SKU, quantity=3)]
     await create_quotation(ctx, items)

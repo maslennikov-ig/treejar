@@ -2,7 +2,7 @@
   "schema_version": "noor-e2e-traceability/v1",
   "goal_id": "tj-ee5f",
   "scope_source_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
-  "source_set_digest": "6dea2d8ec0bf4deb345f8137cb6b02bf7eab02e25d52825b91e97b220085c454",
+  "source_set_digest": "b3a8579018d626fd4ad5eae0f834e85f55c8e9f4594c76515bb58a2a7271eba3",
   "precedence_order": [
     "current repository and runtime contracts",
     "original and updated requirements",
@@ -36,34 +36,34 @@
     },
     "orchestration-contract": {
       "path": ".codex/orchestrator.toml",
-      "content_digest": "4ebbe78fd253aa4865356d01299d7c3a9f267870e9d4b4e3cd1fc6232d6e7749",
+      "content_digest": "a03e1676c15047f0046982fae9c68ec49f19413eafc9356c298d6a825ef8259a",
       "sections": [
         {
           "start_locator": "schema_version = 2",
           "end_locator": null,
-          "content_digest": "4ebbe78fd253aa4865356d01299d7c3a9f267870e9d4b4e3cd1fc6232d6e7749"
+          "content_digest": "a03e1676c15047f0046982fae9c68ec49f19413eafc9356c298d6a825ef8259a"
         }
       ]
     },
     "runtime-truth": {
       "path": ".codex/handoff.md",
-      "content_digest": "498bfcf59861f8948ebea0a28f6f169e059045e4b3d7ee9abfd352c3343ad371",
+      "content_digest": "d7f060c240b4dfa4fe08e83477483d9909c80a232906515efd14ccd6dc0352dd",
       "sections": [
         {
           "start_locator": "# Orchestrator Handoff",
           "end_locator": null,
-          "content_digest": "498bfcf59861f8948ebea0a28f6f169e059045e4b3d7ee9abfd352c3343ad371"
+          "content_digest": "d7f060c240b4dfa4fe08e83477483d9909c80a232906515efd14ccd6dc0352dd"
         }
       ]
     },
     "project-index": {
       "path": ".codex/project-index.md",
-      "content_digest": "106b96da8d25b002c4d958abcf787de3eb3b40ba2e113b90146098b73c9486a8",
+      "content_digest": "0177ed620ca228b65f6fbb3dff05ab532122c1b4f5ecf9c652f607d40d1b9ae9",
       "sections": [
         {
           "start_locator": "# Project Index - Treejar AI Sales Bot",
           "end_locator": null,
-          "content_digest": "106b96da8d25b002c4d958abcf787de3eb3b40ba2e113b90146098b73c9486a8"
+          "content_digest": "0177ed620ca228b65f6fbb3dff05ab532122c1b4f5ecf9c652f607d40d1b9ae9"
         }
       ]
     },
