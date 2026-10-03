@@ -312,7 +312,7 @@ class TestCreateQuotation:
         mock_gen_pdf.return_value = b"%PDF-fake-bytes"
 
         mock_inv = AsyncMock(spec=ZohoInventoryClient)
-        mock_inv.get_stock_bulk.return_value = [
+        mock_inv.get_stock_bulk_fresh.return_value = [
             {
                 "sku": "CHAIR-01",
                 "item_id": "zoho_item_001",
@@ -351,7 +351,8 @@ class TestCreateQuotation:
         result = await create_quotation(ctx, items)  # type: ignore[arg-type]
 
         assert "SO-0001" in result
-        mock_inv.get_stock_bulk.assert_awaited_once()
+        mock_inv.get_stock_bulk_fresh.assert_awaited_once_with(["CHAIR-01"])
+        mock_inv.get_stock_bulk.assert_not_awaited()
         mock_inv.create_sale_order.assert_awaited_once()
         mock_redis.setex.assert_not_awaited()
         mock_notify.assert_not_awaited()
@@ -372,10 +373,22 @@ class TestCreateQuotation:
         mock_gen_pdf.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_quotation_sku_not_found(self) -> None:
-        """When a requested SKU is missing from stock, return error."""
+    @patch(
+        "src.llm.quotation_deferral.alert_managers_for_conversation",
+        new_callable=AsyncMock,
+        return_value=True,
+    )
+    @patch("src.services.pdf.generator.render_quotation_html")
+    @patch("src.services.pdf.generator.generate_pdf", new_callable=AsyncMock)
+    async def test_quotation_sku_not_found(
+        self,
+        mock_gen_pdf: AsyncMock,
+        mock_render: MagicMock,
+        mock_alert: AsyncMock,
+    ) -> None:
+        """Missing fresh stock preserves the exact request without business writes."""
         mock_inv = AsyncMock(spec=ZohoInventoryClient)
-        mock_inv.get_stock_bulk.return_value = []  # no items found
+        mock_inv.get_stock_bulk_fresh.return_value = []  # no items found
 
         conv = _make_conversation()
         _grant_quote_consent(conv)
@@ -385,9 +398,32 @@ class TestCreateQuotation:
         ctx = _FakeRunContext(deps=deps)
 
         items = [QuotationItem(sku="NONEXISTENT", quantity=1)]
+        details_before = dict(conv.metadata_["quote_customer_details"])
         result = await create_quotation(ctx, items)  # type: ignore[arg-type]
 
-        assert "not found" in result
+        assert "has not been sent yet" in result
+        mock_inv.get_stock_bulk_fresh.assert_awaited_once_with(["NONEXISTENT"])
+        mock_inv.get_stock_bulk.assert_not_awaited()
+        mock_inv.get_stock.assert_not_awaited()
+        mock_inv.find_customer_by_phone.assert_not_awaited()
+        mock_inv.create_contact.assert_not_awaited()
+        mock_inv.create_sale_order.assert_not_awaited()
+        mock_render.assert_not_called()
+        mock_gen_pdf.assert_not_awaited()
+        deps.messaging_client.send_media.assert_not_awaited()
+        pending = conv.metadata_["pending_quotation"]
+        assert pending["status"] == "pending"
+        assert pending["items"] == [{"sku": "NONEXISTENT", "quantity": 1}]
+        assert pending["reason"] == "inventory_unavailable"
+        assert pending["attempts"] == 1
+        assert pending["manager_notified"] is True
+        assert conv.metadata_["quote_customer_details"] == details_before
+        assert conv.metadata_["order_runtime"]["quote_workflow"]["consent"] == "granted"
+        assert conv.escalation_status == "none"
+        assert not deps.quotation_created
+        mock_alert.assert_awaited_once_with(
+            deps, [{"sku": "NONEXISTENT", "quantity": 1}], "inventory_unavailable"
+        )
 
     @pytest.mark.asyncio
     @patch(
@@ -408,7 +444,7 @@ class TestCreateQuotation:
         mock_gen_pdf.return_value = b"%PDF-bytes"
 
         mock_inv = AsyncMock(spec=ZohoInventoryClient)
-        mock_inv.get_stock_bulk.return_value = [
+        mock_inv.get_stock_bulk_fresh.return_value = [
             {
                 "sku": "DESK-01",
                 "item_id": "zoho_item_002",
@@ -448,6 +484,8 @@ class TestCreateQuotation:
         result = await create_quotation(ctx, items)  # type: ignore[arg-type]
 
         assert "couldn't finalize the exact quotation automatically" in result.lower()
+        mock_inv.get_stock_bulk_fresh.assert_awaited_once_with(["DESK-01"])
+        mock_inv.get_stock_bulk.assert_not_awaited()
         mock_redis.setex.assert_not_awaited()
         mock_notify.assert_awaited_once()
 
@@ -471,7 +509,7 @@ class TestCreateQuotation:
         mock_gen_pdf.return_value = b"%PDF-bytes"
 
         mock_inv = AsyncMock(spec=ZohoInventoryClient)
-        mock_inv.get_stock_bulk.return_value = [
+        mock_inv.get_stock_bulk_fresh.return_value = [
             {
                 "sku": "TABLE-01",
                 "item_id": "zoho_003",
@@ -513,6 +551,8 @@ class TestCreateQuotation:
         # subtotal = 2000, vat = 100, grand = 2100
         # We verify the render function was called (the VAT is inside pdf_context)
         assert "SO-0003" in result
+        mock_inv.get_stock_bulk_fresh.assert_awaited_once_with(["TABLE-01"])
+        mock_inv.get_stock_bulk.assert_not_awaited()
         mock_render.assert_called_once()
 
         # Inspect the pdf_context dict passed to render_quotation_html

@@ -317,7 +317,7 @@ class TestScenario3QuotationFlow:
         mock_gen_pdf.return_value = b"%PDF-fake-content"
 
         mock_inv = AsyncMock(spec=ZohoInventoryClient)
-        mock_inv.get_stock_bulk.return_value = [
+        mock_inv.get_stock_bulk_fresh.return_value = [
             {
                 "sku": "CHAIR-01",
                 "item_id": "zoho_001",
@@ -397,7 +397,8 @@ class TestScenario3QuotationFlow:
             )
 
         # Verify PDF pipeline
-        mock_inv.get_stock_bulk.assert_awaited_once()
+        mock_inv.get_stock_bulk_fresh.assert_awaited_once_with(["CHAIR-01"])
+        mock_inv.get_stock_bulk.assert_not_awaited()
         mock_inv.create_sale_order.assert_awaited_once()
         mock_gen_pdf.assert_awaited_once()
         mock_redis.setex.assert_not_awaited()
@@ -1225,4 +1226,5 @@ async def test_model_can_record_consent_then_observe_quotation_data_gate() -> No
     assert step == 3
     assert "delivery address" in result.output
     deps.zoho_inventory.get_stock_bulk.assert_not_awaited()
+    deps.zoho_inventory.get_stock_bulk_fresh.assert_not_awaited()
     assert not deps.quotation_created

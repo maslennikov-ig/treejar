@@ -6040,7 +6040,7 @@ async def test_tools_create_quotation_sends_pdf_to_customer_when_price_is_safe(
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.return_value = product
     db.execute.return_value = execute_result
-    zoho.get_stock_bulk.return_value = [
+    zoho.get_stock_bulk_fresh.return_value = [
         {
             "sku": "00-07024023",
             "item_id": "zoho-item-1",
@@ -6067,6 +6067,8 @@ async def test_tools_create_quotation_sends_pdf_to_customer_when_price_is_safe(
     )
 
     result = await create_quotation(ctx, [QuotationItem(sku="00-07024023", quantity=1)])
+    zoho.get_stock_bulk_fresh.assert_awaited_once_with(["00-07024023"])
+    zoho.get_stock_bulk.assert_not_awaited()
 
     assert "Quotation SO-1 has been prepared" in result
     assert "sent" in result.lower()
@@ -6144,7 +6146,7 @@ async def test_tools_create_quotation_prefers_customer_details_metadata(
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.return_value = product
     db.execute.return_value = execute_result
-    zoho.get_stock_bulk.return_value = [
+    zoho.get_stock_bulk_fresh.return_value = [
         {
             "sku": "00-07024023",
             "item_id": "zoho-item-1",
@@ -6171,6 +6173,8 @@ async def test_tools_create_quotation_prefers_customer_details_metadata(
     )
 
     result = await create_quotation(ctx, [QuotationItem(sku="00-07024023", quantity=1)])
+    zoho.get_stock_bulk_fresh.assert_awaited_once_with(["00-07024023"])
+    zoho.get_stock_bulk.assert_not_awaited()
 
     assert "Quotation SO-1 has been prepared" in result
     pdf_context = mock_render_html.call_args.args[0]
@@ -6246,7 +6250,7 @@ async def test_tools_create_quotation_individual_metadata_overrides_stale_crm_pd
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.return_value = product
     db.execute.return_value = execute_result
-    zoho.get_stock_bulk.return_value = [
+    zoho.get_stock_bulk_fresh.return_value = [
         {
             "sku": "CH-140",
             "item_id": "zoho-item-ch-140",
@@ -6279,6 +6283,8 @@ async def test_tools_create_quotation_individual_metadata_overrides_stale_crm_pd
     )
 
     result = await create_quotation(ctx, [QuotationItem(sku="CH-140", quantity=4)])
+    zoho.get_stock_bulk_fresh.assert_awaited_once_with(["CH-140"])
+    zoho.get_stock_bulk.assert_not_awaited()
 
     assert "Quotation SO-INDIVIDUAL has been prepared" in result
     pdf_context = mock_render_html.call_args.args[0]
@@ -6351,7 +6357,7 @@ async def test_tools_create_quotation_explicit_company_beats_ambiguous_individua
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.return_value = product
     db.execute.return_value = execute_result
-    zoho.get_stock_bulk.return_value = [
+    zoho.get_stock_bulk_fresh.return_value = [
         {
             "sku": "CH 620 grey",
             "item_id": "zoho-item-ch-620",
@@ -6378,6 +6384,8 @@ async def test_tools_create_quotation_explicit_company_beats_ambiguous_individua
     )
 
     result = await create_quotation(ctx, [QuotationItem(sku="CH 620 grey", quantity=5)])
+    zoho.get_stock_bulk_fresh.assert_awaited_once_with(["CH 620 grey"])
+    zoho.get_stock_bulk.assert_not_awaited()
 
     assert "Quotation SO-LLD has been prepared" in result
     pdf_context = mock_render_html.call_args.args[0]
@@ -6452,7 +6460,7 @@ async def test_tools_create_quotation_requires_explicit_email_instead_of_crm_tes
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.return_value = product
     db.execute.return_value = execute_result
-    zoho.get_stock_bulk.return_value = [
+    zoho.get_stock_bulk_fresh.return_value = [
         {
             "sku": "CH-140",
             "item_id": "zoho-item-ch-140",
@@ -6482,6 +6490,7 @@ async def test_tools_create_quotation_requires_explicit_email_instead_of_crm_tes
 
     assert "email" in result.lower()
     zoho.get_stock_bulk.assert_not_awaited()
+    zoho.get_stock_bulk_fresh.assert_not_awaited()
     zoho.create_sale_order.assert_not_awaited()
     messaging.send_media.assert_not_awaited()
     mock_render_html.assert_not_called()
@@ -6538,7 +6547,7 @@ async def test_tools_create_quotation_requires_explicit_company_or_individual_in
 
     from src.llm.engine import create_quotation
 
-    zoho.get_stock_bulk.return_value = [
+    zoho.get_stock_bulk_fresh.return_value = [
         {
             "sku": "CH-140",
             "item_id": "zoho-item-ch-140",
@@ -6561,6 +6570,7 @@ async def test_tools_create_quotation_requires_explicit_company_or_individual_in
     assert "company name" in result.lower()
     assert "individual" in result.lower()
     zoho.get_stock_bulk.assert_not_awaited()
+    zoho.get_stock_bulk_fresh.assert_not_awaited()
     zoho.create_sale_order.assert_not_awaited()
     messaging.send_media.assert_not_awaited()
     mock_render_html.assert_not_called()
@@ -6620,6 +6630,7 @@ async def test_tools_create_quotation_blocks_missing_required_customer_details_b
     assert "delivery address" in result.lower()
     assert "specific" in result.lower()
     zoho.get_stock_bulk.assert_not_awaited()
+    zoho.get_stock_bulk_fresh.assert_not_awaited()
     zoho.create_sale_order.assert_not_awaited()
     messaging.send_media.assert_not_awaited()
     mock_render_html.assert_not_called()
@@ -6676,6 +6687,7 @@ async def test_tools_create_quotation_blocks_any_invalid_item_before_zoho(
 
     assert "items and quantities" in result.lower()
     zoho.get_stock_bulk.assert_not_awaited()
+    zoho.get_stock_bulk_fresh.assert_not_awaited()
     zoho.create_sale_order.assert_not_awaited()
     messaging.send_media.assert_not_awaited()
     mock_render_html.assert_not_called()
@@ -6727,7 +6739,7 @@ async def test_tools_create_quotation_blocks_when_catalog_line_rate_override_fai
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.return_value = product
     db.execute.return_value = execute_result
-    zoho.get_stock_bulk.return_value = [
+    zoho.get_stock_bulk_fresh.return_value = [
         {
             "sku": "00-07024023",
             "item_id": "zoho-item-1",
@@ -6746,6 +6758,8 @@ async def test_tools_create_quotation_blocks_when_catalog_line_rate_override_fai
     )
 
     result = await create_quotation(ctx, [QuotationItem(sku="00-07024023", quantity=1)])
+    zoho.get_stock_bulk_fresh.assert_awaited_once_with(["00-07024023"])
+    zoho.get_stock_bulk.assert_not_awaited()
 
     line_items = zoho.create_sale_order.await_args.kwargs["items"]
     assert line_items[0]["rate"] == 310.65
@@ -6761,7 +6775,17 @@ async def test_tools_create_quotation_blocks_when_catalog_line_rate_override_fai
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
 )
-async def test_tools_create_quotation_catalog_mismatch_alerts_without_escalating(
+@patch("src.services.pdf.generator.generate_pdf", new_callable=AsyncMock)
+@patch("src.services.pdf.generator.render_quotation_html")
+@patch(
+    "src.llm.quotation_deferral.alert_managers_for_conversation",
+    new_callable=AsyncMock,
+    return_value=True,
+)
+async def test_tools_create_quotation_missing_fresh_item_defers_before_catalog_check(
+    mock_alert: AsyncMock,
+    mock_render_html: MagicMock,
+    mock_generate_pdf: AsyncMock,
     mock_notify_manager: AsyncMock,
     mock_notify_mismatch: AsyncMock,
     mock_deps: tuple[
@@ -6810,7 +6834,7 @@ async def test_tools_create_quotation_catalog_mismatch_alerts_without_escalating
     result_b = MagicMock()
     result_b.scalar_one_or_none.return_value = catalog_only_product
     db.execute.side_effect = [result_a, result_b, result_b]
-    zoho.get_stock_bulk.return_value = [
+    zoho.get_stock_bulk_fresh.return_value = [
         {
             "sku": "00-07024023",
             "item_id": "zoho-item-1",
@@ -6827,6 +6851,7 @@ async def test_tools_create_quotation_catalog_mismatch_alerts_without_escalating
         deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
     )
 
+    details_before = dict(conv.metadata_["quote_customer_details"])
     result = await create_quotation(
         ctx,
         [
@@ -6835,11 +6860,33 @@ async def test_tools_create_quotation_catalog_mismatch_alerts_without_escalating
         ],
     )
 
-    assert "couldn't confirm exact price and availability" in result.lower()
+    assert "has not been sent yet" in result.lower()
+    zoho.get_stock_bulk_fresh.assert_awaited_once_with(["00-07024023", "CATALOG-ONLY"])
+    zoho.get_stock_bulk.assert_not_awaited()
+    zoho.get_stock.assert_not_awaited()
+    zoho.find_customer_by_phone.assert_not_awaited()
+    zoho.create_contact.assert_not_awaited()
     zoho.create_sale_order.assert_not_awaited()
-    mismatch_events = conv.metadata_["catalog_zoho_mismatches"]
-    assert [event["sku"] for event in mismatch_events] == ["CATALOG-ONLY"]
-    mock_notify_mismatch.assert_awaited_once()
+    mock_render_html.assert_not_called()
+    mock_generate_pdf.assert_not_awaited()
+    messaging.send_media.assert_not_awaited()
+    db.execute.assert_not_awaited()
+    assert "catalog_zoho_mismatches" not in conv.metadata_
+    pending = conv.metadata_["pending_quotation"]
+    assert pending["status"] == "pending"
+    assert pending["items"] == [
+        {"sku": "00-07024023", "quantity": 1},
+        {"sku": "CATALOG-ONLY", "quantity": 1},
+    ]
+    assert pending["reason"] == "inventory_unavailable"
+    assert pending["attempts"] == 1
+    assert pending["manager_notified"] is True
+    assert conv.metadata_["quote_customer_details"] == details_before
+    assert conv.metadata_["order_runtime"]["quote_workflow"]["consent"] == "granted"
+    assert conv.escalation_status == "none"
+    assert not deps.quotation_created
+    mock_alert.assert_awaited_once_with(deps, pending["items"], "inventory_unavailable")
+    mock_notify_mismatch.assert_not_awaited()
     mock_notify_manager.assert_not_awaited()
 
 
@@ -6849,7 +6896,17 @@ async def test_tools_create_quotation_catalog_mismatch_alerts_without_escalating
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
 )
+@patch("src.services.pdf.generator.generate_pdf", new_callable=AsyncMock)
+@patch("src.services.pdf.generator.render_quotation_html")
+@patch(
+    "src.llm.quotation_deferral.alert_managers_for_conversation",
+    new_callable=AsyncMock,
+    return_value=True,
+)
 async def test_tools_create_quotation_blocks_catalog_only_item_without_escalation(
+    mock_alert: AsyncMock,
+    mock_render_html: MagicMock,
+    mock_generate_pdf: AsyncMock,
     mock_notify_manager: AsyncMock,
     mock_notify_mismatch: AsyncMock,
     mock_deps: tuple[
@@ -6885,20 +6942,42 @@ async def test_tools_create_quotation_blocks_catalog_only_item_without_escalatio
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.return_value = product
     db.execute.return_value = execute_result
-    zoho.get_stock_bulk.return_value = []
+    zoho.get_stock_bulk_fresh.return_value = []
     zoho.get_stock.return_value = None
 
     ctx = RunContext(
         deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
     )
 
+    details_before = dict(conv.metadata_["quote_customer_details"])
     result = await create_quotation(
         ctx, [QuotationItem(sku="CATALOG-ONLY", quantity=1)]
     )
 
-    assert "couldn't confirm exact price and availability" in result.lower()
+    assert "has not been sent yet" in result.lower()
+    zoho.get_stock_bulk_fresh.assert_awaited_once_with(["CATALOG-ONLY"])
+    zoho.get_stock_bulk.assert_not_awaited()
+    zoho.get_stock.assert_not_awaited()
+    zoho.find_customer_by_phone.assert_not_awaited()
+    zoho.create_contact.assert_not_awaited()
     zoho.create_sale_order.assert_not_awaited()
-    mock_notify_mismatch.assert_awaited_once()
+    mock_render_html.assert_not_called()
+    mock_generate_pdf.assert_not_awaited()
+    messaging.send_media.assert_not_awaited()
+    db.execute.assert_not_awaited()
+    assert "catalog_zoho_mismatches" not in conv.metadata_
+    pending = conv.metadata_["pending_quotation"]
+    assert pending["status"] == "pending"
+    assert pending["items"] == [{"sku": "CATALOG-ONLY", "quantity": 1}]
+    assert pending["reason"] == "inventory_unavailable"
+    assert pending["attempts"] == 1
+    assert pending["manager_notified"] is True
+    assert conv.metadata_["quote_customer_details"] == details_before
+    assert conv.metadata_["order_runtime"]["quote_workflow"]["consent"] == "granted"
+    assert conv.escalation_status == "none"
+    assert not deps.quotation_created
+    mock_alert.assert_awaited_once_with(deps, pending["items"], "inventory_unavailable")
+    mock_notify_mismatch.assert_not_awaited()
     mock_notify_manager.assert_not_awaited()
 
 
@@ -6949,7 +7028,7 @@ async def test_tools_create_quotation_fails_closed_when_catalog_price_missing_or
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.return_value = product
     db.execute.return_value = execute_result
-    zoho.get_stock_bulk.return_value = [
+    zoho.get_stock_bulk_fresh.return_value = [
         {
             "sku": "00-07024023",
             "item_id": "zoho-item-1",
@@ -6976,6 +7055,8 @@ async def test_tools_create_quotation_fails_closed_when_catalog_price_missing_or
     )
 
     result = await create_quotation(ctx, [QuotationItem(sku="00-07024023", quantity=1)])
+    zoho.get_stock_bulk_fresh.assert_awaited_once_with(["00-07024023"])
+    zoho.get_stock_bulk.assert_not_awaited()
 
     assert "couldn't confirm a customer-facing catalog price" in result.lower()
     assert "685" not in result
@@ -12150,6 +12231,7 @@ async def test_create_quotation_blocks_untrusted_workflow_before_adapters(
 
     assert "explicitly confirm" in response.casefold()
     zoho.get_stock_bulk.assert_not_awaited()
+    zoho.get_stock_bulk_fresh.assert_not_awaited()
     zoho.create_sale_order.assert_not_awaited()
     messaging.send_media.assert_not_awaited()
 
@@ -12176,7 +12258,7 @@ async def test_create_quotation_migrates_trusted_legacy_grant_before_inventory(
         },
     }
     db.execute.return_value.scalar_one_or_none.return_value = None
-    zoho.get_stock_bulk.return_value = []
+    zoho.get_stock_bulk_fresh.return_value = []
     zoho.get_stock.return_value = None
     deps = SalesDeps(
         db=db,
@@ -12202,6 +12284,12 @@ async def test_create_quotation_migrates_trusted_legacy_grant_before_inventory(
     )
 
     assert "explicitly confirm" not in response.casefold()
+    zoho.get_stock_bulk_fresh.assert_awaited_once_with(["CH-616"])
+    zoho.get_stock_bulk.assert_not_awaited()
+    zoho.get_stock.assert_not_awaited()
+    assert conv.metadata_["pending_quotation"]["items"] == [
+        {"sku": "CH-616", "quantity": 2}
+    ]
     assert conv.metadata_["order_runtime"]["quote_workflow"]["consent"] == "granted"
 
 

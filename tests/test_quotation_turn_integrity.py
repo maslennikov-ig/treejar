@@ -70,7 +70,7 @@ def _conversation_after_consent() -> Conversation:
 
 def _zoho() -> AsyncMock:
     zoho = AsyncMock()
-    zoho.get_stock_bulk.return_value = [
+    zoho.get_stock_bulk_fresh.return_value = [
         {
             "sku": LUMA,
             "item_id": "zoho-luma-1",
@@ -240,6 +240,8 @@ async def test_details_completing_turn_creates_the_quotation_the_model_skipped()
         source_message_id="244fc940",
     )
 
+    zoho.get_stock_bulk_fresh.assert_awaited_once_with([LUMA])
+    zoho.get_stock_bulk.assert_not_awaited()
     zoho.create_sale_order.assert_awaited_once()
     line = zoho.create_sale_order.await_args.kwargs["items"][0]
     assert (line["item_id"], line["quantity"]) == ("zoho-luma-1", 1)
@@ -275,6 +277,8 @@ async def test_details_turn_where_the_model_quotes_itself_is_left_alone() -> Non
 
     zoho.create_sale_order.assert_awaited_once()
     assert response.text.endswith("Quotation Fr4032 has been sent to you.")
+    zoho.get_stock_bulk_fresh.assert_awaited_once_with([LUMA])
+    zoho.get_stock_bulk.assert_not_awaited()
     assert not response.model.endswith("|quotation-completion")
     assert len(model.steps) == 3
 
@@ -323,6 +327,8 @@ async def test_details_turn_still_missing_a_detail_does_not_quote() -> None:
         source_message_id="244fc940",
     )
 
+    zoho.get_stock_bulk_fresh.assert_not_awaited()
+    zoho.get_stock_bulk.assert_not_awaited()
     zoho.create_sale_order.assert_not_awaited()
     assert "email" in response.text
     lifecycle = conversation.metadata_["order_runtime"]["quote_workflow"]["lifecycle"]
@@ -399,6 +405,8 @@ async def test_a_later_turn_never_reissues_the_sent_quotation(accept: bool) -> N
     first_instructions = model.steps[0].instructions or ""
     assert "call create_quotation now" not in first_instructions
     # ...and a call made anyway creates nothing.
+    zoho.get_stock_bulk_fresh.assert_awaited_once_with([LUMA])
+    zoho.get_stock_bulk.assert_not_awaited()
     assert zoho.create_sale_order.await_count == 1
     assert messaging.send_media.await_count == 1
     assert any(
@@ -451,6 +459,8 @@ async def test_a_quotation_call_refused_too_early_is_still_owed() -> None:
     zoho.create_sale_order.assert_awaited_once()
     assert "Fr4032" in response.text
     assert response.model.endswith("|quotation-completion")
+    zoho.get_stock_bulk_fresh.assert_awaited_once_with([LUMA])
+    zoho.get_stock_bulk.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -464,7 +474,7 @@ async def test_a_deferred_quotation_call_is_not_repeated() -> None:
     conversation = _conversation_after_consent()
     zoho, messaging = _zoho(), _messaging()
     request = httpx.Request("GET", "https://www.zohoapis.eu/inventory/v1/items")
-    zoho.get_stock_bulk.side_effect = ZohoRateLimitError(
+    zoho.get_stock_bulk_fresh.side_effect = ZohoRateLimitError(
         "429 Too Many Requests",
         request=request,
         response=httpx.Response(429, request=request),
@@ -486,7 +496,8 @@ async def test_a_deferred_quotation_call_is_not_repeated() -> None:
             source_message_id="244fc940",
         )
 
-    assert zoho.get_stock_bulk.await_count == 1
+    zoho.get_stock_bulk_fresh.assert_awaited_once_with([LUMA])
+    zoho.get_stock_bulk.assert_not_awaited()
     zoho.create_sale_order.assert_not_awaited()
     assert not response.model.endswith("|quotation-completion")
     assert conversation.metadata_["pending_quotation"]["status"] == "pending"
