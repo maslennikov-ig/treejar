@@ -21,6 +21,7 @@ from src.integrations.inventory.zoho_inventory import (
     ZohoInventoryClient,
     ZohoRateLimitError,
     parse_retry_after,
+    reset_rate_limit_cooldown,
 )
 
 
@@ -135,6 +136,66 @@ async def test_cooldown_started_by_another_process_is_respected() -> None:
         await client.get_stock("A")
     request.assert_not_awaited()
     await client.close()
+
+
+@pytest.mark.parametrize(
+    ("retry_after", "cooldown_seconds"), [(1800, 1800), (7200, 7200), (99999999, 86400)]
+)
+@pytest.mark.asyncio
+async def test_provider_cooldown_blocks_early_retries_and_allows_recovery(
+    retry_after: int, cooldown_seconds: int
+) -> None:
+    redis = _FakeRedis()
+    client = _client(redis)
+    started = 1790991000.0
+    request = AsyncMock(
+        return_value=_response(429, headers={"Retry-After": str(retry_after)})
+    )
+    with (
+        patch.object(client.client, "request", request),
+        patch(
+            "src.integrations.inventory.zoho_inventory.time.time", return_value=started
+        ),
+        pytest.raises(ZohoRateLimitError),
+    ):
+        await client.get_stock("A")
+
+    key, deadline, ttl = redis.set_calls[-1]
+    assert key == ZOHO_RATE_LIMIT_COOLDOWN_KEY
+    assert ttl == cooldown_seconds
+    assert float(deadline) == started + cooldown_seconds
+
+    # A second process has no local cooldown and depends on the shared deadline.
+    reset_rate_limit_cooldown()
+    other = _client(redis)
+    early_request = AsyncMock(
+        return_value=_response(200, json={"items": [{"sku": "A", "stock_on_hand": 2}]})
+    )
+    with (
+        patch.object(other.client, "request", early_request),
+        patch(
+            "src.integrations.inventory.zoho_inventory.time.time",
+            return_value=started + 301,
+        ),
+        pytest.raises(ZohoRateLimitError) as blocked,
+    ):
+        await other.get_stock("A")
+
+    assert blocked.value.local_cooldown is True
+    assert blocked.value.retry_after_seconds == cooldown_seconds - 301
+    early_request.assert_not_awaited()
+
+    with (
+        patch.object(other.client, "request", early_request),
+        patch(
+            "src.integrations.inventory.zoho_inventory.time.time",
+            return_value=started + cooldown_seconds + 1,
+        ),
+    ):
+        assert await other.get_stock("A") == {"sku": "A", "stock_on_hand": 2}
+    early_request.assert_awaited_once()
+    await client.close()
+    await other.close()
 
 
 @pytest.mark.asyncio

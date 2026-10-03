@@ -38,7 +38,9 @@ logger = logging.getLogger(__name__)
 # stops calling Zoho Inventory for a short cooldown instead of hammering it.
 ZOHO_RATE_LIMIT_COOLDOWN_KEY = "zoho:inventory:rate_limited_until"
 _RATE_LIMIT_DEFAULT_COOLDOWN_SECONDS = 30.0
-_RATE_LIMIT_MAX_COOLDOWN_SECONDS = 300.0
+# Zoho's org block can last 30 minutes. Do not retry every five minutes while
+# Retry-After still forbids requests; bound abnormal values to one day.
+_RATE_LIMIT_MAX_COOLDOWN_SECONDS = 86400.0
 # Longest single wait a request will sit through before retrying a read; a
 # longer Retry-After ends the request at once and leaves the cooldown in place.
 _RATE_LIMIT_MAX_INLINE_WAIT_SECONDS = 8.0
@@ -614,7 +616,7 @@ class ZohoInventoryClient(InventoryProvider):
                 remaining = max(remaining, float(raw) - now)
         return max(remaining, 0.0)
 
-    async def _start_cooldown(self, seconds: float) -> None:
+    async def _start_cooldown(self, seconds: float) -> float:
         global _process_rate_limited_until
         seconds = min(max(seconds, 1.0), _RATE_LIMIT_MAX_COOLDOWN_SECONDS)
         deadline = time.time() + seconds
@@ -627,6 +629,7 @@ class ZohoInventoryClient(InventoryProvider):
             )
         except Exception:
             logger.warning("Could not share the Zoho rate-limit cooldown via Redis")
+        return seconds
 
     def _cooldown_error(
         self, method: str, path: str, remaining: float
@@ -733,7 +736,7 @@ class ZohoInventoryClient(InventoryProvider):
                     if retry_after is not None
                     else _RATE_LIMIT_DEFAULT_COOLDOWN_SECONDS
                 )
-                await self._start_cooldown(cooldown)
+                cooldown = await self._start_cooldown(cooldown)
                 logger.warning(
                     "Zoho Inventory rate limit on %s %s after %d attempt(s); "
                     "cooldown %.0fs",
