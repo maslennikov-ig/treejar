@@ -1,0 +1,71 @@
+{
+  "evidence_kind": "offline_transport_interception",
+  "provider_live_proof": false,
+  "cases": [
+    {
+      "case": "unchanged",
+      "passed": true,
+      "inventory_gets": 0
+    },
+    {
+      "case": "unknown",
+      "passed": true,
+      "inventory_gets": 0
+    },
+    {
+      "case": "rewound",
+      "passed": true,
+      "inventory_gets": 0
+    },
+    {
+      "case": "success",
+      "passed": true,
+      "inventory_gets": 3
+    },
+    {
+      "case": "missing",
+      "passed": true,
+      "inventory_gets": 2
+    },
+    {
+      "case": "401",
+      "passed": true,
+      "inventory_gets": 1
+    },
+    {
+      "case": "429",
+      "passed": true,
+      "inventory_gets": 1
+    },
+    {
+      "case": "cooldown",
+      "passed": true,
+      "inventory_gets": 0
+    },
+    {
+      "case": "bad_context",
+      "passed": true,
+      "inventory_gets": 1
+    },
+    {
+      "case": "repeated",
+      "passed": true,
+      "inventory_gets": 2
+    },
+    {
+      "case": "page_cap",
+      "passed": true,
+      "inventory_gets": 15
+    },
+    {
+      "case": "wrong_item",
+      "passed": true,
+      "inventory_gets": 3
+    },
+    {
+      "case": "moved_again",
+      "passed": true,
+      "inventory_gets": 3
+    }
+  ]
+}

@@ -167,3 +167,10 @@ membership absent. Access available, no Viktor login required.21offline guard
 cases plus retained17grant/6audit checks pass. Filter docs independently read
 by filter_docs_review; stock-only timestamp advancement remains undocumented.
 Runtime/release footprint unchanged; deltaOFF/task in_progress.
+
+
+Bounded natural quantity observer live-started04Oct11:48UTC, baseline2397 numeric
+rows; stop after first comparison or05Oct11:48UTC. Snapshot Redis GET only,
+then <=16 cached-token InventoryGET, no OAuth/retry/writes.13offline observer
+guards pass; startup receipt SHA-binds source. No coverage/activation claim.
+Pending terminal output must be read by root; no automatic notification installed.

@@ -1,0 +1,111 @@
+All checks passed!
+10 files already formatted
+{
+  "evidence_kind": "offline_transport_interception",
+  "provider_live_proof": false,
+  "cases": [
+    {
+      "case": "unchanged",
+      "passed": true,
+      "inventory_gets": 0
+    },
+    {
+      "case": "unknown",
+      "passed": true,
+      "inventory_gets": 0
+    },
+    {
+      "case": "rewound",
+      "passed": true,
+      "inventory_gets": 0
+    },
+    {
+      "case": "success",
+      "passed": true,
+      "inventory_gets": 3
+    },
+    {
+      "case": "missing",
+      "passed": true,
+      "inventory_gets": 2
+    },
+    {
+      "case": "401",
+      "passed": true,
+      "inventory_gets": 1
+    },
+    {
+      "case": "429",
+      "passed": true,
+      "inventory_gets": 1
+    },
+    {
+      "case": "cooldown",
+      "passed": true,
+      "inventory_gets": 0
+    },
+    {
+      "case": "bad_context",
+      "passed": true,
+      "inventory_gets": 1
+    },
+    {
+      "case": "repeated",
+      "passed": true,
+      "inventory_gets": 2
+    },
+    {
+      "case": "page_cap",
+      "passed": true,
+      "inventory_gets": 15
+    },
+    {
+      "case": "wrong_item",
+      "passed": true,
+      "inventory_gets": 3
+    },
+    {
+      "case": "moved_again",
+      "passed": true,
+      "inventory_gets": 3
+    }
+  ]
+}
+Executed observer source/startup bound; runtime release digest unchanged
+orchestration contract OK (balanced-v2.19 via orchestration-setup)
+git diff --check OK
+git status --short
+ M .codex/handoff.md
+ M .codex/orchestrator.toml
+ M .codex/stages/tj-ee5f/traceability-manifest.json
+ M .codex/stages/tj-uvld-stock-sync/artifacts/tj-uvld.md
+ M .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-2fc89a78ee27f03ee00ce6605169681036c1bf00b35f0aa26fc193078eacd054.json
+ M .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-466c2f308b48c7661d646fdd068fbecea974c665fe65dbf8ed508f224180ce0b.json
+ M .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-9d43df80de1d23bc323c6b088e04f7ea6cb70cfedd9fa51447ea32eebaa86522.json
+ M .codex/stages/tj-uvld-stock-sync/summary.md
+ M docs/reports/2026-10-04-zoho-stock-sync-optimization.md
+ M docs/research/2026-10-04-zoho-stock/README.md
+?? .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-2011a6e246f7cdc0ac281e1a9fb1adab5bb6a38d1a928524a11c24166d700317.json
+?? .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-7de1b2dfd23a24f4b12d441649b3b6c2b5e6e61060cc6d5fc0bf30086ed08b8f.json
+?? docs/research/2026-10-04-zoho-stock/snapshot-watch-launch.json
+?? docs/research/2026-10-04-zoho-stock/snapshot-watch-offline-checks.json
+?? docs/research/2026-10-04-zoho-stock/snapshot-watch-root-acceptance.txt
+?? docs/research/2026-10-04-zoho-stock/snapshot-watch-selftest.py
+?? docs/research/2026-10-04-zoho-stock/snapshot-watch.py
+artifact validation OK
+stage tj-uvld-stock-sync ready
+process verification OK
+blocking review findings OK
+child acceptance cleanup OK
+project index review OK (stage summary records no-change review)
+documentation review OK (structural)
+debt marker scan OK
+== verification group: root_selected_commands ==
+$ uv run --no-sync ruff check docs/research/2026-10-04-zoho-stock/
+$ uv run --no-sync ruff format --check docs/research/2026-10-04-zoho-stock/
+$ uv run --no-sync python docs/research/2026-10-04-zoho-stock/snapshot-watch-selftest.py
+$ uv run --no-sync python -c 'import hashlib,json,sys; from pathlib import Path; root=Path("docs/research/2026-10-04-zoho-stock"); receipt=json.loads((root/"snapshot-watch-launch.json").read_text()); assert hashlib.sha256((root/"snapshot-watch.py").read_bytes()).hexdigest()==receipt["source_sha256"]; assert receipt["provider_coverage_verified"] is False; assert any(event.get("event")=="baseline" for event in receipt["startup_events"]); sys.path.insert(0,"scripts/orchestration"); from run_stage_closeout import compute_content_digest; release=json.loads((root/"source-evidence-reuse.json").read_text()); assert compute_content_digest(Path.cwd(),release["source_paths"])==release["expected_source_digest"]; print("Executed observer source/startup bound; runtime release digest unchanged")'
+$ git diff --check
+$ /home/me/code/treejar/.worktrees/tj-uvld-stock-sync/scripts/orchestration/run_process_verification.sh --stage tj-uvld-stock-sync
+blocking review findings OK
+stage closeout verification OK

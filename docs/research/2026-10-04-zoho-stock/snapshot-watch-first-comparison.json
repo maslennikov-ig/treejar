@@ -1,0 +1,35 @@
+{
+  "checked_at_utc": "2026-10-04T11:53:55.550897+00:00",
+  "source_sha256": "10acc81d61428af7d497831f0671152b86d40762eae73d3c91c4c535fe8d9447",
+  "local_ssh_pid": 71170,
+  "process_start_ticks": "6341261",
+  "matching_process_alive": true,
+  "provider_coverage_verified": false,
+  "events": [
+    {
+      "event": "started",
+      "at_utc": "2026-10-04T11:48:19.944060+00:00",
+      "deadline_utc": "2026-10-05T11:48:19.944084+00:00",
+      "read_only": true,
+      "max_duration_seconds": 86400,
+      "interval_seconds": 60,
+      "max_inventory_gets": 16,
+      "oauth_exchanges": 0,
+      "redis_writes": 0,
+      "provider_coverage_verified": false
+    },
+    {
+      "event": "baseline",
+      "full_utc": "2026-10-04T11:46:00.252985+00:00",
+      "numeric_stock_rows": 2397
+    },
+    {
+      "event": "full_snapshot_compared",
+      "full_utc": "2026-10-04T11:51:00.456526+00:00",
+      "changed_quantities": 0,
+      "added_rows": 0,
+      "removed_rows": 0,
+      "inventory_gets": 0
+    }
+  ]
+}

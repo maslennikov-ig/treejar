@@ -60,6 +60,14 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
   Current docs do not guarantee stock-only changes advance item timestamps.
  21offline Self Client guards passed; old17grant/6audit checks retained.
   Archived localhost server-based helper is not a client/Viktor instruction.
+- Bounded natural quantity observer started04Oct11:48:19UTC, deadline05Oct
+ 11:48:19UTC (14:48MSK). Initial full11:46UTC:2397 numeric-stock rows;
+ unknown quantities are excluded, never zero. Snapshot Redis GET only until
+ first quantity change; then <=16 cached-token InventoryGET, no OAuth/retry/
+ writes. Stops after one comparison or24h. Startup/source-bound receipt and
+13offline observer guards: research snapshot-watch-* files. Local SSHPID71170;
+ private runtime directory is in snapshot-watch-launch.json. Observer output
+ still needs root reading; no automatic chat callback or delta activation.
 
 - Read-only probes2026-10-03:9 InventoryGETs,8HTTP200+1HTTP400.
   Literal trailingZ rejected; +0000 accepted, including sorted empty delta.

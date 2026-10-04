@@ -198,5 +198,37 @@ Ruff/format/process и pure launcher build. Локальные fixtures не я�
 Receipts и воспроизводимые entrypoints:
 `docs/research/2026-10-04-zoho-stock/README.md`.
 
-docs-reviewed: updated - prior Viktor instructions found, live temporary read-only access, historical helper superseded, remaining causal data gate.
-graph-reviewed: no-change-needed - no enabled task-owned graph; runtime entrypoints unchanged.
+## Ограниченное наблюдение обычных изменений
+
+Пассивное ожидание заменено конкретной проверкой: **04октября14:48:19МСК**
+запущено сравнение последовательных полных снимков, только на чтение.
+Исходный снимок14:46МСК содержит2397позиций с числовым остатком. Неизвестные
+количества исключены; нулём не подменяются. Старые количества из существующего
+последнего снимка и сегодняшней корректировки достоверно не восстанавливаются.
+
+Наблюдение читает уже существующий Redis-кэш раз в минуту. Пока количество
+не изменилось, дополнительных запросов к Zoho нет. При первом изменении:
+выборка modified-since с полной проверкой страниц, затем подтверждение текущего
+остатка одной выбранной позиции через API. Максимум16InventoryGET; cached token,
+без OAuth/refresh/retry/Redis или складских записей, cooldown/401/429 stops.
+Сравнение завершится после первого изменения либо **05октября14:48:19МСК**.
+Службы, расписания и настройки production не менялись; работает временный процесс.
+
+Live startup и точный source hash сохранены в snapshot-watch-launch.json.
+**13 локальных проверок** прошли: неизвестное количество, откат источника,
+пропуск позиции, страницы/повторы/лимиты,401/429/cooldown, identity и изменение
+количества повторно. Локальные fixtures не доказывают поведение Zoho.
+На запуске зафиксирован baseline; результата сравнения изменений ещё нет.
+
+Изменения количества — часть AC02. Один наблюдаемый пример не доказывает все
+виды операций, lifecycle и стабильность страниц. Терминальный результат должен
+прочитать исполнитель и сопоставить с историей обычных операций. Автоматическое
+уведомление в чат не установлено; запись сама по себе не включает оптимизацию.
+Виктору и владельцу сейчас не нужны новые настройки или специальные движения.
+Delta остаётся выключена, реальная суточная экономия не измерена.
+
+Команды, ограничения и путь результата:
+`docs/research/2026-10-04-zoho-stock/README.md`.
+
+docs-reviewed: updated - bounded natural-stock observation launched, current data limitations and exact remaining gates.
+graph-reviewed: no-change-needed - temporary diagnostic only; production runtime entrypoints unchanged.

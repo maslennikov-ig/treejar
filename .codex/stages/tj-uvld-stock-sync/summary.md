@@ -164,3 +164,29 @@ membership/lifecycle/paging proof under normal operations. Delta staysOFF.
 
 Exact clean filter_docs_review tree/branch removed after completion and ancestry
 verification; no force cleanup. Root task tree retained for remaining data gate.
+
+## Natural quantity observation,04Oct11:48UTC
+
+Owner asks whether waiting is sufficient. Root implemented a bounded read-only
+observer in the existing stage, no subagent needed for the coupled context.
+StockState retains the current full, not old quantity history; historical
+before quantities cannot be reconstructed reliably from present stock+adjustment.
+
+Live startup confirmed: sourceSHA10acc81d, baseline full11:46UTC,2397 numeric
+quantity rows. Unknown quantities omitted rather than zero. Redis GET only
+until the first quantity difference between published full snapshots. Then
+cached-token GET/items with before-full minus120s boundary, explicit complete
+page/unique-ID checks and one current-ID confirmation; <=16 InventoryGET total,
+no OAuth/refresh/retry/Redis writes. Stops after the first comparison or24h;
+deadline05Oct11:48:19UTC/14:48MSK. Temporary app process, no service/config change.
+
+Private runtime path/PID recorded in snapshot-watch-launch.json; no credentials,
+SKU or business IDs in receipts.13offline cases cover quantity unknown handling,
+source rewind, absent-from-delta, paging/identity/cooldown/401/429/caps and
+subsequent quantity drift. Offline transport is not provider evidence.
+
+This observer covers quantity differences in numeric rows, not all lifecycle
+or named operation types. One paged comparison is not stability proof. All
+coverage/activation/optimized24h gates stay false. Startup is live proof only
+of observation readiness. Root must read terminal output before updating truth;
+no automatic chat callback installed. No new acceptance boundary/helper stage.

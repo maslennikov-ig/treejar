@@ -124,3 +124,46 @@ Current official temporary grant contract:
 Inventory support was established by the live receipts, not assumed from the
 generic OAuth documentation. Historical manual code flow:
 [Self Client authorization code](https://www.zoho.com/developer/oauth/self-client/authorization-code-flow.html).
+
+
+## Bounded natural quantity observation, active run
+
+snapshot-watch.py launched04Oct11:48:19UTC (14:48MSK). Stops after the first
+quantity comparison or05Oct11:48:19UTC (14:48MSK). Initial full11:46UTC contains
+2397 numeric quantity rows; unknown stock values are excluded, never zero.
+SourceSHA10acc81d61428af7d497831f0671152b86d40762eae73d3c91c4c535fe8d9447
+matches the exact code submitted to app through SSH stdin. Live startup receipt:
+snapshot-watch-launch.json.13offline fixtures: snapshot-watch-offline-checks.json.
+
+Current snapshots alone cannot reconstruct historical old quantities. Observer
+keeps successive full snapshots in app memory and exports no identifiers/SKU.
+Until a natural quantity change occurs, only Redis GET is used: zero Inventory
+or OAuth requests. On the first change, reads cached token and executes a bounded
+modified-since list (<=15pages, page_context/unique identities required) plus one
+current-item identity/quantity confirmation. Total<=16InventoryGET, cooldown at
+every request,401/429/other failures stop, no retries/refresh/config/data writes.
+
+One comparison does not certify page stability, operation type coverage or
+lifecycle completeness. Provider coverage always remains false in this tool.
+Root must read the terminal event and correlate with ordinary operation history.
+No automatic chat notification or feature activation is installed.
+
+Read the active private events.jsonl in the runtime directory recorded in
+snapshot-watch-launch.json. Check the exact recorded SSHPID and its /proc
+command/start time before attributing liveness or terminating. Do not start a
+second run while this one is active. No daemon or schedule/service was installed.
+
+Reproduce offline guards:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 UV_PROJECT_ENVIRONMENT=/home/me/code/treejar/.venv PYTHONPATH=$PWD \
+  uv run --no-sync python docs/research/2026-10-04-zoho-stock/snapshot-watch-selftest.py
+```
+
+After the existing run ends, an explicitly authorized fresh bounded run can use:
+
+```sh
+ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=2 noor-server \
+  'cd /opt/noor && docker compose exec -T -e PYTHONDONTWRITEBYTECODE=1 app python - --duration-seconds 86400 --interval-seconds 60' \
+  < docs/research/2026-10-04-zoho-stock/snapshot-watch.py
+```
