@@ -1,0 +1,127 @@
+{
+  "measured_at_utc": "2026-10-04T06:05:43.299571+00:00",
+  "read_only": true,
+  "max_inventory_gets": 16,
+  "requests": [
+    {
+      "operation": "recent_item_metadata_sample",
+      "status": 200
+    },
+    {
+      "operation": "last24h_delta_page_1",
+      "status": 200,
+      "summary": {
+        "rows": 3,
+        "dates": {
+          "date": {
+            "present": 0,
+            "min": null,
+            "max": null
+          },
+          "created_time": {
+            "present": 3,
+            "min": "2023-03-21T00:31:14+04:00",
+            "max": "2023-03-21T00:32:01+04:00"
+          },
+          "last_modified_time": {
+            "present": 3,
+            "min": "2026-03-18T14:28:04+04:00",
+            "max": "2026-03-18T14:29:13+04:00"
+          }
+        },
+        "numeric_stock_rows": 3,
+        "line_items_present": 0
+      }
+    },
+    {
+      "operation": "last24h_delta_page_2",
+      "status": 200,
+      "summary": {
+        "rows": 3,
+        "dates": {
+          "date": {
+            "present": 0,
+            "min": null,
+            "max": null
+          },
+          "created_time": {
+            "present": 3,
+            "min": "2023-03-21T00:32:15+04:00",
+            "max": "2023-05-16T19:07:44+04:00"
+          },
+          "last_modified_time": {
+            "present": 3,
+            "min": "2026-03-18T14:29:34+04:00",
+            "max": "2026-03-18T14:56:15+04:00"
+          }
+        },
+        "numeric_stock_rows": 3,
+        "line_items_present": 0
+      }
+    },
+    {
+      "operation": "last24h_delta_page_3",
+      "status": 200,
+      "summary": {
+        "rows": 3,
+        "dates": {
+          "date": {
+            "present": 0,
+            "min": null,
+            "max": null
+          },
+          "created_time": {
+            "present": 3,
+            "min": "2023-05-16T18:59:40+04:00",
+            "max": "2025-01-09T15:09:28+04:00"
+          },
+          "last_modified_time": {
+            "present": 3,
+            "min": "2026-05-12T12:58:05+04:00",
+            "max": "2026-07-07T15:18:53+04:00"
+          }
+        },
+        "numeric_stock_rows": 3,
+        "line_items_present": 0
+      }
+    },
+    {
+      "operation": "inventoryadjustments_sample",
+      "status": 401
+    }
+  ],
+  "provider_coverage_verified": false,
+  "limitations": [
+    "Bounded history samples are not complete histories.",
+    "No before/after stock observations or causal operation proof.",
+    "No item lifecycle operations were performed."
+  ],
+  "organization_fingerprint": "544f8528f9db448a",
+  "recent_item_metadata_sample": {
+    "rows": 3,
+    "dates": {
+      "date": {
+        "present": 0,
+        "min": null,
+        "max": null
+      },
+      "created_time": {
+        "present": 3,
+        "min": "2026-10-02T13:38:01+04:00",
+        "max": "2026-10-02T16:07:53+04:00"
+      },
+      "last_modified_time": {
+        "present": 3,
+        "min": "2026-10-02T13:38:01+04:00",
+        "max": "2026-10-02T16:08:21+04:00"
+      }
+    },
+    "numeric_stock_rows": 3,
+    "line_items_present": 0
+  },
+  "delta_boundary_utc": "2026-10-03T06:05:44+0000",
+  "delta_distinct_items": 9,
+  "delta_list_complete": false,
+  "stopped": "http_401_no_refresh_or_retry",
+  "diagnostic_source_sha256": "4d0206dd17f6827fd5164ff9a75a811817e3d1d91badc98e5b12c8f9511be1b8"
+}

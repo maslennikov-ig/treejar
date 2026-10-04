@@ -1,0 +1,32 @@
+{
+  "evidence_kind": "fresh_live_readback_comparison",
+  "measured_at_utc": "2026-10-04T05:56:19.551349+00:00",
+  "expected_release_sha": "25a8c080e9b014333380b8e62be7d5e981daefe7",
+  "checks": {
+    "release_exact": true,
+    "env_unchanged": true,
+    "https_release_exact": true,
+    "database_redis_healthy": true,
+    "app_container_preserved": true,
+    "app_running_no_restarts_or_oom": true,
+    "worker_container_preserved": true,
+    "worker_running_no_restarts_or_oom": true,
+    "db_container_preserved": true,
+    "db_running_no_restarts_or_oom": true,
+    "redis_container_preserved": true,
+    "redis_running_no_restarts_or_oom": true,
+    "nginx_container_preserved": true,
+    "nginx_running_no_restarts_or_oom": true,
+    "app_safety_unchanged": true,
+    "app_source_hashes_exact": true,
+    "app_schedule_and_functions_preserved": true,
+    "app_delta_gate_closed": true,
+    "app_retained_complete_state": true,
+    "worker_safety_unchanged": true,
+    "worker_source_hashes_exact": true,
+    "worker_schedule_and_functions_preserved": true,
+    "worker_delta_gate_closed": true,
+    "worker_retained_complete_state": true
+  },
+  "passed": true
+}

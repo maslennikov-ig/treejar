@@ -1,0 +1,29 @@
+{
+  "window_start_utc": "2026-10-03T14:50:52+00:00",
+  "window_end_exclusive_utc": "2026-10-04T06:00:00+00:00",
+  "window_start_moscow": "2026-10-03T17:50:52+03:00",
+  "window_end_exclusive_moscow": "2026-10-04T09:00:00+03:00",
+  "measurement_status": "counters_present",
+  "http_attempts": 2019,
+  "counters": {
+    "pages|full|processed|unknown": 2015,
+    "http|full|200|unknown": 2015,
+    "attempt|full|sent|initial": 2019,
+    "items|full|processed|unknown": 396335,
+    "cycle|full|success|unknown": 155,
+    "skipped|full|cooldown|unknown": 23,
+    "http|full|429|minute": 4,
+    "cycle|full|failed|unknown": 4
+  },
+  "current_state": {
+    "items": 2557,
+    "coverage_age_seconds": 253.13659858703613,
+    "last_full_utc": "2026-10-04T05:56:00.289211+00:00",
+    "last_delta_utc": null
+  },
+  "limitations": [
+    "Only Noor Inventory calls; outside account consumers and OAuth are excluded.",
+    "Second precision; current state is read now, not reconstructed at the interval end.",
+    "Counters expire after seven days; Redis/counter failure is a measurement gap, not zero account usage."
+  ]
+}

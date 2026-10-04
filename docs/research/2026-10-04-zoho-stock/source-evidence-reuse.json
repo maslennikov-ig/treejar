@@ -1,0 +1,17 @@
+{
+  "expected_source_digest": "1c4aeb8b8a8b9b5b38c43ef7fa7a46db62ab3c00b77068c4702732ca07a84a2b",
+  "actual_source_digest": "1c4aeb8b8a8b9b5b38c43ef7fa7a46db62ab3c00b77068c4702732ca07a84a2b",
+  "matching": true,
+  "release_sha": "25a8c080e9b014333380b8e62be7d5e981daefe7",
+  "reused_release_receipt": ".codex/stages/tj-uvld-stock-sync/evidence/release_commands-599304bf1f9c76fe70a103ede95eed54f6b87a8620f5473609e74edf74bb9f56.json",
+  "source_paths": [
+    "src",
+    "tests",
+    "pyproject.toml",
+    "uv.lock",
+    "scripts/orchestration",
+    "scripts/vps-deploy.sh",
+    "scripts/zoho_stock_preflight.py",
+    "scripts/zoho_stock_report.py"
+  ]
+}

@@ -84,3 +84,26 @@ DB/Redis/nginx preservation verified;25 checks passed. Live counters prove
 disabled; provider coverage, live quotation and optimized24h proof unverified.
 Delivery receipt docs/reports/2026-10-03-zoho-stock-sync-delivery.md.
 Root worktree stays for the open provider/activation boundary.
+
+## 2026-10-04 read-only continuation
+
+Owner requires working organization only; no warehouse mutations. Existing
+push/merge/deploy authority retained. Source/deployed release25a8c080 unchanged;
+24fresh live comparisons passed, safe channel/env/container invariants preserved.
+UTC[03Oct14:50:52,04Oct06:00:00):2019attempts,2015HTTP200,4HTTP429/minute,
+155successful full cycles,4failures,23local cooldown skips.15h9m8s full-mode
+observation, not optimized24h evidence. No production savings claim.
+
+Bounded read-only history diagnostic:5GET,4HTTP200+1HTTP401. Stopped on the
+adjustment history endpoint without OAuth refresh, retry, writes or access
+change.9returned timestamps precede the last24h filter boundary: semantics
+need clarification; this is not causal proof of a missed stock operation.
+No complete nonempty paging/lifecycle/operation evidence.6offline guard checks
+and diagnostic Ruff/format passed; all business side effects intercepted.
+Root kept this tightly coupled investigation local; no new delegation needed.
+
+Report:docs/reports/2026-10-04-zoho-stock-sync-optimization.md.
+Receipts and runnable guards:docs/research/2026-10-04-zoho-stock/.
+Reuse exact existing code acceptance; only docs/research/current-state changed.
+Remaining:read-only causal history/access data, then proven provider gate,
+optimized activation and actual24h proof. Stage internal_ready/task in_progress.

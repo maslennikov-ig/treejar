@@ -28,10 +28,21 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 - New v2/legacy:2557 rows,48h TTL. UTC[14:50:52,14:53:10):
  13GET/13HTTP200,1successful full cycle; not optimized24h evidence.
 - Delivery receipt:docs/reports/2026-10-03-zoho-stock-sync-delivery.md.
-- Report: docs/reports/2026-10-03-zoho-stock-sync-optimization.md.
+- Latest report: docs/reports/2026-10-04-zoho-stock-sync-optimization.md.
+- Implementation report: docs/reports/2026-10-03-zoho-stock-sync-optimization.md.
 - Stage: .codex/stages/tj-uvld-stock-sync/summary.md.
 
 ## Provider evidence and eligibility
+
+- Owner2026-10-04: working organization only, no warehouse mutations.
+- Fresh live readback24checks passed, runtime25a8c080 unchanged.
+  UTC[03Oct14:50:52,04Oct06:00:00):2019 attempts,2015HTTP200,4HTTP429/minute,
+ 155successful full cycles/4failed/23local cooldown skips;15h9m8s, not optimized24h.
+- Read-only history probe04Oct:5GET,4HTTP200+1HTTP401 at inventoryadjustments;
+ stopped without OAuth refresh/retry/access changes.9 returned item timestamps
+ precede last24h query boundary; filter/field semantics unproved, no causal
+ missed-operation inference. Coverage gate stays closed. Receipts:
+ docs/research/2026-10-04-zoho-stock/.
 
 - Read-only probes2026-10-03:9 InventoryGETs,8HTTP200+1HTTP400.
   Literal trailingZ rejected; +0000 accepted, including sorted empty delta.
@@ -49,8 +60,9 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
   fingerprints equal predeploy. Approved0665 sender/allowlist and Telegram
   phone isolation unchanged; no new messaging/webhook configuration.
 - Current owner authority covers tj-uvld push/merge/deploy with delta gate off.
-- External stock mutations, OAuth/access changes and real messages still need
-  separate approval. No paid model reader/calls were used.
+- Warehouse mutations are explicitly excluded by current owner instruction.
+  OAuth/access changes and real messages still need separate approval.
+  No paid model reader/calls were used.
 - Website products.is_active, catalog prices and embeddings remain owned by
   their existing sync; stock state never writes those fields.
 
@@ -66,8 +78,9 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 
 ## Explicit defers
 
-- tj-uvld: AC02 provider stock/lifecycle coverage and paging stability need an
-  approved test organization or bounded owner-authorized transactions.
+- tj-uvld: AC02 provider stock/lifecycle coverage and paging stability need
+  read-only causal operation history. Current history endpoint returned401;
+  owner forbids warehouse mutations and no test organization is available.
 - tj-uvld: provider-gated delta activation and real24h optimized counters are
   still pending; code delivered, no claim of optimized production savings yet.
 - tj-4kot: outside account consumer (~50requests/min) incident remains open;
@@ -83,10 +96,11 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 Next stage id: tj-uvld-stock-sync
 Recommended action: continue the same boundary after approved provider evidence.
 
-Code delivery completed. Next needs one concrete approved test organization
-and a bounded stock-operation diagnostic, or sufficient redacted operation
-history. Prove AC02, then authorize delta activation and collect24h UTC
-[start,end) counters with Moscow conversion. Do not close tj-uvld early.
+Code delivery completed. Owner requires working-org read-only continuation.
+Next needs sufficient redacted before/after operation history or separately
+authorized read-only history access; existing token returned401. Resolve
+modified-since/filter timestamp semantics, prove AC02, then authorize delta
+activation and collect24h UTC[start,end) counters. Do not close tj-uvld early.
 
 ## Starter prompt for next orchestrator
 

@@ -1,0 +1,173 @@
+{
+  "measured_at_utc": "2026-10-04T05:56:19.551349+00:00",
+  "release_sha": "25a8c080e9b014333380b8e62be7d5e981daefe7",
+  "env_sha256": "4f02009f04dc38a2fbc9312f9168c76404a984a6236601c52e3b544bc25388f8",
+  "containers": {
+    "app": {
+      "id": "b7b1cfb89b48f7b268979c4eb85bbe0521fc6c946a7a55ce1129ae40bfeb78f6",
+      "image": "sha256:6c583782b0d5c776bfa889a72eab99b0e25f2f4ccdac63843922de077c6d20d2",
+      "status": "running",
+      "started_at": "2026-10-03T14:50:52.141440053Z",
+      "restart_count": 0,
+      "oom_killed": false,
+      "runtime": {
+        "release_sha": "25a8c080e9b014333380b8e62be7d5e981daefe7",
+        "stock": {
+          "v2": {
+            "exists": true,
+            "ttl": 172772,
+            "items": 2557,
+            "coverage": 1791093360.2892106,
+            "full_at": 1791093360.2892106,
+            "delta_at": null,
+            "coverage_evidence_present": false
+          },
+          "legacy": {
+            "exists": true,
+            "ttl": 172772,
+            "items": 2557,
+            "coverage": null,
+            "full_at": null,
+            "delta_at": null,
+            "coverage_evidence_present": false
+          },
+          "cooldown_remaining_seconds": 0
+        },
+        "safety_fingerprint": "57552c05d85e1647b59f56d07c77006bc55662af82cbc8add38491c263cbae0a",
+        "restore_mode": true,
+        "telegram_test_phone_0665": true,
+        "sender_matches_allowlist": true,
+        "incremental_enabled": false,
+        "coverage_evidence_present": false,
+        "bulk_size": 0,
+        "functions": [
+          "process_incoming_batch",
+          "retry_pending_quotation",
+          "refresh_conversation_summary",
+          "refresh_zoho_stock_snapshot",
+          "refresh_zoho_stock_delta",
+          "reconcile_telegram_webhook"
+        ],
+        "crons": [
+          {
+            "name": "refresh_zoho_stock_snapshot",
+            "minute": "{1, 36, 6, 41, 11, 46, 16, 51, 21, 56, 26, 31}",
+            "hour": "None",
+            "run_at_startup": false
+          },
+          {
+            "name": "reconcile_telegram_webhook",
+            "minute": "None",
+            "hour": "None",
+            "run_at_startup": true
+          }
+        ],
+        "hashes": {
+          "src/core/config.py": "796c3b8aebe6f43374f9d64092ceb6a375c6d137853f4b316a7444e0552d7d61",
+          "src/worker.py": "731177147e658fb2bd798d5ba53e8c45cb81ffcc2947602ca28af0d6e01051ba",
+          "src/integrations/inventory/zoho_inventory.py": "af80f8c1324aa041b80406353fa2bb4420fc680cff1edbc9dde35eb51eaaf041",
+          "src/integrations/inventory/stock_state.py": "9c23c625ef323c820ca989e24df4b6c334fc363f5146bd5b95376975bc43468b",
+          "src/integrations/inventory/sync.py": "a952c2eace79d0b1271a701f23123669b6a1e15cd78ab4e9ada1d20c8af1a670",
+          "src/llm/engine.py": "72bbf626187ecfbda9ed91674bcda02c0f3c70046a914355a4af0d2290770b25",
+          "src/llm/customer_intent_tools.py": "6987ad03aed40b00c3245101aa9dc93167bead3fd220d3d7a88ba2bae07da799",
+          "src/services/quotation_retry.py": "d889ecd63d6abb881717a94017ab518edf0b8a2585897bbd99a9de6bf3aeb654"
+        }
+      }
+    },
+    "worker": {
+      "id": "7bcd8eaf2d90f6199b20305d6a81df8659763d7dc31e4694780e8670b643cf98",
+      "image": "sha256:6c5312a01a1b8c58ef98600da2721ac94dd8762a12f9c5875b32273203772f27",
+      "status": "running",
+      "started_at": "2026-10-03T14:50:52.140923101Z",
+      "restart_count": 0,
+      "oom_killed": false,
+      "runtime": {
+        "release_sha": "25a8c080e9b014333380b8e62be7d5e981daefe7",
+        "stock": {
+          "v2": {
+            "exists": true,
+            "ttl": 172756,
+            "items": 2557,
+            "coverage": 1791093360.2892106,
+            "full_at": 1791093360.2892106,
+            "delta_at": null,
+            "coverage_evidence_present": false
+          },
+          "legacy": {
+            "exists": true,
+            "ttl": 172756,
+            "items": 2557,
+            "coverage": null,
+            "full_at": null,
+            "delta_at": null,
+            "coverage_evidence_present": false
+          },
+          "cooldown_remaining_seconds": 0
+        },
+        "safety_fingerprint": "57552c05d85e1647b59f56d07c77006bc55662af82cbc8add38491c263cbae0a",
+        "restore_mode": true,
+        "telegram_test_phone_0665": true,
+        "sender_matches_allowlist": true,
+        "incremental_enabled": false,
+        "coverage_evidence_present": false,
+        "bulk_size": 0,
+        "functions": [
+          "process_incoming_batch",
+          "retry_pending_quotation",
+          "refresh_conversation_summary",
+          "refresh_zoho_stock_snapshot",
+          "refresh_zoho_stock_delta",
+          "reconcile_telegram_webhook"
+        ],
+        "crons": [
+          {
+            "name": "refresh_zoho_stock_snapshot",
+            "minute": "{1, 36, 6, 41, 11, 46, 16, 51, 21, 56, 26, 31}",
+            "hour": "None",
+            "run_at_startup": false
+          },
+          {
+            "name": "reconcile_telegram_webhook",
+            "minute": "None",
+            "hour": "None",
+            "run_at_startup": true
+          }
+        ],
+        "hashes": {
+          "src/core/config.py": "796c3b8aebe6f43374f9d64092ceb6a375c6d137853f4b316a7444e0552d7d61",
+          "src/worker.py": "731177147e658fb2bd798d5ba53e8c45cb81ffcc2947602ca28af0d6e01051ba",
+          "src/integrations/inventory/zoho_inventory.py": "af80f8c1324aa041b80406353fa2bb4420fc680cff1edbc9dde35eb51eaaf041",
+          "src/integrations/inventory/stock_state.py": "9c23c625ef323c820ca989e24df4b6c334fc363f5146bd5b95376975bc43468b",
+          "src/integrations/inventory/sync.py": "a952c2eace79d0b1271a701f23123669b6a1e15cd78ab4e9ada1d20c8af1a670",
+          "src/llm/engine.py": "72bbf626187ecfbda9ed91674bcda02c0f3c70046a914355a4af0d2290770b25",
+          "src/llm/customer_intent_tools.py": "6987ad03aed40b00c3245101aa9dc93167bead3fd220d3d7a88ba2bae07da799",
+          "src/services/quotation_retry.py": "d889ecd63d6abb881717a94017ab518edf0b8a2585897bbd99a9de6bf3aeb654"
+        }
+      }
+    },
+    "db": {
+      "id": "43ccb64efb9deb16c908f00bcdaa8ae6eb08ccee856cd9267b0742ec254585cb",
+      "image": "sha256:7d400e340efb42f4d8c9c12c6427adb253f726881a9985d2a471bf0eed824dff",
+      "status": "running",
+      "started_at": "2026-04-02T15:06:07.471170116Z",
+      "restart_count": 0,
+      "oom_killed": false
+    },
+    "redis": {
+      "id": "1b9c9a5c99d0141a4d60131440a3f5c8d1f966cfcc56fb796f8c2ddc2dbfc757",
+      "image": "sha256:7aec734b2bb298a1d769fd8729f13b8514a41bf90fcdd1f38ec52267fbaa8ee6",
+      "status": "running",
+      "started_at": "2026-04-24T07:08:56.480907912Z",
+      "restart_count": 0,
+      "oom_killed": false
+    },
+    "nginx": {
+      "id": "0cdbce63c5db68deb3690b566ea701e547e7a7ac781b8156276a046c5b1f9694",
+      "image": "sha256:e7257f1ef28ba17cf7c248cb8ccf6f0c6e0228ab9c315c152f9c203cd34cf6d1",
+      "status": "running",
+      "started_at": "2026-04-02T15:06:07.456163286Z",
+      "restart_count": 0,
+      "oom_killed": false
+    }
+  }
+}

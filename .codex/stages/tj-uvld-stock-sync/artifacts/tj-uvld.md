@@ -140,3 +140,10 @@ and removes a redundant post-validation guard. Full canonical release passed:
 4458 tests,20 expected gated skips; Ruff/format/mypy/process passed.
 Release receipt and logs/release-acceptance.log are retained; code inputs are
 bound to source digest1c4aeb8b8a8b9b5b38c43ef7fa7a46db62ab3c00b77068c4702732ca07a84a2b.
+
+Read-only continuation2026-10-04: owner excludes warehouse mutations. Fresh
+24live checks passed;2019attempts/2015HTTP200/4HTTP429 over15h9m8s of full
+fallback, not optimized24h.5GET history probe stopped on401;9delta timestamps
+precede boundary, semantics unproved.6offline diagnostic guards passed.
+Latest report:docs/reports/2026-10-04-zoho-stock-sync-optimization.md.
+Provider coverage/activation/24h still pending; no task completion claim.

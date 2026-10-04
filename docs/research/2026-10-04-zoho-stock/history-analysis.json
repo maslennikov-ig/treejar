@@ -1,0 +1,7 @@
+{
+  "provider_filter_semantics_proven": false,
+  "returned_rows_with_modified_time_before_boundary": 9,
+  "complete_nonempty_delta_observed": false,
+  "operation_coverage_observed": false,
+  "interpretation": "Earlier returned timestamps do not prove a stock operation was missed; filter/field semantics need clarification. HTTP401 ended the diagnostic without OAuth refresh or retries."
+}

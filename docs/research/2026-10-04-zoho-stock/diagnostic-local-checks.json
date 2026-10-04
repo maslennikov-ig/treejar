@@ -1,0 +1,54 @@
+{
+  "evidence_kind": "offline_http_and_redis_interception",
+  "provider_live_proof": false,
+  "cases": [
+    {
+      "status": 200,
+      "cooldown": false,
+      "malformed": false,
+      "page_cap": false,
+      "sent_gets": 7,
+      "passed": true
+    },
+    {
+      "status": 401,
+      "cooldown": false,
+      "malformed": false,
+      "page_cap": false,
+      "sent_gets": 1,
+      "passed": true
+    },
+    {
+      "status": 429,
+      "cooldown": false,
+      "malformed": false,
+      "page_cap": false,
+      "sent_gets": 1,
+      "passed": true
+    },
+    {
+      "status": 200,
+      "cooldown": true,
+      "malformed": false,
+      "page_cap": false,
+      "sent_gets": 0,
+      "passed": true
+    },
+    {
+      "status": 200,
+      "cooldown": false,
+      "malformed": true,
+      "page_cap": false,
+      "sent_gets": 2,
+      "passed": true
+    },
+    {
+      "status": 200,
+      "cooldown": false,
+      "malformed": false,
+      "page_cap": true,
+      "sent_gets": 9,
+      "passed": true
+    }
+  ]
+}

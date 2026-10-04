@@ -1,0 +1,20 @@
+{
+  "id": "tj-uvld",
+  "status": "in_progress",
+  "updated_at": "2026-10-04T06:14:01Z",
+  "metadata": {
+    "ci_run": 37130777663,
+    "live_deployed": true,
+    "deployment_sha": "25a8c080e9b014333380b8e62be7d5e981daefe7",
+    "live_activated": false,
+    "local_verified": true,
+    "live_24h_measured": false,
+    "live_24h_verified": false,
+    "local_implementation_sha": "0b5c723eeb96c240d2c1654f6b570d951aa782eb",
+    "readonly_followup_report": "docs/reports/2026-10-04-zoho-stock-sync-optimization.md",
+    "provider_coverage_verified": false,
+    "warehouse_mutations_allowed": false,
+    "provider_history_http_status": 401
+  },
+  "last_note": "2026-10-04 owner requires working organization only and explicitly forbids warehouse mutations. Read-only continuation completed: deployed app/worker25a8c080 unchanged,24fresh live checks passed; env/channel/container invariants preserved. UTC[2026-10-03T14:50:52Z,2026-10-04T06:00:00Z):2019runtime attempts,2015HTTP200,4HTTP429/minute,155successful full cycles,4failures,23local cooldown skips;15h9m8s full fallback, not optimized24h or savings. Separate bounded cached-token history probe:5InventoryGET,4HTTP200+1HTTP401 at inventoryadjustments, stopped without OAuth refresh/retry/write/access expansion.9returned timestamps precede requested24h boundary; filter/field semantics unclear, not causal proof of missed stock operations.6offline diagnostic guards and Ruff/format passed; existing exact release/focused evidence reused as runtime source unchanged. AC02 now requires sufficient redacted before/after operation history or separately authorized read-only history access, plus filter semantics clarification; no warehouse test transactions permitted. Delta OFF; provider_coverage_verified/live_activated/live_24h_measured=false; task remains in_progress. Latest report docs/reports/2026-10-04-zoho-stock-sync-optimization.md; receipts docs/research/2026-10-04-zoho-stock/."
+}
