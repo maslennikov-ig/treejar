@@ -97,7 +97,7 @@ changed_files:
   - tests/test_zoho_stock_incremental.py
   - tests/test_zoho_stock_bulk.py
 explicit_defers:
-  - tj-uvld owner read-only login, provider operation coverage, activation and real24h proof
+  - tj-uvld causal provider operation coverage, activation and real24h proof
 ---
 
 # Summary
@@ -149,11 +149,21 @@ precede boundary, semantics unproved.6offline diagnostic guards passed.
 Latest report:docs/reports/2026-10-04-zoho-stock-sync-optimization.md.
 Provider coverage/activation/24h still pending; no task completion claim.
 
-Read-only access setup2026-10-04: one additional GET401/code57, no retry or
+Historical read-only access preparation2026-10-04: one additional GET401/code57, no retry or
 refresh. Separate EU online six-READ grant helper, loopback-only password form
 and source-pinned stdin diagnostic wrapper implemented at root.17 offline
-checks passed; Windows form returnedHTTP200. Owner login/new-client consent
-is missing; no OAuth exchange, production credential swap or warehouse write.
+checks passed; Windows form returnedHTTP200. This local operator prototype was
+superseded by the existing Self Client flow below, not sent to Viktor.
 Original release footprint unchanged; new slice receipt also binds all five
 research Python entrypoints. Detailed receipts/report record real vs offline
 proof. Existing Inventory/CRM shared client is preserved.
+
+Read-only access resolved04Oct11:03UTC using existing EU Self Client:
+client_credentials, six exact READ scopes,3600s token, no refresh/persistence.
+Three bounded sessions total3OAuthPOST200/17InventoryGET200. History JSON
+validated; safe hashes bind executed sources. Applied adjustment line+10 and
+same-item stock24/16Sep timestamp observed; old quantity and complete delta
+membership absent. Access available, no Viktor login required.21offline guard
+cases plus retained17grant/6audit checks pass. Filter docs independently read
+by filter_docs_review; stock-only timestamp advancement remains undocumented.
+Runtime/release footprint unchanged; deltaOFF/task in_progress.

@@ -1,9 +1,10 @@
 # Read-only follow-up, tj-uvld
 
-Owner boundary: working organization only, no warehouse mutations. Diagnostics
-so far used cached tokens, with no OAuth/access change, paid call or messaging.
-Owner requested separate read-only access setup; no new grant issued yet.
-Runtime remains25a8c080; deltaOFF.
+Owner boundary: working organization only, no warehouse mutations. Read-only
+access is now live-verified using the existing EU Self Client; no Viktor login
+or new client/code is required. Temporary six-READ access tokens stay in app
+memory, no refresh tokens or production token replacement. Runtime25a8c080;
+deltaOFF. Earlier cached-token401 receipts are historical, not current access.
 
 - runtime.json + health.json: fresh live metadata/hash checks.
 - verification.json:24 checks comparing the deployed runtime with03Oct receipt
@@ -50,69 +51,76 @@ Official interfaces revisited04Oct:
 - [Transfers](https://www.zoho.com/inventory/api/v1/transferorders/#list-all-the-transfer-orders)
 - [Packages](https://www.zoho.com/inventory/api/v1/packages/#list-all-packages)
 
-These documents identify read interfaces. They do not establish causal
-before/after stock coverage in the working organization. History operations
-other than adjustments were not queried after the stop. No completeness or
-operation-coverage claim is made.
+These documents identify read interfaces, not causal before/after stock coverage.
+The cached-token session stopped at adjustments; later Self Client sessions
+read adjustment/receive/return/transfer samples. No coverage claim is made.
 
-## Separate read-only access, owner login pending
+## Current access: existing Self Client, owner action unnecessary
 
-One additional GET on04Oct10:06UTC returned401/code57 (not_authorized).
-history-error-readonly.json and history-error-readonly.source.txt retain only
-safe metadata and the executed source. The existing cache TTL2632s does not
-prove provider validity. Historical configuration requested no history READ
-scopes; the response does not distinguish missing scopes from user-role limits.
-No retry, refresh, token replacement or existing-client revocation was attempted.
+Prior client instructions are tracked in docs/client-answers/zoho-inventory-code-2026-09.html
+(28Sep) and docs/client/zoho-token-renewal-victor.html (general recovery).
+The28Sep EU Self Client scope list did not request history READ scopes.
+Do not repeat permanent Generate Code/refresh token renewal for this diagnostic.
 
-The current Inventory/CRM client is shared. Create a NEW EU server-based client
-through the owner's browser consent; preserve the existing client and tokens.
-The preparation is locally tested; owner authorization in Zoho is not complete.
+Three bounded live sessions:
 
-1. Start the bounded loopback server from this worktree:
+| UTC04Oct | OAuth POST | Inventory GET | Proof |
+|---|---:|---:|---|
+|10:59:05|1 HTTP200|1 HTTP200|Transport feasibility only; payload shape/source binding not proven by this preliminary receipt|
+|11:03:26|1 HTTP200|13 HTTP200|Adjustment list JSON validated; history samples and bounded incomplete delta|
+|11:19:26|1 HTTP200|3 HTTP200|Applied quantity adjustment/detail/current-item identity validated|
 
-   ```sh
-   PYTHONDONTWRITEBYTECODE=1 UV_PROJECT_ENVIRONMENT=/home/me/code/treejar/.venv \
-     uv run --no-sync python docs/research/2026-10-04-zoho-stock/history-access.py
-   ```
+All three:3600s token, exact six READ scopes reported, zero refresh tokens,
+retries, Redis/config/warehouse writes; production cached token unchanged.
+Total3 OAuth POST +17 Inventory GET, separately from runtime counters.
+Safe receipts: self-client-feasibility-live.json, self-client-history-live.json,
+adjustment-observation-live.json. The11:03 executed source is preserved as
+self-client-history.executed-source.txt with receipt-matching SHAa92da3a3;
+11:19 source SHA1cfb1a37 matches self-client-readonly-probe.py.
 
-2. In the Windows browser, sign in to [EU API Console](https://api-console.zoho.eu/).
-   Add Client → Server-based Applications. Client Name: `Noor stock audit read-only`;
-   Homepage URL: `https://noor.starec.ai`; exact Authorized Redirect URI:
-   `http://127.0.0.1:8769/zoho-history/callback`.
-3. Enter the NEW client ID/secret only in `http://127.0.0.1:8769/`, never chat.
-   Inspect the Zoho consent screen before approving the six requested READ scopes:
-   items, inventoryadjustments, purchasereceives, salesreturns, transferorders,
-   packages. The flow uses `access_type=online`, no refresh token, <=1h lifetime.
-   Local handler expires after15min; restart it if it expired before consent.
-4. After the successful callback, run the bounded audit:
+Adjustment statusadjusted/quantity, created04Oct06:12:25UTC; selected line+10.
+Identity-matched item current stock24, item timestamp16Sep12:46:30UTC.
+Old quantity and complete delta membership were not observed; do not derive
+old quantity by subtraction. Delta gate stays closed. Packages response shape
+was unexpected, not inferred empty. Read the full limits and primary sources
+in self-client-access-findings.md.
 
-   ```sh
-   PYTHONDONTWRITEBYTECODE=1 UV_PROJECT_ENVIRONMENT=/home/me/code/treejar/.venv \
-     uv run --no-sync python docs/research/2026-10-04-zoho-stock/history-grant-probe.py
-   ```
+Offline safeguards (21cases, never live proof):
 
-The token lives only in the user-owned700 directory
-`/home/me/.local/state/treejar/tj-uvld/zoho-history/`, as a600 file outside Git.
-The client secret/code remain in memory and are never logged. A pre-existing
-token is not overwritten; an expired token requires exact-file local cleanup
-after ownership/permissions verification before a fresh owner flow.
-The wrapper sends the token only through encrypted SSH stdin, never process
-arguments/environment or remote files. Before any GET, it verifies organization
-fingerprint and the fixed EU API host. Redis is read only. <=16 sequential GETs,
-no retries/refresh, existing cooldown and401/429 stops; no metrics/config writes.
-The original executed audit source remains unchanged and SHA-pinned.
+```sh
+PYTHONDONTWRITEBYTECODE=1 UV_PROJECT_ENVIRONMENT=/home/me/code/treejar/.venv \
+  uv run --no-sync python docs/research/2026-10-04-zoho-stock/self-client-probe-selftest.py
+```
 
-17 offline tests intercept OAuth/SSH/provider transport. Windows HTTP200 and
-real loopback guard statuses establish local reachability, not live OAuth or
-operation coverage. Safe source-bound receipts: history-access-checks.txt and
-history-access-local-http.json. Scope fields label requested scopes separately
-from provider-reported scopes; an absent scope response is not verified scope proof.
+Reviewed bounded history launcher (one token exchange, <=16 InventoryGET,
+no retry/refresh/persistence; only for expressly authorized read-only work):
 
-An API history sample still does not prove stock-change coverage, equal-time
-paging, or otherwise unobserved lifecycle types. Need causal before/after
-observations of ordinary owner operations. Keep deltaOFF until AC02 is met.
+```sh
+PYTHONDONTWRITEBYTECODE=1 UV_PROJECT_ENVIRONMENT=/home/me/code/treejar/.venv \
+  uv run --no-sync python docs/research/2026-10-04-zoho-stock/self-client-history-run.py
+```
 
-Official access contract:
-[Inventory OAuth](https://www.zoho.com/inventory/api/v1/oauth/),
-[Client registration](https://www.zoho.com/developer/oauth/register-app.html),
-[Server-based flow](https://www.zoho.com/developer/oauth/web-server-apps/overview.html).
+The single-adjustment observation used reviewed self-client-readonly-probe.py
+through SSH stdin with --examine-adjustment; <=3 InventoryGET. Extra GETs also
+check current cooldown. History and adjustment modes are mutually exclusive.
+Credentials never leave the production app; safe aggregates alone reach Git.
+
+## Historical manual helper, superseded
+
+history-error-readonly.json records10:06UTC cached-token401/code57; cache TTL
+was not provider-validity proof. Existing grant vs user-role cause remains
+unproved, but the later six-READ Self Client grant succeeds with the same owner.
+
+history-access.py and history-grant-probe.py were locally prepared operator
+prototypes: EU server-based online grant through a loopback callback.17offline
+guards and real Windows HTTP200 proved local reachability, not owner consent.
+The loopback callback is not usable directly by remote Viktor. No new client
+or authorization-code grant was issued. This path is archived and unnecessary
+for the current working organization; do not send it as a client instruction.
+Safe historical receipts: history-access-checks.txt/history-access-local-http.json.
+
+Current official temporary grant contract:
+[Self Client client credentials](https://www.zoho.com/developer/oauth/self-client/client-credentials-flow.html).
+Inventory support was established by the live receipts, not assumed from the
+generic OAuth documentation. Historical manual code flow:
+[Self Client authorization code](https://www.zoho.com/developer/oauth/self-client/authorization-code-flow.html).

@@ -108,7 +108,7 @@ Reuse exact existing code acceptance; only docs/research/current-state changed.
 Remaining:read-only causal history/access data, then proven provider gate,
 optimized activation and actual24h proof. Stage internal_ready/task in_progress.
 
-## Separate read-only access preparation
+## Historical read-only access preparation (superseded)
 
 Owner requested continuing through read-only access setup. One additional
 cached-token GET at10:06UTC returned401/code57 (not_authorized), stopped.
@@ -122,9 +122,45 @@ and history-grant-probe.py (pinned audit source, SSH stdin only, organization/
 API-host fencing before requests, <=16GET, existing cooldown/401/429 stops).
 17 offline security checks passed; real Windows loopback form HTTP200.
 Research README contains registration fields, commands and evidence limits.
-No owner login/client consent/new token yet; no production credentials or data
-changed. New root-selected source footprint binds diagnostics; release source
+No owner login/client consent was performed for that prototype; no production
+credentials or data changed. It was not suitable as a remote client instruction. New root-selected source footprint binds diagnostics; release source
 footprint/acceptance reused unchanged. No helper stage or redundant deployment.
 
-Task remains in_progress/internal_ready. Next input is owner console login;
-access alone cannot certify unobserved stock/lifecycle operations. Delta off.
+## Existing Self Client access and independent docs review
+
+Owner asked to find prior Viktor instructions. Located28Sep existing EU Self
+Client Generate Code instruction; its Inventory scope list omitted history
+READ. No permanent code/grant renewal is necessary for current diagnostics.
+Existing Self Client client_credentials flow independently confirmed live:
+three sessions10:59/11:03/11:19UTC,3OAuthPOST200/17InventoryGET200, six exact
+READ scopes,3600s token, no refresh token, cache/env/Redis/warehouse writes.
+The first transport-only feasibility receipt does not prove payload shape;
+11:03 history and11:19 detail JSON/identity checks do. Source hashes verified.
+
+Quantity adjustment statusadjusted created04Oct06:12:25UTC; selected line+10,
+matched current stock24 with item timestamp16Sep12:46:30UTC. No observed old
+quantity or complete delta membership. Never infer old quantity by subtraction.
+Recent delta sample still incomplete; packages shape unverified, not empty.
+21offline Self Client guards passed, including cooldown at extra GETs and
+identity/error stops. Root source footprint expanded by3 diagnostic files;
+release footprint unchanged, exact prior4458/20 evidence reused.
+
+| Stream | Ownership | Decision and benefit |
+|---|---|---|
+| OAuth/history probe and causal reading | root, research scripts/receipts | local: credential/context and acceptance boundary coupled |
+| Filter contract docs | filter_docs_review, read-only dedicated tree | parallel: primary-source scrutiny isolated, role-default Luna |
+
+Docs review accepted: GET/items says modified after, no defined equality/tie
+order or stock-only timestamp guarantee; itemmasters wording does not apply.
+LiteralZ docs vs live rejection retained as inconsistency. General pagination
+has_more_page is documented, max per_page is not. OpenAPI schema not verified.
+First-party links and limitations retained in self-client-access-findings.md.
+No child writes or paid reader. Root reads causal evidence independently.
+
+Task remains in_progress/internal_ready; no owner console/login step pending.
+Remaining data: observed before/after quantities and complete causal delta
+membership/lifecycle/paging proof under normal operations. Delta staysOFF.
+
+
+Exact clean filter_docs_review tree/branch removed after completion and ancestry
+verification; no force cleanup. Root task tree retained for remaining data gate.

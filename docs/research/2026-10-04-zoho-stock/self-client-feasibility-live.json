@@ -1,0 +1,24 @@
+{
+  "measured_at_utc": "2026-10-04T10:59:05.376669+00:00",
+  "read_only": true,
+  "oauth_exchange_attempts": 1,
+  "oauth_refreshes": 0,
+  "inventory_gets": 1,
+  "redis_writes": 0,
+  "provider_coverage_verified": false,
+  "requested_scopes": [
+    "ZohoInventory.items.READ",
+    "ZohoInventory.inventoryadjustments.READ",
+    "ZohoInventory.purchasereceives.READ",
+    "ZohoInventory.salesreturns.READ",
+    "ZohoInventory.transferorders.READ",
+    "ZohoInventory.packages.READ"
+  ],
+  "oauth_status": 200,
+  "temporary_grant_obtained": true,
+  "expires_in_seconds": 3600,
+  "granted_scopes_reported": true,
+  "inventory_status": 200,
+  "stopped": "single_readonly_probe_complete_no_retry",
+  "production_cached_token_unchanged": true
+}

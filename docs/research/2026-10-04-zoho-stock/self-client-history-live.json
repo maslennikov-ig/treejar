@@ -1,0 +1,338 @@
+{
+  "measured_at_utc": "2026-10-04T11:03:26.569723+00:00",
+  "read_only": true,
+  "oauth_exchange_attempts": 1,
+  "oauth_refreshes": 0,
+  "inventory_gets": 13,
+  "redis_writes": 0,
+  "provider_coverage_verified": false,
+  "requested_scopes": [
+    "ZohoInventory.items.READ",
+    "ZohoInventory.inventoryadjustments.READ",
+    "ZohoInventory.purchasereceives.READ",
+    "ZohoInventory.salesreturns.READ",
+    "ZohoInventory.transferorders.READ",
+    "ZohoInventory.packages.READ"
+  ],
+  "oauth_status": 200,
+  "temporary_grant_obtained": true,
+  "expires_in_seconds": 3600,
+  "granted_scopes_reported": true,
+  "inventory_status": 200,
+  "history_read_verified": true,
+  "history_audit": {
+    "measured_at_utc": "2026-10-04T11:03:27.184901+00:00",
+    "read_only": true,
+    "max_inventory_gets": 16,
+    "requests": [
+      {
+        "operation": "recent_item_metadata_sample",
+        "status": 200
+      },
+      {
+        "operation": "last24h_delta_page_1",
+        "status": 200,
+        "summary": {
+          "rows": 3,
+          "dates": {
+            "date": {
+              "present": 0,
+              "min": null,
+              "max": null
+            },
+            "created_time": {
+              "present": 3,
+              "min": "2023-03-18T22:14:01+04:00",
+              "max": "2023-03-21T00:32:01+04:00"
+            },
+            "last_modified_time": {
+              "present": 3,
+              "min": "2026-03-18T14:25:40+04:00",
+              "max": "2026-03-18T14:29:13+04:00"
+            }
+          },
+          "numeric_stock_rows": 3,
+          "line_items_present": 0
+        }
+      },
+      {
+        "operation": "last24h_delta_page_2",
+        "status": 200,
+        "summary": {
+          "rows": 3,
+          "dates": {
+            "date": {
+              "present": 0,
+              "min": null,
+              "max": null
+            },
+            "created_time": {
+              "present": 3,
+              "min": "2023-05-16T19:07:44+04:00",
+              "max": "2024-06-06T09:53:01+04:00"
+            },
+            "last_modified_time": {
+              "present": 3,
+              "min": "2026-03-18T14:56:15+04:00",
+              "max": "2026-03-18T14:58:56+04:00"
+            }
+          },
+          "numeric_stock_rows": 3,
+          "line_items_present": 0
+        }
+      },
+      {
+        "operation": "last24h_delta_page_3",
+        "status": 200,
+        "summary": {
+          "rows": 3,
+          "dates": {
+            "date": {
+              "present": 0,
+              "min": null,
+              "max": null
+            },
+            "created_time": {
+              "present": 3,
+              "min": "2023-03-18T22:14:01+04:00",
+              "max": "2025-11-07T14:49:39+04:00"
+            },
+            "last_modified_time": {
+              "present": 3,
+              "min": "2026-03-18T14:58:56+04:00",
+              "max": "2026-03-25T15:09:51+04:00"
+            }
+          },
+          "numeric_stock_rows": 3,
+          "line_items_present": 0
+        }
+      },
+      {
+        "operation": "inventoryadjustments_sample",
+        "status": 200
+      },
+      {
+        "operation": "inventoryadjustments_detail_sample",
+        "status": 200
+      },
+      {
+        "operation": "purchasereceives_sample",
+        "status": 200
+      },
+      {
+        "operation": "salesreturns_sample",
+        "status": 200
+      },
+      {
+        "operation": "salesreturns_detail_sample",
+        "status": 200
+      },
+      {
+        "operation": "transferorders_sample",
+        "status": 200
+      },
+      {
+        "operation": "transferorders_detail_sample",
+        "status": 200
+      },
+      {
+        "operation": "packages_sample",
+        "status": 200
+      }
+    ],
+    "provider_coverage_verified": false,
+    "limitations": [
+      "Bounded history samples are not complete histories.",
+      "No before/after stock observations or causal operation proof.",
+      "No item lifecycle operations were performed."
+    ],
+    "organization_fingerprint": "544f8528f9db448a",
+    "recent_item_metadata_sample": {
+      "rows": 3,
+      "dates": {
+        "date": {
+          "present": 0,
+          "min": null,
+          "max": null
+        },
+        "created_time": {
+          "present": 3,
+          "min": "2026-10-02T13:38:01+04:00",
+          "max": "2026-10-02T16:07:53+04:00"
+        },
+        "last_modified_time": {
+          "present": 3,
+          "min": "2026-10-02T13:38:01+04:00",
+          "max": "2026-10-02T16:08:21+04:00"
+        }
+      },
+      "numeric_stock_rows": 3,
+      "line_items_present": 0
+    },
+    "delta_boundary_utc": "2026-10-03T11:03:28+0000",
+    "delta_distinct_items": 9,
+    "delta_list_complete": false,
+    "inventoryadjustments": {
+      "rows": 3,
+      "dates": {
+        "date": {
+          "present": 3,
+          "min": "2026-09-30T00:00:00",
+          "max": "2026-10-04T00:00:00"
+        },
+        "created_time": {
+          "present": 3,
+          "min": "2026-09-30T17:12:13+04:00",
+          "max": "2026-10-04T10:12:25+04:00"
+        },
+        "last_modified_time": {
+          "present": 3,
+          "min": "2026-09-30T17:19:35+04:00",
+          "max": "2026-10-04T10:13:25+04:00"
+        }
+      },
+      "numeric_stock_rows": 0,
+      "line_items_present": 0,
+      "detail_sample": {
+        "rows": 1,
+        "dates": {
+          "date": {
+            "present": 1,
+            "min": "2026-10-04T00:00:00",
+            "max": "2026-10-04T00:00:00"
+          },
+          "created_time": {
+            "present": 1,
+            "min": "2026-10-04T10:12:25+04:00",
+            "max": "2026-10-04T10:12:25+04:00"
+          },
+          "last_modified_time": {
+            "present": 1,
+            "min": "2026-10-04T10:13:25+04:00",
+            "max": "2026-10-04T10:13:25+04:00"
+          }
+        },
+        "numeric_stock_rows": 0,
+        "line_items_present": 1
+      }
+    },
+    "purchasereceives": {
+      "rows": 3,
+      "dates": {
+        "date": {
+          "present": 0,
+          "min": null,
+          "max": null
+        },
+        "created_time": {
+          "present": 3,
+          "min": "2023-06-30T14:14:29+04:00",
+          "max": "2023-07-03T13:24:53+04:00"
+        },
+        "last_modified_time": {
+          "present": 3,
+          "min": "2026-08-10T22:20:50+04:00",
+          "max": "2026-08-10T22:20:50+04:00"
+        }
+      },
+      "numeric_stock_rows": 0,
+      "line_items_present": 0
+    },
+    "salesreturns": {
+      "rows": 3,
+      "dates": {
+        "date": {
+          "present": 3,
+          "min": "2026-10-02T00:00:00",
+          "max": "2026-10-03T00:00:00"
+        },
+        "created_time": {
+          "present": 3,
+          "min": "2026-10-02T12:03:33+04:00",
+          "max": "2026-10-03T12:46:42+04:00"
+        },
+        "last_modified_time": {
+          "present": 3,
+          "min": "2026-10-02T12:06:01+04:00",
+          "max": "2026-10-03T12:47:21+04:00"
+        }
+      },
+      "numeric_stock_rows": 0,
+      "line_items_present": 0,
+      "detail_sample": {
+        "rows": 1,
+        "dates": {
+          "date": {
+            "present": 1,
+            "min": "2026-10-03T00:00:00",
+            "max": "2026-10-03T00:00:00"
+          },
+          "created_time": {
+            "present": 0,
+            "min": null,
+            "max": null
+          },
+          "last_modified_time": {
+            "present": 0,
+            "min": null,
+            "max": null
+          }
+        },
+        "numeric_stock_rows": 0,
+        "line_items_present": 1
+      }
+    },
+    "transferorders": {
+      "rows": 3,
+      "dates": {
+        "date": {
+          "present": 3,
+          "min": "2026-10-02T00:00:00",
+          "max": "2026-10-03T00:00:00"
+        },
+        "created_time": {
+          "present": 3,
+          "min": "2026-10-02T18:56:15+04:00",
+          "max": "2026-10-03T23:17:20+04:00"
+        },
+        "last_modified_time": {
+          "present": 3,
+          "min": "2026-10-02T18:56:15+04:00",
+          "max": "2026-10-03T23:17:20+04:00"
+        }
+      },
+      "numeric_stock_rows": 0,
+      "line_items_present": 0,
+      "detail_sample": {
+        "rows": 1,
+        "dates": {
+          "date": {
+            "present": 1,
+            "min": "2026-10-03T00:00:00",
+            "max": "2026-10-03T00:00:00"
+          },
+          "created_time": {
+            "present": 1,
+            "min": "2026-10-03T23:17:20+04:00",
+            "max": "2026-10-03T23:17:20+04:00"
+          },
+          "last_modified_time": {
+            "present": 1,
+            "min": "2026-10-03T23:17:20+04:00",
+            "max": "2026-10-03T23:17:20+04:00"
+          }
+        },
+        "numeric_stock_rows": 0,
+        "line_items_present": 1
+      }
+    },
+    "packages": {
+      "evidence": "unexpected_list_shape_no_empty_inference"
+    },
+    "stopped": "bounded_readonly_history_check_complete_coverage_unproved"
+  },
+  "history_source_sha256": "4d0206dd17f6827fd5164ff9a75a811817e3d1d91badc98e5b12c8f9511be1b8",
+  "stopped": "single_readonly_probe_complete_no_retry",
+  "production_cached_token_unchanged": true,
+  "probe_source_sha256": "a92da3a3895979e96239665f3ba2f8fc26662c6ff01009ab26922bfb994ee2c0"
+}

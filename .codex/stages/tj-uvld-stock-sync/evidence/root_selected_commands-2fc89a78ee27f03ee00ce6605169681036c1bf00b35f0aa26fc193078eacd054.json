@@ -1,6 +1,6 @@
 {
   "artifact_digests": [],
-  "command_digest": "466c2f308b48c7661d646fdd068fbecea974c665fe65dbf8ed508f224180ce0b",
+  "command_digest": "2fc89a78ee27f03ee00ce6605169681036c1bf00b35f0aa26fc193078eacd054",
   "environment_digest": "f9480c95301820271f042e45fe7f536e7013e63e23c2d7df81c3b41ce9a6d16f",
   "group": "root_selected_commands",
   "level": "slice_acceptance",
@@ -26,5 +26,5 @@
     "docs/research/2026-10-04-zoho-stock/self-client-probe-selftest.py",
     "docs/research/2026-10-04-zoho-stock/self-client-history-run.py"
   ],
-  "timestamp": "2026-10-04T11:27:06.303169+00:00"
+  "timestamp": "2026-10-04T11:27:05.308035+00:00"
 }

@@ -1,0 +1,44 @@
+{
+  "measured_at_utc": "2026-10-04T11:19:26.724565+00:00",
+  "read_only": true,
+  "oauth_exchange_attempts": 1,
+  "oauth_refreshes": 0,
+  "inventory_gets": 3,
+  "redis_writes": 0,
+  "provider_coverage_verified": false,
+  "requested_scopes": [
+    "ZohoInventory.items.READ",
+    "ZohoInventory.inventoryadjustments.READ",
+    "ZohoInventory.purchasereceives.READ",
+    "ZohoInventory.salesreturns.READ",
+    "ZohoInventory.transferorders.READ",
+    "ZohoInventory.packages.READ"
+  ],
+  "oauth_status": 200,
+  "temporary_grant_obtained": true,
+  "expires_in_seconds": 3600,
+  "granted_scopes_reported": true,
+  "inventory_status": 200,
+  "history_read_verified": true,
+  "adjustment_detail_status": 200,
+  "adjustment_observation": {
+    "adjustment_type": "quantity",
+    "status": "adjusted",
+    "created_time_utc": "2026-10-04T06:12:25+00:00",
+    "last_modified_time_utc": "2026-10-04T06:13:25+00:00",
+    "line_count": 28,
+    "old_quantity_verified": false,
+    "causal_stock_delta_coverage_verified": false,
+    "selected_line_numeric_fields": {
+      "quantity_adjusted": 10.0
+    },
+    "selected_item_status": 200,
+    "selected_item_identity_verified": true,
+    "current_stock_on_hand": 24.0,
+    "current_item_last_modified_time_utc": "2026-09-16T12:46:30+00:00",
+    "note": "Current stock and operation metadata do not supply an observed old quantity or complete delta membership."
+  },
+  "stopped": "single_readonly_probe_complete_no_retry",
+  "production_cached_token_unchanged": true,
+  "probe_source_sha256": "1cfb1a37068351021ba3f8246df1903a0060d15cd846f9fe14b8f1eb4ef00fc7"
+}

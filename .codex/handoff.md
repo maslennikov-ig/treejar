@@ -47,11 +47,19 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 - Access follow-up10:06UTC: one cached-token GET returned401/code57
   (not_authorized); stopped, no refresh/retry. Scope history suggests missing
   history READ grants; role/grant distinction is not proven by cached TTL.
-- Owner requested read-only access setup. Separate EU online grant helper
-  and stdin-only diagnostic wrapper prepared;17 offline guards passed.
-  Windows loopback form HTTP200 verified; no grant has been issued yet.
-  New server-based client requires owner login in api-console.zoho.eu.
-  Runnable entrypoints and exact redirect/scopes: research README above.
+- Read-only access resolved without owner console action: existing EU Self
+  Client client_credentials produced <=1h tokens for six exact READ scopes;
+  no refresh tokens, production token replacement, env/Redis or warehouse write.
+  10:59/11:03/11:19UTC:3OAuthPOST200 +17InventoryGET200, no retries.
+  Validated adjustment/receive/return/transfer history samples available.
+  Packages response shape remains unverified, not inferred empty.
+  Executed source hashes and safe receipts: research README above.
+- Applied quantity adjustment04Oct06:12UTC contains selected line +10;
+  matched current item stock24, item timestamp16Sep12:46UTC. No observed
+  old quantity or complete delta membership; this does not certify coverage.
+  Current docs do not guarantee stock-only changes advance item timestamps.
+ 21offline Self Client guards passed; old17grant/6audit checks retained.
+  Archived localhost server-based helper is not a client/Viktor instruction.
 
 - Read-only probes2026-10-03:9 InventoryGETs,8HTTP200+1HTTP400.
   Literal trailingZ rejected; +0000 accepted, including sorted empty delta.
@@ -70,10 +78,11 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
   phone isolation unchanged; no new messaging/webhook configuration.
 - Current owner authority covers tj-uvld push/merge/deploy with delta gate off.
 - Warehouse mutations are explicitly excluded by current owner instruction.
-  Requested access setup is limited to a NEW diagnostic client, six READ
-  scopes, online <=1h grant, owner browser consent. Existing shared Inventory/
-  CRM client, production tokens/env and scopes are preserved. Other access
-  changes and real messages still require separate approval.
+  Requested diagnostic access uses existing EU Self Client, six exact READ
+  scopes, <=1h access tokens only in app memory. Existing shared Inventory/
+  CRM client configuration, refresh/cached tokens and production env preserved.
+  Permanent reauthorization/revocation, permissions changes and real messages
+  still require separate approval.
   No paid model reader/calls were used.
 - Website products.is_active, catalog prices and embeddings remain owned by
   their existing sync; stock state never writes those fields.
@@ -91,8 +100,9 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 ## Explicit defers
 
 - tj-uvld: AC02 provider stock/lifecycle coverage and paging stability need
-  read-only causal operation history. Current history endpoint returned401;
-  owner forbids warehouse mutations and no test organization is available.
+  read-only causal before/after observations and complete delta membership.
+  History access is now available; no owner console step is pending. Owner
+  forbids warehouse mutations and no test organization is available.
 - tj-uvld: provider-gated delta activation and real24h optimized counters are
   still pending; code delivered, no claim of optimized production savings yet.
 - tj-4kot: outside account consumer (~50requests/min) incident remains open;
@@ -109,8 +119,9 @@ Next stage id: tj-uvld-stock-sync
 Recommended action: continue the same boundary after approved provider evidence.
 
 Code delivery completed. Owner requires working-org read-only continuation.
-Next needs owner login/consent for the prepared separate read-only client,
-then sufficient redacted before/after operation history; existing token401.
+History access live-verified through temporary read-only Self Client grants.
+Next needs sufficient redacted before/after operation observations and complete
+delta membership, without introducing warehouse test operations.
 Read-only access alone does not establish otherwise unobserved coverage. Resolve
 modified-since/filter timestamp semantics, prove AC02, then authorize delta
 activation and collect24h UTC[start,end) counters. Do not close tj-uvld early.

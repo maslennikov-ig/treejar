@@ -7,7 +7,7 @@
   "producer": "root-orchestrator",
   "result": "passed",
   "schema_version": "verification-evidence/v1",
-  "source_digest": "f0b31e9ce47e0000c53487d272613b66e3ecc3de31c7135a95cfb7ccca37ae12",
+  "source_digest": "22d99e71fefa71ee9e7f399fbb1c0f04f625a1e3b505ec8842bb49f3a1554c82",
   "source_paths": [
     "src",
     "tests",
@@ -21,7 +21,10 @@
     "docs/research/2026-10-04-zoho-stock/diagnostic-selftest.py",
     "docs/research/2026-10-04-zoho-stock/history-access.py",
     "docs/research/2026-10-04-zoho-stock/history-access-selftest.py",
-    "docs/research/2026-10-04-zoho-stock/history-grant-probe.py"
+    "docs/research/2026-10-04-zoho-stock/history-grant-probe.py",
+    "docs/research/2026-10-04-zoho-stock/self-client-readonly-probe.py",
+    "docs/research/2026-10-04-zoho-stock/self-client-probe-selftest.py",
+    "docs/research/2026-10-04-zoho-stock/self-client-history-run.py"
   ],
-  "timestamp": "2026-10-04T10:38:31.282229+00:00"
+  "timestamp": "2026-10-04T11:27:06.064659+00:00"
 }

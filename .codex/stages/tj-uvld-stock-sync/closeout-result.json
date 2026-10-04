@@ -2,10 +2,10 @@
   "groups": [
     "root_selected_commands"
   ],
-  "idempotency_key": "d255544c558c5f93d347258a7633295f3f6ef11262943e3104335a64be3a9289",
+  "idempotency_key": "208e32ecf4e721d484890fa48f6d467ece5294e5cea79e0b6333ce9eba1b7423",
   "orchestration_level": "slice_acceptance",
   "result": "passed",
   "schema_version": "stage-closeout-result/v1",
   "stage_id": "tj-uvld-stock-sync",
-  "verification_fingerprint": "5c022ef0c657e3bb52c7264102100edf6e49c27365ccde78e00b8d8cfcf25038"
+  "verification_fingerprint": "ac9228ea678dae55e97cee46869ab1860aff4f08677dcdd147d350ad5cc96a2f"
 }

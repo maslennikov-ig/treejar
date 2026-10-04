@@ -1,0 +1,132 @@
+{
+  "evidence_kind": "offline_http_and_redis_interception",
+  "provider_live_proof": false,
+  "cases": [
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 1,
+      "stopped": "single_readonly_probe_complete_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 1,
+      "stopped": "inventory_unavailable_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 1,
+      "stopped": "inventory_unavailable_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 0,
+      "gets": 0,
+      "stopped": "active_cooldown_no_exchange"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 0,
+      "stopped": "active_cooldown_no_inventory_call"
+    },
+    {
+      "passed": true,
+      "posts": 0,
+      "gets": 0,
+      "stopped": "unexpected_or_missing_context"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 0,
+      "stopped": "grant_unavailable_or_unexpected_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 0,
+      "stopped": "grant_unavailable_or_unexpected_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 0,
+      "stopped": "grant_unavailable_or_unexpected_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 0,
+      "stopped": "grant_unavailable_or_unexpected_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 0,
+      "stopped": "grant_unavailable_or_unexpected_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 0,
+      "stopped": "unexpected_granted_scopes_no_inventory_call"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 8,
+      "stopped": "single_readonly_probe_complete_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 3,
+      "stopped": "single_readonly_probe_complete_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 2,
+      "stopped": "adjustment_detail_unavailable_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 2,
+      "stopped": "adjustment_detail_unavailable_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 2,
+      "stopped": "invalid_adjustment_detail_identity"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 3,
+      "stopped": "invalid_selected_item_identity"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 1,
+      "stopped": "active_cooldown_no_adjustment_detail"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 2,
+      "stopped": "active_cooldown_no_selected_item"
+    },
+    {
+      "passed": true,
+      "posts": 0,
+      "gets": 0,
+      "stopped": "exclusive_diagnostic_modes_no_exchange"
+    }
+  ]
+}

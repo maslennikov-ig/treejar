@@ -1,0 +1,257 @@
+All checks passed!
+8 files already formatted
+{
+  "evidence_kind": "offline_http_and_redis_interception",
+  "provider_live_proof": false,
+  "cases": [
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 1,
+      "stopped": "single_readonly_probe_complete_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 1,
+      "stopped": "inventory_unavailable_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 1,
+      "stopped": "inventory_unavailable_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 0,
+      "gets": 0,
+      "stopped": "active_cooldown_no_exchange"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 0,
+      "stopped": "active_cooldown_no_inventory_call"
+    },
+    {
+      "passed": true,
+      "posts": 0,
+      "gets": 0,
+      "stopped": "unexpected_or_missing_context"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 0,
+      "stopped": "grant_unavailable_or_unexpected_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 0,
+      "stopped": "grant_unavailable_or_unexpected_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 0,
+      "stopped": "grant_unavailable_or_unexpected_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 0,
+      "stopped": "grant_unavailable_or_unexpected_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 0,
+      "stopped": "grant_unavailable_or_unexpected_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 0,
+      "stopped": "unexpected_granted_scopes_no_inventory_call"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 8,
+      "stopped": "single_readonly_probe_complete_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 3,
+      "stopped": "single_readonly_probe_complete_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 2,
+      "stopped": "adjustment_detail_unavailable_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 2,
+      "stopped": "adjustment_detail_unavailable_no_retry"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 2,
+      "stopped": "invalid_adjustment_detail_identity"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 3,
+      "stopped": "invalid_selected_item_identity"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 1,
+      "stopped": "active_cooldown_no_adjustment_detail"
+    },
+    {
+      "passed": true,
+      "posts": 1,
+      "gets": 2,
+      "stopped": "active_cooldown_no_selected_item"
+    },
+    {
+      "passed": true,
+      "posts": 0,
+      "gets": 0,
+      "stopped": "exclusive_diagnostic_modes_no_exchange"
+    }
+  ]
+}
+test_absent_scope_is_reported_as_unobserved (__main__.AccessGuards.test_absent_scope_is_reported_as_unobserved) ... ok
+test_callback_is_exchanged_once_and_secret_cleared (__main__.AccessGuards.test_callback_is_exchanged_once_and_secret_cleared) ... ok
+test_existing_token_is_not_overwritten (__main__.AccessGuards.test_existing_token_is_not_overwritten) ... ok
+test_invalid_state_never_exchanges (__main__.AccessGuards.test_invalid_state_never_exchanges) ... ok
+test_offline_and_broad_grants_are_rejected (__main__.AccessGuards.test_offline_and_broad_grants_are_rejected) ... ok
+test_online_scopes_are_exactly_read_only (__main__.AccessGuards.test_online_scopes_are_exactly_read_only) ... ok
+test_production_client_is_rejected (__main__.AccessGuards.test_production_client_is_rejected) ... ok
+test_refused_exchange_is_not_retried (__main__.AccessGuards.test_refused_exchange_is_not_retried) ... ok
+test_secret_file_and_directory_are_private (__main__.AccessGuards.test_secret_file_and_directory_are_private) ... ok
+test_symlink_parent_is_rejected (__main__.AccessGuards.test_symlink_parent_is_rejected) ... ok
+test_symlink_private_directory_is_rejected (__main__.AccessGuards.test_symlink_private_directory_is_rejected) ... ok
+test_expired_or_different_grant_is_rejected (__main__.GrantProbeGuards.test_expired_or_different_grant_is_rejected) ... ok
+test_missing_token_never_starts_ssh (__main__.GrantProbeGuards.test_missing_token_never_starts_ssh) ... ok
+test_org_host_and_401_guards_use_only_the_separate_token (__main__.GrantProbeGuards.test_org_host_and_401_guards_use_only_the_separate_token) ... ok
+test_pinned_diagnostic_source_is_required (__main__.GrantProbeGuards.test_pinned_diagnostic_source_is_required) ... ok
+test_private_file_is_required (__main__.GrantProbeGuards.test_private_file_is_required) ... ok
+test_token_uses_stdin_only (__main__.GrantProbeGuards.test_token_uses_stdin_only) ... ok
+
+----------------------------------------------------------------------
+Ran 17 tests in 0.042s
+
+OK
+{
+  "evidence_kind": "offline_http_and_redis_interception",
+  "provider_live_proof": false,
+  "cases": [
+    {
+      "status": 200,
+      "cooldown": false,
+      "malformed": false,
+      "page_cap": false,
+      "sent_gets": 7,
+      "passed": true
+    },
+    {
+      "status": 401,
+      "cooldown": false,
+      "malformed": false,
+      "page_cap": false,
+      "sent_gets": 1,
+      "passed": true
+    },
+    {
+      "status": 429,
+      "cooldown": false,
+      "malformed": false,
+      "page_cap": false,
+      "sent_gets": 1,
+      "passed": true
+    },
+    {
+      "status": 200,
+      "cooldown": true,
+      "malformed": false,
+      "page_cap": false,
+      "sent_gets": 0,
+      "passed": true
+    },
+    {
+      "status": 200,
+      "cooldown": false,
+      "malformed": true,
+      "page_cap": false,
+      "sent_gets": 2,
+      "passed": true
+    },
+    {
+      "status": 200,
+      "cooldown": false,
+      "malformed": false,
+      "page_cap": true,
+      "sent_gets": 9,
+      "passed": true
+    }
+  ]
+}
+Launcher compile, both executed-source bindings and unchanged release digest passed: 1c4aeb8b8a8b9b5b38c43ef7fa7a46db62ab3c00b77068c4702732ca07a84a2b
+orchestration contract OK (balanced-v2.19 via orchestration-setup)
+git diff --check OK
+git status --short
+ M .codex/handoff.md
+ M .codex/orchestrator.toml
+ M .codex/stages/tj-ee5f/traceability-manifest.json
+ M .codex/stages/tj-uvld-stock-sync/artifacts/tj-uvld.md
+ M .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-3b3364d101d9b6bdbe2612ecb26da7fb92cae46953b17ea98632802071f415f4.json
+ M .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-466c2f308b48c7661d646fdd068fbecea974c665fe65dbf8ed508f224180ce0b.json
+ M .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-dbd3a2f3c4df4730c92b187933ac1afdf36188018df734d261607c126986f7ee.json
+ M .codex/stages/tj-uvld-stock-sync/summary.md
+ M docs/reports/2026-10-04-zoho-stock-sync-optimization.md
+ M docs/research/2026-10-04-zoho-stock/README.md
+?? .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-2fc89a78ee27f03ee00ce6605169681036c1bf00b35f0aa26fc193078eacd054.json
+?? .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-63945b0e99cd558069ddf58413bc669c100214bf20bab5065f2df71d47a3cb8d.json
+?? .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-9d43df80de1d23bc323c6b088e04f7ea6cb70cfedd9fa51447ea32eebaa86522.json
+?? .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-d6f45d4c6f29f300a169ab92e8f1d64e4a448f199bc74fd3b2979a3a4772dc7d.json
+?? docs/research/2026-10-04-zoho-stock/adjustment-observation-live.json
+?? docs/research/2026-10-04-zoho-stock/self-client-access-findings.md
+?? docs/research/2026-10-04-zoho-stock/self-client-feasibility-live.json
+?? docs/research/2026-10-04-zoho-stock/self-client-history-live.json
+?? docs/research/2026-10-04-zoho-stock/self-client-history-run.py
+?? docs/research/2026-10-04-zoho-stock/self-client-history.executed-source.txt
+?? docs/research/2026-10-04-zoho-stock/self-client-offline-checks.json
+?? docs/research/2026-10-04-zoho-stock/self-client-probe-selftest.py
+?? docs/research/2026-10-04-zoho-stock/self-client-readonly-probe.py
+?? docs/research/2026-10-04-zoho-stock/self-client-root-acceptance.txt
+artifact validation OK
+stage tj-uvld-stock-sync ready
+process verification OK
+blocking review findings OK
+child acceptance cleanup OK
+project index review OK (stage summary records no-change review)
+documentation review OK (structural)
+debt marker scan OK
+== verification group: root_selected_commands ==
+$ uv run --no-sync ruff check docs/research/2026-10-04-zoho-stock/
+$ uv run --no-sync ruff format --check docs/research/2026-10-04-zoho-stock/
+$ uv run --no-sync python docs/research/2026-10-04-zoho-stock/self-client-probe-selftest.py
+$ uv run --no-sync python docs/research/2026-10-04-zoho-stock/history-access-selftest.py
+$ uv run --no-sync python docs/research/2026-10-04-zoho-stock/diagnostic-selftest.py
+$ uv run --no-sync python -c 'import hashlib,json,runpy,sys; from pathlib import Path; root=Path("docs/research/2026-10-04-zoho-stock"); launcher=runpy.run_path(str(root/"self-client-history-run.py")); compile(launcher["build"](),"<bounded-launcher>","exec"); assert hashlib.sha256((root/"self-client-readonly-probe.py").read_bytes()).hexdigest()==json.loads((root/"adjustment-observation-live.json").read_text())["probe_source_sha256"]; assert hashlib.sha256((root/"self-client-history.executed-source.txt").read_bytes()).hexdigest()==json.loads((root/"self-client-history-live.json").read_text())["probe_source_sha256"]; sys.path.insert(0,"scripts/orchestration"); from run_stage_closeout import compute_content_digest; evidence=json.loads((root/"source-evidence-reuse.json").read_text()); actual=compute_content_digest(Path.cwd(),evidence["source_paths"]); assert actual==evidence["expected_source_digest"]; print("Launcher compile, both executed-source bindings and unchanged release digest passed:",actual)'
+$ git diff --check
+$ /home/me/code/treejar/.worktrees/tj-uvld-stock-sync/scripts/orchestration/run_process_verification.sh --stage tj-uvld-stock-sync
+blocking review findings OK
+stage closeout verification OK

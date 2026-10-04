@@ -1,0 +1,206 @@
+"""One explicitly requested read-only access-setup feasibility probe.
+
+Run via stdin in app. Exactly one client_credentials exchange, never a refresh
+or authorization_code exchange; no token persistence or production replacement.
+One Inventory GET only if the provider returns the expected temporary grant.
+Optional pinned history audit uses the same token, total <=16 Inventory GETs.
+No retry, raw error/payload/credentials, revoke, configuration or warehouse write.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import os
+import time
+from datetime import UTC, datetime
+
+import httpx
+from redis.asyncio import Redis
+
+SCOPES = (
+    "ZohoInventory.items.READ",
+    "ZohoInventory.inventoryadjustments.READ",
+    "ZohoInventory.purchasereceives.READ",
+    "ZohoInventory.salesreturns.READ",
+    "ZohoInventory.transferorders.READ",
+    "ZohoInventory.packages.READ",
+)
+EXPECTED_ORG = "544f8528f9db448a"
+EXPECTED_CLIENT = "ecf28d8fc9037516"
+
+
+def prepare_history_source(source: str) -> str:
+    if (
+        hashlib.sha256(source.encode()).hexdigest()
+        != "4d0206dd17f6827fd5164ff9a75a811817e3d1d91badc98e5b12c8f9511be1b8"
+    ):
+        raise ValueError("unexpected_history_source")
+    before = 'token = await redis.get("zoho:access_token")'
+    source = source.replace(before, "token = _HISTORY_TOKEN", 1)
+    marker = "async with httpx.AsyncClient("
+    source = source.replace(
+        marker,
+        'if base != "https://www.zohoapis.eu/inventory/v1" or hashlib.sha256(org.encode()).hexdigest()[:16] != _HISTORY_ORG:\n            result["stopped"] = "unexpected_history_context_no_request"\n            return result\n        '
+        + marker,
+        1,
+    )
+    source = source.replace(
+        'len(result["requests"]) >= 16', 'len(result["requests"]) >= 15', 1
+    )
+    compile(source, "<bounded-readonly-history>", "exec")
+    return source
+
+
+async def probe(history_source: str | None = None):
+    redis = Redis.from_url(
+        os.environ.get("REDIS_URL", "redis://redis:6379/0"), decode_responses=True
+    )
+    result = {
+        "measured_at_utc": datetime.now(UTC).isoformat(),
+        "read_only": True,
+        "oauth_exchange_attempts": 0,
+        "oauth_refreshes": 0,
+        "inventory_gets": 0,
+        "redis_writes": 0,
+        "provider_coverage_verified": False,
+        "requested_scopes": list(SCOPES),
+    }
+    try:
+        prepared_history = (
+            prepare_history_source(history_source)
+            if history_source is not None
+            else None
+        )
+        cooldown = await redis.get("zoho:inventory:rate_limited_until")
+        if cooldown and float(cooldown) > time.time():
+            result["stopped"] = "active_cooldown_no_exchange"
+            return result
+        org = os.environ.get("ZOHO_INVENTORY_ORG_ID", "")
+        client_id = os.environ.get("ZOHO_INVENTORY_CLIENT_ID", "")
+        secret = os.environ.get("ZOHO_INVENTORY_CLIENT_SECRET", "")
+        if (
+            hashlib.sha256(org.encode()).hexdigest()[:16] != EXPECTED_ORG
+            or hashlib.sha256(client_id.encode()).hexdigest()[:16] != EXPECTED_CLIENT
+            or not secret
+        ):
+            result["stopped"] = "unexpected_or_missing_context"
+            return result
+        cached_before = await redis.get("zoho:access_token")
+        async with httpx.AsyncClient(timeout=8, follow_redirects=False) as client:
+            result["oauth_exchange_attempts"] = 1
+            response = await client.post(
+                "https://accounts.zoho.eu/oauth/v2/token",
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": client_id,
+                    "client_secret": secret,
+                    "scope": ",".join(SCOPES),
+                    "soid": "ZohoInventory." + org,
+                },
+            )
+            result["oauth_status"] = response.status_code
+            data = response.json()
+            if not isinstance(data, dict):
+                result["stopped"] = "malformed_oauth_response_no_retry"
+                return result
+            error = data.get("error")
+            if error is not None:
+                result["oauth_error"] = (
+                    error
+                    if error
+                    in (
+                        "unsupported_grant_type",
+                        "invalid_scope",
+                        "invalid_client",
+                        "missing_org_info",
+                        "invalid_org",
+                        "access_denied",
+                        "invalid_soid",
+                        "invalid_request",
+                        "invalid_code",
+                    )
+                    else "unclassified_error_no_raw_message"
+                )
+            token, lifetime = data.get("access_token"), data.get("expires_in")
+            if (
+                response.status_code != 200
+                or error is not None
+                or not isinstance(token, str)
+                or not 1 <= len(token) <= 4096
+                or data.get("refresh_token")
+                or isinstance(lifetime, bool)
+                or not isinstance(lifetime, int)
+                or not 1 <= lifetime <= 3600
+                or data.get("api_domain", "https://www.zohoapis.eu")
+                != "https://www.zohoapis.eu"
+            ):
+                result["stopped"] = "grant_unavailable_or_unexpected_no_retry"
+                return result
+            reported_scope = data.get("scope")
+            if reported_scope is not None and (
+                not isinstance(reported_scope, str)
+                or set(reported_scope.replace(",", " ").split()) != set(SCOPES)
+            ):
+                result["stopped"] = "unexpected_granted_scopes_no_inventory_call"
+                return result
+            result["temporary_grant_obtained"] = True
+            result["expires_in_seconds"] = lifetime
+            result["granted_scopes_reported"] = reported_scope is not None
+            cooldown = await redis.get("zoho:inventory:rate_limited_until")
+            if cooldown and float(cooldown) > time.time():
+                result["stopped"] = "active_cooldown_no_inventory_call"
+                return result
+            result["inventory_gets"] = 1
+            response = await client.get(
+                "https://www.zohoapis.eu/inventory/v1/inventoryadjustments",
+                params={"organization_id": org, "page": 1, "per_page": 1},
+                headers={"Authorization": "Zoho-oauthtoken " + token},
+            )
+            result["inventory_status"] = response.status_code
+            if response.status_code != 200:
+                result["stopped"] = "inventory_unavailable_no_retry"
+                return result
+            payload = response.json()
+            result["history_read_verified"] = (
+                isinstance(payload, dict)
+                and payload.get("code") == 0
+                and isinstance(payload.get("inventory_adjustments"), list)
+                and all(
+                    isinstance(row, dict) for row in payload["inventory_adjustments"]
+                )
+            )
+            if not result["history_read_verified"]:
+                result["stopped"] = "unexpected_history_response_no_further_call"
+                return result
+            if prepared_history is not None:
+                namespace = {
+                    "__name__": "bounded_history",
+                    "_HISTORY_TOKEN": token,
+                    "_HISTORY_ORG": EXPECTED_ORG,
+                }
+                exec(prepared_history, namespace)
+                history = await namespace["audit"]()
+                result["history_audit"] = history
+                result["inventory_gets"] += len(history["requests"])
+                result["history_source_sha256"] = hashlib.sha256(
+                    history_source.encode()
+                ).hexdigest()
+            result["stopped"] = "single_readonly_probe_complete_no_retry"
+            return result
+    except Exception as exc:
+        result["stopped"] = "unavailable_no_retry"
+        result["error_type"] = type(exc).__name__
+        return result
+    finally:
+        result["production_cached_token_unchanged"] = (
+            cached_before == await redis.get("zoho:access_token")
+            if "cached_before" in locals()
+            else None
+        )
+        await redis.aclose()
+
+
+if __name__ == "__main__":
+    print(json.dumps(asyncio.run(probe()), indent=2))
