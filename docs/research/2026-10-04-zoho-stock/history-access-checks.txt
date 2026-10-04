@@ -1,0 +1,114 @@
+All checks passed!
+5 files already formatted
+test_absent_scope_is_reported_as_unobserved (__main__.AccessGuards.test_absent_scope_is_reported_as_unobserved) ... ok
+test_callback_is_exchanged_once_and_secret_cleared (__main__.AccessGuards.test_callback_is_exchanged_once_and_secret_cleared) ... ok
+test_existing_token_is_not_overwritten (__main__.AccessGuards.test_existing_token_is_not_overwritten) ... ok
+test_invalid_state_never_exchanges (__main__.AccessGuards.test_invalid_state_never_exchanges) ... ok
+test_offline_and_broad_grants_are_rejected (__main__.AccessGuards.test_offline_and_broad_grants_are_rejected) ... ok
+test_online_scopes_are_exactly_read_only (__main__.AccessGuards.test_online_scopes_are_exactly_read_only) ... ok
+test_production_client_is_rejected (__main__.AccessGuards.test_production_client_is_rejected) ... ok
+test_refused_exchange_is_not_retried (__main__.AccessGuards.test_refused_exchange_is_not_retried) ... ok
+test_secret_file_and_directory_are_private (__main__.AccessGuards.test_secret_file_and_directory_are_private) ... ok
+test_symlink_parent_is_rejected (__main__.AccessGuards.test_symlink_parent_is_rejected) ... ok
+test_symlink_private_directory_is_rejected (__main__.AccessGuards.test_symlink_private_directory_is_rejected) ... ok
+test_expired_or_different_grant_is_rejected (__main__.GrantProbeGuards.test_expired_or_different_grant_is_rejected) ... ok
+test_missing_token_never_starts_ssh (__main__.GrantProbeGuards.test_missing_token_never_starts_ssh) ... ok
+test_org_host_and_401_guards_use_only_the_separate_token (__main__.GrantProbeGuards.test_org_host_and_401_guards_use_only_the_separate_token) ... ok
+test_pinned_diagnostic_source_is_required (__main__.GrantProbeGuards.test_pinned_diagnostic_source_is_required) ... ok
+test_private_file_is_required (__main__.GrantProbeGuards.test_private_file_is_required) ... ok
+test_token_uses_stdin_only (__main__.GrantProbeGuards.test_token_uses_stdin_only) ... ok
+
+----------------------------------------------------------------------
+Ran 17 tests in 0.105s
+
+OK
+{
+  "evidence_kind": "offline_http_and_redis_interception",
+  "provider_live_proof": false,
+  "cases": [
+    {
+      "status": 200,
+      "cooldown": false,
+      "malformed": false,
+      "page_cap": false,
+      "sent_gets": 7,
+      "passed": true
+    },
+    {
+      "status": 401,
+      "cooldown": false,
+      "malformed": false,
+      "page_cap": false,
+      "sent_gets": 1,
+      "passed": true
+    },
+    {
+      "status": 429,
+      "cooldown": false,
+      "malformed": false,
+      "page_cap": false,
+      "sent_gets": 1,
+      "passed": true
+    },
+    {
+      "status": 200,
+      "cooldown": true,
+      "malformed": false,
+      "page_cap": false,
+      "sent_gets": 0,
+      "passed": true
+    },
+    {
+      "status": 200,
+      "cooldown": false,
+      "malformed": true,
+      "page_cap": false,
+      "sent_gets": 2,
+      "passed": true
+    },
+    {
+      "status": 200,
+      "cooldown": false,
+      "malformed": false,
+      "page_cap": true,
+      "sent_gets": 9,
+      "passed": true
+    }
+  ]
+}
+orchestration contract OK (balanced-v2.19 via orchestration-setup)
+git diff --check OK
+git status --short
+ M .codex/handoff.md
+ M .codex/orchestrator.toml
+ M .codex/stages/tj-ee5f/traceability-manifest.json
+ M .codex/stages/tj-uvld-stock-sync/artifacts/tj-uvld.md
+ M .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-466c2f308b48c7661d646fdd068fbecea974c665fe65dbf8ed508f224180ce0b.json
+ M .codex/stages/tj-uvld-stock-sync/summary.md
+ M docs/reports/2026-10-04-zoho-stock-sync-optimization.md
+ M docs/research/2026-10-04-zoho-stock/README.md
+?? .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-1a0dc3fbe5fe41d19eade3e9420f8ec47be005c692006634a2c8ad3375dd4e76.json
+?? .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-3b3364d101d9b6bdbe2612ecb26da7fb92cae46953b17ea98632802071f415f4.json
+?? .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-bb7b7476a9a0b0127f5cfddbc45e6ad7216ff4cea62bafd3fe7f2fd0f4f80b80.json
+?? .codex/stages/tj-uvld-stock-sync/evidence/root_selected_commands-dbd3a2f3c4df4730c92b187933ac1afdf36188018df734d261607c126986f7ee.json
+?? docs/research/2026-10-04-zoho-stock/history-access-checks.txt
+?? docs/research/2026-10-04-zoho-stock/history-access-selftest.py
+?? docs/research/2026-10-04-zoho-stock/history-access.py
+?? docs/research/2026-10-04-zoho-stock/history-grant-probe.py
+artifact validation OK
+stage tj-uvld-stock-sync ready
+process verification OK
+blocking review findings OK
+child acceptance cleanup OK
+project index review OK (stage summary records no-change review)
+documentation review OK (structural)
+debt marker scan OK
+== verification group: root_selected_commands ==
+$ uv run --no-sync ruff check docs/research/2026-10-04-zoho-stock/*.py
+$ uv run --no-sync ruff format --check docs/research/2026-10-04-zoho-stock/*.py
+$ uv run --no-sync python docs/research/2026-10-04-zoho-stock/history-access-selftest.py
+$ uv run --no-sync python docs/research/2026-10-04-zoho-stock/diagnostic-selftest.py
+$ git diff --check
+$ /home/me/code/treejar/.worktrees/tj-uvld-stock-sync/scripts/orchestration/run_process_verification.sh --stage tj-uvld-stock-sync
+blocking review findings OK
+stage closeout verification OK

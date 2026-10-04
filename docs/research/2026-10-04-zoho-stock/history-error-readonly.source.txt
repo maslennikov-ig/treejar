@@ -1,0 +1,35 @@
+import asyncio, hashlib, json, math, os, time
+from datetime import UTC,datetime
+import httpx
+from redis.asyncio import Redis
+async def main():
+    r=Redis.from_url(os.environ.get('REDIS_URL','redis://redis:6379/0'),decode_responses=True)
+    result={'measured_at_utc':datetime.now(UTC).isoformat(),'read_only':True,'inventory_gets':0,'oauth_refreshes':0,'redis_writes':0}
+    try:
+        deadline=await r.get('zoho:inventory:rate_limited_until')
+        if deadline and float(deadline)>time.time():
+            result['stopped']='active_cooldown';result['cooldown_remaining_seconds']=math.ceil(float(deadline)-time.time());return result
+        token=await r.get('zoho:access_token')
+        result['cached_token_ttl']=await r.ttl('zoho:access_token')
+        if not token:result['stopped']='cached_token_absent_no_refresh';return result
+        org=os.environ.get('ZOHO_INVENTORY_ORG_ID','')
+        client_id=os.environ.get('ZOHO_INVENTORY_CLIENT_ID','')
+        result['organization_fingerprint']=hashlib.sha256(org.encode()).hexdigest()[:16]
+        result['client_id_fingerprint']=hashlib.sha256(client_id.encode()).hexdigest()[:16]
+        result['configured_inventory_credentials_present']=all(os.environ.get(n) for n in ('ZOHO_INVENTORY_CLIENT_ID','ZOHO_INVENTORY_CLIENT_SECRET','ZOHO_INVENTORY_REFRESH_TOKEN'))
+        async with httpx.AsyncClient(base_url=os.environ.get('ZOHO_INVENTORY_API_URL','https://www.zohoapis.eu/inventory/v1'),timeout=8,follow_redirects=False) as client:
+            result['inventory_gets']=1
+            response=await client.get('/inventoryadjustments',params={'organization_id':org,'page':1,'per_page':1},headers={'Authorization':'Zoho-oauthtoken '+token})
+            result['status']=response.status_code
+            try:data=response.json()
+            except ValueError:data={}
+            code=data.get('code') if isinstance(data,dict) else None
+            if isinstance(code,int) or code in ('OAUTH_SCOPE_MISMATCH','INVALID_TOKEN','AUTHENTICATION_FAILURE','NO_PERMISSION'):result['provider_code']=code
+            message=str(data.get('message','')).lower() if isinstance(data,dict) else ''
+            result['message_category']=next((category for terms,category in ((('scope',),'scope_mismatch'),(('not authorized','not authorised','permission','privilege'),'not_authorized'),(('invalid oauth','invalid authtoken','invalid token','expired'),'invalid_or_expired_token')) if any(t in message for t in terms)),'unknown_no_raw_payload_retained')
+            result['stopped']='single_cached_token_get_complete_no_retry_or_refresh'
+            return result
+    except Exception as exc:
+        result['stopped']='unavailable';result['error_type']=type(exc).__name__;return result
+    finally:await r.aclose()
+print(json.dumps(asyncio.run(main()),indent=2))

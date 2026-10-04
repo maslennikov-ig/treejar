@@ -97,7 +97,7 @@ changed_files:
   - tests/test_zoho_stock_incremental.py
   - tests/test_zoho_stock_bulk.py
 explicit_defers:
-  - tj-uvld provider operation coverage, authorized delivery and real24h proof
+  - tj-uvld owner read-only login, provider operation coverage, activation and real24h proof
 ---
 
 # Summary
@@ -124,7 +124,8 @@ and intercepted quotation effects do not prove live transaction coverage.
 
 # Delivery / Cleanup
 
-No main merge/push/deploy. Root worktree retained pending owner authorization.
+Main delivery and app/worker deployment completed as25a8c080; delta remains off.
+Root worktree retained for the open provider/activation acceptance boundary.
 Clean auxiliary docs/review worktrees/branches and disposable Redis removed.
 
 # Risks / Follow-ups
@@ -147,3 +148,12 @@ fallback, not optimized24h.5GET history probe stopped on401;9delta timestamps
 precede boundary, semantics unproved.6offline diagnostic guards passed.
 Latest report:docs/reports/2026-10-04-zoho-stock-sync-optimization.md.
 Provider coverage/activation/24h still pending; no task completion claim.
+
+Read-only access setup2026-10-04: one additional GET401/code57, no retry or
+refresh. Separate EU online six-READ grant helper, loopback-only password form
+and source-pinned stdin diagnostic wrapper implemented at root.17 offline
+checks passed; Windows form returnedHTTP200. Owner login/new-client consent
+is missing; no OAuth exchange, production credential swap or warehouse write.
+Original release footprint unchanged; new slice receipt also binds all five
+research Python entrypoints. Detailed receipts/report record real vs offline
+proof. Existing Inventory/CRM shared client is preserved.

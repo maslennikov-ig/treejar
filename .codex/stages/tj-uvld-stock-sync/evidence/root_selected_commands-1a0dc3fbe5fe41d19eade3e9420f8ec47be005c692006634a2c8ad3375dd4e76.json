@@ -1,6 +1,6 @@
 {
   "artifact_digests": [],
-  "command_digest": "466c2f308b48c7661d646fdd068fbecea974c665fe65dbf8ed508f224180ce0b",
+  "command_digest": "1a0dc3fbe5fe41d19eade3e9420f8ec47be005c692006634a2c8ad3375dd4e76",
   "environment_digest": "f9480c95301820271f042e45fe7f536e7013e63e23c2d7df81c3b41ce9a6d16f",
   "group": "root_selected_commands",
   "level": "slice_acceptance",
@@ -23,5 +23,5 @@
     "docs/research/2026-10-04-zoho-stock/history-access-selftest.py",
     "docs/research/2026-10-04-zoho-stock/history-grant-probe.py"
   ],
-  "timestamp": "2026-10-04T10:38:31.353895+00:00"
+  "timestamp": "2026-10-04T10:38:30.453827+00:00"
 }

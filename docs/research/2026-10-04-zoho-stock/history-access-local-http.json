@@ -1,0 +1,51 @@
+{
+  "measured_at_utc": "2026-10-04T10:39:55.189010+00:00",
+  "evidence_kind": "real_local_http_and_windows_ipv4_probe",
+  "provider_live_proof": false,
+  "windows_probe": {
+    "new_client_instructions": true,
+    "cache_control": "no-store",
+    "zoho_form_redirect_allowed": true,
+    "fixed_callback": true,
+    "password_field": true,
+    "status": 200
+  },
+  "local_http_guards": [
+    {
+      "guard": "foreign_host",
+      "status": 403,
+      "passed": true
+    },
+    {
+      "guard": "foreign_origin",
+      "status": 403,
+      "passed": true
+    },
+    {
+      "guard": "missing_csrf",
+      "status": 400,
+      "passed": true
+    },
+    {
+      "guard": "invalid_oauth_state",
+      "status": 400,
+      "passed": true
+    }
+  ],
+  "oauth_exchanges_performed": 0,
+  "new_token_exists": false,
+  "production_credential_writes": 0,
+  "script_sha256": {
+    "history-grant-probe.py": "2268de5c93fad12bf53ea66ffe0cd6f0d631a07cd256dc2c4a6e0fd870dcd301",
+    "diagnostic-selftest.py": "dde106352debc424588675618cdfd391653ae6a41ea458699f8abd3d0edc4237",
+    "history-access.py": "ca6017ff4cd9f0c2ddee680743a511f5228bf99fbf7b2333a4e974fafb894f60",
+    "readonly-history.py": "4d0206dd17f6827fd5164ff9a75a811817e3d1d91badc98e5b12c8f9511be1b8",
+    "history-access-selftest.py": "1f3be751efda2c0aa91c7d80dc60ea39a9b663530f74b05b56ce38c876069eeb"
+  },
+  "release_source_digest": "1c4aeb8b8a8b9b5b38c43ef7fa7a46db62ab3c00b77068c4702732ca07a84a2b",
+  "diagnostic_slice_source_digest": "f0b31e9ce47e0000c53487d272613b66e3ecc3de31c7135a95cfb7ccca37ae12",
+  "limits": [
+    "Windows native browser launch performed; visual rendering not inspected.",
+    "Provider OAuth/stock coverage still unverified."
+  ]
+}

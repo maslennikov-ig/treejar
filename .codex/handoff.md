@@ -1,6 +1,6 @@
 # Orchestrator Handoff
 
-Updated: 2026-10-03
+Updated: 2026-10-04
 Current branch: codex/tj-uvld-stock-sync
 Current stage id: tj-uvld-stock-sync
 Status: full release verified;4458 passed,20 gated skips; Ruff/mypy/process passed.
@@ -44,6 +44,15 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
  missed-operation inference. Coverage gate stays closed. Receipts:
  docs/research/2026-10-04-zoho-stock/.
 
+- Access follow-up10:06UTC: one cached-token GET returned401/code57
+  (not_authorized); stopped, no refresh/retry. Scope history suggests missing
+  history READ grants; role/grant distinction is not proven by cached TTL.
+- Owner requested read-only access setup. Separate EU online grant helper
+  and stdin-only diagnostic wrapper prepared;17 offline guards passed.
+  Windows loopback form HTTP200 verified; no grant has been issued yet.
+  New server-based client requires owner login in api-console.zoho.eu.
+  Runnable entrypoints and exact redirect/scopes: research README above.
+
 - Read-only probes2026-10-03:9 InventoryGETs,8HTTP200+1HTTP400.
   Literal trailingZ rejected; +0000 accepted, including sorted empty delta.
   Bulk1/2/4/8 returned all requested IDs with numeric stock;8 is a verified
@@ -61,7 +70,10 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
   phone isolation unchanged; no new messaging/webhook configuration.
 - Current owner authority covers tj-uvld push/merge/deploy with delta gate off.
 - Warehouse mutations are explicitly excluded by current owner instruction.
-  OAuth/access changes and real messages still need separate approval.
+  Requested access setup is limited to a NEW diagnostic client, six READ
+  scopes, online <=1h grant, owner browser consent. Existing shared Inventory/
+  CRM client, production tokens/env and scopes are preserved. Other access
+  changes and real messages still require separate approval.
   No paid model reader/calls were used.
 - Website products.is_active, catalog prices and embeddings remain owned by
   their existing sync; stock state never writes those fields.
@@ -97,8 +109,9 @@ Next stage id: tj-uvld-stock-sync
 Recommended action: continue the same boundary after approved provider evidence.
 
 Code delivery completed. Owner requires working-org read-only continuation.
-Next needs sufficient redacted before/after operation history or separately
-authorized read-only history access; existing token returned401. Resolve
+Next needs owner login/consent for the prepared separate read-only client,
+then sufficient redacted before/after operation history; existing token401.
+Read-only access alone does not establish otherwise unobserved coverage. Resolve
 modified-since/filter timestamp semantics, prove AC02, then authorize delta
 activation and collect24h UTC[start,end) counters. Do not close tj-uvld early.
 

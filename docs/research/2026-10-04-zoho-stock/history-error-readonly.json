@@ -1,0 +1,17 @@
+{
+  "measured_at_utc": "2026-10-04T10:06:08.048265+00:00",
+  "read_only": true,
+  "inventory_gets": 1,
+  "oauth_refreshes": 0,
+  "redis_writes": 0,
+  "cached_token_ttl": 2632,
+  "organization_fingerprint": "544f8528f9db448a",
+  "client_id_fingerprint": "ecf28d8fc9037516",
+  "configured_inventory_credentials_present": true,
+  "status": 401,
+  "provider_code": 57,
+  "message_category": "not_authorized",
+  "stopped": "single_cached_token_get_complete_no_retry_or_refresh",
+  "diagnostic_source_sha256": "1ccf1f9ab6c5a40929f8f24d9c413e58354404e9f04e0535b67081b6eeb9ae00",
+  "diagnostic_source": "history-error-readonly.source.txt"
+}

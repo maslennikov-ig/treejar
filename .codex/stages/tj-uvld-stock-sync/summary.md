@@ -107,3 +107,24 @@ Receipts and runnable guards:docs/research/2026-10-04-zoho-stock/.
 Reuse exact existing code acceptance; only docs/research/current-state changed.
 Remaining:read-only causal history/access data, then proven provider gate,
 optimized activation and actual24h proof. Stage internal_ready/task in_progress.
+
+## Separate read-only access preparation
+
+Owner requested continuing through read-only access setup. One additional
+cached-token GET at10:06UTC returned401/code57 (not_authorized), stopped.
+Token cache TTL is metadata, not a guarantee of provider token validity.
+Historical grant setup omitted history READ scopes; user role vs grant denial
+remains unproved. Existing Inventory/CRM client must not be edited/revoked.
+
+Root prepared history-access.py (EU, online, six exact READ scopes, local
+password form, one state-bound code exchange, private600 token/no refresh)
+and history-grant-probe.py (pinned audit source, SSH stdin only, organization/
+API-host fencing before requests, <=16GET, existing cooldown/401/429 stops).
+17 offline security checks passed; real Windows loopback form HTTP200.
+Research README contains registration fields, commands and evidence limits.
+No owner login/client consent/new token yet; no production credentials or data
+changed. New root-selected source footprint binds diagnostics; release source
+footprint/acceptance reused unchanged. No helper stage or redundant deployment.
+
+Task remains in_progress/internal_ready. Next input is owner console login;
+access alone cannot certify unobserved stock/lifecycle operations. Delta off.
