@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="portal-style" content="cs">
+<title>Noor · Пошаговая проверка бота для Анжелы</title>
+</head>
+<body class="cs-page">
+<header class="cs-hero"><div class="cs-container cs-hero__inner">
+<div><p class="cs-eyebrow">Treejar · Инструкция тестировщику</p>
+<h1 class="cs-hero__title">Проверяем Noor шаг за шагом</h1>
+<p class="cs-lead">Анжела, отправляйте готовые реплики в WhatsApp, вставляйте ответы бота в поля под каждым шагом и отмечайте результат. По вашим записям мы сможем повторить проблему и проверить исправление.</p></div>
+<ul class="cs-meta">
+<li class="cs-meta__row"><span><b class="cs-kpi">7 сценариев</b> проверки</span></li>
+<li class="cs-meta__row"><span><b class="cs-kpi">4 маршрута</b> с отдельными диалогами</span></li>
+<li class="cs-meta__row"><span><b class="cs-kpi">Автосохранение</b> ответов и заметок</span></li>
+</ul></div></header>
+<main class="cs-container cs-artifact-main">
+<section class="cs-artifact-sec" id="start"><div class="cs-sec__num">Старт</div>
+<h2 class="cs-sec__title">Где и как тестировать</h2>
+<div class="cs-prose"><ol>
+<li>Откройте <a href="https://wa.me/971551220665" target="_blank" rel="noopener noreferrer">тестовый чат Noor в WhatsApp: +971 55 122 0665</a>. Эта страница служит для записи результатов — сообщения боту отправляйте в WhatsApp.</li>
+<li>Пройдите маршруты А → Б → В → Г. Внутри маршрута продолжайте один разговор; перед новым маршрутом попросите координатора подготовить чистый тестовый диалог.</li>
+<li>Координатор сбрасывает именно ваш тестовый диалог через административную команду <code>/reset</code>. Удаление переписки в WhatsApp и фраза «начнём заново» не очищают память бота.</li>
+<li>Отправляйте по одной реплике и дожидайтесь ответа. Если бот задаёт уместный уточняющий вопрос, ответьте естественно и сохраните дополнительные сообщения в поле этого шага.</li>
+<li>После каждого шага скопируйте текст ответа в поле. Для фото запишите, пришло ли оно и соответствует ли модели. Для PDF запишите номер КП и результат проверки документа.</li>
+<li>После каждого сценария выберите результат. При ошибке опишите, что ожидали и что произошло; добавьте время сообщения, чтобы мы нашли его в журнале. При отсутствии ответа зафиксируйте время ожидания.</li>
+</ol><p>Для сверки цен, остатков и содержания PDF используйте актуальные данные, полученные у координатора. Если сверка недоступна, напишите «Не удалось сверить» — это не подтверждение правильности цифр. Используйте тестовые реквизиты; перед вставкой переписки уберите личные данные реальных клиентов.</p></div>
+<div class="cs-sheet cs-sheet--stack">
+<section class="cs-q" data-portal-question="Имя тестировщика"><div class="cs-q__head"><h3 class="cs-q__title"><label for="tester-name">Кто проводит проверку</label></h3></div><div class="cs-q__body"><input class="cs-field" id="tester-name" type="text" name="tester_name" placeholder="Имя, например Анжела" autocomplete="given-name"></div></section>
+<section class="cs-q" data-portal-optional><div class="cs-q__head"><h3 class="cs-q__title"><label for="test-time">Дата и время начала</label></h3></div><div class="cs-q__body"><input class="cs-field" id="test-time" type="text" name="test_started_at" placeholder="Например: 9 октября, 14:30 МСК"></div></section>
+</div>
+<aside class="cs-note"><p>Все результаты сохраняются автоматически. Можно прерваться и вернуться по той же ссылке. Дождитесь статуса сохранения вверху страницы. Кнопку в конце нажмите один раз, когда проверка закончена: после отправки ответы станут доступны только для чтения.</p></aside>
+</section>
+<nav class="cs-parts" aria-label="Маршруты проверки">
+<a class="cs-parts__item" href="#route-a"><span class="cs-parts__num">Маршрут А</span><span class="cs-parts__title">Подбор и память · 1 → 2 → 4</span></a>
+<a class="cs-parts__item" href="#route-b"><span class="cs-parts__num">Маршрут Б</span><span class="cs-parts__title">Товар, фото и КП · 3 → 7</span></a>
+<a class="cs-parts__item" href="#route-c"><span class="cs-parts__num">Маршрут В</span><span class="cs-parts__title">Арабский язык · 5</span></a>
+<a class="cs-parts__item" href="#route-d"><span class="cs-parts__num">Маршрут Г</span><span class="cs-parts__title">Границы ассортимента · 6</span></a>
+</nav>
+<section class="cs-part" id="route-a"><div class="cs-part__head"><p class="cs-part__num">Маршрут А · 1 из 4</p><h2 class="cs-part__title">Подбор мебели и память</h2><p class="cs-part__lead">Начните с чистого тестового диалога. Порядок сценариев: 1 → 2 → 4.</p></div>
+<section class="cs-artifact-sec" id="scenario-1"><div class="cs-sec__num">01</div><h2 class="cs-sec__title">Понимает задачу клиента</h2><p class="cs-ctx">Диалог А · начало</p>
+<div class="cs-prose"><p><strong>Шаг 1. Отправьте первое сообщение</strong></p>
+<blockquote><p id="message-1-1" lang="en" dir="ltr">Hi, I’m Nadia. We’re furnishing a new office in Dubai for four people. Can you help us choose the furniture?</p></blockquote>
+<button type="button" class="cs-btn cs-btn--ghost" data-copy="message-1-1" aria-label="Скопировать реплику: сценарий 1, шаг 1">Скопировать реплику</button>
+<p><label for="answer-1-1">Ответ бота на шаг 1</label></p>
+<textarea class="cs-field cs-field--area" id="answer-1-1" name="scenario_1_answer_1" data-portal-label="Сценарий 1, шаг 1: ответ бота" placeholder="Вставьте точный ответ. Если было несколько сообщений, сохраните всю последовательность. Для фото или PDF опишите, что пришло; при отсутствии ответа укажите время ожидания." rows="4"></textarea></div>
+<div class="cs-prose"><p><strong>Шаг 2. Если бот спросит о характере работы, ответьте</strong></p>
+<blockquote><p id="message-1-2" lang="en" dir="ltr">We’re a design team. We collaborate often, but each person needs some privacy.</p></blockquote>
+<button type="button" class="cs-btn cs-btn--ghost" data-copy="message-1-2" aria-label="Скопировать реплику: сценарий 1, шаг 2">Скопировать реплику</button>
+<p><label for="answer-1-2">Ответ бота на шаг 2</label></p>
+<textarea class="cs-field cs-field--area" id="answer-1-2" name="scenario_1_answer_2" data-portal-label="Сценарий 1, шаг 2: ответ бота" placeholder="Вставьте точный ответ. Если было несколько сообщений, сохраните всю последовательность. Для фото или PDF опишите, что пришло; при отсутствии ответа укажите время ожидания." rows="4"></textarea></div>
+<div class="cs-prose"><p><strong>Что считать успешным результатом</strong></p><ul>
+<li>Представляется, отвечает на английском и учитывает имя Nadia.</li>
+<li>Понимает: офис в Дубае, четыре человека; не спрашивает повторно уже названные сведения.</li>
+<li>Уточняет то, что помогает подбору, без длинной анкеты; учитывает совместную работу и потребность в приватности.</li>
+</ul></div>
+<div class="cs-sheet cs-sheet--stack"><section class="cs-q" data-portal-question="Сценарий 1: результат">
+<div class="cs-q__head"><h3 class="cs-q__title"><label for="result-1">Результат сценария 1</label></h3></div>
+<div class="cs-q__body"><select class="cs-field" id="result-1" name="scenario_1_result">
+<option value="">Выберите результат</option><option value="Пройден">Пройден</option><option value="Есть замечания">Есть замечания</option><option value="Не пройден">Не пройден</option><option value="Пропущен">Пропущен</option></select></div></section>
+<section class="cs-q" data-portal-optional><div class="cs-q__head"><h3 class="cs-q__title"><label for="note-1">Замечания к сценарию 1</label></h3></div><div class="cs-q__body">
+<textarea class="cs-field cs-field--area" id="note-1" name="scenario_1_note" data-portal-label="Сценарий 1: замечания" placeholder="Что ожидали → что произошло. При ошибке укажите время сообщения; при пропуске — причину." rows="3"></textarea></div></section></div></section>
+<section class="cs-artifact-sec" id="scenario-2"><div class="cs-sec__num">02</div><h2 class="cs-sec__title">Сравнивает варианты и объясняет выбор</h2><p class="cs-ctx">Диалог А · продолжение сценария 1</p>
+<div class="cs-prose"><p><strong>Шаг 1. Попросите сравнить варианты</strong></p>
+<blockquote><p id="message-2-1" lang="en" dir="ltr">Please compare LUMA 9719-4 and a NOVO four-person setup for our team. What are the differences in privacy, collaboration and current price?</p></blockquote>
+<button type="button" class="cs-btn cs-btn--ghost" data-copy="message-2-1" aria-label="Скопировать реплику: сценарий 2, шаг 1">Скопировать реплику</button>
+<p><label for="answer-2-1">Ответ бота на шаг 1</label></p>
+<textarea class="cs-field cs-field--area" id="answer-2-1" name="scenario_2_answer_1" data-portal-label="Сценарий 2, шаг 1: ответ бота" placeholder="Вставьте точный ответ. Если было несколько сообщений, сохраните всю последовательность. Для фото или PDF опишите, что пришло; при отсутствии ответа укажите время ожидания." rows="4"></textarea></div>
+<div class="cs-prose"><p><strong>Шаг 2. После ответа попросите рекомендацию</strong></p>
+<blockquote><p id="message-2-2" lang="en" dir="ltr">Which would you recommend for us, and why?</p></blockquote>
+<button type="button" class="cs-btn cs-btn--ghost" data-copy="message-2-2" aria-label="Скопировать реплику: сценарий 2, шаг 2">Скопировать реплику</button>
+<p><label for="answer-2-2">Ответ бота на шаг 2</label></p>
+<textarea class="cs-field cs-field--area" id="answer-2-2" name="scenario_2_answer_2" data-portal-label="Сценарий 2, шаг 2: ответ бота" placeholder="Вставьте точный ответ. Если было несколько сообщений, сохраните всю последовательность. Для фото или PDF опишите, что пришло; при отсутствии ответа укажите время ожидания." rows="4"></textarea></div>
+<div class="cs-prose"><p><strong>Что считать успешным результатом</strong></p><ul>
+<li>Сравнивает конкретные варианты и связывает рекомендацию с потребностями команды.</li>
+<li>Называет подтверждённые характеристики и текущие цены. Не подменяет неизвестные сведения догадками.</li>
+<li>Не приравнивает перегородки к доказанной звукоизоляции.</li>
+<li>Название товара и фотография, если она пришла, соответствуют друг другу.</li>
+</ul></div>
+<div class="cs-sheet cs-sheet--stack"><section class="cs-q" data-portal-question="Сценарий 2: результат">
+<div class="cs-q__head"><h3 class="cs-q__title"><label for="result-2">Результат сценария 2</label></h3></div>
+<div class="cs-q__body"><select class="cs-field" id="result-2" name="scenario_2_result">
+<option value="">Выберите результат</option><option value="Пройден">Пройден</option><option value="Есть замечания">Есть замечания</option><option value="Не пройден">Не пройден</option><option value="Пропущен">Пропущен</option></select></div></section>
+<section class="cs-q" data-portal-optional><div class="cs-q__head"><h3 class="cs-q__title"><label for="note-2">Замечания к сценарию 2</label></h3></div><div class="cs-q__body">
+<textarea class="cs-field cs-field--area" id="note-2" name="scenario_2_note" data-portal-label="Сценарий 2: замечания" placeholder="Что ожидали → что произошло. При ошибке укажите время сообщения; при пропуске — причину." rows="3"></textarea></div></section></div></section>
+<section class="cs-artifact-sec" id="scenario-4"><div class="cs-sec__num">04</div><h2 class="cs-sec__title">Помнит изменения в разговоре</h2><p class="cs-ctx">Диалог А · продолжение сценария 2</p>
+<div class="cs-prose"><p><strong>Шаг 1. Измените исходную задачу</strong></p>
+<blockquote><p id="message-4-1" lang="en" dir="ltr">We’re considering two LUMA 9719-4 workstations in walnut for eight people. Our furniture budget is AED 6,000. Don’t prepare a quotation yet.</p></blockquote>
+<button type="button" class="cs-btn cs-btn--ghost" data-copy="message-4-1" aria-label="Скопировать реплику: сценарий 4, шаг 1">Скопировать реплику</button>
+<p><label for="answer-4-1">Ответ бота на шаг 1</label></p>
+<textarea class="cs-field cs-field--area" id="answer-4-1" name="scenario_4_answer_1" data-portal-label="Сценарий 4, шаг 1: ответ бота" placeholder="Вставьте точный ответ. Если было несколько сообщений, сохраните всю последовательность. Для фото или PDF опишите, что пришло; при отсутствии ответа укажите время ожидания." rows="4"></textarea></div>
+<div class="cs-prose"><p><strong>Шаг 2. После ответа спросите об услугах</strong></p>
+<blockquote><p id="message-4-2" lang="en" dir="ltr">Do you provide delivery and assembly in Dubai?</p></blockquote>
+<button type="button" class="cs-btn cs-btn--ghost" data-copy="message-4-2" aria-label="Скопировать реплику: сценарий 4, шаг 2">Скопировать реплику</button>
+<p><label for="answer-4-2">Ответ бота на шаг 2</label></p>
+<textarea class="cs-field cs-field--area" id="answer-4-2" name="scenario_4_answer_2" data-portal-label="Сценарий 4, шаг 2: ответ бота" placeholder="Вставьте точный ответ. Если было несколько сообщений, сохраните всю последовательность. Для фото или PDF опишите, что пришло; при отсутствии ответа укажите время ожидания." rows="4"></textarea></div>
+<div class="cs-prose"><p><strong>Шаг 3. После ответа измените количество и попросите итог</strong></p>
+<blockquote><p id="message-4-3" lang="en" dir="ltr">Update: we now need places for twelve people, so three four-person workstations. Keep the walnut finish and the same budget. Please summarise the updated requirements.</p></blockquote>
+<button type="button" class="cs-btn cs-btn--ghost" data-copy="message-4-3" aria-label="Скопировать реплику: сценарий 4, шаг 3">Скопировать реплику</button>
+<p><label for="answer-4-3">Ответ бота на шаг 3</label></p>
+<textarea class="cs-field cs-field--area" id="answer-4-3" name="scenario_4_answer_3" data-portal-label="Сценарий 4, шаг 3: ответ бота" placeholder="Вставьте точный ответ. Если было несколько сообщений, сохраните всю последовательность. Для фото или PDF опишите, что пришло; при отсутствии ответа укажите время ожидания." rows="4"></textarea></div>
+<div class="cs-prose"><p><strong>Что считать успешным результатом</strong></p><ul>
+<li>Отвечает об услугах и сохраняет контекст подбора.</li>
+<li>В итогах: 12 человек, 3 рабочие станции LUMA 9719-4, цвет walnut, бюджет AED 6,000.</li>
+<li>Не смешивает старое и новое количество. Если бюджет не сходится с ценами, обозначает это.</li>
+<li>Не создаёт КП без согласия.</li>
+</ul></div>
+<div class="cs-sheet cs-sheet--stack"><section class="cs-q" data-portal-question="Сценарий 4: результат">
+<div class="cs-q__head"><h3 class="cs-q__title"><label for="result-4">Результат сценария 4</label></h3></div>
+<div class="cs-q__body"><select class="cs-field" id="result-4" name="scenario_4_result">
+<option value="">Выберите результат</option><option value="Пройден">Пройден</option><option value="Есть замечания">Есть замечания</option><option value="Не пройден">Не пройден</option><option value="Пропущен">Пропущен</option></select></div></section>
+<section class="cs-q" data-portal-optional><div class="cs-q__head"><h3 class="cs-q__title"><label for="note-4">Замечания к сценарию 4</label></h3></div><div class="cs-q__body">
+<textarea class="cs-field cs-field--area" id="note-4" name="scenario_4_note" data-portal-label="Сценарий 4: замечания" placeholder="Что ожидали → что произошло. При ошибке укажите время сообщения; при пропуске — причину." rows="3"></textarea></div></section></div></section>
+</section>
+<section class="cs-part" id="route-b"><div class="cs-part__head"><p class="cs-part__num">Маршрут Б · 2 из 4</p><h2 class="cs-part__title">Конкретный товар, фотографии и КП</h2><p class="cs-part__lead">Начните с чистого тестового диалога. Порядок сценариев: 3 → 7.</p></div>
+<section class="cs-artifact-sec" id="scenario-3"><div class="cs-sec__num">03</div><h2 class="cs-sec__title">Проверяет товар, количество и фотографии</h2><p class="cs-ctx">Диалог Б · новый чистый диалог</p>
+<div class="cs-prose"><p><strong>Шаг 1. Проверьте конкретную модель</strong></p>
+<blockquote><p id="message-3-1" lang="en" dir="ltr">Hi, I’m Aisha. Please check the current price and stock for CH 616 NEW black. I need 4 chairs. No quotation yet.</p></blockquote>
+<button type="button" class="cs-btn cs-btn--ghost" data-copy="message-3-1" aria-label="Скопировать реплику: сценарий 3, шаг 1">Скопировать реплику</button>
+<p><label for="answer-3-1">Ответ бота на шаг 1</label></p>
+<textarea class="cs-field cs-field--area" id="answer-3-1" name="scenario_3_answer_1" data-portal-label="Сценарий 3, шаг 1: ответ бота" placeholder="Вставьте точный ответ. Если было несколько сообщений, сохраните всю последовательность. Для фото или PDF опишите, что пришло; при отсутствии ответа укажите время ожидания." rows="4"></textarea></div>
+<div class="cs-prose"><p><strong>Шаг 2. После ответа запросите фотографию</strong></p>
+<blockquote><p id="message-3-2" lang="en" dir="ltr">Please send me a photo of CH 616 NEW black.</p></blockquote>
+<button type="button" class="cs-btn cs-btn--ghost" data-copy="message-3-2" aria-label="Скопировать реплику: сценарий 3, шаг 2">Скопировать реплику</button>
+<p><label for="answer-3-2">Ответ бота на шаг 2</label></p>
+<textarea class="cs-field cs-field--area" id="answer-3-2" name="scenario_3_answer_2" data-portal-label="Сценарий 3, шаг 2: ответ бота" placeholder="Вставьте точный ответ. Если было несколько сообщений, сохраните всю последовательность. Для фото или PDF опишите, что пришло; при отсутствии ответа укажите время ожидания." rows="4"></textarea></div>
+<div class="cs-prose"><p><strong>Шаг 3. После получения фото попросите прислать его ещё раз</strong></p>
+<blockquote><p id="message-3-3" lang="en" dir="ltr">Please send that photo again.</p></blockquote>
+<button type="button" class="cs-btn cs-btn--ghost" data-copy="message-3-3" aria-label="Скопировать реплику: сценарий 3, шаг 3">Скопировать реплику</button>
+<p><label for="answer-3-3">Ответ бота на шаг 3</label></p>
+<textarea class="cs-field cs-field--area" id="answer-3-3" name="scenario_3_answer_3" data-portal-label="Сценарий 3, шаг 3: ответ бота" placeholder="Вставьте точный ответ. Если было несколько сообщений, сохраните всю последовательность. Для фото или PDF опишите, что пришло; при отсутствии ответа укажите время ожидания." rows="4"></textarea></div>
+<div class="cs-prose"><p><strong>Что считать успешным результатом</strong></p><ul>
+<li>Проверяет именно CH 616 NEW, чёрный цвет, количество — четыре кресла.</li>
+<li>Сообщает фактические цену и остаток; при недоступности данных объясняет ситуацию, не придумывая числа. Если четырёх кресел нет, сообщает о нехватке.</li>
+<li>Фото действительно приходит и соответствует модели; повторная просьба приводит к повторной отправке фото.</li>
+<li>После «No quotation yet» не создаёт КП и не начинает сбор реквизитов для его оформления.</li>
+</ul></div>
+<div class="cs-sheet cs-sheet--stack"><section class="cs-q" data-portal-question="Сценарий 3: результат">
+<div class="cs-q__head"><h3 class="cs-q__title"><label for="result-3">Результат сценария 3</label></h3></div>
+<div class="cs-q__body"><select class="cs-field" id="result-3" name="scenario_3_result">
+<option value="">Выберите результат</option><option value="Пройден">Пройден</option><option value="Есть замечания">Есть замечания</option><option value="Не пройден">Не пройден</option><option value="Пропущен">Пропущен</option></select></div></section>
+<section class="cs-q" data-portal-optional><div class="cs-q__head"><h3 class="cs-q__title"><label for="note-3">Замечания к сценарию 3</label></h3></div><div class="cs-q__body">
+<textarea class="cs-field cs-field--area" id="note-3" name="scenario_3_note" data-portal-label="Сценарий 3: замечания" placeholder="Что ожидали → что произошло. При ошибке укажите время сообщения; при пропуске — причину." rows="3"></textarea></div></section></div></section>
+<section class="cs-artifact-sec" id="scenario-7"><div class="cs-sec__num">07</div><h2 class="cs-sec__title">Создаёт PDF-КП и не дублирует его</h2><p class="cs-ctx">Диалог Б · продолжение сценария 3 · тестовое КП согласовано</p>
+<div class="cs-prose"><p><strong>Этот сценарий создаёт тестовое коммерческое предложение (КП) и записи в системе продаж. До начала согласуйте с координатором тестовые реквизиты и создание КП. Если согласования нет, выберите «Пропущен» и укажите причину.</strong></p></div>
+<div class="cs-prose"><p><strong>Шаг 1. Если создание тестового КП согласовано, отправьте</strong></p>
+<blockquote><p id="message-7-1" lang="en" dir="ltr">Please prepare a formal quotation for exactly 4 x CH 616 NEW black at the current confirmed price.</p></blockquote>
+<button type="button" class="cs-btn cs-btn--ghost" data-copy="message-7-1" aria-label="Скопировать реплику: сценарий 7, шаг 1">Скопировать реплику</button>
+<p>Если бот запросит реквизиты, передайте согласованные тестовые данные. Вставьте сюда всю переписку до получения PDF, указав дополнительные вопросы и свои ответы. При недоступности КП зафиксируйте это и пропустите следующий шаг.</p>
+<p><label for="answer-7-1">Ответ бота на шаг 1</label></p>
+<textarea class="cs-field cs-field--area" id="answer-7-1" name="scenario_7_answer_1" data-portal-label="Сценарий 7, шаг 1: ответ бота" placeholder="Вставьте точный ответ. Если было несколько сообщений, сохраните всю последовательность. Для фото или PDF опишите, что пришло; при отсутствии ответа укажите время ожидания." rows="4"></textarea></div>
+<div class="cs-prose"><p><strong>Шаг 2. Только после получения и открытия PDF отправьте короткое подтверждение</strong></p>
+<blockquote><p id="message-7-2" lang="en" dir="ltr">Okay, thank you.</p></blockquote>
+<button type="button" class="cs-btn cs-btn--ghost" data-copy="message-7-2" aria-label="Скопировать реплику: сценарий 7, шаг 2">Скопировать реплику</button>
+<p><label for="answer-7-2">Ответ бота на шаг 2</label></p>
+<textarea class="cs-field cs-field--area" id="answer-7-2" name="scenario_7_answer_2" data-portal-label="Сценарий 7, шаг 2: ответ бота" placeholder="Вставьте точный ответ. Если было несколько сообщений, сохраните всю последовательность. Для фото или PDF опишите, что пришло; при отсутствии ответа укажите время ожидания." rows="4"></textarea></div>
+<div class="cs-prose"><p><strong>Что считать успешным результатом</strong></p><ul>
+<li>Запрашивает только недостающие данные: имя, компанию или покупку как физлицо, email и полный адрес доставки.</li>
+<li>Сохраняет товар CH 616 NEW black и количество — четыре кресла.</li>
+<li>Присылает PDF, который открывается. В документе совпадают реквизиты, товар, количество, цена и итог; налоги и дополнительные расходы понятны.</li>
+<li>После «Okay, thank you» не создаёт новое КП и не присылает дубликат.</li>
+<li>Если сообщает об ожидании, фиксируем ожидание: сценарий считается пройденным только после получения и проверки PDF. Не отправляйте запрос на КП повторно.</li>
+</ul></div>
+<div class="cs-sheet cs-sheet--stack"><section class="cs-q" data-portal-question="Сценарий 7: результат">
+<div class="cs-q__head"><h3 class="cs-q__title"><label for="result-7">Результат сценария 7</label></h3></div>
+<div class="cs-q__body"><select class="cs-field" id="result-7" name="scenario_7_result">
+<option value="">Выберите результат</option><option value="Пройден">Пройден</option><option value="Есть замечания">Есть замечания</option><option value="Не пройден">Не пройден</option><option value="Пропущен">Пропущен</option></select></div></section>
+<section class="cs-q" data-portal-optional><div class="cs-q__head"><h3 class="cs-q__title"><label for="note-7">Замечания к сценарию 7</label></h3></div><div class="cs-q__body">
+<textarea class="cs-field cs-field--area" id="note-7" name="scenario_7_note" data-portal-label="Сценарий 7: замечания" placeholder="Что ожидали → что произошло. При ошибке укажите время сообщения; при пропуске — причину." rows="3"></textarea></div></section></div></section>
+</section>
+<section class="cs-part" id="route-c"><div class="cs-part__head"><p class="cs-part__num">Маршрут В · 3 из 4</p><h2 class="cs-part__title">Консультация на арабском</h2><p class="cs-part__lead">Начните с чистого тестового диалога. Порядок сценариев: 5.</p></div>
+<section class="cs-artifact-sec" id="scenario-5"><div class="cs-sec__num">05</div><h2 class="cs-sec__title">Общается по-арабски</h2><p class="cs-ctx">Диалог В · новый чистый диалог</p>
+<div class="cs-prose"><p><strong>Шаг 1. Отправьте запрос на арабском</strong></p>
+<blockquote><p id="message-5-1" lang="ar" dir="rtl">مرحباً، اسمي ليان. أحتاج إلى تجهيز مكتب لستة موظفين في دبي بمحطات عمل توفر الخصوصية وكراسٍ مريحة. الميزانية ١٠٬٠٠٠ درهم. ماذا تقترحين؟</p></blockquote>
+<button type="button" class="cs-btn cs-btn--ghost" data-copy="message-5-1" aria-label="Скопировать реплику: сценарий 5, шаг 1">Скопировать реплику</button>
+<p>Перевод: «Здравствуйте, меня зовут Лаян. Нужно оборудовать офис для шести сотрудников в Дубае: рабочие места с приватностью и удобные кресла. Бюджет 10 000 дирхамов. Что предложите?»</p>
+<p><label for="answer-5-1">Ответ бота на шаг 1</label></p>
+<textarea class="cs-field cs-field--area" id="answer-5-1" name="scenario_5_answer_1" data-portal-label="Сценарий 5, шаг 1: ответ бота" placeholder="Вставьте точный ответ. Если было несколько сообщений, сохраните всю последовательность. Для фото или PDF опишите, что пришло; при отсутствии ответа укажите время ожидания." rows="4"></textarea></div>
+<div class="cs-prose"><p><strong>Что считать успешным результатом</strong></p><ul>
+<li>Отвечает на арабском.</li>
+<li>Понимает имя Лаян, шесть сотрудников, Дубай и бюджет 10 000 дирхамов.</li>
+<li>Учитывает приватность и удобные кресла, предлагает товары или полезное уточнение.</li>
+</ul></div>
+<div class="cs-sheet cs-sheet--stack"><section class="cs-q" data-portal-question="Сценарий 5: результат">
+<div class="cs-q__head"><h3 class="cs-q__title"><label for="result-5">Результат сценария 5</label></h3></div>
+<div class="cs-q__body"><select class="cs-field" id="result-5" name="scenario_5_result">
+<option value="">Выберите результат</option><option value="Пройден">Пройден</option><option value="Есть замечания">Есть замечания</option><option value="Не пройден">Не пройден</option><option value="Пропущен">Пропущен</option></select></div></section>
+<section class="cs-q" data-portal-optional><div class="cs-q__head"><h3 class="cs-q__title"><label for="note-5">Замечания к сценарию 5</label></h3></div><div class="cs-q__body">
+<textarea class="cs-field cs-field--area" id="note-5" name="scenario_5_note" data-portal-label="Сценарий 5: замечания" placeholder="Что ожидали → что произошло. При ошибке укажите время сообщения; при пропуске — причину." rows="3"></textarea></div></section></div></section>
+</section>
+<section class="cs-part" id="route-d"><div class="cs-part__head"><p class="cs-part__num">Маршрут Г · 4 из 4</p><h2 class="cs-part__title">Товары вне ассортимента</h2><p class="cs-part__lead">Начните с чистого тестового диалога. Порядок сценариев: 6.</p></div>
+<section class="cs-artifact-sec" id="scenario-6"><div class="cs-sec__num">06</div><h2 class="cs-sec__title">Честно обозначает границы ассортимента</h2><p class="cs-ctx">Диалог Г · новый чистый диалог</p>
+<div class="cs-prose"><p><strong>Шаг 1. Запросите специализированное оборудование</strong></p>
+<blockquote><p id="message-6-1" lang="en" dir="ltr">Hi, I’m Rami. Do you sell laboratory fume hoods and chemical-resistant lab benches for a research facility?</p></blockquote>
+<button type="button" class="cs-btn cs-btn--ghost" data-copy="message-6-1" aria-label="Скопировать реплику: сценарий 6, шаг 1">Скопировать реплику</button>
+<p><label for="answer-6-1">Ответ бота на шаг 1</label></p>
+<textarea class="cs-field cs-field--area" id="answer-6-1" name="scenario_6_answer_1" data-portal-label="Сценарий 6, шаг 1: ответ бота" placeholder="Вставьте точный ответ. Если было несколько сообщений, сохраните всю последовательность. Для фото или PDF опишите, что пришло; при отсутствии ответа укажите время ожидания." rows="4"></textarea></div>
+<div class="cs-prose"><p><strong>Что считать успешным результатом</strong></p><ul>
+<li>Не выдаёт офисные столы за лабораторное оборудование.</li>
+<li>Прямо говорит, если подходящих товаров в каталоге нет.</li>
+<li>Если предлагает офисную мебель, ясно отделяет её от исходного запроса.</li>
+</ul></div>
+<div class="cs-sheet cs-sheet--stack"><section class="cs-q" data-portal-question="Сценарий 6: результат">
+<div class="cs-q__head"><h3 class="cs-q__title"><label for="result-6">Результат сценария 6</label></h3></div>
+<div class="cs-q__body"><select class="cs-field" id="result-6" name="scenario_6_result">
+<option value="">Выберите результат</option><option value="Пройден">Пройден</option><option value="Есть замечания">Есть замечания</option><option value="Не пройден">Не пройден</option><option value="Пропущен">Пропущен</option></select></div></section>
+<section class="cs-q" data-portal-optional><div class="cs-q__head"><h3 class="cs-q__title"><label for="note-6">Замечания к сценарию 6</label></h3></div><div class="cs-q__body">
+<textarea class="cs-field cs-field--area" id="note-6" name="scenario_6_note" data-portal-label="Сценарий 6: замечания" placeholder="Что ожидали → что произошло. При ошибке укажите время сообщения; при пропуске — причину." rows="3"></textarea></div></section></div></section>
+</section>
+<section class="cs-artifact-sec" id="finish"><div class="cs-sec__num">Финиш</div><h2 class="cs-sec__title">Завершите проверку</h2>
+<div class="cs-prose"><p>Проверьте, что у каждого сценария выбран результат. Если шаг не выполняли, отметьте «Пропущен» и объясните почему. Обещание прислать фото или КП само по себе не означает, что действие выполнено.</p></div>
+<div class="cs-sheet cs-sheet--stack"><section class="cs-q" data-portal-optional><div class="cs-q__head"><h3 class="cs-q__title"><label for="test-summary">Общий комментарий</label></h3></div><div class="cs-q__body"><textarea class="cs-field cs-field--area" id="test-summary" name="test_summary" placeholder="Какие проблемы мешают покупке? Что стоит проверить дополнительно?" rows="4"></textarea></div></section></div>
+<div class="cs-submit"><p>Ответы сохраняются автоматически. Нажмите кнопку после завершения проверки: мы получим результаты, а эта ссылка станет доступна только для чтения.</p><button type="button" class="cs-btn" data-portal-submit>Отправить результаты тестирования</button></div>
+<p class="cs-muted">Инструкция восстановлена по прежним семи сценариям для Анжелы и дополнена проверками повторной фотографии и отсутствия дубля КП. Обновлено 9 октября 2026.</p></section>
+<p id="copy-status" class="cs-muted" role="status" aria-live="polite"></p>
+</main>
+<script>
+(function () {
+  document.querySelectorAll('[data-copy]').forEach(function (button) {
+    button.addEventListener('click', async function () {
+      var source = document.getElementById(button.dataset.copy);
+      var status = document.getElementById('copy-status');
+      var copied = false;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(source.textContent);
+          copied = true;
+        }
+      } catch (_) {}
+      if (!copied) {
+        var range = document.createRange();
+        range.selectNodeContents(source);
+        var selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        try { copied = document.execCommand('copy'); } catch (_) {}
+        if (copied) selection.removeAllRanges();
+      }
+      button.textContent = copied ? 'Скопировано' : 'Текст выделен — скопируйте вручную';
+      status.textContent = copied ? 'Реплика скопирована. Вставьте её в WhatsApp.' : 'Браузер не разрешил копирование. Скопируйте выделенный текст вручную.';
+      setTimeout(function () { button.textContent = 'Скопировать реплику'; }, 4000);
+    });
+  });
+})();
+</script>
+</body>
+</html>
