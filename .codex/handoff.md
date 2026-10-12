@@ -1,5 +1,24 @@
 # Orchestrator Handoff
 
+## WhatsApp ingress incident 2026-10-12
+
+- `tj-spg1`: owner reports missing WhatsApp replies and requests immediate fix.
+  Fresh live release is `25a8c080`; app/worker/dependencies healthy; bot enabled;
+  sender/allowlist match active test channel `0665`; ARQ queue empty.
+- Owner decided audit capture is unnecessary and explicitly requested direct
+  routing. Wazzup callback restored at 14:56 Moscow to
+  `https://noor.starec.ai/api/v1/webhook/wazzup`; PATCH and readback HTTP 200.
+- Subscriptions preserved. Wazzup's own registration ping reached Noor at
+  `2026-10-12T11:56:26.123Z` and received HTTP 200. Stable later readback;
+  channel active, restore mode intact, app/worker zero restarts, health healthy.
+- Callback backup: `/opt/noor/.hotfix-backups/whatsapp-ingress-20261012/webhooks-before.json`
+  (private `0600`, contains callback query secret; never commit its contents).
+- No deployment, replay, reset, paid completion or synthetic outbound message.
+- Explicit defer `tj-spg1`: keep open for a fresh tester inbound/reply and
+  provider delivery status or tester confirmation. Callback transport is proved;
+  the original WhatsApp round trip remains unverified until a new tester turn.
+- Incident report: `docs/reports/2026-10-12-whatsapp-ingress.md`.
+
 Updated: 2026-10-03
 Current branch: codex/tj-uvld-stock-sync
 Current stage id: tj-uvld-stock-sync
