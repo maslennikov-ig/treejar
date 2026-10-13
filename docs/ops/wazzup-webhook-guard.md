@@ -1,7 +1,8 @@
 # Wazzup webhook guard
 
-Task: `tj-vqcc`. Local implementation; production activation requires explicit
-approval. The owner confirmed on 2026-10-12 that audit capture is unnecessary
+Task: `tj-vqcc`. Deployed and enabled with explicit owner approval on
+2026-10-13; release `d2de7b3f47260cbb88114fc42f8cb6c85e27832d`.
+The owner confirmed on 2026-10-12 that audit capture is unnecessary
 and that events should reach Noor directly. The same audit callback reappeared
 on 2026-10-13. The owner then requested protection against further changes.
 
@@ -34,8 +35,9 @@ owner-authorized repairs with that request passed HTTP 200 and preserved flags.
 
 ## Technical premortem
 
-Verdict: GO WITH CONDITIONS — local proof passes; deployment and enabling the
-shared-account writer remain owner-approved actions.
+Verdict: GO WITH CONDITIONS — local and CI proof passed; the owner explicitly
+authorized deployment and enabling the shared-account writer. The competing
+writer remains a separate follow-up, `tj-zc6k`.
 Scope: provider callback configuration, ARQ registration, Redis lease and
 administrator notification. No new permissions or credentials are introduced.
 
@@ -58,7 +60,10 @@ its account access only with separate authority.
 1. Confirm exact candidate release and current provider URL/subscriptions, keep
    a private `0600` backup, and reconfirm approved test sender/allowlist.
 2. Deploy the accepted source through the existing isolated release helper and
-   test-worker-preserving deployment path. Keep the current test0665 boundary.
+   test-worker-preserving deployment path. The canonical VPS helper's
+   `--app-only` option automatically enables preservation of a verified
+   restore-mode worker, including candidate fingerprint validation and safe
+   app/worker recreation. Keep the current test0665 boundary.
 3. Set `WAZZUP_WEBHOOK_GUARD_ENABLED=true` in the approved runtime environment
    and recreate the affected worker under the same deployment authority.
 4. Verify effective worker settings, registered cron/function, unchanged sender
@@ -70,10 +75,16 @@ correct callback stays in place; turning off the guard does not reroute messages
 Restore another callback from the private backup only on an owner decision,
 after checking the current configuration. No database or queue rollback is needed.
 
-Local proof uses mocked provider/Redis/Telegram boundaries. It does not establish
-production activation, automatic repair in production, or resolution of the
-external configuration writer. The separate natural owner test on October 13
-confirmed text and three images after a manual callback restoration.
+Local proof uses mocked provider/Redis/Telegram boundaries. Separate live proof
+on October 13 establishes effective activation, startup/minute cron checks and
+the deployed repair path against the real provider with drift injected only
+into an isolated process's GET observations. The real callback was never
+diverted; one real PATCH retained the correct callback and subscriptions.
+This controlled test does not establish a naturally observed external overwrite
+or resolution of its writer. The earlier natural owner test confirmed text and
+three images after manual repair; a fresh postdeployment round trip remains
+pending. See `docs/reports/2026-10-13-wazzup-webhook-guard-delivery.md` for
+source/CI/runtime receipts and the private rollback directory.
 
 Local acceptance on 2026-10-13: 89 passed in 2.42 seconds using
 `python -m pytest tests/test_wazzup_webhook_guard.py tests/test_worker.py

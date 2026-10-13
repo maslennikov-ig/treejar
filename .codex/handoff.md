@@ -1,6 +1,6 @@
 # Orchestrator Handoff
 
-## Wazzup webhook protection — local candidate 2026-10-13
+## Wazzup webhook protection — deployed 2026-10-13
 
 - `tj-vqcc`, branch `codex/wazzup-webhook-guard`, isolated worktree
   `/home/me/code/treejar/.worktrees/wazzup-webhook-guard`.
@@ -14,21 +14,32 @@
   and minute worker check, Redis-owned lease, two validated reads, preserved
   subscriptions, verified PATCH result, bounded administrator notification.
   Callback query secrets and provider error bodies are excluded from logs.
-- Local acceptance: 89 tests passed (guard, worker, deployment helper and
-  outbound safety); affected-file Ruff/format, Mypy on three source files,
-  shell syntax and diff checks passed. No guard deployment or activation yet.
+- Owner explicitly authorized deployment/activation. Live app+worker release
+  `d2de7b3f47260cbb88114fc42f8cb6c85e27832d`; canonical CI38425819094
+  passed Ruff, Mypy,4470 tests/27 gated skips, separate pgvector1test and deploy.
+  Local89 focused tests and54 official mutable-pin/manifest tests passed.
+- Guard flag is effective true. Startup16:04:11UTC and minute16:05:00
+  returned `ok`; fresh provider/config proof preserved callback/subscriptions,
+  restore-mode sender/allowlist/Telegram fingerprint and held queues.
+- Controlled16:05:44UTC deployed repair test used real provider/Redis, with
+  wrong-host observations injected only in memory: one real PATCH to the
+  already-correct callback, subscription readback and lease release passed.
+  The real callback was never diverted; this is not a natural overwrite receipt.
 - Live provider probe rejected callback-only PATCH with HTTP 400; guard uses
   the documented subscription-bearing request already verified by manual repairs.
 - Runbook and premortem: `docs/ops/wazzup-webhook-guard.md`.
-- Delivery requires explicit approval to merge/deploy this branch and enable
-  the flag on `/opt/noor`, retaining test0665 sender/allowlist and held queues.
-- Explicit defer `tj-vqcc`: exact competing writer and permanent account
+- Delivery/rollback receipt: `docs/reports/2026-10-13-wazzup-webhook-guard-delivery.md`.
+  Private rollback `/opt/noor/.hotfix-backups/tj-vqcc-20261013T154629Z`.
+- Fresh postdeployment natural message from owner...0921 to bot...0665 is
+  requested and pending; `tj-vqcc` stays in progress. Earlier received text/photos
+  are predeployment proof only.
+- Explicit defer `tj-zc6k`: exact competing writer and permanent account
   ownership remain unknown. This guard recovers changes; another integration
   can still change the account. Provider has no conditional-write guarantee;
   a race after the final read remains possible and is checked on readback.
-- docs-reviewed: updated - README, env flag, runbook and current candidate.
+- docs-reviewed: updated - README, env flag, runbook and live delivery receipt.
   graph-reviewed: no-change-needed - no enabled task-owned graph; new job uses
-  the existing worker/provider boundaries and source integration is pending.
+  the existing worker/provider boundaries.
 
 Updated: 2026-10-04
 Current branch: codex/tj-uvld-stock-sync
@@ -52,8 +63,9 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 - Source observation and successful dataset coverage are distinct. Multi-page
   delta requires two identical complete reads; changed pages abort publication.
   This safeguard does not establish provider paging/operation completeness.
-- Live app+worker:25a8c080e9b014333380b8e62be7d5e981daefe7;
-  CI4451 passed/27 gated skips; local4458/20. Zero restarts, health/deps OK.
+- Stock source unchanged in live app+worker:d2de7b3f47260cbb88114fc42f8cb6c85e27832d
+  after authorized Wazzup guard delivery above. Stock-stage CI4451/27 and local
+  4458/20 are retained historical receipts; current full CI4470/27 passed.
 - .env/safety fingerprints unchanged; DB/Redis/nginx containers retained.
 - New v2/legacy:2557 rows,48h TTL. UTC[14:50:52,14:53:10):
  13GET/13HTTP200,1successful full cycle; not optimized24h evidence.
@@ -111,9 +123,10 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 
 ## Operating boundary
 
-- Live25a8c08, TEST_CHANNEL_RESTORE_MODE=true; .env and app/worker safety
+- Live d2de7b3, TEST_CHANNEL_RESTORE_MODE=true; protected app/worker safety
   fingerprints equal predeploy. Approved0665 sender/allowlist and Telegram
-  phone isolation unchanged; no new messaging/webhook configuration.
+  phone isolation unchanged. Owner-authorized Wazzup guard flag is now true;
+  direct callback/subscription configuration is retained.
 - Current owner authority covers tj-uvld push/merge/deploy with delta gate off.
 - Warehouse mutations are explicitly excluded by current owner instruction.
   Requested diagnostic access uses existing EU Self Client, six exact READ
@@ -137,6 +150,8 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 
 ## Explicit defers
 
+- tj-zc6k: identify and stop the external Wazzup callback writer. Enabled guard
+  recovers routing but does not remove that integration's write access.
 - tj-uvld: AC02 provider stock/lifecycle coverage and paging stability need
   read-only causal before/after observations and complete delta membership.
   History access is now available; no owner console step is pending. Owner
