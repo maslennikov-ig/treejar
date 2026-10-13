@@ -13298,6 +13298,15 @@ def test_quotation_claimed_without_call_is_a_defect(reply: str) -> None:
     assert quotation_claimed_without_call(reply, quotation_created=True) is False
 
 
+def test_quotation_hold_until_customer_is_ready_is_not_a_completion_claim() -> None:
+    from src.dialogue.order_guards import quotation_claimed_without_call
+
+    assert not quotation_claimed_without_call(
+        "I’ll keep the quotation on hold until you tell me you’re ready.",
+        quotation_created=False,
+    )
+
+
 @pytest.mark.parametrize(
     "reply",
     [

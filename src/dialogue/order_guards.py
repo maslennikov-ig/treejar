@@ -57,7 +57,7 @@ _QUOTATION_DONE_CLAIM_RE = re.compile(
 # "I will prepare the quotation once you confirm", which is exactly the honest
 # sentence the assistant is supposed to say after a decline.
 _QUOTATION_NOT_YET_RE = re.compile(
-    r"\b(?:will|would|can|could|shall|going\s+to|once|after\s+you|when\s+you"
+    r"\b(?:will|would|can|could|shall|going\s+to|once|after\s+you|when\s+you|until\s+you"
     r"|as\s+soon\s+as|if\s+you|cannot|can't|won't|not\s+yet|before)\b"
     r"|(?:سوف|سأ|بمجرد|عندما|إذا|لا\s+أستطيع|لم\s+)",
     re.IGNORECASE,
