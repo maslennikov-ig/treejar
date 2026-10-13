@@ -81,10 +81,31 @@ processed and answered with text plus three photos; the owner confirmed receipt
 before this release. That evidence establishes the repaired route at that time.
 It does not establish a fresh postdeployment customer round trip.
 
-Postdeployment fresh natural-message acceptance is pending: the owner was asked
-to send another message from suffix 0921 to bot suffix 0665. Do not promote
-health, registration ping, injected drift or provider `sent` to actual receipt.
-`tj-vqcc` stays in progress until the fresh round trip is checked.
+Fresh postdeployment natural-message acceptance is now complete. The owner
+sent “Could you show me a coffee table?” from suffix0921 to bot suffix0665.
+Read-only database and worker-log correlation found:
+
+- Conversation `01089560-500f-4c41-931c-1a6c324b8e29`, incoming provider ID
+  `8a5827f3-c09c-4db5-b177-16914ee8141b`. Provider-supplied timestamp
+  17:16:00.001 is minute-normalized and is not the measured ingress time.
+- Batch `ib1_29ced826a9c74fd3d391fd3f` started at17:17:10.451; the normal
+  model searched the catalog and produced two CT1065 coffee-table options.
+- Text persisted at17:17:50.446919. Wazzup POST returned201; provider ID
+  `f305548b-ed35-4111-8166-04bc0be1cda0`, audit status `sent` at17:17:50.905831.
+- The owner separately confirmed receipt of that exact two-option reply.
+  This confirmation establishes handset receipt; `sent` alone does not.
+- Independent GET at17:26:18.749804 returned200 with the canonical callback
+  and all four unchanged subscriptions. Guard/restore flags remain enabled,
+  sender equals allowlist, app health/dependencies are OK at released`d2de7b3`.
+  Minute guard checks during17:15–17:20 returned`ok`.
+
+The owner also reported that this reply lacked photographs. Worker logs
+suppressed all three pending images as unreferenced, despite the two actual
+catalog variants having photos. The structured-title/model-reference defect
+is tracked separately in product task `tj-i2b1.4`; it does not change the
+completed inbound/text-delivery acceptance or competing-writer attribution.
+No synthetic customer message, queue replay or production write was used in
+this final verification.
 
 ## Recovery
 
