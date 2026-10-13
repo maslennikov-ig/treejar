@@ -14292,6 +14292,63 @@ def test_the_customers_own_figure_stays_groundable(
     ) == ("12,000",)
 
 
+def test_summary_keeps_the_recorded_budget_without_reusing_a_catalog_price(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from src.dialogue.state import DialogueState
+    from src.llm.grounding_output import GroundingViolation, classify_grounding_output
+    from src.llm.response_policy import ReplyPolicyState, render_reply
+
+    _db, conv, *_ = mock_deps
+    state = DialogueState.from_conversation(conv)
+    state.slots.budget_cap_aed = 6000
+    state.slots.selected_items = [{"sku": "LUMA", "quantity": 3}]
+    conv.metadata_ = state.to_metadata(conv.metadata_)
+    deps = _deps_without_catalog_evidence(conv)
+    amounts = grounded_amounts_for_turn(
+        deps, customer_text="Three workstations for twelve people. Same budget."
+    )
+    summary = (
+        "Updated requirements: 3 x LUMA 9719-4, walnut finish, for 12 people.\n"
+        "Total furniture budget: AED 6,000. Quotation remains on hold."
+    )
+    result = render_reply(
+        summary,
+        state=ReplyPolicyState(language="en", grounded_amounts=amounts),
+        provenance="model",
+    )
+    assert not result.flags
+    assert "3 x LUMA" in result.text
+    assert "12 people" in result.text
+    assert "6,000" in result.text
+    # A previous catalog price is not made current by carrying the budget.
+    assert classify_grounding_output(
+        "The workstation costs AED 1,883.", grounded_amounts=amounts
+    ) == (GroundingViolation.UNVERIFIED_PRICE,)
+
+
+def test_a_replaced_budget_does_not_ground_the_old_figure(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from src.dialogue.state import DialogueState
+    from src.llm.grounding_output import GroundingViolation, classify_grounding_output
+
+    _db, conv, *_ = mock_deps
+    state = DialogueState.from_conversation(conv)
+    state.slots.budget_cap_aed = 6000
+    conv.metadata_ = state.to_metadata(conv.metadata_)
+    amounts = grounded_amounts_for_turn(
+        _deps_without_catalog_evidence(conv), customer_text="Keep the same budget"
+    )
+    assert classify_grounding_output(
+        "Your budget is AED 7,000.", grounded_amounts=amounts
+    ) == (GroundingViolation.UNVERIFIED_PRICE,)
+
+
 def test_the_price_check_stands_down_once_a_row_was_retrieved(
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock

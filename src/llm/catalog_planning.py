@@ -2340,7 +2340,14 @@ def grounded_amounts_for_turn(
 
     if _turn_saw_catalog_evidence(deps):
         return None
-    return tuple(_PRICE_FIGURE_RE.findall(str(customer_text or "")))
+    amounts: list[object] = list(_PRICE_FIGURE_RE.findall(str(customer_text or "")))
+    # "Keep the same budget" does not repeat its digits. A validated retained
+    # customer requirement is still evidence; catalog prices are not carried
+    # forward here and must continue to be retrieved in the current turn.
+    budget = DialogueState.from_conversation(deps.conversation).slots.budget_cap_aed
+    if budget is not None and budget > 0:
+        amounts.append(budget)
+    return tuple(amounts)
 
 
 _CLAIM_CONTRACT_CONTRACT = (
