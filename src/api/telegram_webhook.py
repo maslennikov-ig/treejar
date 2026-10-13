@@ -16,6 +16,7 @@ NOTE: This requires setting up the Telegram webhook externally
 from __future__ import annotations
 
 import base64
+import inspect
 import json
 import logging
 import re
@@ -87,6 +88,16 @@ def _get_telegram_client() -> TelegramClient:
         bot_token=settings.telegram_bot_token,
         chat_id=settings.telegram_chat_id,
     )
+
+
+async def _close_telegram_client(client: Any) -> None:
+    if client is None:
+        return
+    aclose = getattr(client, "aclose", None) or getattr(client, "close", None)
+    if callable(aclose):
+        res = aclose()
+        if inspect.isawaitable(res):
+            await res
 
 
 def _metadata_text(value: Any) -> str:
@@ -200,86 +211,91 @@ async def telegram_webhook(
 async def _handle_callback_query(callback_query: dict[str, Any]) -> None:
     """Process inline keyboard button press."""
     client = _get_telegram_client()
-    callback_id = callback_query["id"]
-    callback_data = callback_query.get("data", "")
-    chat_id = callback_query["message"]["chat"]["id"]
-    message_id = callback_query["message"].get("message_id")
-
-    # Parse callback_data: "faq_global:<conv_id>" or "faq_private:<conv_id>"
-    if ":" not in callback_data:
-        await client.answer_callback_query(callback_id, "❌ Invalid callback data")
-        return
-
-    mode, conv_id_str = callback_data.split(":", 1)
-
-    if mode not in (
-        "faq_global",
-        "faq_private",
-        "order_confirm",
-        "order_reject",
-        "reset_confirm",
-        "reset_cancel",
-    ):
-        await client.answer_callback_query(callback_id, "❌ Unknown action")
-        return
-
-    if mode in ("reset_confirm", "reset_cancel"):
-        await _handle_reset_callback(
-            client,
-            callback_query,
-            callback_id,
-            chat_id,
-            message_id,
-            mode,
-            conv_id_str,
-        )
-        return
-
-    # Handle order confirmation/rejection immediately (no text input needed)
-    if mode in ("order_confirm", "order_reject"):
-        await _handle_order_decision(
-            client,
-            callback_id,
-            chat_id,
-            message_id,
-            mode,
-            conv_id_str,
-        )
-        return
-
-    # Validate conversation UUID
     try:
-        conv_uuid = uuid.UUID(conv_id_str)
-    except ValueError:
-        await client.answer_callback_query(callback_id, "❌ Invalid conversation ID")
-        return
+        callback_id = callback_query["id"]
+        callback_data = callback_query.get("data", "")
+        chat_id = callback_query["message"]["chat"]["id"]
+        message_id = callback_query["message"].get("message_id")
 
-    # Find the last user question from the conversation
-    question = await _get_last_user_question(conv_uuid)
+        # Parse callback_data: "faq_global:<conv_id>" or "faq_private:<conv_id>"
+        if ":" not in callback_data:
+            await client.answer_callback_query(callback_id, "❌ Invalid callback data")
+            return
 
-    # Store the pending response context in Redis (survives restarts)
-    pending_data = json.dumps(
-        {
-            "conversation_id": str(conv_uuid),
-            "mode": mode,
-            "question": question or "Question not found",
-        }
-    )
-    await redis_client.setex(
-        f"{_PENDING_KEY_PREFIX}{chat_id}", _PENDING_TTL_SECONDS, pending_data
-    )
-    await redis_client.setex(
-        f"{_PROMPTED_KEY_PREFIX}{chat_id}", _PROMPTED_TTL_SECONDS, "1"
-    )
+        mode, conv_id_str = callback_data.split(":", 1)
 
-    mode_label = "📚 FAQ + customer" if mode == "faq_global" else "👤 Customer only"
-    await client.answer_callback_query(callback_id, f"✅ Mode: {mode_label}")
-    await client.send_message(
-        f"📝 <b>Type your reply</b> ({mode_label}):\n\n"
-        f"<i>Customer question:</i> {question or 'not found'}\n\n"
-        "Write your reply and I will send it to the customer.",
-        chat_id=str(chat_id),
-    )
+        if mode not in (
+            "faq_global",
+            "faq_private",
+            "order_confirm",
+            "order_reject",
+            "reset_confirm",
+            "reset_cancel",
+        ):
+            await client.answer_callback_query(callback_id, "❌ Unknown action")
+            return
+
+        if mode in ("reset_confirm", "reset_cancel"):
+            await _handle_reset_callback(
+                client,
+                callback_query,
+                callback_id,
+                chat_id,
+                message_id,
+                mode,
+                conv_id_str,
+            )
+            return
+
+        # Handle order confirmation/rejection immediately (no text input needed)
+        if mode in ("order_confirm", "order_reject"):
+            await _handle_order_decision(
+                client,
+                callback_id,
+                chat_id,
+                message_id,
+                mode,
+                conv_id_str,
+            )
+            return
+
+        # Validate conversation UUID
+        try:
+            conv_uuid = uuid.UUID(conv_id_str)
+        except ValueError:
+            await client.answer_callback_query(
+                callback_id, "❌ Invalid conversation ID"
+            )
+            return
+
+        # Find the last user question from the conversation
+        question = await _get_last_user_question(conv_uuid)
+
+        # Store the pending response context in Redis (survives restarts)
+        pending_data = json.dumps(
+            {
+                "conversation_id": str(conv_uuid),
+                "mode": mode,
+                "question": question or "Question not found",
+            }
+        )
+        await redis_client.setex(
+            f"{_PENDING_KEY_PREFIX}{chat_id}", _PENDING_TTL_SECONDS, pending_data
+        )
+        await redis_client.setex(
+            f"{_PROMPTED_KEY_PREFIX}{chat_id}", _PROMPTED_TTL_SECONDS, "1"
+        )
+
+        mode_label = "📚 FAQ + customer" if mode == "faq_global" else "👤 Customer only"
+        await client.answer_callback_query(callback_id, f"✅ Mode: {mode_label}")
+        await client.send_message(
+            f"📝 <b>Type your reply</b> ({mode_label}):\n\n"
+            f"<i>Customer question:</i> {question or 'not found'}\n\n"
+            "Write your reply and I will send it to the customer.",
+            chat_id=str(chat_id),
+        )
+    finally:
+        await _close_telegram_client(client)
 
 
 def _is_configured_admin_chat(chat_id: Any) -> bool:
@@ -307,50 +323,54 @@ async def _handle_admin_login_command_if_present(message: dict[str, Any]) -> boo
     from_user = message.get("from") or {}
     requester_id = from_user.get("id")
     client = _get_telegram_client()
+    try:
+        if not isinstance(requester_id, int):
+            if (
+                _is_configured_admin_chat(chat_id)
+                or str(chat_type or "").lower() == "private"
+            ):
+                await client.send_message(
+                    "Could not determine the Telegram user id. No CRM login was issued.",
+                    chat_id=str(chat_id),
+                )
+            return True
 
-    if not isinstance(requester_id, int):
-        if (
-            _is_configured_admin_chat(chat_id)
-            or str(chat_type or "").lower() == "private"
-        ):
+        is_allowed_source = _is_configured_admin_chat(
+            chat_id
+        ) or _is_private_chat_for_user(
+            chat_id=chat_id,
+            chat_type=chat_type,
+            user_id=requester_id,
+        )
+        if not is_allowed_source:
+            return True
+
+        from src.services.telegram_admin_login import create_telegram_admin_login_link
+
+        result = await create_telegram_admin_login_link(
+            redis_client,
+            chat_id=chat_id,
+            chat_type=str(chat_type or ""),
+            user_id=requester_id,
+            username=from_user.get("username"),
+            first_name=from_user.get("first_name"),
+        )
+        if not result.authorized or not result.url:
             await client.send_message(
-                "Could not determine the Telegram user id. No CRM login was issued.",
+                "CRM access is not configured for Telegram user id "
+                f"<code>{escape(str(requester_id))}</code>.",
                 chat_id=str(chat_id),
             )
-        return True
+            return True
 
-    is_allowed_source = _is_configured_admin_chat(chat_id) or _is_private_chat_for_user(
-        chat_id=chat_id,
-        chat_type=chat_type,
-        user_id=requester_id,
-    )
-    if not is_allowed_source:
-        return True
-
-    from src.services.telegram_admin_login import create_telegram_admin_login_link
-
-    result = await create_telegram_admin_login_link(
-        redis_client,
-        chat_id=chat_id,
-        chat_type=str(chat_type or ""),
-        user_id=requester_id,
-        username=from_user.get("username"),
-        first_name=from_user.get("first_name"),
-    )
-    if not result.authorized or not result.url:
-        await client.send_message(
-            "CRM access is not configured for Telegram user id "
-            f"<code>{escape(str(requester_id))}</code>.",
+        await client.send_message_with_inline_keyboard(
+            "The one-time Noor CRM login link is valid for 5 minutes.",
+            [[{"text": "Open Noor CRM", "url": result.url}]],
             chat_id=str(chat_id),
         )
         return True
-
-    await client.send_message_with_inline_keyboard(
-        "The one-time Noor CRM login link is valid for 5 minutes.",
-        [[{"text": "Open Noor CRM", "url": result.url}]],
-        chat_id=str(chat_id),
-    )
-    return True
+    finally:
+        await _close_telegram_client(client)
 
 
 async def _handle_reset_command_if_present(message: dict[str, Any]) -> bool:
@@ -370,69 +390,75 @@ async def _handle_reset_command_if_present(message: dict[str, Any]) -> bool:
         return True
 
     client = _get_telegram_client()
-    raw_phone = match.group("phone")
-    phone = normalize_reset_phone(raw_phone)
-    if phone is None:
-        await client.send_message(
-            "Usage: <code>/reset +&lt;country-code-and-number&gt;</code>",
-            chat_id=str(chat_id),
+    try:
+        raw_phone = match.group("phone")
+        phone = normalize_reset_phone(raw_phone)
+        if phone is None:
+            await client.send_message(
+                "Usage: <code>/reset +&lt;country-code-and-number&gt;</code>",
+                chat_id=str(chat_id),
+            )
+            return True
+
+        from_user = message.get("from") or {}
+        requester_id = from_user.get("id")
+        if not isinstance(requester_id, int):
+            await client.send_message(
+                "Could not determine the Telegram user id. Reset was not performed.",
+                chat_id=str(chat_id),
+            )
+            return True
+
+        async with async_session_factory() as db:
+            preview = await build_reset_preview(db, phone)
+
+        if preview.conversation_count == 0:
+            await client.send_message(
+                f"No conversations found for <code>{escape(phone)}</code>, nothing to reset.",
+                chat_id=str(chat_id),
+            )
+            return True
+
+        token = secrets.token_urlsafe(9)
+        redis_key = f"{_RESET_PENDING_KEY_PREFIX}{token}"
+        await redis_client.setex(
+            redis_key,
+            _RESET_TTL_SECONDS,
+            json.dumps(
+                {
+                    "phone": phone,
+                    "requested_by_telegram_user_id": requester_id,
+                    "chat_id": chat_id,
+                }
+            ),
         )
-        return True
 
-    from_user = message.get("from") or {}
-    requester_id = from_user.get("id")
-    if not isinstance(requester_id, int):
-        await client.send_message(
-            "Could not determine the Telegram user id. Reset was not performed.",
-            chat_id=str(chat_id),
+        latest_id = str(preview.latest_conversation_id or "n/a")
+        text = (
+            "Confirm the conversation reset.\n\n"
+            f"Phone: <code>{escape(phone)}</code>\n"
+            f"Conversations to archive: <b>{preview.conversation_count}</b>\n"
+            f"Messages in history: <b>{preview.message_count}</b>\n"
+            f"Pending escalations: <b>{preview.pending_escalation_count}</b>\n"
+            f"Latest conversation: <code>{escape(latest_id)}</code>\n\n"
+            "Nothing will be sent to the customer."
         )
-        return True
-
-    async with async_session_factory() as db:
-        preview = await build_reset_preview(db, phone)
-
-    if preview.conversation_count == 0:
-        await client.send_message(
-            f"No conversations found for <code>{escape(phone)}</code>, nothing to reset.",
-            chat_id=str(chat_id),
-        )
-        return True
-
-    token = secrets.token_urlsafe(9)
-    redis_key = f"{_RESET_PENDING_KEY_PREFIX}{token}"
-    await redis_client.setex(
-        redis_key,
-        _RESET_TTL_SECONDS,
-        json.dumps(
-            {
-                "phone": phone,
-                "requested_by_telegram_user_id": requester_id,
-                "chat_id": chat_id,
-            }
-        ),
-    )
-
-    latest_id = str(preview.latest_conversation_id or "n/a")
-    text = (
-        "Confirm the conversation reset.\n\n"
-        f"Phone: <code>{escape(phone)}</code>\n"
-        f"Conversations to archive: <b>{preview.conversation_count}</b>\n"
-        f"Messages in history: <b>{preview.message_count}</b>\n"
-        f"Pending escalations: <b>{preview.pending_escalation_count}</b>\n"
-        f"Latest conversation: <code>{escape(latest_id)}</code>\n\n"
-        "Nothing will be sent to the customer."
-    )
-    await client.send_message_with_inline_keyboard(
-        text,
-        [
+        await client.send_message_with_inline_keyboard(
+            text,
             [
-                {"text": "Confirm reset", "callback_data": f"reset_confirm:{token}"},
-                {"text": "Cancel", "callback_data": f"reset_cancel:{token}"},
-            ]
-        ],
-        chat_id=str(chat_id),
-    )
-    return True
+                [
+                    {
+                        "text": "Confirm reset",
+                        "callback_data": f"reset_confirm:{token}",
+                    },
+                    {"text": "Cancel", "callback_data": f"reset_cancel:{token}"},
+                ]
+            ],
+            chat_id=str(chat_id),
+        )
+        return True
+    finally:
+        await _close_telegram_client(client)
 
 
 async def _handle_reset_callback(
@@ -529,11 +555,15 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
         prompted_key = f"{_PROMPTED_KEY_PREFIX}{chat_id}"
         if await redis_client.get(prompted_key):
             await redis_client.delete(prompted_key)
-            await _get_telegram_client().send_message(
-                "⚠️ The draft is no longer active, so the reply was not sent.\n\n"
-                "Press the button under the relevant escalation and send the text again.",
-                chat_id=str(chat_id),
-            )
+            late_client = _get_telegram_client()
+            try:
+                await late_client.send_message(
+                    "⚠️ The draft is no longer active, so the reply was not sent.\n\n"
+                    "Press the button under the relevant escalation and send the text again.",
+                    chat_id=str(chat_id),
+                )
+            finally:
+                await _close_telegram_client(late_client)
         return
     await redis_client.delete(redis_key, f"{_PROMPTED_KEY_PREFIX}{chat_id}")
 
@@ -545,176 +575,181 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
     client = _get_telegram_client()
 
     try:
-        phone, language = await _get_conversation_phone_and_lang(uuid.UUID(conv_id))
+        try:
+            phone, language = await _get_conversation_phone_and_lang(uuid.UUID(conv_id))
 
-        faq_candidate = None
-        faq_candidate_generation_failed = False
-        if mode == "faq_global":
-            from src.llm.response_adapter import (
-                adapt_manager_response,
-                adapt_manager_response_with_faq_candidate,
-            )
-
-            try:
-                combined = await adapt_manager_response_with_faq_candidate(
-                    question, draft, language
+            faq_candidate = None
+            faq_candidate_generation_failed = False
+            if mode == "faq_global":
+                from src.llm.response_adapter import (
+                    adapt_manager_response,
+                    adapt_manager_response_with_faq_candidate,
                 )
-                adapted = combined.customer_message
-                faq_candidate = combined.kb_candidate
-            except Exception:
-                faq_candidate_generation_failed = True
-                logger.exception(
-                    "Auto-FAQ candidate generation failed; falling back to "
-                    "private manager response adapter for %s",
-                    conv_id,
-                )
-                adapted = await adapt_manager_response(question, draft, language)
-        else:
-            from src.llm.response_adapter import adapt_manager_response
 
-            adapted = await adapt_manager_response(question, draft, language)
-
-        # 2. Send adapted response to the client via Wazzup
-        if phone:
-            from src.integrations.messaging.wazzup import WazzupProvider
-
-            wazzup = WazzupProvider(channel_id=settings.wazzup_channel_id)
-            try:
-                async with async_session_factory() as resolve_db:
-                    send_result = await send_wazzup_text_with_audit(
-                        resolve_db,
-                        provider=wazzup,
-                        conversation_id=uuid.UUID(conv_id),
-                        chat_id=phone,
-                        text=adapted,
-                        source="manager_reply",
-                        crm_message_id=deterministic_crm_message_id(
-                            "manager",
-                            conv_id,
-                            message.get("message_id") or chat_id,
-                            "private",
-                        ),
+                try:
+                    combined = await adapt_manager_response_with_faq_candidate(
+                        question, draft, language
                     )
-                    msg = Message(
-                        conversation_id=uuid.UUID(conv_id),
-                        role="assistant",
-                        content=adapted,
-                        model="manager_reply",
-                        wazzup_message_id=send_result.provider_message_id,
-                        created_at=message_created_at_now(),
-                    )
-                    resolve_db.add(msg)
-
-                    try:
-                        resolved_rows = await resolve_conversation_pending_escalations(
-                            resolve_db, uuid.UUID(conv_id)
-                        )
-                    except Exception:
-                        resolved_rows = 0
-                        logger.exception(
-                            "Failed to resolve escalation for %s",
-                            conv_id,
-                        )
-
-                    await resolve_db.commit()
-                    logger.info(
-                        "Manager reply persisted for %s; pending_rows=%d",
+                    adapted = combined.customer_message
+                    faq_candidate = combined.kb_candidate
+                except Exception:
+                    faq_candidate_generation_failed = True
+                    logger.exception(
+                        "Auto-FAQ candidate generation failed; falling back to "
+                        "private manager response adapter for %s",
                         conv_id,
-                        resolved_rows,
                     )
-            finally:
-                await wazzup.close()
+                    adapted = await adapt_manager_response(question, draft, language)
+            else:
+                from src.llm.response_adapter import adapt_manager_response
 
-            # R3-2: HTML-escape adapted text before Telegram notification
-            safe_adapted = escape(adapted)
-            await client.send_message(
-                f"✅ Reply sent to the customer:\n\n{safe_adapted}",
-                chat_id=str(chat_id),
-            )
-        else:
-            await client.send_message(
-                "⚠️ Could not find the customer's phone number. "
-                f"Adapted reply:\n\n{adapted}",
-                chat_id=str(chat_id),
-            )
+                adapted = await adapt_manager_response(question, draft, language)
 
-        # 3. Prepare FAQ candidate if global mode. Saving requires admin confirmation.
-        if mode == "faq_global":
-            if faq_candidate_generation_failed:
-                await client.send_message(
-                    "⚠️ The reply was processed, but no knowledge base candidate "
-                    "was created: the LLM returned no valid structured output after "
-                    "retry/fallback.",
-                    chat_id=str(chat_id),
-                )
-                return
+            # 2. Send adapted response to the client via Wazzup
+            if phone:
+                from src.integrations.messaging.wazzup import WazzupProvider
 
-            from src.rag.embeddings import EmbeddingEngine
-            from src.services.auto_faq import review_auto_faq_candidate
+                wazzup = WazzupProvider(channel_id=settings.wazzup_channel_id)
+                try:
+                    async with async_session_factory() as resolve_db:
+                        send_result = await send_wazzup_text_with_audit(
+                            resolve_db,
+                            provider=wazzup,
+                            conversation_id=uuid.UUID(conv_id),
+                            chat_id=phone,
+                            text=adapted,
+                            source="manager_reply",
+                            crm_message_id=deterministic_crm_message_id(
+                                "manager",
+                                conv_id,
+                                message.get("message_id") or chat_id,
+                                "private",
+                            ),
+                        )
+                        msg = Message(
+                            conversation_id=uuid.UUID(conv_id),
+                            role="assistant",
+                            content=adapted,
+                            model="manager_reply",
+                            wazzup_message_id=send_result.provider_message_id,
+                            created_at=message_created_at_now(),
+                        )
+                        resolve_db.add(msg)
 
-            async with async_session_factory() as db:
-                save_result = await review_auto_faq_candidate(
-                    db=db,
-                    candidate=faq_candidate,
-                    embedding_engine=EmbeddingEngine(),
-                    customer_message=adapted,
-                    manager_draft=draft,
-                    persist_candidate=True,
-                    source_metadata={
-                        "source": "telegram_manager_reply",
-                        "conversation_id": conv_id,
-                        "chat_id": str(chat_id),
-                    },
-                )
-            if save_result.status == "needs_confirmation" and save_result.candidate:
-                candidate = save_result.candidate
+                        try:
+                            resolved_rows = (
+                                await resolve_conversation_pending_escalations(
+                                    resolve_db, uuid.UUID(conv_id)
+                                )
+                            )
+                        except Exception:
+                            resolved_rows = 0
+                            logger.exception(
+                                "Failed to resolve escalation for %s",
+                                conv_id,
+                            )
+
+                        await resolve_db.commit()
+                        logger.info(
+                            "Manager reply persisted for %s; pending_rows=%d",
+                            conv_id,
+                            resolved_rows,
+                        )
+                finally:
+                    await wazzup.close()
+
+                # R3-2: HTML-escape adapted text before Telegram notification
+                safe_adapted = escape(adapted)
                 await client.send_message(
-                    "📚 A knowledge base candidate was prepared but not saved. "
-                    "Admin confirmation is required.\n\n"
-                    f"<b>Q:</b> {escape(candidate.question)}\n"
-                    f"<b>A:</b> {escape(candidate.answer)}",
-                    chat_id=str(chat_id),
-                )
-            elif save_result.status == "duplicate":
-                await client.send_message(
-                    "ℹ️ A similar answer is already in the knowledge base (duplicate).",
-                    chat_id=str(chat_id),
-                )
-            elif save_result.status == "low_confidence":
-                await client.send_message(
-                    "⚠️ The reply was sent, but the knowledge base candidate "
-                    "was rejected: low confidence.",
-                    chat_id=str(chat_id),
-                )
-            elif save_result.status == "blocked_unsafe":
-                await client.send_message(
-                    "⚠️ The reply was sent, but the knowledge base candidate "
-                    "was rejected by the safety check.",
-                    chat_id=str(chat_id),
-                )
-            elif save_result.status == "missing_candidate":
-                await client.send_message(
-                    "ℹ️ The reply was sent. No knowledge base candidate was created.",
+                    f"✅ Reply sent to the customer:\n\n{safe_adapted}",
                     chat_id=str(chat_id),
                 )
             else:
-                logger.info(
-                    "Downgrading faq_global save to private-only for %s: reasons=%s",
-                    conv_id,
-                    ",".join(save_result.guard_reasons),
-                )
                 await client.send_message(
-                    "⚠️ The reply was sent but not added to the knowledge base: "
-                    "it looks contextual/private-only.",
+                    "⚠️ Could not find the customer's phone number. "
+                    f"Adapted reply:\n\n{adapted}",
                     chat_id=str(chat_id),
                 )
 
-    except Exception:
-        logger.exception("Failed to process manager reply")
-        await client.send_message(
-            "❌ Error while processing the reply. Please try again.",
-            chat_id=str(chat_id),
-        )
+            # 3. Prepare FAQ candidate if global mode. Saving requires admin confirmation.
+            if mode == "faq_global":
+                if faq_candidate_generation_failed:
+                    await client.send_message(
+                        "⚠️ The reply was processed, but no knowledge base candidate "
+                        "was created: the LLM returned no valid structured output after "
+                        "retry/fallback.",
+                        chat_id=str(chat_id),
+                    )
+                    return
+
+                from src.rag.embeddings import EmbeddingEngine
+                from src.services.auto_faq import review_auto_faq_candidate
+
+                async with async_session_factory() as db:
+                    save_result = await review_auto_faq_candidate(
+                        db=db,
+                        candidate=faq_candidate,
+                        embedding_engine=EmbeddingEngine(),
+                        customer_message=adapted,
+                        manager_draft=draft,
+                        persist_candidate=True,
+                        source_metadata={
+                            "source": "telegram_manager_reply",
+                            "conversation_id": conv_id,
+                            "chat_id": str(chat_id),
+                        },
+                    )
+                if save_result.status == "needs_confirmation" and save_result.candidate:
+                    candidate = save_result.candidate
+                    await client.send_message(
+                        "📚 A knowledge base candidate was prepared but not saved. "
+                        "Admin confirmation is required.\n\n"
+                        f"<b>Q:</b> {escape(candidate.question)}\n"
+                        f"<b>A:</b> {escape(candidate.answer)}",
+                        chat_id=str(chat_id),
+                    )
+                elif save_result.status == "duplicate":
+                    await client.send_message(
+                        "ℹ️ A similar answer is already in the knowledge base (duplicate).",
+                        chat_id=str(chat_id),
+                    )
+                elif save_result.status == "low_confidence":
+                    await client.send_message(
+                        "⚠️ The reply was sent, but the knowledge base candidate "
+                        "was rejected: low confidence.",
+                        chat_id=str(chat_id),
+                    )
+                elif save_result.status == "blocked_unsafe":
+                    await client.send_message(
+                        "⚠️ The reply was sent, but the knowledge base candidate "
+                        "was rejected by the safety check.",
+                        chat_id=str(chat_id),
+                    )
+                elif save_result.status == "missing_candidate":
+                    await client.send_message(
+                        "ℹ️ The reply was sent. No knowledge base candidate was created.",
+                        chat_id=str(chat_id),
+                    )
+                else:
+                    logger.info(
+                        "Downgrading faq_global save to private-only for %s: reasons=%s",
+                        conv_id,
+                        ",".join(save_result.guard_reasons),
+                    )
+                    await client.send_message(
+                        "⚠️ The reply was sent but not added to the knowledge base: "
+                        "it looks contextual/private-only.",
+                        chat_id=str(chat_id),
+                    )
+
+        except Exception:
+            logger.exception("Failed to process manager reply")
+            await client.send_message(
+                "❌ Error while processing the reply. Please try again.",
+                chat_id=str(chat_id),
+            )
+    finally:
+        await _close_telegram_client(client)
 
 
 async def _get_last_user_question(conv_id: uuid.UUID) -> str | None:

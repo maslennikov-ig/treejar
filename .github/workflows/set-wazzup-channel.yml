@@ -20,15 +20,19 @@ jobs:
     steps:
       - name: Execute on VPS
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        env:
+          INPUT_CHECK_LOGS: ${{ github.event.inputs.check_logs }}
+          INPUT_CHANNEL_ID: ${{ github.event.inputs.channel_id }}
         with:
           host: ${{ secrets.VPS_HOST }}
           port: 2222
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: INPUT_CHECK_LOGS,INPUT_CHANNEL_ID
           script: |
             cd /opt/noor
 
-            if [ "${{ github.event.inputs.check_logs }}" = "true" ]; then
+            if [ "${INPUT_CHECK_LOGS}" = "true" ]; then
               echo "=== LAST 150 LINES: APP ==="
               docker compose logs --tail=150 --no-color app 2>&1
 
@@ -42,20 +46,22 @@ jobs:
 
               echo ""
               echo "=== ENV CHECK ==="
-              grep "WAZZUP" .env 2>&1
+              grep "WAZZUP" .env | sed 's/=.*/=***/' 2>&1
               exit 0
             fi
 
-            CHANNEL_ID="${{ github.event.inputs.channel_id }}"
+            CHANNEL_ID="${INPUT_CHANNEL_ID}"
             if [ -z "$CHANNEL_ID" ]; then
               echo "Error: channel_id is required when not checking logs"
               exit 1
             fi
 
             sed -i '/^WAZZUP_CHANNEL_ID=/d' .env
+            sed -i '/^WAZZUP_OUTBOUND_ALLOWED_CHANNEL_ID=/d' .env
             echo "WAZZUP_CHANNEL_ID=${CHANNEL_ID}" >> .env
-            echo "✅ WAZZUP_CHANNEL_ID set to ${CHANNEL_ID}"
-            grep "WAZZUP_CHANNEL_ID" .env
+            echo "WAZZUP_OUTBOUND_ALLOWED_CHANNEL_ID=${CHANNEL_ID}" >> .env
+            echo "✅ WAZZUP_CHANNEL_ID and WAZZUP_OUTBOUND_ALLOWED_CHANNEL_ID updated"
+            grep -E "^WAZZUP_(OUTBOUND_ALLOWED_)?CHANNEL_ID=" .env
 
             docker compose up -d app worker
             echo "✅ Containers restarted"

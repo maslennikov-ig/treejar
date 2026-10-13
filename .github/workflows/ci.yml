@@ -9,6 +9,8 @@ on:
       - 'docs/**'
       - '*.md'
       - '**/*.md'
+      - '!docs/faq.md'
+      - '!docs/04-sales-dialogue-guidelines.md'
   pull_request:
     branches: [main]
     paths-ignore:
@@ -17,6 +19,8 @@ on:
       - 'docs/**'
       - '*.md'
       - '**/*.md'
+      - '!docs/faq.md'
+      - '!docs/04-sales-dialogue-guidelines.md'
   workflow_dispatch:
 
 permissions:
@@ -63,7 +67,7 @@ jobs:
           deploy=false
           semantic=false
 
-          if printf '%s\n' "$changed_files" | grep -Eq '^(src/|frontend/|migrations/|alembic\.ini$|pyproject\.toml$|uv\.lock$|Dockerfile$|docker-compose(\..+)?\.ya?ml$|scripts/vps-deploy\.sh$)'; then
+          if printf '%s\n' "$changed_files" | grep -Eq '^(src/|frontend/|migrations/|alembic\.ini$|pyproject\.toml$|uv\.lock$|Dockerfile$|docker-compose(\..+)?\.ya?ml$|scripts/vps-deploy\.sh$|docs/faq\.md$|docs/04-sales-dialogue-guidelines\.md$)'; then
             deploy=true
           fi
 

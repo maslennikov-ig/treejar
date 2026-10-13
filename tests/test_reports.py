@@ -199,6 +199,76 @@ async def test_generate_report_populates_final_acceptance_fields() -> None:
     assert report.qa_cache_write_tokens == 40
 
 
+@pytest.mark.asyncio
+async def test_generate_report_binds_aware_timestamps_for_manager_reviews() -> None:
+    """ManagerReview.created_at is TIMESTAMPTZ in Postgres and must receive tz-aware UTC bounds."""
+    from sqlalchemy.dialects import postgresql
+
+    from src.services.reports import generate_report
+
+    mock_db = AsyncMock()
+
+    conv_result = MagicMock()
+    conv_result.one.return_value = (20, 15)
+
+    deals_result = MagicMock()
+    deals_result.one.return_value = (5, 1200.0)
+
+    esc_reasons_result = MagicMock()
+    esc_reasons_result.all.return_value = []
+
+    top_prod_result = MagicMock()
+    top_prod_result.all.return_value = []
+
+    manager_result = MagicMock()
+    manager_result.one.return_value = (16.0, 600.0, 3, 2)
+
+    top_manager_result = MagicMock()
+    top_manager_result.all.return_value = [("Anna", 18.0)]
+
+    feedback_result = MagicMock()
+    feedback_result.one.return_value = (4, 4.5, 4.0, 3, 1)
+
+    qa_cost_result = MagicMock()
+    qa_cost_result.one.return_value = (6, 0.0123, 1200, 300, 20, 900, 40, 1)
+
+    mock_db.execute.side_effect = [
+        conv_result,
+        deals_result,
+        esc_reasons_result,
+        top_prod_result,
+        manager_result,
+        top_manager_result,
+        feedback_result,
+        qa_cost_result,
+    ]
+    mock_db.scalar.side_effect = [24.0, 2, 3, 0.1234]
+
+    start = datetime(2026, 4, 1, 9, 0, tzinfo=UTC)
+    end = datetime(2026, 4, 8, 9, 0, tzinfo=UTC)
+    report = await generate_report(mock_db, start_date=start, end_date=end)
+
+    assert report.manager_reviews_count == 3
+    assert report.top_managers == [{"name": "Anna", "avg_score": 18.0}]
+
+    # Execute calls 4 (mgr_q) and 5 (top_mgr_q) target ManagerReview.created_at (TIMESTAMPTZ)
+    for idx in (4, 5):
+        stmt = mock_db.execute.call_args_list[idx].args[0]
+        params = stmt.compile(dialect=postgresql.dialect()).params
+        dates = [v for v in params.values() if isinstance(v, datetime)]
+        assert len(dates) == 2
+        assert all(d.tzinfo == UTC for d in dates)
+        assert set(dates) == {start, end}
+
+    # Execute calls 0, 1, 2, 6, 7 target naive timestamp columns
+    for idx in (0, 1, 2, 6, 7):
+        stmt = mock_db.execute.call_args_list[idx].args[0]
+        params = stmt.compile(dialect=postgresql.dialect()).params
+        dates = [v for v in params.values() if isinstance(v, datetime)]
+        assert dates
+        assert all(d.tzinfo is None for d in dates)
+
+
 def test_format_report_text_empty_report() -> None:
     """format_report_text should handle empty report gracefully."""
     from src.services.reports import ReportData, format_report_text

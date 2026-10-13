@@ -351,3 +351,39 @@ async def test_background_retry_keeps_waiting_while_credentials_are_rejected() -
     assert result == "rescheduled"
     assert redis.jobs[0]["args"] == (_CONV_ID, 2)
     send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_background_retry_closes_deps_clients_on_error() -> None:
+    conversation = _conversation(_pending())
+    redis = _ArqRedis()
+    zoho_inventory = AsyncMock()
+    zoho_crm = AsyncMock()
+    messaging_client = AsyncMock()
+    deps = SimpleNamespace(
+        conversation=conversation,
+        db=AsyncMock(),
+        quotation_created=False,
+        zoho_inventory=zoho_inventory,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging_client,
+    )
+
+    with (
+        patch(
+            "src.core.database.async_session_factory",
+            lambda: _session(conversation),
+        ),
+        patch.object(quotation_retry, "_build_deps", lambda *a: deps),
+        patch(
+            "src.llm.engine._create_quotation",
+            AsyncMock(side_effect=RuntimeError("boom")),
+        ),
+    ):
+        result = await retry_pending_quotation({"redis": redis}, _CONV_ID, attempt=1)
+
+    assert result == "error"
+    zoho_inventory.close.assert_awaited_once()
+    zoho_crm.close.assert_awaited_once()
+    messaging_client.close.assert_awaited_once()
+    assert redis.released

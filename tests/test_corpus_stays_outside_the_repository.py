@@ -36,14 +36,7 @@ _CORPUS_FILENAMES = frozenset(
 )
 
 
-def _protected_root() -> pathlib.Path:
-    """Where the corpus is allowed to be: inside the git common dir, never the tree.
-
-    Resolved through `--git-common-dir` rather than a literal `.git` so a
-    worktree lands in the main repository's store instead of its own, which is
-    the same rule `scripts/e2e_acceptance/evidence.py` follows for raw evidence.
-    """
-
+def _git_common_dir() -> pathlib.Path:
     common = subprocess.run(
         ["git", "-C", str(REPO_ROOT), "rev-parse", "--git-common-dir"],
         capture_output=True,
@@ -53,7 +46,18 @@ def _protected_root() -> pathlib.Path:
     root = pathlib.Path(common)
     if not root.is_absolute():
         root = REPO_ROOT / root
-    return root / "codex-orchestration" / "treejar-dialogs-corpus"
+    return root.resolve()
+
+
+def _protected_root() -> pathlib.Path:
+    """Where the corpus is allowed to be: inside the git common dir, never the tree.
+
+    Resolved through `--git-common-dir` rather than a literal `.git` so a
+    worktree lands in the main repository's store instead of its own, which is
+    the same rule `scripts/e2e_acceptance/evidence.py` follows for raw evidence.
+    """
+
+    return _git_common_dir() / "codex-orchestration" / "treejar-dialogs-corpus"
 
 
 def test_no_corpus_file_is_tracked_by_git() -> None:
@@ -85,10 +89,11 @@ def test_no_corpus_file_sits_in_the_working_tree() -> None:
 
 
 def test_the_protected_root_is_outside_the_working_tree() -> None:
-    root = _protected_root()
+    root = _protected_root().resolve()
+    common_git_dir = _git_common_dir()
 
     assert ".git" in root.parts, f"corpus store must live under the git dir: {root}"
-    assert root.is_relative_to(REPO_ROOT / ".git"), (
+    assert root.is_relative_to(common_git_dir), (
         f"corpus store escaped the git dir: {root}"
     )
 

@@ -25,10 +25,16 @@ class Message(UUIDMixin, Base):
             unique=True,
             postgresql_where=text("wazzup_message_id IS NOT NULL"),
         ),
+        Index(
+            "ix_messages_conversation_created_at",
+            "conversation_id",
+            "created_at",
+        ),
     )
 
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("conversations.id"),
+        index=True,
     )
     role: Mapped[str] = mapped_column(String)
     content: Mapped[str] = mapped_column(Text)

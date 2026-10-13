@@ -20,10 +20,11 @@ class Escalation(UUIDMixin, TimestampMixin, Base):
 
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("conversations.id"),
+        index=True,
     )
     reason: Mapped[str] = mapped_column(Text)
     assigned_to: Mapped[str | None] = mapped_column(String, default=None)
-    status: Mapped[str] = mapped_column(String, default="pending")
+    status: Mapped[str] = mapped_column(String, default="pending", index=True)
     notes: Mapped[str | None] = mapped_column(Text, default=None)
 
     # Relationships

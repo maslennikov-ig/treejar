@@ -132,3 +132,52 @@ async def test_calculate_daily_summary_uses_separate_7d_activity_window() -> Non
         )
     )
     assert "2026-03-28 12:00:00" in compiled
+
+
+@pytest.mark.asyncio
+async def test_calculate_daily_summary_matches_column_timezone_awareness() -> None:
+    """deal_delivered_at (TIMESTAMPTZ) must receive tz-aware UTC params while created_at receives naive UTC."""
+    from src.services.daily_summary import calculate_daily_summary
+
+    db = AsyncMock()
+    now = datetime(2026, 4, 4, 12, 0, tzinfo=UTC)
+    executed: list[object] = []
+
+    def _row(**values: object) -> MagicMock:
+        return MagicMock(**values)
+
+    results = [
+        MagicMock(
+            one=MagicMock(return_value=_row(total_conversations=1, unique_customers=1))
+        ),
+        MagicMock(one=MagicMock(return_value=_row(escalation_count=0))),
+        MagicMock(one=MagicMock(return_value=_row(avg_quality_score=20.0))),
+        MagicMock(one=MagicMock(return_value=_row(delivered_deals=1))),
+        MagicMock(one=MagicMock(return_value=_row(assistant_conversations=4))),
+    ]
+
+    async def _execute(stmt: object, *args: object, **kwargs: object) -> MagicMock:
+        executed.append(stmt)
+        return results[len(executed) - 1]
+
+    db.execute = AsyncMock(side_effect=_execute)
+
+    await calculate_daily_summary(db, now=now)
+
+    # Queries 0, 1, 2, 4 filter on naive created_at columns
+    for idx in (0, 1, 2, 4):
+        stmt = executed[idx]
+        assert hasattr(stmt, "compile")
+        params = stmt.compile(dialect=postgresql.dialect()).params
+        dates = [v for v in params.values() if isinstance(v, datetime)]
+        assert dates
+        assert all(d.tzinfo is None for d in dates)
+
+    # Query 3 filters on Conversation.deal_delivered_at (TIMESTAMPTZ)
+    delivered_stmt = executed[3]
+    assert hasattr(delivered_stmt, "compile")
+    delivered_params = delivered_stmt.compile(dialect=postgresql.dialect()).params
+    delivered_dates = [v for v in delivered_params.values() if isinstance(v, datetime)]
+    assert len(delivered_dates) == 2
+    assert all(d.tzinfo == UTC for d in delivered_dates)
+    assert set(delivered_dates) == {now - timedelta(days=7), now}

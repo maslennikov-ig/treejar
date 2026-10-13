@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from src.services.runtime_monitoring import (
     ZOHO_OAUTH_FAILURES_KEY,
@@ -129,6 +130,77 @@ class _ScalarResult:
 
     def scalar_one(self) -> int:
         return self.value
+
+
+@pytest.mark.parametrize("offset_hours", [0, 3])
+@pytest.mark.asyncio
+async def test_escalation_count_uses_utc_naive_timestamp_for_postgres(
+    tmp_path: Path, offset_hours: int
+) -> None:
+    redis = AsyncMock()
+    redis.all_job_results.return_value = []
+    redis.queued_jobs.return_value = []
+    redis.lrange.return_value = []
+    redis.scan.side_effect = [(0, []), (0, [])]
+    db = AsyncMock()
+
+    async def execute(statement: object) -> object:
+        if not hasattr(statement, "compile"):
+            return SimpleNamespace()
+        params = statement.compile(dialect=postgresql.dialect()).params
+        dates = [value for value in params.values() if isinstance(value, datetime)]
+        if not dates:
+            return SimpleNamespace()
+        # PostgreSQL TIMESTAMP WITHOUT TIME ZONE uses a naive epoch in asyncpg.
+        # An aware parameter fails at the same driver boundary as production.
+        cutoff = dates[0]
+        _ = datetime(2000, 1, 1) - cutoff
+        assert cutoff == (NOW - timedelta(days=30)).replace(tzinfo=None)
+        return _ScalarResult(45)
+
+    db.execute.side_effect = execute
+    observed_at = NOW.astimezone(timezone(timedelta(hours=offset_hours)))
+    snapshot = await collect_runtime_snapshot(
+        redis,
+        db,
+        observed_at=observed_at,
+        maintenance_status_path=tmp_path / "missing.status",
+    )
+
+    assert snapshot.stale_pending_escalations == 45
+    assert snapshot.health_dependency_failures == 0
+
+
+@pytest.mark.parametrize("database_unavailable", [False, True])
+@pytest.mark.asyncio
+async def test_unavailable_escalation_count_is_unknown(
+    tmp_path: Path, database_unavailable: bool
+) -> None:
+    redis = AsyncMock()
+    redis.all_job_results.return_value = []
+    redis.queued_jobs.return_value = []
+    redis.lrange.return_value = []
+    redis.scan.side_effect = [(0, []), (0, [])]
+    db = AsyncMock()
+    db.execute.side_effect = (
+        [RuntimeError("database unavailable")]
+        if database_unavailable
+        else [SimpleNamespace(), RuntimeError("audit unavailable")]
+    )
+
+    snapshot = await collect_runtime_snapshot(
+        redis,
+        db,
+        observed_at=NOW,
+        maintenance_status_path=tmp_path / "missing.status",
+    )
+
+    assert snapshot.stale_pending_escalations is None
+    assert snapshot.health_dependency_failures == 1
+    assert "pending_escalations_stale" not in {
+        signal.code
+        for signal in evaluate_runtime_snapshot(snapshot, RuntimeThresholds())
+    }
 
 
 @pytest.mark.asyncio

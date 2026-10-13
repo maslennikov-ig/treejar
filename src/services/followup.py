@@ -1,4 +1,5 @@
 import datetime
+import inspect
 import logging
 import uuid
 from collections.abc import Mapping
@@ -980,6 +981,16 @@ async def run_automatic_followups(ctx: dict[str, Any]) -> None:
         await _run_legacy_inactive_followups(db, now)
 
 
+async def _close_client(client: Any) -> None:
+    if client is None:
+        return
+    close = getattr(client, "close", None) or getattr(client, "aclose", None)
+    if callable(close):
+        res = close()
+        if inspect.isawaitable(res):
+            await res
+
+
 async def _process_followup_for_conversation(db: Any, conv: Conversation) -> None:
     """Generates and sends a follow-up for a specific conversation."""
     logfire.info(f"Processing follow-up for conversation {conv.id}")
@@ -993,89 +1004,94 @@ async def _process_followup_for_conversation(db: Any, conv: Conversation) -> Non
     messaging = WazzupProvider()
     zoho = None
 
-    from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
+    try:
+        from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 
-    zoho = ZohoInventoryClient(redis)
+        zoho = ZohoInventoryClient(redis)
 
-    # Normally, process_message saves user message, calls LLM, saves AIMessage, sends message.
-    # Because this is a system-initiated message, we will call the LLM directly
-    # and then use messaging_client to send it, and save the AI message manually to DB.
+        # Normally, process_message saves user message, calls LLM, saves AIMessage, sends message.
+        # Because this is a system-initiated message, we will call the LLM directly
+        # and then use messaging_client to send it, and save the AI message manually to DB.
 
-    from src.llm.catalog_planning import SalesDeps
-    from src.llm.context import build_message_history
-    from src.llm.engine import sales_agent
-    from src.llm.pii import unmask_pii
-    from src.llm.safety import (
-        PATH_CORE_FOLLOWUP,
-        model_name_for_path,
-        run_agent_with_safety,
-    )
-    from src.models.message import Message, message_created_at_now
+        from src.llm.catalog_planning import SalesDeps
+        from src.llm.context import build_message_history
+        from src.llm.engine import sales_agent
+        from src.llm.pii import unmask_pii
+        from src.llm.safety import (
+            PATH_CORE_FOLLOWUP,
+            model_name_for_path,
+            run_agent_with_safety,
+        )
+        from src.models.message import Message, message_created_at_now
 
-    # 1. Provide context
-    pii_map: dict[str, str] = {}
-    history = await build_message_history(db, conv.id, pii_map)
+        # 1. Provide context
+        pii_map: dict[str, str] = {}
+        history = await build_message_history(db, conv.id, pii_map)
 
-    # Fetch CRM Context
-    crm_context = None
-    if conv.phone:
-        from src.core.cache import get_cached_crm_profile
+        # Fetch CRM Context
+        crm_context = None
+        if conv.phone:
+            from src.core.cache import get_cached_crm_profile
 
-        crm_context = await get_cached_crm_profile(redis, conv.phone)
+            crm_context = await get_cached_crm_profile(redis, conv.phone)
 
-    deps = SalesDeps(
-        db=db,
-        redis=redis,
-        conversation=conv,
-        embedding_engine=engine,
-        zoho_inventory=zoho,
-        zoho_crm=zoho_crm,
-        messaging_client=messaging,
-        pii_map=pii_map,
-        crm_context=crm_context,
-    )
+        deps = SalesDeps(
+            db=db,
+            redis=redis,
+            conversation=conv,
+            embedding_engine=engine,
+            zoho_inventory=zoho,
+            zoho_crm=zoho_crm,
+            messaging_client=messaging,
+            pii_map=pii_map,
+            crm_context=crm_context,
+        )
 
-    # 2. Call LLM with the instruction appended to history as a faux System requirement
-    # Or simply run the agent with the internal message
-    result = await run_agent_with_safety(
-        sales_agent,
-        PATH_CORE_FOLLOWUP,
-        system_instruction,
-        model_name=model_name_for_path(PATH_CORE_FOLLOWUP),
-        deps=deps,
-        message_history=history,
-    )
+        # 2. Call LLM with the instruction appended to history as a faux System requirement
+        # Or simply run the agent with the internal message
+        result = await run_agent_with_safety(
+            sales_agent,
+            PATH_CORE_FOLLOWUP,
+            system_instruction,
+            model_name=model_name_for_path(PATH_CORE_FOLLOWUP),
+            deps=deps,
+            message_history=history,
+        )
 
-    final_text = unmask_pii(result.output, pii_map)
+        final_text = unmask_pii(result.output, pii_map)
 
-    # 3. Save AI message to DB
-    ai_msg = Message(
-        conversation_id=conv.id,
-        role="assistant",
-        content=final_text,
-        tokens_in=result.usage().input_tokens if result.usage() else None,
-        tokens_out=result.usage().output_tokens if result.usage() else None,
-        created_at=message_created_at_now(),
-    )
-    db.add(ai_msg)
-    await db.commit()
+        # 3. Save AI message to DB
+        ai_msg = Message(
+            conversation_id=conv.id,
+            role="assistant",
+            content=final_text,
+            tokens_in=result.usage().input_tokens if result.usage() else None,
+            tokens_out=result.usage().output_tokens if result.usage() else None,
+            created_at=message_created_at_now(),
+        )
+        db.add(ai_msg)
+        await db.commit()
 
-    # 4. Send message
-    await send_wazzup_text_with_audit(
-        db,
-        provider=messaging,
-        conversation_id=conv.id,
-        chat_id=conv.phone,
-        text=final_text,
-        source="automatic_followup",
-        crm_message_id=deterministic_crm_message_id(
-            "followup",
-            conv.id,
-            "inactive",
-        ),
-    )
-    await db.commit()
-    logfire.info(f"Follow-up sent successfully to {conv.phone}")
+        # 4. Send message
+        await send_wazzup_text_with_audit(
+            db,
+            provider=messaging,
+            conversation_id=conv.id,
+            chat_id=conv.phone,
+            text=final_text,
+            source="automatic_followup",
+            crm_message_id=deterministic_crm_message_id(
+                "followup",
+                conv.id,
+                "inactive",
+            ),
+        )
+        await db.commit()
+        logfire.info(f"Follow-up sent successfully to {conv.phone}")
+    finally:
+        await _close_client(zoho)
+        await _close_client(zoho_crm)
+        await _close_client(messaging)
 
 
 async def run_feedback_requests(ctx: dict[str, Any]) -> None:

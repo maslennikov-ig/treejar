@@ -217,14 +217,17 @@ async def generate_report(
     try:
         from src.models.manager_review import ManagerReview
 
+        start_date_utc = start_date.replace(tzinfo=UTC)
+        end_date_utc = end_date.replace(tzinfo=UTC)
+
         mgr_q = select(
             func.avg(ManagerReview.total_score),
             func.avg(ManagerReview.first_response_time_seconds),
             func.count(ManagerReview.id),
             func.count().filter(ManagerReview.deal_converted.is_(True)),
         ).where(
-            ManagerReview.created_at >= start_date,
-            ManagerReview.created_at <= end_date,
+            ManagerReview.created_at >= start_date_utc,
+            ManagerReview.created_at <= end_date_utc,
         )
         mgr_result = await db.execute(mgr_q)
         mgr_row = mgr_result.one()
@@ -245,8 +248,8 @@ async def generate_report(
                 func.avg(ManagerReview.total_score),
             )
             .where(
-                ManagerReview.created_at >= start_date,
-                ManagerReview.created_at <= end_date,
+                ManagerReview.created_at >= start_date_utc,
+                ManagerReview.created_at <= end_date_utc,
                 ManagerReview.manager_name.isnot(None),
             )
             .group_by(ManagerReview.manager_name)

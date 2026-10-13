@@ -14,6 +14,7 @@ a customer turn that is finishing the same quotation.
 from __future__ import annotations
 
 import datetime
+import inspect
 import logging
 import secrets
 import uuid
@@ -219,6 +220,20 @@ async def _send_confirmation(deps: Any, text: str, quote_key: str) -> None:
     await deps.db.commit()
 
 
+async def _close_deps_clients(deps: Any) -> None:
+    if deps is None:
+        return
+    for attr in ("zoho_inventory", "zoho_crm", "messaging_client"):
+        client = getattr(deps, attr, None)
+        if client is None:
+            continue
+        close = getattr(client, "close", None) or getattr(client, "aclose", None)
+        if callable(close):
+            res = close()
+            if inspect.isawaitable(res):
+                await res
+
+
 async def retry_pending_quotation(
     ctx: dict[str, Any], conversation_id: str, attempt: int = 1
 ) -> str:
@@ -252,6 +267,7 @@ async def retry_pending_quotation(
             await db.commit()
             return "chat_busy"
 
+        deps: Any = None
         try:
             await db.refresh(conversation)
             pending = pending_quotation(conversation)
@@ -339,6 +355,7 @@ async def retry_pending_quotation(
             await db.rollback()
             return "error"
         finally:
+            await _close_deps_clients(deps)
             await _release_chat_lock(redis, lock)
 
 

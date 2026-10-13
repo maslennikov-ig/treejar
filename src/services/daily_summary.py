@@ -41,6 +41,8 @@ async def calculate_daily_summary(
     current = _naive_utc(now)
     period_start = current - timedelta(days=1)
     conversion_start = current - timedelta(days=7)
+    current_utc = current.replace(tzinfo=UTC)
+    conversion_start_utc = conversion_start.replace(tzinfo=UTC)
 
     conv_q = (
         select(
@@ -81,8 +83,8 @@ async def calculate_daily_summary(
         select(func.count(Conversation.id).label("delivered_deals"))
         .where(Conversation.deal_status == DealStatus.DELIVERED.value)
         .where(Conversation.deal_delivered_at.is_not(None))
-        .where(Conversation.deal_delivered_at >= conversion_start)
-        .where(Conversation.deal_delivered_at <= current)
+        .where(Conversation.deal_delivered_at >= conversion_start_utc)
+        .where(Conversation.deal_delivered_at <= current_utc)
     )
     delivered_row = (await db.execute(delivered_q)).one()
 

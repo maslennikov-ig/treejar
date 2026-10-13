@@ -46,7 +46,7 @@ class RuntimeSnapshot(BaseModel):
     oauth_failures_last_hour: int = Field(ge=0)
     queue_depth: int = Field(ge=0)
     oldest_queue_age_seconds: float | None = Field(default=None, ge=0)
-    stale_pending_escalations: int = Field(ge=0)
+    stale_pending_escalations: int | None = Field(ge=0)
     health_dependency_failures: int = Field(ge=0)
     maintenance_age_seconds: float | None = Field(default=None, ge=0)
     maintenance_last_run_succeeded: bool | None = None
@@ -150,7 +150,10 @@ def evaluate_runtime_snapshot(
                 remediation="Check worker health before replaying queued work.",
             )
         )
-    if snapshot.stale_pending_escalations >= thresholds.stale_pending_escalations:
+    if (
+        snapshot.stale_pending_escalations is not None
+        and snapshot.stale_pending_escalations >= thresholds.stale_pending_escalations
+    ):
         signals.append(
             _signal(
                 code="pending_escalations_stale",
@@ -428,13 +431,15 @@ async def collect_runtime_snapshot(
             await db.rollback()
         logger.exception("Runtime monitoring database health probe failed")
 
-    stale_pending = 0
+    stale_pending: int | None = None
     if database_healthy:
         try:
             result = await db.execute(
                 select(func.count(Escalation.id)).where(
                     Escalation.status == EscalationStatus.PENDING.value,
-                    Escalation.created_at <= current - _STALE_ESCALATION_AGE,
+                    # TimestampMixin stores naive UTC timestamps in PostgreSQL.
+                    Escalation.created_at
+                    <= (current - _STALE_ESCALATION_AGE).replace(tzinfo=None),
                 )
             )
             stale_pending = int(result.scalar_one())

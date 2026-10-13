@@ -40,7 +40,8 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Node (admin panel future)
+# Node (admin panel)
+node_modules
 node_modules/
 admin/node_modules/
 admin/.next/

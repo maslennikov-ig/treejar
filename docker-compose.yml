@@ -10,7 +10,9 @@ services:
       - pgdata:/var/lib/postgresql/data
 
   app:
-    build: .
+    build:
+      context: .
+      target: runtime
     command: web
     env_file:
       - .env
@@ -22,7 +24,9 @@ services:
     restart: unless-stopped
 
   worker:
-    build: .
+    build:
+      context: .
+      target: runtime
     command: worker
     # Longer than WORKER_JOB_COMPLETION_WAIT_SECONDS so a running turn finishes.
     stop_grace_period: 200s

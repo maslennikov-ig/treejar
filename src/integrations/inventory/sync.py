@@ -424,6 +424,11 @@ async def _deactivate_stale_products(sync_started_at: datetime) -> int:
     Returns:
         Number of products deactivated.
     """
+    cutoff = (
+        sync_started_at.astimezone(UTC).replace(tzinfo=None)
+        if sync_started_at.tzinfo is not None
+        else sync_started_at
+    )
     async with async_session_factory() as session:
         try:
             stmt = (
@@ -431,7 +436,7 @@ async def _deactivate_stale_products(sync_started_at: datetime) -> int:
                     "UPDATE products SET is_active = false, embedding = NULL "
                     "WHERE is_active = true AND (synced_at IS NULL OR synced_at < :cutoff)"
                 )
-            ).bindparams(cutoff=sync_started_at)
+            ).bindparams(cutoff=cutoff)
 
             result = await session.execute(stmt)
             await session.commit()

@@ -1069,3 +1069,50 @@ def test_search_filler_words_do_not_block_an_exact_match() -> None:
         )
         == "exact"
     )
+
+
+@pytest.mark.parametrize(
+    ("query", "candidates"),
+    [
+        ("2 workstations for 8 people", [_LUMA_ROW, _NOVO_ROW]),
+        ("two workstations for 8 people", [_LUMA_ROW, _NOVO_ROW]),
+        ("3 desks", [_LUMA_ROW, _NOVO_ROW]),
+        ("three desks", [_LUMA_ROW, _NOVO_ROW]),
+        (
+            "10 ergonomic mesh chairs",
+            [
+                "Executive Office Chair CH 430 Black",
+                "SkyLand Executive Chair CH 950 BLACK",
+            ],
+        ),
+        (
+            "ten ergonomic mesh chairs",
+            [
+                "Executive Office Chair CH 430 Black",
+                "SkyLand Executive Chair CH 950 BLACK",
+            ],
+        ),
+    ],
+)
+def test_digit_and_word_quantities_preserve_generic_product_match_parity(
+    query: str,
+    candidates: list[str],
+) -> None:
+    assert not verified_answers_module.query_names_specific_item(query)
+    assert classify_product_match(query, candidates) == "generic"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "CH 160",
+        "CT1065",
+        "LUMA 9719-4",
+        "1200x600",
+        "chair 205",
+    ],
+)
+def test_query_names_specific_item_retains_model_codes_and_dimensions(
+    query: str,
+) -> None:
+    assert verified_answers_module.query_names_specific_item(query)

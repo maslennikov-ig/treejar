@@ -3093,6 +3093,30 @@ def test_an_arabic_statement_about_the_request_is_not_a_name() -> None:
         assert "name" not in _extract_quote_customer_details(statement), statement
 
 
+def test_pre_model_name_extraction_rejects_conversational_phrases_and_accepts_real_names() -> (
+    None
+):
+    for non_name in (
+        "Hi, I'm setting up an office.",
+        "I'm ready to order.",
+        "I'm not sure yet.",
+        "I'm fine with walnut.",
+        "I'm comparing acoustic pods.",
+        "Call me tomorrow morning.",
+        "أنا جاهز للطلب",
+    ):
+        assert "name" not in _extract_quote_customer_details(non_name), non_name
+
+    for text, expected_name in (
+        ("I'm Ahmed Al Mansoori", "Ahmed Al Mansoori"),
+        ("I am Sarah", "Sarah"),
+        ("Call me Omar", "Omar"),
+        ("أنا أحمد المنصوري", "أحمد المنصوري"),
+        ("معك سارة", "سارة"),
+    ):
+        assert _extract_quote_customer_details(text).get("name") == expected_name, text
+
+
 def test_clearing_the_name_ask_slot_is_the_only_reask_reset() -> None:
     conversation = SimpleNamespace(metadata_={"customer_name_asked": True})
 
@@ -9036,6 +9060,41 @@ def test_quote_offer_guard_allows_details_for_typed_grant_without_active_frame(
     )
 
     assert guarded == text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Please share your delivery address so I can check the delivery timeline.",
+        "Please share your email address so I can send the product brochure.",
+        "May I have your phone number so our manager can call you?",
+        "يرجى مشاركة عنوان التوصيل للتحقق من موعد التوصيل.",
+    ],
+)
+def test_quote_offer_guard_preserves_single_field_non_quotation_purpose_requests(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+    text: str,
+) -> None:
+    _db, conv, _embedding, _zoho, _zoho_crm, _redis, _messaging = mock_deps
+
+    guarded = engine_module._guard_premature_quote_detail_collection(
+        text,
+        conversation=conv,
+        customer_text="Can you check when it can arrive?",
+    )
+
+    assert guarded == text
+
+
+def test_carry_the_company_question_skips_when_reply_already_has_two_questions() -> (
+    None
+):
+    from src.llm.sales_turn_guard import carry_the_company_question
+
+    two_questions = "Do you prefer black or grey? How many chairs do you need?"
+    assert carry_the_company_question(two_questions, language="en") == two_questions
 
 
 def test_quote_candidates_ignore_alternative_price_table_and_use_quote_offer() -> None:

@@ -1,15 +1,49 @@
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 from pathlib import Path
 
 
+def _resolve_node_binary() -> str:
+    candidate = shutil.which("node")
+    if candidate and os.access(candidate, os.X_OK):
+        return candidate
+    nvm_bins = sorted((Path.home() / ".nvm" / "versions" / "node").glob("*/bin/node"))
+    for node_bin in reversed(nvm_bins):
+        if node_bin.is_file() and os.access(node_bin, os.X_OK):
+            return str(node_bin)
+    return "node"
+
+
+def _ensure_worktree_node_modules(repo_root: Path) -> None:
+    local_node_modules = repo_root / "frontend" / "admin" / "node_modules"
+    if local_node_modules.exists():
+        return
+    common = subprocess.run(
+        ["git", "-C", str(repo_root), "rev-parse", "--git-common-dir"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    if not common:
+        return
+    common_dir = Path(common)
+    if not common_dir.is_absolute():
+        common_dir = (repo_root / common_dir).resolve()
+    shared_node_modules = common_dir.parent / "frontend" / "admin" / "node_modules"
+    if shared_node_modules.is_dir():
+        local_node_modules.symlink_to(shared_node_modules)
+
+
 def _run_frontend_regression(script_name: str) -> subprocess.CompletedProcess[str]:
     repo_root = Path(__file__).resolve().parents[1]
+    _ensure_worktree_node_modules(repo_root)
     script_path = repo_root / "frontend" / "admin" / "tests" / script_name
 
     return subprocess.run(
-        ["node", str(script_path)],
+        [_resolve_node_binary(), str(script_path)],
         cwd=repo_root,
         capture_output=True,
         text=True,

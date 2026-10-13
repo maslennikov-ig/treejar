@@ -9,7 +9,7 @@ import datetime
 import json
 import logging
 from copy import deepcopy
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 from pydantic_ai import RunContext
@@ -92,6 +92,49 @@ def _quotation_on_the_table(deps: SalesDeps) -> bool:
         if text
     )
     return quotation_consent_is_grounded(deps.user_query, last_offer)
+
+
+_DETAIL_TO_DIALOGUE_SLOT: dict[str, str] = {
+    "name": "customer_name",
+    "company": "company",
+    "customer_type": "customer_type",
+    "address": "delivery_address",
+}
+
+
+def _sync_dialogue_slots_from_details(
+    metadata: dict[str, Any], values: dict[str, str]
+) -> dict[str, Any]:
+    slot_updates = {
+        slot_key: value
+        for field_key, slot_key in _DETAIL_TO_DIALOGUE_SLOT.items()
+        if (value := values.get(field_key, "").strip())
+    }
+    if not slot_updates:
+        return metadata
+    kernel_raw = metadata.get("dialogue_kernel")
+    if isinstance(kernel_raw, dict):
+        kernel = dict(kernel_raw)
+        state_raw = kernel.get("state")
+        if isinstance(state_raw, dict):
+            state_dict = dict(state_raw)
+            slots_raw = state_dict.get("slots")
+            if isinstance(slots_raw, dict):
+                slots = dict(slots_raw)
+                slots.update(slot_updates)
+                state_dict["slots"] = slots
+                kernel["state"] = state_dict
+                metadata["dialogue_kernel"] = kernel
+    legacy_state_raw = metadata.get("dialogue_state")
+    if isinstance(legacy_state_raw, dict):
+        legacy_state = dict(legacy_state_raw)
+        legacy_slots_raw = legacy_state.get("slots")
+        if isinstance(legacy_slots_raw, dict):
+            legacy_slots = dict(legacy_slots_raw)
+            legacy_slots.update(slot_updates)
+            legacy_state["slots"] = legacy_slots
+            metadata["dialogue_state"] = legacy_state
+    return metadata
 
 
 async def record_customer_intent(
@@ -211,6 +254,7 @@ async def record_customer_intent(
                 existing = _quote_customer_details_from_metadata(conversation)
                 existing.update(values)
                 metadata[QUOTE_CUSTOMER_DETAILS_KEY] = existing
+                metadata = _sync_dialogue_slots_from_details(metadata, values)
                 frame = quote_frame_from_metadata(metadata)
                 if frame is not None:
                     metadata = quote_frame_to_metadata(
@@ -271,6 +315,24 @@ async def record_customer_intent(
                         source_message_id=ctx.deps.source_message_id,
                         accept_sent_quotation=accept_sent_quotation,
                     )
+                    if hasattr(ctx.deps, "customer_facts_context") and callable(
+                        getattr(ctx.deps.db, "execute", None)
+                    ):
+                        from src.services.customer_memory import (
+                            load_existing_customer_context,
+                        )
+
+                        try:
+                            ctx.deps.customer_facts_context = await load_existing_customer_context(
+                                ctx.deps.db,
+                                conversation=conversation,
+                                max_past_orders=settings.customer_facts_max_context_orders,
+                            )
+                        except Exception:
+                            logger.debug(
+                                "Skipping in-turn customer_facts_context refresh",
+                                exc_info=True,
+                            )
             await ctx.deps.db.flush()
     except Exception:
         conversation.metadata_ = original_metadata

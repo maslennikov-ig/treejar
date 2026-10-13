@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
 import logging
 import re
@@ -713,6 +714,7 @@ async def _handle_escalation_fallback(
     already_notified = await redis.get(cooldown_key)
     if not already_notified:
         await redis.setex(cooldown_key, _ESCALATION_RENOTIFY_COOLDOWN, "1")
+        client: Any = None
         try:
             from src.integrations.notifications.telegram import TelegramClient
 
@@ -740,6 +742,15 @@ async def _handle_escalation_fallback(
                 "Failed to re-notify manager: chat_ref=%s",
                 inbound_chat_reference(conv.phone),
             )
+        finally:
+            if client is not None:
+                aclose = getattr(client, "aclose", None) or getattr(
+                    client, "close", None
+                )
+                if callable(aclose):
+                    res = aclose()
+                    if inspect.isawaitable(res):
+                        await res
 
 
 async def _send_deferred_product_media(

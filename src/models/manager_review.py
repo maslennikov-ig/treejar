@@ -4,7 +4,17 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.models.base import Base, UUIDMixin
@@ -32,7 +42,11 @@ class ManagerReview(UUIDMixin, Base):
         ForeignKey("conversations.id"),
         index=True,
     )
-    manager_name: Mapped[str | None] = mapped_column(String, default=None)
+    manager_name: Mapped[str | None] = mapped_column(
+        String,
+        default=None,
+        index=True,
+    )
 
     # LLM Judge scores
     total_score: Mapped[float] = mapped_column(Numeric(4, 1))
@@ -51,7 +65,14 @@ class ManagerReview(UUIDMixin, Base):
 
     reviewer: Mapped[str] = mapped_column(String, default="ai")
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         server_default=func.now(),
+        index=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     # Relationships

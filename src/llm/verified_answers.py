@@ -1393,6 +1393,7 @@ _PRODUCT_NEED_TERMS = frozenset(
         "furnishing",
         "furniture",
         "individual",
+        "mesh",
         "modern",
         "new",
         "panel",
@@ -1625,10 +1626,267 @@ _MONEY_AMOUNT_RE = re.compile(
     re.IGNORECASE,
 )
 
+_GENERIC_QUANTITY_PREFIX_WORDS = frozenset(
+    {
+        "about",
+        "add",
+        "adding",
+        "also",
+        "and",
+        "around",
+        "at",
+        "between",
+        "buy",
+        "buying",
+        "compare",
+        "comparing",
+        "considering",
+        "find",
+        "for",
+        "from",
+        "get",
+        "getting",
+        "give",
+        "have",
+        "in",
+        "include",
+        "including",
+        "least",
+        "like",
+        "looking",
+        "need",
+        "needing",
+        "needs",
+        "of",
+        "on",
+        "or",
+        "order",
+        "ordering",
+        "plus",
+        "prefer",
+        "quote",
+        "quoting",
+        "recommend",
+        "require",
+        "requires",
+        "requiring",
+        "search",
+        "show",
+        "suggest",
+        "supply",
+        "take",
+        "to",
+        "total",
+        "up",
+        "want",
+        "wanting",
+        "wants",
+        "with",
+        "نحتاج",
+        "احتاج",
+        "أحتاج",
+        "اريد",
+        "أريد",
+        "عندنا",
+        "في",
+        "من",
+        "و",
+        "او",
+        "أو",
+    }
+)
+_GENERIC_QUANTITY_MODIFIER_TERMS = (
+    _PRODUCT_NEED_TERMS
+    | _PRODUCT_MATCH_FILLER_TERMS
+    | frozenset(
+        {
+            "acoustic",
+            "adjustable",
+            "arm",
+            "armrest",
+            "armrests",
+            "arms",
+            "back",
+            "basic",
+            "big",
+            "children",
+            "compact",
+            "computer",
+            "conference",
+            "dining",
+            "executive",
+            "fabric",
+            "glass",
+            "good",
+            "high",
+            "high-back",
+            "home",
+            "kids",
+            "large",
+            "leather",
+            "living",
+            "lounge",
+            "low",
+            "low-back",
+            "medium",
+            "meeting",
+            "metal",
+            "mid",
+            "mid-back",
+            "mobile",
+            "nice",
+            "open",
+            "operative",
+            "padded",
+            "quality",
+            "reception",
+            "shared",
+            "simple",
+            "small",
+            "standard",
+            "standing",
+            "station",
+            "stations",
+            "steel",
+            "storage",
+            "study",
+            "swivel",
+            "task",
+            "upholstered",
+            "visitor",
+            "waiting",
+            "wooden",
+        }
+    )
+)
+_GENERIC_QUANTITY_PRODUCT_NOUNS = frozenset(
+    {
+        "accessory",
+        "accessories",
+        "bed",
+        "beds",
+        "bench",
+        "benches",
+        "bookcase",
+        "bookcases",
+        "bookshelf",
+        "bookshelves",
+        "booth",
+        "booths",
+        "cabinet",
+        "cabinets",
+        "chair",
+        "chairs",
+        "desk",
+        "desks",
+        "drawer",
+        "drawers",
+        "furniture",
+        "item",
+        "items",
+        "locker",
+        "lockers",
+        "mattress",
+        "mattresses",
+        "option",
+        "options",
+        "pedestal",
+        "pedestals",
+        "piece",
+        "pieces",
+        "pod",
+        "pods",
+        "seat",
+        "seating",
+        "seats",
+        "set",
+        "sets",
+        "shelf",
+        "shelves",
+        "sofa",
+        "sofas",
+        "station",
+        "stations",
+        "stool",
+        "stools",
+        "storage",
+        "table",
+        "tables",
+        "unit",
+        "units",
+        "wardrobe",
+        "wardrobes",
+        "workstation",
+        "workstations",
+        "workspace",
+        "workspaces",
+        "أثاث",
+        "اثاث",
+        "تخزين",
+        "خزائن",
+        "خزانة",
+        "طاولات",
+        "طاولة",
+        "كبسولة",
+        "كراسي",
+        "كرسي",
+        "محطات",
+        "محطة",
+        "مقصورة",
+        "مكاتب",
+        "مكتب",
+    }
+)
+_GENERIC_MODIFIER_PATTERN = "|".join(
+    re.escape(term)
+    for term in sorted(_GENERIC_QUANTITY_MODIFIER_TERMS, key=len, reverse=True)
+)
+_GENERIC_PRODUCT_NOUN_PATTERN = "|".join(
+    re.escape(term)
+    for term in sorted(_GENERIC_QUANTITY_PRODUCT_NOUNS, key=len, reverse=True)
+)
+_GENERIC_ITEM_QUANTITY_RE = re.compile(
+    r"(?<![\w\-x*.])(?P<qty>\d{1,3})(?![\w\-x*.])"
+    r"(?:\s*(?:x|×))?\s+"
+    rf"(?P<rest>(?:(?:{_GENERIC_MODIFIER_PATTERN})\s+){{0,4}}"
+    rf"(?:{_GENERIC_PRODUCT_NOUN_PATTERN}))(?!\w)",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def _is_standalone_generic_quantity_match(text: str, match: re.Match[str]) -> bool:
+    prefix = text[: match.start()].rstrip()
+    if not prefix or prefix[-1] in ",.;:!?()\n/":
+        return True
+    prev_match = re.search(r"([\w-]+)$", prefix, flags=re.UNICODE)
+    if prev_match is None:
+        return True
+    return prev_match.group(1).casefold() in _GENERIC_QUANTITY_PREFIX_WORDS
+
+
+def _generic_item_quantity_tokens(text: str) -> set[str]:
+    prepared = strip_head_counts(text)
+    return {
+        match.group("qty")
+        for match in _GENERIC_ITEM_QUANTITY_RE.finditer(prepared)
+        if _is_standalone_generic_quantity_match(prepared, match)
+    }
+
+
+def _strip_generic_item_quantities(text: str) -> str:
+    def _replace(match: re.Match[str]) -> str:
+        if _is_standalone_generic_quantity_match(text, match):
+            return f" {match.group('rest')}"
+        return match.group(0)
+
+    return _GENERIC_ITEM_QUANTITY_RE.sub(_replace, text)
+
 
 def query_names_specific_item(query: str) -> bool:
     """Whether the query names a code, brand, finish or model number."""
-    without_amounts = _MONEY_AMOUNT_RE.sub(" ", strip_head_counts(query))
+    without_amounts = _MONEY_AMOUNT_RE.sub(
+        " ", _strip_generic_item_quantities(strip_head_counts(query))
+    )
     named = (
         (
             _explicit_structured_identifiers(query)
@@ -1744,7 +2002,7 @@ def classify_product_match(
 
     exact_terms = {
         token for token in query_tokens if token not in _PRODUCT_MATCH_FILLER_TERMS
-    }
+    } | _generic_item_quantity_tokens(normalized_query)
 
     if exact_terms and any(
         all(

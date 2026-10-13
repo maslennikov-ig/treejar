@@ -5,6 +5,8 @@ Provides test send and configuration viewing endpoints.
 
 from __future__ import annotations
 
+import inspect
+
 from fastapi import APIRouter
 
 from src.core.config import settings
@@ -20,16 +22,22 @@ async def send_test_notification() -> dict[str, str]:
         bot_token=settings.telegram_bot_token,
         chat_id=settings.telegram_chat_id,
     )
+    try:
+        if not client.is_configured:
+            return {"status": "skipped", "reason": "Telegram not configured"}
 
-    if not client.is_configured:
-        return {"status": "skipped", "reason": "Telegram not configured"}
-
-    await client.send_message(
-        "✅ <b>Test Notification</b>\n\n"
-        "Telegram integration is working correctly.\n"
-        f"<i>Bot: {settings.app_name}</i>"
-    )
-    return {"status": "sent"}
+        await client.send_message(
+            "✅ <b>Test Notification</b>\n\n"
+            "Telegram integration is working correctly.\n"
+            f"<i>Bot: {settings.app_name}</i>"
+        )
+        return {"status": "sent"}
+    finally:
+        aclose = getattr(client, "aclose", None) or getattr(client, "close", None)
+        if callable(aclose):
+            res = aclose()
+            if inspect.isawaitable(res):
+                await res
 
 
 @router.get("/config")

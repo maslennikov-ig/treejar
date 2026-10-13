@@ -335,6 +335,55 @@ def last_assistant_asked_quote_customer_details(
     )
 
 
+def _is_non_quotation_single_field_request(text: str) -> bool:
+    """Whether a single detail ask serves a non-quotation purpose."""
+
+    normalized = " ".join(text.casefold().split())
+    if not normalized:
+        return False
+    if re.search(
+        r"\b(?:quote|quotation|commercial\s+(?:offer|proposal))\b|"
+        r"(?:عرض\s+السعر|عرض\s+أسعار|عرض\s+تجاري)",
+        normalized,
+    ):
+        return False
+    if re.search(r"(?:^|\s)1[.)]\s+\S+.*(?:^|\s)2[.)]\s+\S+", normalized):
+        return False
+    field_patterns = (
+        r"\b(?:company(?:\s+name)?)\b|اسم\s+الشركة",
+        r"\b(?:(?:specific\s+)?delivery\s+address|(?<!email\s)address)\b|عنوان\s+التوصيل",
+        r"\b(?:(?:customer|full)\s+name)\b|اسم\s+العميل",
+        r"\b(?:(?:customer\s+)?email(?:\s+address)?)\b|البريد\s+الإلكتروني",
+        r"\b(?:(?:phone|mobile)(?:\s+number)?)\b|رقم\s+الهاتف",
+        r"\bbuying\s+as\s+an\s+individual\b",
+    )
+    matched_fields = sum(
+        1 for pattern in field_patterns if re.search(pattern, normalized)
+    )
+    if matched_fields != 1:
+        return False
+    non_quote_purpose_patterns = (
+        r"\b(?:to|so\s+(?:that\s+)?(?:i|we)\s+can|in\s+order\s+to)\s+"
+        r"(?:check|confirm|estimate|verify|calculate|see)\b.*\b"
+        r"(?:delivery|shipping|lead\s+time|timeline|schedule|availability|"
+        r"installation|coverage|area|route|eta)\b",
+        r"\bfor\s+(?:a\s+|the\s+)?(?:delivery|shipping|lead\s+time|timeline|"
+        r"availability|installation)\s+(?:check|estimate|timeline|schedule|confirmation)\b",
+        r"\b(?:to|so\s+(?:that\s+)?(?:i|we)\s+can)\s+(?:send|share|forward|email)\b.*\b"
+        r"(?:brochure|catalog(?:ue)?|spec(?:ification)?s?|photos?|pictures?|details|options|pdf)\b",
+        r"\b(?:so|for)\s+(?:that\s+)?(?:our|a|the)?\s*"
+        r"(?:manager|specialist|team|representative|rep|advisor|consultant)\b.*\b"
+        r"(?:call|contact|reach|follow\s+up|get\s+in\s+touch)\b",
+        r"\b(?:to|so\s+(?:that\s+)?(?:i|we)\s+can)\s+(?:arrange|schedule)\s+(?:a\s+)?"
+        r"(?:call|callback|visit|showroom)\b",
+        r"(?:للتحقق\s+من|لتأكيد|لمعرفة|لحساب)\s+(?:موعد|مدة|إمكانية|تغطية|توافر|جدول)\s+"
+        r"(?:التوصيل|الشحن|التركيب)",
+        r"(?:لإرسال|لمشاركة)\s+(?:كتالوج|كتيب|صور|تفاصيل|مواصفات)",
+        r"(?:ليتواصل|للاتصال|لمعاودة\s+الاتصال|ليتمكن\s+المدير)",
+    )
+    return any(re.search(pattern, normalized) for pattern in non_quote_purpose_patterns)
+
+
 def guard_premature_quote_detail_collection(
     text: str,
     *,
@@ -344,6 +393,8 @@ def guard_premature_quote_detail_collection(
     """Replace pre-consent detail collection with the quotation opt-in."""
 
     if quote_consent_granted:
+        return text
+    if _is_non_quotation_single_field_request(text):
         return text
     if not last_assistant_asked_quote_customer_details(
         [f"assistant: {text}"],

@@ -1,0 +1,44 @@
+# Version control & worktrees
+.git
+.worktrees
+
+# Virtual environments & caches
+.venv
+__pycache__/
+*.py[cod]
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.tmp
+
+# Local environment secrets (passed at runtime via env_file)
+.env
+.env.*
+!.env.example
+
+# Agent & orchestration state
+.agent
+.agents
+.beads
+.claude
+.codex
+.impeccable
+.superpowers
+
+# Non-runtime directories & artifacts
+output
+scripts/e2e_acceptance
+docs/reports
+docs/research
+docs/Research
+docs/superpowers
+docs/design
+docs/offers
+
+# Node modules (rebuilt inside frontend builder stages)
+frontend/**/node_modules
+frontend/**/dist
+
+# Keep release metadata injected by CI
+!.release-sha*
+!.release-run-id*

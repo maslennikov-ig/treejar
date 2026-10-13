@@ -695,4 +695,6 @@ def carry_the_company_question(text: str, *, language: str) -> str:
     body = text.rstrip()
     if not body:
         return question
+    if body.count("?") + body.count("؟") >= 2:
+        return text
     return f"{body} {question}"

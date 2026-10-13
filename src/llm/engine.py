@@ -83,8 +83,6 @@ from src.dialogue.order_state import (
 )
 from src.dialogue.reducer import push_expected_answer_frame
 from src.dialogue.runner import (
-    DialogueKernelResult,
-    expected_answer_match_payload,
     quote_consent_signal,
     record_legacy_route,
 )
@@ -528,8 +526,8 @@ _THIS_IS_INTRODUCTION = (
 # are excluded, exactly as `interested|looking|asking` are on the English side.
 _AR_INTRODUCTION = (
     r"\b(?:معك|معاك|أنا|انا)\s+"
-    r"(?!(?:من|في|مع|إلى|الى|هذا|هذه|ذلك|مهتم(?:ة)?|أبحث|ابحث|أريد|اريد"
-    r"|أحتاج|احتاج|بحاجة|أسأل|اسأل|أستفسر|استفسر)\b)"
+    r"(?!(?:من|في|مع|على|بخصوص|إلى|الى|هذا|هذه|ذلك|جاهز(?:ة)?|مهتم(?:ة)?"
+    r"|أبحث|ابحث|أريد|اريد|أحتاج|احتاج|بحاجة|أسأل|اسأل|أستفسر|استفسر)\b)"
 )
 _PERSON_NAME_WORDS = r"[^\W\d_]+(?:\s+[^\W\d_]+)?"
 
@@ -543,9 +541,13 @@ NATURAL_NAME_PATTERNS = (
         re.I | re.S,
     ),
     re.compile(
+        r"\bменя\s+зовут\s+(?P<value>.+?)(?=$|[\n\[]|[.!?;,]\s)",
+        re.I | re.S,
+    ),
+    re.compile(
         r"\b(?:i\s+am|i['’ʼ]m)\s+"
         r"(?!(?:an?\s+)?(?:individual|private\s+customer)\b)"
-        r"(?!(?:interested|looking|asking|checking|from)\b)"
+        r"(?!(?:interested|looking|asking|checking|from|setting|ready|not|sure|fine|ok|okay|comparing|ordering|buying|furnishing|planning|moving|opening|renovating|calling|writing|messaging|contacting|happy|good|great|back|available|busy)\b)"
         r"(?P<value>.+?)(?=$|[\n\[]|[.!?;,]\s)",
         re.I | re.S,
     ),
@@ -1245,15 +1247,6 @@ def _normalize_text(text: str) -> str:
     return " ".join(text.casefold().split())
 
 
-def _dialogue_kernel_bool_config(value: str, *, default: bool) -> bool:
-    normalized = str(value or "").strip().casefold()
-    if normalized in {"1", "true", "yes", "on", "enabled"}:
-        return True
-    if normalized in {"0", "false", "no", "off", "disabled"}:
-        return False
-    return default
-
-
 def _normalize_customer_facts_mode(value: str) -> str:
     normalized = str(value or "").strip().casefold()
     if normalized in {"shadow", "enforce"}:
@@ -1645,19 +1638,6 @@ def _extract_sales_order_quote_items(
     return tuple(items) or None
 
 
-def _is_mixed_product_service_request(text: str) -> bool:
-    normalized = _normalize_text(text)
-    if not normalized:
-        return False
-    has_product_need = any(term in normalized for term in _MIXED_PRODUCT_TERMS)
-    has_service_question = any(term in normalized for term in _MIXED_SERVICE_TERMS)
-    return has_product_need and has_service_question
-
-
-def _is_short_affirmation(text: str) -> bool:
-    return bool(_SHORT_AFFIRMATION_RE.match(text))
-
-
 def _last_assistant_message(recent_history: list[str] | None) -> str:
     for entry in reversed(recent_history or []):
         if entry.startswith("assistant: "):
@@ -1696,52 +1676,6 @@ def _last_assistant_asked_product_preference(
         "novo",
     )
     return any(term in normalized for term in preference_question_terms)
-
-
-def _is_product_preference_answer(
-    text: str,
-    recent_history: list[str] | None,
-) -> bool:
-    if not _last_assistant_asked_product_preference(recent_history):
-        return False
-    normalized = _normalize_text(_normalize_sku_homoglyphs(text))
-    if not normalized or len(normalized) > 220 or "?" in text:
-        return False
-    blocker_terms = (
-        "manager",
-        "human",
-        "complaint",
-        "refund",
-        "return",
-        "exchange",
-        "discount",
-        "special price",
-        "payment term",
-        "payment terms",
-        "credit",
-        "warranty",
-        "guarantee",
-    )
-    if any(term in normalized for term in blocker_terms):
-        return False
-    answer_terms = (
-        "prefer",
-        "more open",
-        "open",
-        "private",
-        "collaborative",
-        "team",
-        "privacy",
-        "luma",
-        "novo",
-        "first option",
-        "second option",
-        "first one",
-        "second one",
-        "option one",
-        "option two",
-    )
-    return any(term in normalized for term in answer_terms)
 
 
 def _dialogue_kernel_mode_allows_expected_answer_frames(mode: str) -> bool:
@@ -1973,87 +1907,6 @@ def _capture_expected_answer_frames_from_assistant_response(
     state = DialogueState.from_conversation(conversation)
     state = push_expected_answer_frame(state, frame)
     conversation.metadata_ = state.to_metadata(conversation.metadata_)
-
-
-def _dialogue_kernel_product_preference_match(
-    result: DialogueKernelResult | None,
-) -> dict[str, Any] | None:
-    match = expected_answer_match_payload(
-        result,
-        route="product_preference_answer",
-        confidence="high",
-        require_usable_kernel=True,
-    )
-    if match is None:
-        return None
-    if match.get("interruption") or match.get("blocker"):
-        return None
-    if match.get("fulfilled") is not True:
-        return None
-    if match.get("missing_required_slots"):
-        return None
-    if not isinstance(match.get("filled_slots"), Mapping):
-        return None
-    return dict(match)
-
-
-def _product_preference_frame_directives(match: Mapping[str, Any]) -> tuple[str, ...]:
-    filled_slots = match.get("filled_slots")
-    if not isinstance(filled_slots, Mapping):
-        return ()
-    workspace_preference = filled_slots.get("workspace_preference")
-    if not isinstance(workspace_preference, str) or not workspace_preference.strip():
-        return ()
-    return (
-        "expected-answer frame matched workspace_preference="
-        f"{workspace_preference.strip()}",
-    )
-
-
-def _has_order_confirmation_product_quantity_signal(text: str) -> bool:
-    normalized = _normalize_text(_normalize_sku_homoglyphs(text))
-    return bool(
-        _QUANTITY_SIGNAL_RE.search(normalized)
-        and _ORDER_CONFIRMATION_PRODUCT_RE.search(normalized)
-    )
-
-
-def _has_order_confirmation_fulfillment_evidence(text: str) -> bool:
-    normalized = _normalize_text(_normalize_sku_homoglyphs(text))
-    if not normalized:
-        return False
-
-    explicit_fulfillment = bool(
-        _ORDER_CONFIRMATION_EXPLICIT_FULFILLMENT_RE.search(normalized)
-    )
-    delivery_or_install = bool(
-        _ORDER_CONFIRMATION_DELIVERY_INSTALL_RE.search(normalized)
-    )
-    has_logistics = bool(
-        _ORDER_CONFIRMATION_LOCATION_RE.search(normalized)
-        or _ORDER_CONFIRMATION_TIMEFRAME_RE.search(normalized)
-    )
-    return (explicit_fulfillment and has_logistics) or (
-        delivery_or_install and has_logistics
-    )
-
-
-def _should_reject_order_confirmation_escalation(text: str) -> bool:
-    return _has_order_confirmation_product_quantity_signal(
-        text
-    ) and not _has_order_confirmation_fulfillment_evidence(text)
-
-
-def _showroom_location_response(language: str) -> str:
-    if is_arabic_customer_language(language):
-        return (
-            "يقع معرضنا في دبي. يمكنك فتح الموقع على خرائط Google هنا: "
-            f"{TREEJAR_MAPS_URL}"
-        )
-    return (
-        "Our showroom is in Dubai. Open the location on Google Maps: "
-        f"{TREEJAR_MAPS_URL}"
-    )
 
 
 def extract_exact_quote_candidate(text: str) -> ExactQuoteCandidate | None:
@@ -2848,13 +2701,6 @@ def _extract_purchase_selection_from_quote_details_reply(
     return None
 
 
-def _has_quote_reply_purchase_selection_update(*texts: str) -> bool:
-    return any(
-        _extract_purchase_selection_from_quote_details_reply(text) is not None
-        for text in texts
-    )
-
-
 def _clean_product_reference_segment(segment: str) -> str:
     cleaned = BOT_TEST_MARKER_RE.sub("", _normalize_sku_homoglyphs(segment))
     cleaned = _PRODUCT_REFERENCE_REQUEST_PREFIX_RE.sub("", cleaned)
@@ -3318,35 +3164,6 @@ async def _verified_facts_for_quotation_items(
     )
 
 
-async def _store_pending_product_reference_quantity(
-    db: AsyncSession,
-    conversation: Conversation,
-    references: tuple[str, ...],
-) -> None:
-    metadata = dict(conversation.metadata_ or {})
-    clean_references = [
-        reference.strip()
-        for reference in references
-        if isinstance(reference, str) and reference.strip()
-    ]
-    if clean_references:
-        metadata[PENDING_PRODUCT_REFERENCE_QUANTITY_KEY] = {
-            "source": "product_reference_quantity_clarification",
-            "references": clean_references,
-        }
-    else:
-        metadata.pop(PENDING_PRODUCT_REFERENCE_QUANTITY_KEY, None)
-    conversation.metadata_ = metadata
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to flush pending product reference quantity for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-
-
 def _pending_product_reference_quantity_from_metadata(
     conversation: Conversation,
 ) -> tuple[str, ...]:
@@ -3435,40 +3252,6 @@ async def _store_pending_question_frame(
             conversation.id,
             exc_info=True,
         )
-
-
-async def _store_kernel_quantity_prompt_frame(
-    db: AsyncSession,
-    conversation: Conversation,
-    *,
-    combined_text: str,
-    masked_text: str,
-    response_text: str,
-) -> None:
-    if not _response_asks_sku_quantity(response_text):
-        return
-
-    missing_quantity_runtime_result = _missing_quantity_order_runtime_result(
-        combined_text
-    )
-    if missing_quantity_runtime_result is None and masked_text != combined_text:
-        missing_quantity_runtime_result = _missing_quantity_order_runtime_result(
-            masked_text
-        )
-
-    frame = (
-        missing_quantity_runtime_result.state.pending_question_frame
-        if missing_quantity_runtime_result is not None
-        else None
-    )
-    if frame is None:
-        references = _extract_missing_quantity_product_references(combined_text)
-        if not references and masked_text != combined_text:
-            references = _extract_missing_quantity_product_references(masked_text)
-        frame = _pending_question_frame_from_references(references)
-
-    if frame is not None:
-        await _store_pending_question_frame(db, conversation, frame)
 
 
 async def _clear_pending_question_frame(
@@ -4554,31 +4337,6 @@ async def _resolved_catalog_options_from_products(
     return resolved
 
 
-def _explicitly_named_sku_products(
-    products: Iterable[Any],
-    text: str,
-) -> list[Any]:
-    normalized_text = re.sub(
-        r"[^a-z0-9]+",
-        "",
-        _normalize_text(_normalize_sku_homoglyphs(text)),
-    )
-    matches: list[tuple[int, Any]] = []
-    for product in products:
-        sku = _string_value(getattr(product, "sku", None))
-        normalized_sku = re.sub(
-            r"[^a-z0-9]+",
-            "",
-            _normalize_text(_normalize_sku_homoglyphs(sku)),
-        )
-        if normalized_sku and normalized_sku in normalized_text:
-            matches.append((len(normalized_sku), product))
-    if not matches:
-        return []
-    longest = max(length for length, _ in matches)
-    return [product for length, product in matches if length == longest]
-
-
 async def _selection_variant_resolved_options(
     *,
     db: AsyncSession,
@@ -5488,6 +5246,178 @@ def _strip_synthetic_test_marker(text: str) -> str:
     return BOT_TEST_MARKER_RE.sub(" ", text).strip()
 
 
+_NATURAL_NAME_REJECT_TOKENS = BARE_NAME_GATE_REJECT_TOKENS | frozenset(
+    {
+        "a",
+        "about",
+        "afternoon",
+        "already",
+        "an",
+        "around",
+        "as",
+        "asking",
+        "at",
+        "away",
+        "back",
+        "browsing",
+        "busy",
+        "buying",
+        "by",
+        "calling",
+        "checking",
+        "client",
+        "company",
+        "comparing",
+        "considering",
+        "contacting",
+        "curious",
+        "customer",
+        "deciding",
+        "down",
+        "enquiring",
+        "equipping",
+        "evening",
+        "expanding",
+        "fine",
+        "fitting",
+        "for",
+        "free",
+        "from",
+        "furnishing",
+        "glad",
+        "good",
+        "great",
+        "happy",
+        "here",
+        "in",
+        "individual",
+        "inquiring",
+        "interested",
+        "into",
+        "just",
+        "later",
+        "looking",
+        "manager",
+        "messaging",
+        "morning",
+        "moving",
+        "new",
+        "night",
+        "not",
+        "now",
+        "oak",
+        "of",
+        "off",
+        "office",
+        "ok",
+        "okay",
+        "on",
+        "only",
+        "onto",
+        "opening",
+        "ordering",
+        "out",
+        "over",
+        "personal",
+        "planning",
+        "private",
+        "ready",
+        "redesigning",
+        "renovating",
+        "searching",
+        "setting",
+        "soon",
+        "staff",
+        "still",
+        "sure",
+        "team",
+        "that",
+        "the",
+        "there",
+        "these",
+        "thinking",
+        "this",
+        "those",
+        "to",
+        "today",
+        "tomorrow",
+        "tonight",
+        "trying",
+        "undecided",
+        "under",
+        "unsure",
+        "up",
+        "updating",
+        "upgrading",
+        "waiting",
+        "walnut",
+        "well",
+        "with",
+        "without",
+        "working",
+        "writing",
+        "yesterday",
+        "yet",
+        "أبحث",
+        "ابحث",
+        "أحتاج",
+        "احتاج",
+        "أريد",
+        "اريد",
+        "أسأل",
+        "اسأل",
+        "أستفسر",
+        "استفسر",
+        "الآن",
+        "الان",
+        "إلى",
+        "الى",
+        "اليوم",
+        "بحاجة",
+        "بخصوص",
+        "حول",
+        "جاهز",
+        "جاهزة",
+        "جاهزه",
+        "جاهزين",
+        "ذلك",
+        "شركة",
+        "صباحا",
+        "صباحاً",
+        "على",
+        "عميل",
+        "عن",
+        "عند",
+        "غدا",
+        "غداً",
+        "فرد",
+        "في",
+        "لاحقا",
+        "لاحقاً",
+        "لدى",
+        "لطلب",
+        "للطلب",
+        "للمكتب",
+        "مساء",
+        "مستعد",
+        "مستعدة",
+        "مع",
+        "من",
+        "مهتم",
+        "مهتمة",
+        "مهتمه",
+        "مهتمين",
+        "نبحث",
+        "نحتاج",
+        "نريد",
+        "هذا",
+        "هذه",
+        "هنا",
+        "هناك",
+    }
+)
+
+
 def _clean_natural_customer_name(value: str) -> str:
     name = BOT_TEST_MARKER_RE.sub(" ", value)
     name = re.split(r"\s*(?:,\s*)?\band\s+i\b", name, maxsplit=1, flags=re.I)[0]
@@ -5497,12 +5427,21 @@ def _clean_natural_customer_name(value: str) -> str:
         maxsplit=1,
         flags=re.I,
     )[0]
+    name = re.split(r"\s+(?:\bfrom\b|من(?=\s|$))", name, maxsplit=1, flags=re.I)[0]
     name = " ".join(name.strip(" \t\r\n.,;:!?-").split())
     if not name or len(name) > 80:
         return ""
     if len(name.split()) > 6:
         return ""
+    tokens = re.findall(r"[^\W\d_]+", name.casefold(), flags=re.UNICODE)
+    if not tokens:
+        return ""
+    if any(token in _NATURAL_NAME_REJECT_TOKENS for token in tokens):
+        return ""
     return name
+
+
+_clean_name_candidate = _clean_natural_customer_name
 
 
 def _extract_natural_customer_name(text: str) -> str:
@@ -5559,46 +5498,6 @@ def _is_name_gate_customer_detail_remainder(value: str) -> bool:
     if _has_product_or_quote_routing_signal(remainder):
         return False
     return bool(_extract_quote_customer_details(remainder))
-
-
-def _extract_pending_name_gate_reply_name(
-    text: str,
-    details: Mapping[str, str],
-) -> str:
-    existing_name = _string_value(details.get("name"))
-    if existing_name:
-        return existing_name
-
-    stripped = _strip_synthetic_test_marker(text)
-    stripped = " ".join(stripped.strip(" \t\r\n.,;:!?").split())
-    if not stripped:
-        return ""
-
-    split_parts = [
-        part.strip(" \t\r\n.,;:!?-")
-        for part in re.split(r"[,;\n/]+", stripped, maxsplit=1)
-        if part.strip(" \t\r\n.,;:!?-")
-    ]
-    if len(split_parts) == 2:
-        candidate = _extract_bare_name_gate_reply(split_parts[0])
-        if candidate and _is_name_gate_customer_detail_remainder(split_parts[1]):
-            return candidate
-
-    customer_type_suffix = re.search(
-        r"\b(?:individual|personal|private customer|for myself)\s*$",
-        stripped,
-        flags=re.IGNORECASE,
-    )
-    if customer_type_suffix:
-        candidate_text = stripped[: customer_type_suffix.start()]
-        candidate = _extract_bare_name_gate_reply(candidate_text)
-        if candidate:
-            return candidate
-
-    if not _extract_quote_customer_details(stripped):
-        return _extract_bare_name_gate_reply(stripped)
-
-    return ""
 
 
 def _is_name_gate_completion_reply(
@@ -5741,21 +5640,6 @@ async def _store_name_gate_pending_request(
         )
 
 
-def _name_gate_pending_request_from_metadata(
-    conversation: Conversation,
-) -> str | None:
-    metadata = (
-        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
-    )
-    raw = metadata.get(NAME_GATE_PENDING_REQUEST_KEY)
-    if not isinstance(raw, Mapping):
-        return None
-    text = raw.get("text")
-    if not isinstance(text, str) or not text.strip():
-        return None
-    return text.strip()
-
-
 def _classify_name_gate_pending_intent(text: str) -> str:
     normalized = _normalize_text(_normalize_sku_homoglyphs(text))
     if _extract_sales_opportunity_request(text) is not None:
@@ -5777,46 +5661,6 @@ def _classify_name_gate_pending_intent(text: str) -> str:
     if evaluate_verified_answer_policy(text, ()).question_class == "product":
         return "catalog_discovery"
     return "general_request"
-
-
-def _name_gate_pending_intent_from_metadata(
-    conversation: Conversation,
-) -> str | None:
-    metadata = (
-        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
-    )
-    raw = metadata.get(NAME_GATE_PENDING_REQUEST_KEY)
-    if not isinstance(raw, Mapping):
-        return None
-    intent = raw.get("intent")
-    if isinstance(intent, str) and intent.strip():
-        return intent.strip()
-    text = raw.get("text")
-    if isinstance(text, str) and text.strip():
-        return _classify_name_gate_pending_intent(text)
-    return None
-
-
-async def _consume_name_gate_pending_request(
-    db: AsyncSession,
-    conversation: Conversation,
-) -> str | None:
-    pending_text = _name_gate_pending_request_from_metadata(conversation)
-    if pending_text is None:
-        return None
-
-    metadata = dict(conversation.metadata_ or {})
-    metadata.pop(NAME_GATE_PENDING_REQUEST_KEY, None)
-    conversation.metadata_ = metadata
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to flush consumed name-gate pending request for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-    return pending_text
 
 
 def _looks_like_natural_delivery_address(value: str) -> bool:
@@ -5962,13 +5806,6 @@ def _extract_quote_customer_details(text: str) -> dict[str, str]:
     return details
 
 
-def _has_quote_customer_details_beyond_name(details: Mapping[str, str]) -> bool:
-    return any(
-        _string_value(details.get(key))
-        for key in ("company", "customer_type", "email", "phone", "address")
-    )
-
-
 def _is_individual_detail_value(value: str | None) -> bool:
     normalized = _normalize_text(value or "")
     return normalized in {
@@ -6012,35 +5849,6 @@ class _UnlabeledQuoteBrief:
     needs_confirmation: bool
 
 
-def _quote_brief_parts(text: str) -> list[str]:
-    raw = _strip_synthetic_test_marker(text).strip(" \t\r\n.;:!?")
-    if not raw or len(raw) > 260 or "?" in raw:
-        return []
-    if re.search(
-        r"\b(?:full name|name|customer name|company name|company|email|"
-        r"phone|delivery address|address|location)\s*(?::|：|=|\bis\b)",
-        raw,
-        flags=re.IGNORECASE,
-    ):
-        return []
-    if not re.search(r"[\n/;]", raw):
-        comma_parts = [
-            " ".join(part.strip(" \t\r\n,.;:-").split())
-            for part in raw.split(",", 3)
-            if part.strip(" \t\r\n,.;:-")
-        ]
-        if len(comma_parts) == 4 and any(
-            EMAIL_PATTERN.search(part) for part in comma_parts
-        ):
-            return comma_parts
-        return []
-    return [
-        " ".join(part.strip(" \t\r\n,.;:-").split())
-        for part in re.split(r"[\n/;]+", raw)
-        if part.strip(" \t\r\n,.;:-")
-    ]
-
-
 def _unlabeled_company_or_customer_type(value: str) -> dict[str, str]:
     normalized = _normalize_text(_normalize_sku_homoglyphs(value))
     if normalized in BARE_NAME_GATE_REJECT_PHRASES:
@@ -6068,41 +5876,6 @@ def _unlabeled_company_or_customer_type(value: str) -> dict[str, str]:
     return {"company": value}
 
 
-def _extract_ordered_unlabeled_quote_brief(
-    text: str,
-) -> _UnlabeledQuoteBrief | None:
-    parts = _quote_brief_parts(text)
-    if len(parts) < 4:
-        return None
-
-    name = _extract_bare_name_gate_reply(parts[0])
-    company_or_type = _unlabeled_company_or_customer_type(parts[1])
-    email_match = EMAIL_PATTERN.search(parts[2])
-    address_parts = [parts[3].strip(" \t\r\n,.;:-")]
-    for tail_part in parts[4:]:
-        if _has_product_or_quote_routing_signal(tail_part):
-            continue
-        address_parts.append(tail_part.strip(" \t\r\n,.;:-"))
-    address = ", ".join(part for part in address_parts if part)
-    if not name or not company_or_type or not email_match or not address:
-        return None
-    if _has_product_or_quote_routing_signal(address):
-        return None
-
-    details = {
-        "name": name,
-        **company_or_type,
-        "email": email_match.group(0).strip(),
-        "address": address,
-    }
-    complete = (
-        bool(details.get("email"))
-        and bool(details.get("company") or details.get("customer_type"))
-        and _is_specific_delivery_address(details.get("address"))
-    )
-    return _UnlabeledQuoteBrief(details=details, needs_confirmation=not complete)
-
-
 def _quote_brief_confirmation_message(details: Mapping[str, str]) -> str:
     lines = ["Please confirm I understood correctly:"]
     if details.get("name"):
@@ -6117,23 +5890,6 @@ def _quote_brief_confirmation_message(details: Mapping[str, str]) -> str:
         lines.append(f"Address: {details['address']}")
     lines.append("Reply yes to use these details, or send the corrected details.")
     return "\n".join(lines)
-
-
-def _pending_quote_brief_confirmation_from_metadata(
-    conversation: Conversation,
-) -> dict[str, str]:
-    metadata = (
-        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
-    )
-    raw = metadata.get(PENDING_QUOTE_BRIEF_CONFIRMATION_KEY)
-    if not isinstance(raw, Mapping):
-        return {}
-    details: dict[str, str] = {}
-    for key in ("name", "company", "customer_type", "email", "phone", "address"):
-        value = raw.get(key)
-        if isinstance(value, str) and value.strip():
-            details[key] = value.strip()
-    return details
 
 
 async def _store_pending_quote_brief_confirmation(
@@ -6158,56 +5914,6 @@ async def _store_pending_quote_brief_confirmation(
             conversation.id,
             exc_info=True,
         )
-
-
-async def _clear_pending_quote_brief_confirmation(
-    db: AsyncSession,
-    conversation: Conversation,
-) -> None:
-    metadata = dict(conversation.metadata_ or {})
-    if PENDING_QUOTE_BRIEF_CONFIRMATION_KEY not in metadata:
-        return
-    metadata.pop(PENDING_QUOTE_BRIEF_CONFIRMATION_KEY, None)
-    conversation.metadata_ = metadata
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to clear quote brief confirmation for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-
-
-async def _store_confirmed_quote_brief_address(
-    db: AsyncSession,
-    conversation: Conversation,
-    address: str,
-) -> None:
-    metadata = dict(conversation.metadata_ or {})
-    clean_address = _string_value(address)
-    if not clean_address:
-        metadata.pop(QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY, None)
-    else:
-        metadata[QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY] = clean_address
-    conversation.metadata_ = metadata
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to flush confirmed quote brief address for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-
-
-def _last_assistant_asked_quote_brief_confirmation(
-    recent_history: list[str] | None,
-) -> bool:
-    last_assistant = _normalize_text(_last_assistant_message(recent_history))
-    return "please confirm i understood correctly" in last_assistant and all(
-        term in last_assistant for term in ("name:", "email:", "address:")
-    )
 
 
 def _looks_like_terse_delivery_address(value: str) -> bool:
@@ -6487,13 +6193,6 @@ def _decision_horizon_hours(text: str) -> int | None:
     return count * multiplier
 
 
-def _decision_horizon_days(text: str) -> int | None:
-    hours = _decision_horizon_hours(text)
-    if hours is None:
-        return None
-    return hours // 24
-
-
 def _extract_sales_opportunity_request(
     text: str,
 ) -> SalesOpportunityRequest | None:
@@ -6532,30 +6231,6 @@ def _extract_sales_opportunity_request(
         ),
         decision_horizon_hours=decision_horizon_hours,
     )
-
-
-async def _store_sales_memory_updates(
-    db: AsyncSession,
-    conversation: Conversation,
-    updates: Mapping[str, str],
-) -> dict[str, str]:
-    if not updates:
-        return _sales_memory_from_metadata(conversation)
-
-    metadata = dict(conversation.metadata_ or {})
-    existing = _sales_memory_from_metadata(conversation)
-    memory = {**existing, **updates}
-    metadata[SALES_MEMORY_KEY] = memory
-    conversation.metadata_ = metadata
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to flush sales memory for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-    return memory
 
 
 async def _quote_offer_allowed_for_turn(
@@ -7175,51 +6850,6 @@ def _is_neutral_detail_capture_update(
     return not _has_product_or_quote_routing_signal(text)
 
 
-def _has_active_sales_detail_capture_context(
-    conversation: Conversation,
-    recent_history: list[str] | None,
-) -> bool:
-    if _active_pending_quote_selection_from_conversation(conversation) is not None:
-        return True
-    if _sales_memory_from_metadata(conversation):
-        return True
-
-    stage = _normalize_text(str(getattr(conversation, "sales_stage", "") or ""))
-    if stage in {
-        SalesStage.SOLUTION.value,
-        SalesStage.COMPANY_DETAILS.value,
-        SalesStage.QUOTING.value,
-        SalesStage.CLOSING.value,
-    }:
-        return True
-
-    quote_details = _quote_customer_details_from_metadata(conversation)
-    if any(key in quote_details for key in ("company", "address", "email", "phone")):
-        return True
-
-    history_text = _normalize_text(
-        _normalize_sku_homoglyphs(" ".join(recent_history or []))
-    )
-    if not history_text:
-        return False
-
-    context_terms = (
-        *_MIXED_PRODUCT_TERMS,
-        *_QUOTE_REQUEST_TERMS,
-        "skyland",
-        "novo",
-        "xten",
-        "trend",
-        "mobile drawer",
-        "mobile drawers",
-        "delivery",
-        "deliver",
-        "assembly",
-        "installation",
-    )
-    return any(term in history_text for term in context_terms)
-
-
 def _guard_premature_quote_detail_collection(
     text: str,
     *,
@@ -7235,35 +6865,6 @@ def _guard_premature_quote_detail_collection(
         language=str(conversation.language),
         quote_consent_granted=workflow.consent is QuoteConsent.GRANTED,
     )
-
-
-def _detail_capture_acknowledgement(
-    customer_details: Mapping[str, str],
-    sales_memory_updates: Mapping[str, str],
-) -> str:
-    noted: list[str] = []
-    if customer_details.get("name"):
-        noted.append(f"name: {customer_details['name']}")
-    if customer_details.get("company"):
-        noted.append(f"company: {customer_details['company']}")
-    if customer_details.get("address"):
-        noted.append(f"delivery address: {customer_details['address']}")
-    if customer_details.get("email"):
-        noted.append(f"email: {customer_details['email']}")
-    if customer_details.get("phone"):
-        noted.append(f"phone: {customer_details['phone']}")
-    if customer_details.get("customer_type"):
-        noted.append(f"customer type: {customer_details['customer_type']}")
-    if sales_memory_updates.get("assembly_required"):
-        noted.append("assembly is required")
-    if sales_memory_updates.get("delivery_timing"):
-        noted.append(f"delivery timing: {sales_memory_updates['delivery_timing']}")
-    if sales_memory_updates.get("quotation_hold"):
-        noted.append("do not create a quotation yet")
-
-    if not noted:
-        return "Thanks, I've noted that."
-    return f"Thanks, I've noted {', '.join(noted)}."
 
 
 def _is_explicit_individual_customer(details: Mapping[str, str]) -> bool:
@@ -7387,15 +6988,6 @@ def _quote_missing_required_details_message(
     )
 
 
-async def _store_quote_customer_details(
-    db: AsyncSession,
-    conversation: Conversation,
-    text: str,
-) -> dict[str, str]:
-    extracted = _extract_quote_customer_details(text)
-    return await _store_extracted_quote_customer_details(db, conversation, extracted)
-
-
 async def _store_extracted_quote_customer_details(
     db: AsyncSession,
     conversation: Conversation,
@@ -7466,34 +7058,6 @@ def _looks_like_budget_address_artifact(value: str) -> bool:
     return normalized.strip(" ,.").isdigit()
 
 
-def _quote_intent_frame_from_text(text: str) -> dict[str, Any] | None:
-    candidate = extract_exact_quote_candidate(text)
-    if candidate is None:
-        return None
-    details = _extract_quote_customer_details(text)
-    return {
-        "source": "exact_quote",
-        "items": [
-            {
-                "sku": candidate.sku,
-                "quantity": candidate.quantity,
-                "item_candidate": candidate.item_candidate,
-            }
-        ],
-        "customer_details": details,
-    }
-
-
-def _quote_intent_frame_from_metadata(
-    conversation: Conversation,
-) -> Mapping[str, Any] | None:
-    metadata = (
-        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
-    )
-    frame = metadata.get(QUOTE_INTENT_FRAME_KEY)
-    return frame if isinstance(frame, Mapping) else None
-
-
 def _exact_quote_candidate_from_frame(
     frame: Mapping[str, Any] | None,
 ) -> ExactQuoteCandidate | None:
@@ -7523,37 +7087,6 @@ def _exact_quote_candidate_from_frame(
     )
 
 
-async def _store_quote_intent_frame(
-    db: AsyncSession,
-    conversation: Conversation,
-    text: str,
-) -> Mapping[str, Any] | None:
-    frame = _quote_intent_frame_from_text(text)
-    if frame is None:
-        return None
-
-    metadata = dict(conversation.metadata_ or {})
-    metadata[QUOTE_INTENT_FRAME_KEY] = frame
-    conversation.metadata_ = metadata
-
-    details = frame.get("customer_details")
-    if isinstance(details, Mapping):
-        await _store_extracted_quote_customer_details(db, conversation, details)
-        metadata = dict(conversation.metadata_ or {})
-        metadata[QUOTE_INTENT_FRAME_KEY] = frame
-        conversation.metadata_ = metadata
-
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to flush quote intent frame for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-    return frame
-
-
 async def _clear_quote_intent_frame(
     db: AsyncSession,
     conversation: Conversation,
@@ -7571,75 +7104,6 @@ async def _clear_quote_intent_frame(
             conversation.id,
             exc_info=True,
         )
-
-
-async def _store_name_gate_quote_context(
-    db: AsyncSession,
-    conversation: Conversation,
-    *,
-    combined_text: str,
-    masked_text: str,
-) -> bool:
-    """Persist quote/order intent before first-turn name-gate returns."""
-    try:
-        sales_order_items = _extract_sales_order_quote_items(masked_text)
-        if sales_order_items is None and masked_text != combined_text:
-            sales_order_items = _extract_sales_order_quote_items(combined_text)
-        if sales_order_items is not None:
-            resolved_quote_items: list[QuotationItem] = []
-            unresolved_items: list[ExactQuoteCandidate] = []
-            for item in sales_order_items:
-                resolved_sku = await _resolve_exact_quote_candidate_sku(db, item)
-                if resolved_sku:
-                    resolved_quote_items.append(
-                        QuotationItem(sku=resolved_sku, quantity=item.quantity)
-                    )
-                else:
-                    unresolved_items.append(item)
-            await _store_pending_sales_order_quote(
-                db,
-                conversation,
-                resolved_items=resolved_quote_items,
-                unresolved_items=tuple(unresolved_items),
-            )
-            return True
-
-        exact_quote_candidate = extract_exact_quote_candidate(masked_text)
-        if exact_quote_candidate is None and masked_text != combined_text:
-            exact_quote_candidate = extract_exact_quote_candidate(combined_text)
-        if exact_quote_candidate is None:
-            return False
-
-        resolved_exact_sku = await _resolve_exact_quote_candidate_sku(
-            db,
-            exact_quote_candidate,
-        )
-        if resolved_exact_sku:
-            await _store_pending_exact_quote(
-                db,
-                conversation,
-                [
-                    QuotationItem(
-                        sku=resolved_exact_sku,
-                        quantity=exact_quote_candidate.quantity,
-                    )
-                ],
-            )
-        else:
-            await _store_pending_exact_quote(
-                db,
-                conversation,
-                [],
-                unresolved_items=(exact_quote_candidate,),
-            )
-        return True
-    except Exception:
-        logger.warning(
-            "Failed to persist quote context before name gate for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-        return False
 
 
 async def _store_applied_bot_rules(
@@ -8214,10 +7678,6 @@ def _pending_quote_unresolved_items_from_metadata(
 
 def _is_pending_sales_order_quote(selection: Mapping[str, Any]) -> bool:
     return selection.get("source") == "sales_order_quote"
-
-
-def _is_pending_exact_quote(selection: Mapping[str, Any]) -> bool:
-    return selection.get("source") == "exact_quote"
 
 
 def _accepts_exact_item_quote_followup(selection: Mapping[str, Any]) -> bool:
@@ -8847,107 +8307,9 @@ def _metadata_quotation_number(metadata: Mapping[str, Any]) -> str:
     )
 
 
-def _has_pending_proposal_decision(conversation: Conversation) -> bool:
-    metadata = (
-        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
-    )
-    proposal_state = metadata.get("proposal_followup")
-    if not isinstance(proposal_state, Mapping):
-        return False
-    status = _metadata_quotation_decision_status(metadata)
-    return status not in {"approved", "accepted", "rejected", "cancelled", "canceled"}
-
-
-def _last_assistant_asked_post_quotation_approval(
-    recent_history: list[str] | None,
-) -> bool:
-    last_assistant = _normalize_text(_last_assistant_message(recent_history))
-    if not last_assistant:
-        return False
-    return any(cue in last_assistant for cue in _POST_QUOTATION_APPROVAL_PROMPT_CUES)
-
-
-def _is_post_quotation_acceptance(
-    text: str,
-    recent_history: list[str] | None = None,
-) -> bool:
-    normalized = _normalize_text(text)
-    if not normalized:
-        return False
-    if normalized in _POST_QUOTATION_GENERIC_ACCEPTANCE_EXACT:
-        return _last_assistant_asked_post_quotation_approval(recent_history)
-    if normalized in _POST_QUOTATION_ACCEPTANCE_EXACT:
-        return True
-    return len(normalized.split()) <= 8 and any(
-        phrase in normalized for phrase in _POST_QUOTATION_ACCEPTANCE_PHRASES
-    )
-
-
-def _post_quotation_accepted_response(language: str) -> str:
-    if is_arabic_customer_language(language):
-        return "شكراً لك. سأحوّل الموافقة إلى المدير لمتابعة الخطوات التالية."
-    return "Thank you. I’ve passed your approval to our manager to proceed with the next steps."
-
-
-def _post_quotation_acknowledgement_response(language: str) -> str:
-    if is_arabic_customer_language(language):
-        return "تم، شكراً لك."
-    return "Noted."
-
-
-def _post_quotation_context_acknowledgement_response(language: str) -> str:
-    if is_arabic_customer_language(language):
-        return "تم. سأُبقي بيانات العميل والمنتجات المذكورة في عرض السعر كما هي."
-    return (
-        "Noted. I’ll keep the same company, delivery address, and quoted items. "
-        "The existing quotation remains unchanged."
-    )
-
-
 def _has_quoted_quote_frame(conversation: Conversation) -> bool:
     frame = _quote_frame_from_conversation(conversation)
     return frame is not None and frame.has_valid_lines and frame.status == "quoted"
-
-
-def _is_post_quotation_context_preserving_reply(text: str) -> bool:
-    stripped = _strip_synthetic_test_marker(text)
-    normalized = _normalize_text(stripped)
-    if not normalized:
-        return False
-    if (
-        _extract_purchase_selection(stripped) is not None
-        or _extract_sales_order_quote_items(stripped) is not None
-        or extract_exact_quote_candidate(stripped) is not None
-    ):
-        return False
-
-    same_context = bool(re.search(r"\b(?:use|keep)\s+(?:the\s+)?same\b", normalized))
-    same_detail = any(
-        term in normalized
-        for term in (
-            "same company",
-            "same address",
-            "same delivery address",
-            "same details",
-            "same information",
-            "same customer",
-        )
-    )
-    no_item_change = bool(
-        re.search(
-            r"\b(?:don'?t|do\s+not|dont|not)\s+"
-            r"(?:change|modify|update|replace)\s+(?:the\s+)?"
-            r"(?:items?|products?|order|quotation|quote)\b",
-            normalized,
-        )
-    )
-    no_changes = bool(
-        re.search(
-            r"\b(?:no|without)\s+(?:changes?|modifications?|updates?)\b",
-            normalized,
-        )
-    )
-    return no_item_change or no_changes or (same_context and same_detail)
 
 
 def _mark_quotation_accepted(
@@ -9001,12 +8363,6 @@ def _format_rejected_quotation_status(
     if quote_number:
         return f"Quotation {quote_number} was rejected. There is no active order linked to this conversation right now."
     return "The quotation was rejected. There is no active order linked to this conversation right now."
-
-
-def _extract_crm_company(value: Any) -> str:
-    if isinstance(value, Mapping):
-        return _string_value(value.get("name"))
-    return _string_value(value)
 
 
 def _is_repeated_outbound_message_error(exc: Exception) -> bool:
@@ -11525,25 +10881,6 @@ async def _create_quotation(
             ),
         )
     return _quotation_prepared_message(ctx.deps.conversation, quote_number)
-
-
-def _cross_sell_catalog_fallback_query(
-    *,
-    category: str,
-    customer_text: str,
-) -> str:
-    normalized = _normalize_text(f"{category} {customer_text}")
-    has_chair = "chair" in normalized
-    has_desk = any(
-        term in normalized for term in ("desk", "workstation", "table", "bench")
-    )
-    if has_chair and has_desk:
-        return "mobile pedestal office storage"
-    if has_chair:
-        return "compact office desk"
-    if has_desk:
-        return "ergonomic office chair"
-    return "office storage accessory"
 
 
 def _no_verified_cross_sell_disclosure(

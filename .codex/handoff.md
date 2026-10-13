@@ -23,12 +23,14 @@
   Local acceptance:1271 tests, Ruff/format and Mypy194files passed. Final
   same-model replay passes with qty3/budget6000/consentdeclined, no real sends.
   Total smoke costUSD0.02932057; no product-fix deployment yet.
-- Local implementation closed; continue the same epic using
-  `docs/prompts/2026-10-13-tester-feedback-epic.md`. Cleanup/ownership receipt:
-  `docs/reports/2026-10-13-tester-feedback-closeout.md`. Task checkout retained;
-  clean equivalent capacity/guard worktrees and local branches removed.
-- Preserve dirty primary checkout and other owners' work. Existing Wazzup guard,
-  test0665 sender/allowlist, restore mode and customer/held queues are unchanged.
+- Stacked release candidate `codex/project-consistency-20261013` (worktree
+  `/home/me/code/treejar/.worktrees/project-consistency-20261013` on `e7074ca8`)
+  adds DB tz/index/client fixes (`tj-535g`), LLM/name/quantity consistency,
+  repo/Docker/CI hygiene, `tj-bgwu`, and trims `engine.py` to 11353 lines;
+  full suite 4555 passed/20 skipped, Ruff/format/Mypy 194 files passed.
+- Cleanup/ownership receipt: `docs/reports/2026-10-13-tester-feedback-closeout.md`.
+  Preserve dirty primary checkout and other owners' work; Wazzup guard, test0665
+  sender/allowlist, restore mode and customer/held queues remain unchanged.
 - docs-reviewed: updated - source feedback, replay inputs and correction report.
   graph-reviewed: no-change-needed - no enabled task-owned graph; existing paths.
 
@@ -167,10 +169,10 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
   still pending; code delivered, no claim of optimized production savings yet.
 - tj-4kot: outside account consumer (~50requests/min) incident remains open;
   cooldown fix delivered in25a8c08; external load resolution remains unproved.
-- tj-535g: monitoring fixa4cc1a7 remains separate and undeployed; monitoring
-  activation was not changed. Primary handoff retains its independent truth.
+- tj-535g: monitoring fix a4cc1a7 included in `codex/project-consistency-20261013`;
+  remains undeployed until merge/deploy authority is granted.
 - Zoho quotation live E2E remains unverified; no real messages were sent here.
-- tj-1baw latency and tj-bgwu linked-worktree corpus assumptions remain separate.
+- tj-1baw latency remains separate; tj-bgwu fixed in `codex/project-consistency-20261013`.
 - Paid second reader stays off; reader-gap drift tracked in tj-4q79.
 
 ## Next recommended

@@ -556,3 +556,52 @@ async def test_quotation_is_deferred_when_the_customer_names_it() -> None:
     )
 
     assert result.startswith("Customer intent recorded")
+
+
+@pytest.mark.asyncio
+async def test_record_customer_intent_syncs_dialogue_kernel_slots_for_same_turn_readers() -> (
+    None
+):
+    from src.dialogue.state import DialogueState
+
+    customer_text = (
+        "Actually I'm Omar from Al Noor Trading, deliver to Business Bay Tower 2."
+    )
+    ctx = context(
+        customer_text,
+        metadata={
+            "dialogue_kernel": {
+                "state": {
+                    "slots": {
+                        "customer_name": "Old Name",
+                        "company": "Old Co",
+                        "delivery_address": "Old Address",
+                    }
+                }
+            }
+        },
+    )
+
+    result = await engine.record_customer_intent(
+        ctx,
+        evidence=customer_text,
+        details=[
+            engine.CustomerDetailEvidence(field="name", value="Omar", evidence="Omar"),
+            engine.CustomerDetailEvidence(
+                field="company",
+                value="Al Noor Trading",
+                evidence="Al Noor Trading",
+            ),
+            engine.CustomerDetailEvidence(
+                field="address",
+                value="Business Bay Tower 2",
+                evidence="Business Bay Tower 2",
+            ),
+        ],
+    )
+
+    assert result.startswith("Customer intent recorded")
+    state = DialogueState.from_conversation(ctx.deps.conversation)
+    assert state.slots.customer_name == "Omar"
+    assert state.slots.company == "Al Noor Trading"
+    assert state.slots.delivery_address == "Business Bay Tower 2"
