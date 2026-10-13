@@ -1,23 +1,26 @@
 # Orchestrator Handoff
 
-## WhatsApp ingress incident 2026-10-12
+## WhatsApp ingress restored; repeated configuration changes 2026-10-13
 
 - `tj-spg1`: owner reports missing WhatsApp replies and requests immediate fix.
   Fresh live release is `25a8c080`; app/worker/dependencies healthy; bot enabled;
   sender/allowlist match active test channel `0665`; ARQ queue empty.
 - Owner decided audit capture is unnecessary and explicitly requested direct
-  routing. Wazzup callback restored at 14:56 Moscow to
+  routing. After another exact reversion to the audit receiver, Wazzup callback
+  restored again on October 13 at 17:05 Moscow to
   `https://noor.starec.ai/api/v1/webhook/wazzup`; PATCH and readback HTTP 200.
-- Subscriptions preserved. Wazzup's own registration ping reached Noor at
-  `2026-10-12T11:56:26.123Z` and received HTTP 200. Stable later readback;
-  channel active, restore mode intact, app/worker zero restarts, health healthy.
-- Callback backup: `/opt/noor/.hotfix-backups/whatsapp-ingress-20261012/webhooks-before.json`
+- Subscriptions preserved. Provider test and seven readbacks over three minutes
+  passed. Natural owner message from suffix `0921` arrived at 17:06:32 Moscow;
+  text and three images sent by 17:07:20. Owner confirms both received.
+  `tj-spg1` closed on actual round-trip evidence.
+- Callback backup: `/opt/noor/.hotfix-backups/whatsapp-ingress-20261013T140515Z/webhooks-before.json`
   (private `0600`, contains callback query secret; never commit its contents).
 - No deployment, replay, reset, paid completion or synthetic outbound message.
-- Explicit defer `tj-spg1`: keep open for a fresh tester inbound/reply and
-  provider delivery status or tester confirmation. Callback transport is proved;
-  the original WhatsApp round trip remains unverified until a new tester turn.
-- Incident report: `docs/reports/2026-10-12-whatsapp-ingress.md`.
+- Explicit defer `tj-vqcc`: competing callback writer and its automatic/manual
+  mechanism unknown; sustained configuration ownership remains unresolved.
+  Owner asks for protection; local guard preparation is a separate delivery.
+- Incident reports: `docs/reports/2026-10-12-whatsapp-ingress.md` and
+  `docs/reports/2026-10-13-whatsapp-ingress.md`.
 
 Updated: 2026-10-03
 Current branch: codex/tj-uvld-stock-sync
