@@ -16,6 +16,7 @@ from src.integrations.inventory.sync import (
     sync_products_from_treejar_catalog,
     sync_products_from_zoho,
 )
+from src.integrations.messaging.wazzup_webhook import reconcile_wazzup_webhook
 from src.integrations.notifications.telegram_webhook import reconcile_telegram_webhook
 from src.llm.conversation_summary import refresh_conversation_summary
 from src.quality.job import (
@@ -123,6 +124,11 @@ def build_worker_functions() -> list[Any]:
     # Keeps the admin /reset path reachable when an outside token holder moves
     # the webhook; restore mode depends on that path, so it runs there too.
     webhook_reconcile = func(reconcile_telegram_webhook, max_tries=1)
+    wazzup_guard = (
+        [func(reconcile_wazzup_webhook, max_tries=1)]
+        if settings.wazzup_webhook_guard_enabled
+        else []
+    )
     if settings.test_channel_restore_mode:
         return [
             inbound,
@@ -131,11 +137,13 @@ def build_worker_functions() -> list[Any]:
             stock_snapshot,
             stock_delta,
             webhook_reconcile,
+            *wazzup_guard,
         ]
     return [
         stock_snapshot,
         stock_delta,
         webhook_reconcile,
+        *wazzup_guard,
         sync_products_from_treejar_catalog,
         sync_products_from_zoho,
         inbound,
@@ -182,11 +190,17 @@ def build_worker_cron_jobs() -> list[Any]:
         run_at_startup=True,
         unique=True,
     )
+    wazzup_guard = (
+        [cron(reconcile_wazzup_webhook, run_at_startup=True, unique=True)]
+        if settings.wazzup_webhook_guard_enabled
+        else []
+    )
     if settings.test_channel_restore_mode:
-        return [*stock_crons, webhook_reconcile]
+        return [*stock_crons, webhook_reconcile, *wazzup_guard]
     return [
         *stock_crons,
         webhook_reconcile,
+        *wazzup_guard,
         cron(
             sync_products_from_treejar_catalog,
             hour={0, 6, 12, 18},

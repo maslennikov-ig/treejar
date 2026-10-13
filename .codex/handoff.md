@@ -1,5 +1,35 @@
 # Orchestrator Handoff
 
+## Wazzup webhook protection — local candidate 2026-10-13
+
+- `tj-vqcc`, branch `codex/wazzup-webhook-guard`, isolated worktree
+  `/home/me/code/treejar/.worktrees/wazzup-webhook-guard`.
+  Base refreshed to remote `92111c5`; its five intervening commits are docs and
+  retained stock evidence. Primary dirty work and other worktrees preserved.
+- Owner requested protection after the October 12 direct callback reverted to
+  the exact audit receiver again. Manual restoration on October 13 plus the
+  owner's fresh `...0921` message proved text and three photos actually received;
+  `tj-spg1` is closed. Incident receipts are on `codex/whatsapp-ingress-20261012`.
+- Implemented opt-in `WAZZUP_WEBHOOK_GUARD_ENABLED` (default `false`): startup
+  and minute worker check, Redis-owned lease, two validated reads, preserved
+  subscriptions, verified PATCH result, bounded administrator notification.
+  Callback query secrets and provider error bodies are excluded from logs.
+- Local acceptance: 89 tests passed (guard, worker, deployment helper and
+  outbound safety); affected-file Ruff/format, Mypy on three source files,
+  shell syntax and diff checks passed. No guard deployment or activation yet.
+- Live provider probe rejected callback-only PATCH with HTTP 400; guard uses
+  the documented subscription-bearing request already verified by manual repairs.
+- Runbook and premortem: `docs/ops/wazzup-webhook-guard.md`.
+- Delivery requires explicit approval to merge/deploy this branch and enable
+  the flag on `/opt/noor`, retaining test0665 sender/allowlist and held queues.
+- Explicit defer `tj-vqcc`: exact competing writer and permanent account
+  ownership remain unknown. This guard recovers changes; another integration
+  can still change the account. Provider has no conditional-write guarantee;
+  a race after the final read remains possible and is checked on readback.
+- docs-reviewed: updated - README, env flag, runbook and current candidate.
+  graph-reviewed: no-change-needed - no enabled task-owned graph; new job uses
+  the existing worker/provider boundaries and source integration is pending.
+
 Updated: 2026-10-04
 Current branch: codex/tj-uvld-stock-sync
 Current stage id: tj-uvld-stock-sync

@@ -56,6 +56,15 @@ containers and a fresh message to the approved channel. For the current test-onl
 incident, follow the hold and recovery conditions in
 [the handoff](.codex/handoff.md) before starting services.
 
+### Wazzup callback recovery
+
+With explicit account-owner approval, `WAZZUP_WEBHOOK_GUARD_ENABLED=true`
+registers a startup and once-per-minute worker check of the shared Wazzup
+callback. It restores `https://noor.starec.ai/api/v1/webhook/wazzup` on drift,
+preserving current subscription values and the WhatsApp sender allowlist.
+The setting defaults to `false`. See the [guard runbook](docs/ops/wazzup-webhook-guard.md)
+for activation, verification, limitations and rollback.
+
 ## Customer intent and tools
 
 The main sales model reads the customer message and history and chooses the

@@ -45,6 +45,7 @@ def test_restore_mode_registers_conversation_jobs_and_only_safe_crons() -> None:
 
     restore_settings = SimpleNamespace(
         test_channel_restore_mode=True,
+        wazzup_webhook_guard_enabled=False,
         zoho_stock_incremental_enabled=False,
         zoho_stock_coverage_evidence="",
         zoho_stock_daily_hour_utc=3,
@@ -66,6 +67,22 @@ def test_restore_mode_registers_conversation_jobs_and_only_safe_crons() -> None:
         "refresh_zoho_stock_snapshot",
         "reconcile_telegram_webhook",
     ]
+
+
+def test_normal_mode_guard_is_opt_in_and_runs_at_startup(monkeypatch) -> None:
+    from src.core.config import settings
+
+    monkeypatch.setattr(settings, "test_channel_restore_mode", False)
+    monkeypatch.setattr(settings, "wazzup_webhook_guard_enabled", True)
+    names = {_function_name(function) for function in build_worker_functions()}
+    assert "reconcile_wazzup_webhook" in names
+    scheduled = next(
+        job
+        for job in build_worker_cron_jobs()
+        if job.coroutine.__qualname__ == "reconcile_wazzup_webhook"
+    )
+    assert scheduled.run_at_startup is True
+    assert scheduled.unique is True
 
 
 def test_inbound_batch_job_has_bounded_retries() -> None:
@@ -149,7 +166,10 @@ async def test_worker_shutdown_runs() -> None:
     await WorkerSettings.on_shutdown(ctx)
 
 
-def test_deploy_gate_allowlist_covers_restore_mode_functions() -> None:
+@pytest.mark.parametrize("guard_enabled", [False, True])
+def test_deploy_gate_allowlist_covers_restore_mode_functions(
+    guard_enabled: bool,
+) -> None:
     """scripts/vps-deploy.sh refuses a test worker with a job outside its allowlist."""
     import ast
     import re
@@ -165,6 +185,7 @@ def test_deploy_gate_allowlist_covers_restore_mode_functions() -> None:
         "src.worker.settings",
         SimpleNamespace(
             test_channel_restore_mode=True,
+            wazzup_webhook_guard_enabled=guard_enabled,
             zoho_stock_incremental_enabled=False,
             zoho_stock_coverage_evidence="",
             zoho_stock_daily_hour_utc=3,
@@ -174,10 +195,14 @@ def test_deploy_gate_allowlist_covers_restore_mode_functions() -> None:
         names = [_function_name(function) for function in build_worker_functions()]
 
     assert "process_incoming_batch" in names
-    assert set(names) == allowlist
+    assert set(names) <= allowlist
+    assert ("reconcile_wazzup_webhook" in names) is guard_enabled
 
 
-def test_deploy_gate_cron_allowlist_covers_restore_mode_crons() -> None:
+@pytest.mark.parametrize("guard_enabled", [False, True])
+def test_deploy_gate_cron_allowlist_covers_restore_mode_crons(
+    guard_enabled: bool,
+) -> None:
     import re
     from pathlib import Path
     from types import SimpleNamespace
@@ -190,6 +215,7 @@ def test_deploy_gate_cron_allowlist_covers_restore_mode_crons() -> None:
         "src.worker.settings",
         SimpleNamespace(
             test_channel_restore_mode=True,
+            wazzup_webhook_guard_enabled=guard_enabled,
             zoho_stock_incremental_enabled=False,
             zoho_stock_coverage_evidence="",
             zoho_stock_daily_hour_utc=3,
@@ -199,6 +225,7 @@ def test_deploy_gate_cron_allowlist_covers_restore_mode_crons() -> None:
         names = {c.coroutine.__qualname__ for c in build_worker_cron_jobs()}
 
     assert names <= {name.strip().strip('"') for name in match.group(1).split(",")}
+    assert ("reconcile_wazzup_webhook" in names) is guard_enabled
 
 
 def test_worker_lets_a_running_turn_finish_before_deploy_stops_it() -> None:

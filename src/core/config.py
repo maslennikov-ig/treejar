@@ -89,6 +89,8 @@ class Settings(BaseSettings):
     )
     wazzup_webhook_auth_mode: Literal["disabled", "observe", "enforce"] = "disabled"
     wazzup_webhook_secret: SecretStr = SecretStr("")
+    # Shared-account callback ownership requires explicit operator activation.
+    wazzup_webhook_guard_enabled: bool = False
 
     # Zoho CRM
     zoho_crm_client_id: str = ""
