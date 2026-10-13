@@ -29,6 +29,7 @@ from src.dialogue.claim_contract import (
     signals_a_project,
 )
 from src.dialogue.count_words import COUNT_PATTERN, count_value, head_count
+from src.dialogue.decision_state import REQUIREMENTS_SUMMARY_DIRECTIVE
 from src.dialogue.state import DialogueState
 from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
@@ -2068,15 +2069,33 @@ def _product_search_response_contract(
     target_coverage_complete: bool | None = None,
     lower_verified_family_total: tuple[CatalogFamily, float, float] | None = None,
     closed_selection_skus: tuple[str, ...] = (),
+    specific_item_requested: bool = True,
 ) -> str:
     if closed_selection_skus and match_kind in {"exact", "generic", "nearby"}:
         return " ".join(_closed_selection_contract_parts(closed_selection_skus))
     if match_kind == "nearby":
         contract_parts = [
-            "Catalog results were found, but they are the closest alternatives rather than a confirmed exact match.",
-            "Lead with up to 3 closest alternatives from these results before any generic qualifying questions, but respect an explicit smaller maximum in the customer's request.",
-            "Say honestly that the exact requested item is not confirmed from the catalog results.",
-            "Do not claim that these are the exact item requested.",
+            "Catalog results were found, but they are the closest alternatives rather than a confirmed exact match."
+            if specific_item_requested
+            else "Relevant catalog options were found, but the search does not "
+            "establish every requested detail.",
+            "Lead with up to 3 closest alternatives from these results before any generic qualifying questions, but respect an explicit smaller maximum in the customer's request."
+            if specific_item_requested
+            else "Lead with up to 3 concrete options relevant to the customer's "
+            "actual need before qualifying questions; respect a smaller "
+            "maximum the customer requested.",
+            "Say honestly that the exact requested item is not confirmed from the catalog results."
+            if specific_item_requested
+            else "A broad furnishing need names no exact item to confirm: do not "
+            "say the requested furniture set or exact item is missing or "
+            "unconfirmed. Search-query expansions do not add requirements "
+            "to the customer's actual request.",
+            "Do not claim that these are the exact item requested."
+            if specific_item_requested
+            else "Describe only specific material gaps in what the customer "
+            "actually requested (such as an unsupported property or an "
+            "uncovered product family). Do not claim full requirement "
+            "coverage or invent properties of these options.",
             "Use only facts already present in tool results; do not invent specs or allocate more units than returned catalog stock.",
             "Treejar Catalog price is the customer-facing commercial truth by default.",
             "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
@@ -2391,7 +2410,7 @@ def _claim_contract_directive(
     # reply is held to the same bar as an unrepaired one.
     directive += (
         " Keep the arithmetic visible where the answer rests on it, and close "
-        "with one concrete next step."
+        f"with one concrete next step. {REQUIREMENTS_SUMMARY_DIRECTIVE}"
     )
     return directive
 

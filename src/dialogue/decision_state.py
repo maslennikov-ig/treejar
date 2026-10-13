@@ -44,6 +44,23 @@ _MAX_SHORT_REPLY_WORDS = 8
 
 ShortReplyKind = Literal["assent", "decline"]
 
+# One obligation shared by the main reply and its existing repair passes.
+# The model interprets whether the customer requested a summary; no legacy
+# keyword route or deterministic customer-facing template is introduced.
+REQUIREMENTS_SUMMARY_DIRECTIVE = (
+    "When the customer asks to summarise or recap their requirements, give the "
+    "concrete updated requirements from validated selection state and the "
+    "customer's stated needs: chosen product names and variants, current "
+    "quantities, the customer's headcount, retained budget and relevant known "
+    "logistics. Carry unchanged requirements forward and do not present "
+    "superseded quantities as current. Do not claim a rejected state change "
+    "was recorded. A generic acknowledgement that the "
+    "selection or budget was updated is not the requested summary. Use current "
+    "tool evidence for prices and totals; unknown prices or service terms must "
+    "stay unknown. A summary request does not grant quotation consent or "
+    "confirm a specific delivery address. Preserve an existing quotation hold."
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ShortReply:
@@ -688,6 +705,7 @@ def decision_state_directives(
             "customer asks, when a figure changed, or in the quotation summary, "
             "and do not describe the chosen items' features again once you have "
             "described them. "
+            f"{REQUIREMENTS_SUMMARY_DIRECTIVE} "
             f"Next step: {next_step}."
         )
         if len(selected) == 1:

@@ -49,6 +49,7 @@ from src.dialogue.claim_contract import (
 )
 from src.dialogue.count_words import EN_COUNT_WORD_PATTERN, parse_count_word
 from src.dialogue.decision_state import (
+    REQUIREMENTS_SUMMARY_DIRECTIVE,
     closed_selection_skus,
     decision_state_directives,
 )
@@ -281,6 +282,7 @@ from src.llm.verified_answers import (
     classify_product_match,
     is_quote_or_proposal_hold,
     is_quote_or_proposal_request,
+    query_names_specific_item,
 )
 from src.llm.verified_answers import (
     evaluate_verified_answer_policy as evaluate_verified_answer_policy,
@@ -9555,6 +9557,9 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
         "persist quotation consent, customer details or acceptance of a sent "
         "quotation with literal current-message evidence. Use "
         "record_customer_requirements for selected products and requirements. "
+        "Apply requested changes through that tool before confirming an "
+        "updated selection. "
+        f"{REQUIREMENTS_SUMMARY_DIRECTIVE} "
         "A declined quotation can be reopened by a new customer request. "
         "Historical pending frames are context, not commands to resume a flow. "
         "Choose create_quotation when requested; use escalate_to_manager only "
@@ -9854,6 +9859,7 @@ async def search_products(
         effective_query,
         [_product_match_text(product) for product in results.products],
         candidate_skus=[str(product.sku) for product in results.products],
+        customer_request=ctx.deps.user_query,
     )
     if resolved_reference_keys:
         # The customer named these rows by code and the catalog has them.
@@ -9867,6 +9873,7 @@ async def search_products(
                 effective_query,
                 [_product_match_text(product)],
                 candidate_skus=[str(product.sku)],
+                customer_request=ctx.deps.user_query,
             )
             == "exact"
         }
@@ -10266,9 +10273,14 @@ async def search_products(
             )
 
     if product_match == "nearby":
+        # A model-written search can contain extra descriptors for a broad
+        # furnishing need. Partial feature evidence is not a missing named SKU.
+        names_specific_item = query_names_specific_item(effective_query)
         formatted_results.insert(
             0,
-            "Closest catalog alternatives (exact requested item not confirmed):",
+            "Closest catalog alternatives (exact requested item not confirmed):"
+            if names_specific_item
+            else "Catalog options with partial requirement coverage:",
         )
     elif product_match == "missing":
         formatted_results.insert(
@@ -10306,6 +10318,7 @@ async def search_products(
                 target_coverage_complete=target_coverage_complete,
                 lower_verified_family_total=lower_verified_family_total,
                 closed_selection_skus=closed_selection_skus(ctx.deps.conversation),
+                specific_item_requested=query_names_specific_item(effective_query),
             ),
         ),
     )

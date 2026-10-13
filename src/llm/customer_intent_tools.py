@@ -6,6 +6,7 @@ Runtime engine imports preserve existing patch points without a module cycle.
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 from copy import deepcopy
 from typing import Literal
@@ -13,6 +14,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from pydantic_ai import RunContext
 
+from src.dialogue.decision_state import REQUIREMENTS_SUMMARY_DIRECTIVE
 from src.dialogue.order_state import (
     QuoteConsent,
     QuoteLifecycle,
@@ -445,9 +447,23 @@ async def record_customer_requirements(
         parts.append("Recorded: " + "; ".join(recorded) + ".")
     if rejected:
         parts.append("Not recorded: " + "; ".join(rejected) + ".")
+    # Return the committed state, not just this call's delta. In particular a
+    # quantity correction must expose the budget retained from an earlier turn.
+    snapshot = {
+        "items": slots.selected_items,
+        "budget_cap_aed": slots.budget_cap_aed,
+        "needed_by": slots.needed_by,
+        "decision_authority": slots.decision_authority,
+        "company_activity": slots.company_activity,
+        "quotation_consent": quote_workflow_from_metadata(
+            conversation.metadata_
+        ).consent.value,
+    }
+    parts.append("Current recorded requirements: " + json.dumps(snapshot) + ".")
     parts.append(
         "Carry what you recorded into your reply so the customer can correct "
         "it -- alongside the answer, never instead of one. A turn whose whole "
         "content is a confirmation of what they just said is not a reply."
     )
+    parts.append(REQUIREMENTS_SUMMARY_DIRECTIVE)
     return " ".join(parts)

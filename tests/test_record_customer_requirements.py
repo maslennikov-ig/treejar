@@ -1,5 +1,6 @@
 """Model-selected replacements/removals preserve validated state atomically."""
 
+import json
 from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -93,3 +94,48 @@ async def test_failed_flush_rolls_back_metadata_and_does_not_report_success():
         await engine.record_customer_requirements(ctx, replace_items=True)
     assert ctx.deps.conversation.metadata_ == before
     assert transaction.__aexit__.await_args.args[0] is RuntimeError
+
+
+@pytest.mark.asyncio
+async def test_quantity_update_returns_the_current_selection_and_retained_budget(
+    monkeypatch,
+):
+    from src.dialogue.order_state import QuoteConsent, quote_workflow_from_metadata
+
+    ctx = selected_context()
+    state = DialogueState.from_conversation(ctx.deps.conversation)
+    state.slots.budget_cap_aed = 6000
+    ctx.deps.conversation.metadata_ = state.to_metadata(
+        {
+            "order_runtime": {
+                "quote_workflow": {
+                    "version": 2,
+                    "consent": "declined",
+                    "lifecycle": "consultation",
+                }
+            }
+        }
+    )
+    name = "Four person workstation SKYLAND LUMA 9719-4 walnut"
+    monkeypatch.setattr(
+        engine,
+        "_find_catalog_product_by_sku",
+        AsyncMock(return_value=SimpleNamespace(sku="LUMA", name_en=name)),
+    )
+
+    result = await engine.record_customer_requirements(
+        ctx, items=[engine.RecordedItem(sku="LUMA", quantity=3)]
+    )
+
+    snapshot, _ = json.JSONDecoder().raw_decode(
+        result.split("Current recorded requirements: ", 1)[1]
+    )
+    assert snapshot["items"] == [{"sku": "LUMA", "quantity": 3, "name": name}]
+    assert snapshot["budget_cap_aed"] == 6000
+    assert snapshot["quotation_consent"] == "declined"
+    assert (
+        quote_workflow_from_metadata(ctx.deps.conversation.metadata_).consent
+        is QuoteConsent.DECLINED
+    )
+    assert "generic acknowledgement" in result
+    ctx.deps.db.flush.assert_awaited_once()

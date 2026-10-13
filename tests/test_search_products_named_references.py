@@ -228,6 +228,68 @@ async def test_named_but_absent_brand_keeps_the_caveat(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("language", ["en", "ar"])
+async def test_broad_search_expansion_does_not_invent_a_missing_exact_set(
+    monkeypatch: pytest.MonkeyPatch, language: str
+) -> None:
+    luma = _row(
+        "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+        "Four person workstation SKYLAND LUMA 9719-4",
+        stock=30,
+        price=1883,
+    )
+    monkeypatch.setattr(engine_module, "rag_search_products", _vector_results(luma))
+    ctx = _ctx(_CatalogDb(_CATALOG))
+    ctx.deps.conversation.language = language
+    ctx.deps.user_query = (
+        "Can you help us choose furniture for our new office?"
+        if language == "en"
+        else "أحتاج إلى تجهيز مكتب. ماذا تقترحين؟"
+    )
+
+    # A search expansion can ask for a complete package although the customer
+    # requested help choosing furniture. No catalog row is an exact package.
+    result = await search_products(  # type: ignore[arg-type]
+        ctx, "complete office furniture package for four people"
+    )
+
+    assert isinstance(result, ToolReturn)
+    assert "SKU: " + luma.sku in result.return_value
+    assert _NOT_CONFIRMED not in result.return_value
+    assert "partial requirement coverage" in result.return_value
+    assert "no exact item to confirm" in str(result.content)
+    assert "unsupported property" in str(result.content)
+    assert "Do not claim full requirement coverage" in str(result.content)
+
+
+@pytest.mark.asyncio
+async def test_shortened_search_retains_the_customers_multiple_unit_requirement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    luma = _row(
+        "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+        "Four person workstation SKYLAND LUMA 9719-4",
+        stock=30,
+        price=1883,
+    )
+    monkeypatch.setattr(engine_module, "rag_search_products", _vector_results(luma))
+    ctx = _ctx(_CatalogDb(_CATALOG))
+    ctx.deps.user_query = (
+        "We’re considering two LUMA 9719-4 workstations in walnut for eight "
+        "people. Our furniture budget is AED 6,000. Don’t prepare a quotation yet."
+    )
+
+    result = await search_products(  # type: ignore[arg-type]
+        ctx, "LUMA 9719-4 workstation in walnut for eight people"
+    )
+
+    assert isinstance(result, ToolReturn)
+    assert "SKU: " + luma.sku in result.return_value
+    assert _NOT_CONFIRMED not in result.return_value
+    assert "partial requirement coverage" not in result.return_value
+
+
+@pytest.mark.asyncio
 async def test_contracts_drop_the_stray_caveat_and_generic_has_none() -> None:
     exact = _product_search_response_contract(match_kind="exact").casefold()
     generic = _product_search_response_contract(match_kind="generic").casefold()

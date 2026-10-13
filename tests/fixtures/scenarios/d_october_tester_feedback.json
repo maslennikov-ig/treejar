@@ -1,0 +1,65 @@
+{
+  "id": "D-October13",
+  "source_conversation": "ecaa8c22-8c5d-44be-a43f-ac351f939735",
+  "description": "Retained October13 Nadia opening and correction to three walnut workstations for twelve people; quotation stays declined.",
+  "customer": {
+    "phone": "+971500000013",
+    "language": "en"
+  },
+  "fixtures": {
+    "catalog": "tests/fixtures/catalog_snapshot_2026-09-23.json"
+  },
+  "turns": [
+    {
+      "text": "Hi, I’m Nadia. We’re furnishing a new office in Dubai for four people. Can you help us choose the furniture?"
+    },
+    {
+      "text": "We’re considering two LUMA 9719-4 workstations in walnut for eight people. Our furniture budget is AED 6,000. Don’t prepare a quotation yet."
+    },
+    {
+      "text": "Do you provide delivery and assembly in Dubai?"
+    },
+    {
+      "text": "Update: we now need places for twelve people, so three four-person workstations. Keep the walnut finish and the same budget. Please summarise the updated requirements."
+    }
+  ],
+  "checks": [
+    {
+      "type": "no_structured_leak"
+    },
+    {
+      "type": "no_unconfirmed_claim",
+      "turns": [
+        1,
+        2
+      ],
+      "description": "Supported general need and matching multiple named units must not receive an exact-match caveat."
+    },
+    {
+      "type": "positive_answer",
+      "turn": 4,
+      "description": "Requested updated summary states actual current quantities, model, finish, headcount and retained budget.",
+      "require_patterns": [
+        "9719-4",
+        "walnut",
+        "\\b(?:12|twelve)\\b",
+        "\\b(?:3|three)\\b[^\\n]*(?:LUMA|workstations)|(?:LUMA|workstations)[^\\n]*\\b(?:3|three)\\b",
+        "6[, ]?000"
+      ],
+      "forbid_patterns": [
+        "shall I.*quotation",
+        "would you like.*quotation"
+      ]
+    },
+    {
+      "type": "records_items_without_alternative",
+      "turn": 4,
+      "skus": [
+        "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut"
+      ],
+      "alternative_patterns": [
+        "NOVO"
+      ]
+    }
+  ]
+}
