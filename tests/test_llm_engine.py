@@ -2028,6 +2028,69 @@ def test_product_media_reference_keeps_both_colours_when_both_are_named() -> Non
     assert _referenced_product_media((black, brown), reply) == (black, brown)
 
 
+def _structured_coffee_table_media() -> tuple[ProductMediaPayload, ...]:
+    return tuple(
+        ProductMediaPayload(
+            url=f"https://example.com/{sku}.jpg",
+            caption=f"{name} — 214.97 AED",
+            product_key=sku,
+            reference_tokens=(name, sku),
+        )
+        for sku, name in (
+            (
+                "00-07015317",
+                "Coffee table, COFFEE, CT 1065, 1000х650х400, Oak Devon",
+            ),
+            (
+                "00-07015316",
+                "Coffee table, COFFEE, CT 1065, 1000х650х400, Wenge magic",
+            ),
+            (
+                "00-07015318",
+                "Coffee table, COFFEE, CT 1065, 1000х650х400, Walnut Dallas",
+            ),
+        )
+    )
+
+
+def test_product_media_reference_keeps_named_structured_catalog_finishes() -> None:
+    oak, wenge, walnut = _structured_coffee_table_media()
+    reply = (
+        "Here are two coffee tables in the *COFFEE* collection:\n"
+        "• *CT 1065 — Oak Devon*: 1000 × 650 × 400 mm, AED 214.97; 1 in stock.\n"
+        "• *CT 1065 — Wenge Magic*: 1000 × 650 × 400 mm, AED 214.97; 1 in stock.\n"
+        "Which finish would you prefer?"
+    )
+
+    assert _referenced_product_media((oak, wenge, walnut), reply) == (oak, wenge)
+    assert _product_media_is_referenced(oak, reply)
+
+
+@pytest.mark.parametrize(
+    ("reply", "expected_indexes"),
+    [
+        ("CT 1065 — Oak Devon, AED 214.97.", (0,)),
+        ("CT 1065 — Wenge Magic, AED 214.97.", (1,)),
+        ("CT 1065 — Walnut Dallas, AED 214.97.", (2,)),
+        ("CT 2065 — Oak Devon, AED 214.97.", ()),
+        ("The COFFEE collection costs AED 214.97.", ()),
+        (
+            "CT 1065 — Oak Devon, AED 214.97.\n"
+            "Other model CT 2065 has the Wenge Magic finish.",
+            (0,),
+        ),
+    ],
+)
+def test_product_media_reference_separates_structured_catalog_variants(
+    reply: str, expected_indexes: tuple[int, ...]
+) -> None:
+    media = _structured_coffee_table_media()
+
+    assert _referenced_product_media(media, reply) == tuple(
+        media[index] for index in expected_indexes
+    )
+
+
 def test_product_media_reference_bare_model_code_does_not_add_siblings() -> None:
     media = _novo_luma_media()
     reply = (

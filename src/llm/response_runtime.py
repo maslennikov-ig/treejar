@@ -183,25 +183,29 @@ def _product_model_reference(raw_reference: str) -> tuple[str, ...]:
     ("4 Person Face to Face Table SKYLAND NOVO 2400" -> "SKYLAND NOVO 2400"),
     cut to the series word before the first digit-bearing token plus the rest
     of the code ("novo 2400", "luma 9719 4", "ch 145 m"). Colour/variant words
-    are transparent. Names without such a code have no model reference.
+    are transparent. Comma-delimited catalog names may carry dimensions and
+    a finish after a separate model segment. Names without a code have no
+    model reference.
     """
 
-    run: list[str] = []
-    for token in reversed(raw_reference.split()):
-        normalized = _normalized_product_reference(token)
-        if not normalized:
-            continue
-        if normalized in _PRODUCT_REFERENCE_VARIANT_WORDS:
-            continue
-        if any(char.islower() for char in token):
-            break
-        run[:0] = normalized.split()
+    candidates = [raw_reference, *reversed(raw_reference.split(",")[:-1])]
+    for candidate in candidates:
+        run: list[str] = []
+        for token in reversed(candidate.split()):
+            normalized = _normalized_product_reference(token)
+            if not normalized:
+                continue
+            if normalized in _PRODUCT_REFERENCE_VARIANT_WORDS:
+                continue
+            if any(char.islower() for char in token):
+                break
+            run[:0] = normalized.split()
 
-    for index, word in enumerate(run):
-        if _has_digit(word):
-            if index == 0 or _has_digit(run[index - 1]):
-                return ()
-            return tuple(run[index - 1 :])
+        for index, word in enumerate(run):
+            if _has_digit(word):
+                if index == 0 or _has_digit(run[index - 1]):
+                    break
+                return tuple(run[index - 1 :])
     return ()
 
 
@@ -353,6 +357,22 @@ def _product_media_reference_strength(
         model_reference = _product_model_reference(raw_reference)
         if model_reference and f" {' '.join(model_reference)} " in padded_response:
             model_match = True
+            # Structured titles end with a literal compound finish such as
+            # "Oak Devon". It must occur on a line naming this model; a finish
+            # attached to another model cannot select this sibling's photo.
+            segments = raw_reference.split(",")
+            finish = _normalized_product_reference(segments[-1])
+            if (
+                len(segments) > 1
+                and finish
+                and any(char.islower() for char in segments[-1])
+                and not _has_digit(finish)
+                and any(
+                    f" {finish} " in f" {_normalized_product_reference(line)} "
+                    for line in _lines_mentioning(response_text, model_reference)
+                )
+            ):
+                return "full"
 
     return "model" if model_match else None
 
