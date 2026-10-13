@@ -1,7 +1,7 @@
 # Code review: October 13 tester corrections
 
-Scope: `32c95f6..9570c1d`, root review of the search, requirements, intent and
-reply-rendering boundaries. Verdict: PASS for local acceptance; runtime delivery
+Scope: `32c95f6..6cd3115`, root review of the search, requirements, intent, media
+and reply-rendering boundaries. Verdict: PASS for local acceptance; runtime delivery
 is pending owner approval.
 
 No unresolved in-scope code issue remains. The relevant history preserves the
@@ -21,12 +21,19 @@ The review explicitly checked:
   pending-offer/stock-shortfall gates. No history or paraphrase becomes authority.
 - Quotation-hold diagnostics have no control over permissions or customer text.
   Genuine successful-action claims still require a successful call.
+- Structured catalog model segments retain the existing uppercase/digit code
+  requirement. A compound finish must occur on a line naming the same model;
+  the actual owner reply retains exactly two photos, with unmentioned siblings
+  and different models excluded. Existing Arabic/price/descriptor cases pass.
 
-Validation:1264focused tests passed; whole-source/test Ruff and format passed,
+Validation:1271focused tests passed; whole-source/test Ruff and format passed,
 Mypy passed194files. The final existing-model replay passed four declared checks
 and root state/effect reading (qty3,budget6000,consentdeclined,no real sends).
 The fixture/provider boundary limits are in
 `docs/reports/2026-10-13-tester-feedback-fixes.md`.
+The media correction replays exact observed text/title inputs deterministically,
+with no additional paid call or live send. Actual post-fix photo receipt is a
+separate runtime acceptance gate.
 
 Shared matcher and intent contracts received root review. No database migration,
 new dependency, permission expansion, model switch or legacy reply template.

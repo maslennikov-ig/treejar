@@ -3,7 +3,8 @@
 ## October 13 tester feedback — local candidate
 
 - Parent `tj-i2b1`; findings `tj-i2b1.1` (false mismatch caveats), `.2`
-  (missing updated summary), `.3` (literal refusal persistence).
+  (missing updated summary), `.3` (literal refusal persistence), `.4`
+  (missing photos for structured catalog titles).
 - Branch `codex/tester-feedback-20261013`, isolated worktree
   `/home/me/code/treejar/.worktrees/tester-feedback-20261013`, base `32c95f6`.
   Original submitted feedback retained privately; sanitized evidence is under
@@ -16,8 +17,10 @@
 - Literal evidence accepts one presentation quote pair only when the unchanged
   excerpt occurs in the current message. No paraphrase/history/permission gate
   changes. Explicit quote holds must be recorded, not just promised in prose.
+- Media recognizes explicit comma-delimited model codes and a literal finish
+  on the same reply line. Actual CT1065 text retains2photos, not the third variant.
 - Acceptance/delivery details: `docs/reports/2026-10-13-tester-feedback-fixes.md`.
-  Local acceptance:1264 tests, Ruff/format and Mypy194files passed. Final
+  Local acceptance:1271 tests, Ruff/format and Mypy194files passed. Final
   same-model replay passes with qty3/budget6000/consentdeclined, no real sends.
   Total smoke costUSD0.02932057; no product-fix deployment yet.
 - Preserve dirty primary checkout and other owners' work. Existing Wazzup guard,
@@ -33,8 +36,9 @@
   callback was never diverted. Test0665 and protected settings retained.
 - Runbook `docs/ops/wazzup-webhook-guard.md`; deployment/rollback receipt
   `docs/reports/2026-10-13-wazzup-webhook-guard-delivery.md`.
-- Fresh postdeployment owner...0921 message is still pending; earlier actual
-  received text/photos and tester questionnaire precede this deployment.
+- Fresh owner...0921 coffee-table message processed at17:17UTC, text accepted
+  by Wazzup201 and owner-confirmed received. Callback/settings stable17:26UTC;
+  `tj-vqcc` closed. Independent photo defect belongs to `tj-i2b1.4` above.
 - External configuration writer remains UNKNOWN under `tj-zc6k`. Guard recovers
   changes but does not revoke that integration's write access.
 

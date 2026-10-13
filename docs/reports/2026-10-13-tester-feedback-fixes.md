@@ -1,7 +1,7 @@
 # October 13 tester feedback corrections
 
 Parent task: `tj-i2b1`. Local candidate on `codex/tester-feedback-20261013`.
-Base: `32c95f6`; final code: `9570c1d`.
+Base: `32c95f6`; final code: `6cd3115`.
 Production is still `d2de7b3`; this product correction has not been deployed.
 
 ## Source and task coverage
@@ -19,6 +19,7 @@ from Git. Portal records were not edited or reset.
 | `tj-i2b1.1` | Generic furnishing gets a missing-exact-set disclaimer; two matching walnut LUMA units for eight people are called a mismatch | Broad needs retain only specific actual gaps, not an invented missing named item. Named quantity × per-unit capacity is checked separately; original customer quantity can recover a shortened model search. Wrong model, finish, explicit per-unit capacity and incomplete coverage remain negative cases. |
 | `tj-i2b1.2` | Requested twelve-person update receives only an acknowledgement | Requirement tool returns the current committed selection and retained budget; main and existing repair prompts carry the summary obligation. The connected output guard now recognizes a retained customer budget, so “same budget” no longer deletes a valid summary. Historical catalog prices and replaced budgets remain blocked. |
 | `tj-i2b1.3` | Replay exposes quoted literal refusal rejected, or a promised quote hold not actually recorded | One presentation quote pair is removed only if its unchanged inner excerpt occurs in the current message. Paraphrases/history remain rejected, and quotation-on-table/shortfall/proposal gates remain. Explicit refusal must be persisted before replying. Held quotation wording no longer causes a false completion error. |
+| `tj-i2b1.4` | Owner's fresh coffee-table reply arrives without photos | The structured catalog title puts model CT1065 before dimensions and a compound finish, so suffix-only media matching discarded all three photos. Read the explicit comma-delimited model segment and bind the literal finish to a line naming that model. The exact observed reply keeps OakDevon/WengeMagic and excludes WalnutDallas; wrong models and unrelated collection names remain negative cases. |
 
 Read-only production messages confirmed the exact reported replies in archived
 conversation `ecaa8c22-8c5d-44be-a43f-ac351f939735`, including the correction
@@ -27,7 +28,7 @@ and budget6000; this was not a lost message or missing quantity write.
 
 ## Acceptance
 
-Root-selected local acceptance: **1264 passed**, no skips, in7.14s:
+Root-selected final local acceptance: **1271 passed**, no skips, in6.10s:
 
 ```sh
 python -m pytest tests/test_llm_engine.py tests/test_verified_answers.py \
@@ -74,6 +75,17 @@ only the completion diagnostic: it does not change the model prompt, text,
 state or sends. Its exact observed line and genuine completion negatives pass
 in the final local set; no additional model rerun was needed for logging.
 
+After the owner confirmed a fresh post-guard text reply, read-only live logs
+showed three images suppressed as unreferenced. Both offered CT1065 variants
+are active catalog products with photographs. The exact existing model output
+and actual structured titles reproduced0kept images; five positive cases failed
+while two negatives passed. After `6cd3115`, all16focused media-reference cases
+pass, including the exact two-image selection and wrong-model/finish separation.
+The complete1271test acceptance above also passed. This is a deterministic
+media-boundary correction with no additional paid call, generated reply or
+live photo send. It does not change the accepted earlier summary/intent replay.
+Live image delivery after installing the correction remains to be verified.
+
 This is model/pipeline proof with intercepted boundaries. Lexical fixture
 ranking and a September catalog snapshot do not establish current production
 RAG ordering, stock, real PDF creation or handset receipt. The tester's five
@@ -94,6 +106,7 @@ canonical CI and runtime/channel readback, followed by the affected natural test
 | Quoted evidence becomes new authorization | Plausible if normalization changed meaning; persistent consent tools | Exact unchanged current substring only; forged, paraphrased, blank and no-offer grant negatives pass. No permission inference is added. |
 | Aggregate headcount masks a wrong product/finish/unit capacity | Confirmed old8vs4 error; named-product matcher shared by search/media | Same-model quantity/coverage only, with explicit wrong finish/unit/mixed cases retained. |
 | Broad search wording hides a true unsupported requirement | Plausible contract consumer regression | Preserve specific missing family/property and no-full-coverage constraints; genuine mismatch tests pass. |
+| Compound catalog finishes are mistaken for an unmentioned sibling | Observed0photos for2named variants, because dimensions/finish follow the code | Literal finish must share a reply line with the recognized model; exact two-variant, single-variant, wrong-model and unrelated-collection cases pass, with existing Arabic/price/descriptor cases retained. |
 | Replay mistaken for live delivery | Confirmed intercepted providers/catalog limitations | Report model/pipeline, deployment, provider and tester receipt separately. |
 | Executor deploys from dirty or unrelated work | Plausible shared repository/server boundary | Dedicated clean task branch, owned-only integration; preserve primary dirty work, server flags and held queues. |
 
@@ -112,9 +125,12 @@ module in a separate clean worktree. Worker commits994b05e/6b5087c were reviewed
 and integrated as59fada9/d6d84c6; root owned the shared search/reply contracts,
 intent persistence, output guard, acceptance and docs.
 
-Product deployment and fresh tester acceptance are still pending. Existing
-`tj-vqcc` postdeployment natural-message proof and `tj-zc6k` external-writer
-attribution remain separate; the questionnaire was submitted before guard rollout.
+Product deployment and fresh tester acceptance are still pending. Wazzup guard
+task `tj-vqcc` now has the separate owner-confirmed postdeployment text round
+trip and stable provider readback; its receipt is retained in
+`2026-10-13-wazzup-webhook-guard-delivery.md`. The new photo defect belongs to
+`.4`; external-writer attribution remains UNKNOWN in`tj-zc6k`. The submitted
+questionnaire itself predates the guard rollout.
 
 docs-reviewed: updated - sanitized feedback, replay fixture, report and current handoff.
 graph-reviewed: no-change-needed - no enabled task-owned graph; existing boundaries retained.
