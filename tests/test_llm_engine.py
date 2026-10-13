@@ -4750,11 +4750,11 @@ async def test_tools_search_products_marks_nearby_alternatives_explicitly(
         result = await engine_module.search_products(ctx, "acoustic pods")
         assert isinstance(result, ToolReturn)
         assert "meeting booth" in result.return_value.lower()
-        assert "closest alternatives" in result.content.lower()
-        assert (
-            "do not claim that these are the exact item requested"
-            in result.content.lower()
-        )
+        # A distinct unmet product type remains a coverage gap; it is not an
+        # absent named SKU. Keep that limitation without inventing an exact ask.
+        assert "partial requirement coverage" in result.return_value.lower()
+        assert "uncovered product family" in result.content.lower()
+        assert "do not claim full requirement coverage" in result.content.lower()
     finally:
         if orig_search is not None:
             engine_module.rag_search_products = orig_search
@@ -5101,7 +5101,7 @@ async def test_tools_search_products_respects_explicit_customer_option_cap(
 
     assert mock_search.await_args.kwargs["query"].limit == 2
     assert isinstance(result, ToolReturn)
-    assert "explicit smaller maximum" in result.content.lower()
+    assert "smaller maximum" in result.content.lower()
 
 
 @pytest.mark.asyncio

@@ -36,6 +36,25 @@ class RecordedItem(BaseModel):
 MAX_RECORDED_QUANTITY = 10_000
 MAX_RECORDED_BUDGET_AED = 100_000_000.0
 MAX_RECORDED_TEXT_CHARS = 200
+_EVIDENCE_QUOTE_PAIRS = {('"', '"'), ("'", "'"), ("“", "”"), ("‘", "’")}
+
+
+def _literal_current_evidence(evidence: str, current: str) -> str | None:
+    """Remove presentation quotes only if the inner excerpt is still literal.
+
+    No paraphrase, punctuation normalization, history or inferred consent is
+    accepted. Persist the exact current-message excerpt, not the model wrapper.
+    """
+    if evidence.strip() and evidence in current:
+        return evidence
+    cleaned = evidence.strip()
+    if cleaned and cleaned in current:
+        return cleaned
+    if len(cleaned) >= 3 and (cleaned[0], cleaned[-1]) in _EVIDENCE_QUOTE_PAIRS:
+        excerpt = cleaned[1:-1]
+        if excerpt.strip() and excerpt in current:
+            return excerpt
+    return None
 
 
 class CustomerDetailEvidence(BaseModel):
@@ -113,10 +132,17 @@ async def record_customer_intent(
     current = ctx.deps.user_query
     if any(not d.value.strip() for d in details or []):
         return "Not recorded: detail values must not be blank."
-    if not evidence.strip() or evidence not in current:
+    literal_evidence = _literal_current_evidence(evidence, current)
+    if literal_evidence is None:
         return "Not recorded: evidence must be a literal excerpt of the current customer message."
-    if any(not d.evidence.strip() or d.evidence not in current for d in details or []):
-        return "Not recorded: every detail needs literal current-message evidence."
+    evidence = literal_evidence
+    validated_details = []
+    for detail in details or []:
+        literal_detail = _literal_current_evidence(detail.evidence, current)
+        if literal_detail is None:
+            return "Not recorded: every detail needs literal current-message evidence."
+        validated_details.append(detail.model_copy(update={"evidence": literal_detail}))
+    details = validated_details
     if any(
         d.field == "customer_type" and d.value != "individual" for d in details or []
     ):
@@ -275,8 +301,10 @@ async def record_proposal_response(
         unmask_pii,
     )
 
-    if not evidence.strip() or evidence not in ctx.deps.user_query:
+    literal_evidence = _literal_current_evidence(evidence, ctx.deps.user_query)
+    if literal_evidence is None:
         return "Not recorded: evidence must be a literal current-message excerpt."
+    evidence = literal_evidence
     from src.services.proposal_followup import record_model_proposal_response
 
     conversation = ctx.deps.conversation

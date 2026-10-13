@@ -216,6 +216,54 @@ async def test_blank_details_rejected() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "opening,closing", [('"', '"'), ("'", "'"), ("“", "”"), ("‘", "’")]
+)
+async def test_quoted_literal_refusal_is_recorded_without_its_presentation_wrapper(
+    opening: str, closing: str
+) -> None:
+    refusal = "Don’t prepare a quotation yet."
+    ctx = context("Two LUMA workstations. " + refusal)
+    result = await engine.record_customer_intent(
+        ctx, evidence=opening + refusal + closing, quotation_consent="deferred"
+    )
+    assert not result.startswith("Not recorded")
+    assert (
+        quote_workflow_from_metadata(ctx.deps.conversation.metadata_).consent
+        is QuoteConsent.DEFERRED
+    )
+    assert (
+        ctx.deps.conversation.metadata_["model_customer_intent"]["evidence"] == refusal
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "evidence", ["“Yes, prepare a quotation.”", "“No quote for now.”", "“ ”", "“‘No’”"]
+)
+async def test_quoting_does_not_authorize_forged_or_paraphrased_evidence(
+    evidence: str,
+) -> None:
+    ctx = context("Don’t prepare a quotation yet.")
+    result = await engine.record_customer_intent(
+        ctx, evidence=evidence, quotation_consent="granted"
+    )
+    assert result.startswith("Not recorded")
+    ctx.deps.db.flush.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_quoted_literal_yes_still_needs_a_quotation_on_the_table() -> None:
+    ctx = context("Yes")
+    result = await engine.record_customer_intent(
+        ctx, evidence='"Yes"', quotation_consent="granted"
+    )
+    assert result.startswith("Not recorded")
+    assert "ask for a quotation" in result
+    ctx.deps.db.flush.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_model_acceptance_enables_manager_confirmation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
