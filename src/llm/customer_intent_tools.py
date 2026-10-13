@@ -494,4 +494,10 @@ async def record_customer_requirements(
         "content is a confirmation of what they just said is not a reply."
     )
     parts.append(REQUIREMENTS_SUMMARY_DIRECTIVE)
+    parts.append(
+        "This tool does not record quotation consent. If the current message "
+        "declines or defers quotation preparation, record that decision with "
+        "record_customer_intent before replying; a promise in the reply is "
+        "not persisted consent."
+    )
     return " ".join(parts)
