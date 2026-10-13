@@ -1532,15 +1532,44 @@ def _matches_aggregate_model_capacity(
     return False
 
 
-def _model_reference_details_agree(
-    query: str, candidate: str, references: Sequence[str]
-) -> bool:
-    """A named model is the item only if the named finish and size agree too."""
+def _model_reference_attributes_agree(query: str, candidate: str) -> bool:
     query_tokens = _tokenize(_fold_model_text(query))
     candidate_tokens = _tokenize(_fold_model_text(candidate))
-    if not (query_tokens & _PRODUCT_FINISH_TERMS).issubset(candidate_tokens):
+    return (query_tokens & _PRODUCT_FINISH_TERMS).issubset(
+        candidate_tokens
+    ) and _explicit_structured_discriminators(query).issubset(candidate_tokens)
+
+
+def _query_allows_aggregate_model_capacity(
+    query: str, references: Sequence[str]
+) -> bool:
+    folded_query = _fold_model_text(query)
+    if re.search(r"\b(?:each|per)\b", folded_query):
         return False
-    if not _explicit_structured_discriminators(query).issubset(candidate_tokens):
+    if any(
+        _query_names_model_reference(match.group("item"), ref)
+        for match in _NAMED_MODEL_QUANTITY_RE.finditer(folded_query)
+        for ref in references
+    ):
+        return False
+    # A shortened query may retain "MODEL for eight people" while dropping
+    # the unit count. "Eight-person MODEL" still states per-unit capacity.
+    return any(
+        _capacity_value(prefix := folded_query[: match.start()]) is None
+        and any(_query_names_model_reference(prefix, ref) for ref in references)
+        for match in re.finditer(r"\bfor\b", folded_query)
+    )
+
+
+def _model_reference_details_agree(
+    query: str,
+    candidate: str,
+    references: Sequence[str],
+    *,
+    customer_request: str | None = None,
+) -> bool:
+    """A named model is the item only if the named finish and size agree too."""
+    if not _model_reference_attributes_agree(query, candidate):
         return False
     requested_capacity = _capacity_value(query)
     candidate_capacity = _capacity_value(candidate)
@@ -1551,6 +1580,14 @@ def _model_reference_details_agree(
         or _matches_aggregate_model_capacity(
             query, references, requested_capacity, candidate_capacity
         )
+        or (
+            customer_request is not None
+            and _model_reference_attributes_agree(customer_request, candidate)
+            and _query_allows_aggregate_model_capacity(query, references)
+            and _matches_aggregate_model_capacity(
+                customer_request, references, requested_capacity, candidate_capacity
+            )
+        )
     )
 
 
@@ -1558,6 +1595,8 @@ def _matches_named_model_reference(
     query: str,
     candidate: str,
     sku: str | None = None,
+    *,
+    customer_request: str | None = None,
 ) -> bool:
     """Whether the query names this row by model reference or by SKU.
 
@@ -1574,7 +1613,9 @@ def _matches_named_model_reference(
         _query_names_model_reference(folded_query, reference)
         for reference in references
         if reference
-    ) and _model_reference_details_agree(query, details_text, references)
+    ) and _model_reference_details_agree(
+        query, details_text, references, customer_request=customer_request
+    )
 
 
 _MONEY_AMOUNT_RE = re.compile(
@@ -1669,6 +1710,7 @@ def classify_product_match(
     candidates: Sequence[str],
     *,
     candidate_skus: Sequence[str | None] | None = None,
+    customer_request: str | None = None,
 ) -> ProductMatch:
     if not candidates:
         return "missing"
@@ -1685,7 +1727,9 @@ def classify_product_match(
         return "exact"
 
     if any(
-        _matches_named_model_reference(query, candidate, sku)
+        _matches_named_model_reference(
+            query, candidate, sku, customer_request=customer_request
+        )
         for candidate, sku in zip(candidates, skus, strict=True)
     ):
         return "exact"

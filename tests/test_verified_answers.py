@@ -818,6 +818,10 @@ _NOVO_ROW = (
     "4 Person Face to Face Table SKYLAND NOVO 2400\nFace to face desk.\nWorkstations"
 )
 _LUMA_SKU = "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut"
+_LUMA_AGGREGATE_REQUEST = (
+    "We’re considering two LUMA 9719-4 workstations in walnut for eight people. "
+    "Our furniture budget is AED 6,000. Don’t prepare a quotation yet."
+)
 
 
 def test_verbose_compare_query_naming_two_models_is_exact() -> None:
@@ -843,9 +847,7 @@ def test_named_model_with_appended_seat_count_is_exact() -> None:
     ("query", "row", "sku"),
     [
         (
-            "We’re considering two LUMA 9719-4 workstations in walnut for eight "
-            "people. Our furniture budget is AED 6,000. Don’t prepare a "
-            "quotation yet.",
+            _LUMA_AGGREGATE_REQUEST,
             _LUMA_ROW,
             _LUMA_SKU,
         ),
@@ -894,6 +896,91 @@ def test_named_model_aggregate_capacity_keeps_product_constraints(query: str) ->
     assert (
         classify_product_match(query, [_LUMA_ROW], candidate_skus=[_LUMA_SKU])
         == "nearby"
+    )
+
+
+def test_shortened_named_query_reuses_customer_request_quantity() -> None:
+    assert (
+        classify_product_match(
+            "LUMA9719-4 walnut for eight people",
+            [_LUMA_ROW],
+            candidate_skus=[_LUMA_SKU],
+            customer_request=_LUMA_AGGREGATE_REQUEST,
+        )
+        == "exact"
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "customer_request"),
+    [
+        ("LUMA9719-4 oak for eight people", _LUMA_AGGREGATE_REQUEST),
+        (
+            "LUMA9719-4 walnut for eight people",
+            "Two LUMA 9719-4 workstations in oak for eight people",
+        ),
+        (
+            "LUMA9719-4 walnut for eight people",
+            "Two NOVO 2400 workstations in walnut for eight people",
+        ),
+        (
+            "LUMA9719-4 walnut for eight people",
+            "Three LUMA 9719-4 workstations in walnut for eight people",
+        ),
+        (
+            "LUMA9719-4 walnut for eight people",
+            "Three LUMA 9719-4 workstations in walnut for twelve people",
+        ),
+        (
+            "LUMA9719-4 walnut for eight people",
+            "Two eight-person LUMA 9719-4 workstations in walnut for eight people",
+        ),
+        (
+            "LUMA9719-4 walnut for eight people",
+            "Two LUMA 9719-4 workstations in walnut for eight people each",
+        ),
+        ("LUMA9719-4 eight-person workstation in walnut", _LUMA_AGGREGATE_REQUEST),
+        ("LUMA9719-4 eight-person in walnut", _LUMA_AGGREGATE_REQUEST),
+        (
+            "LUMA9719-4 eight-person workstation in walnut for eight people",
+            _LUMA_AGGREGATE_REQUEST,
+        ),
+        ("LUMA9719-4 walnut for eight people each", _LUMA_AGGREGATE_REQUEST),
+        ("LUMA9719-4 walnut for eight people per unit", _LUMA_AGGREGATE_REQUEST),
+        (
+            "Three LUMA 9719-4 workstations in walnut for eight people",
+            _LUMA_AGGREGATE_REQUEST,
+        ),
+        ("NOVO 2400 walnut for eight people", _LUMA_AGGREGATE_REQUEST),
+    ],
+)
+def test_customer_quantity_cannot_override_named_query_constraints(
+    query: str, customer_request: str
+) -> None:
+    assert classify_product_match(
+        query,
+        [_LUMA_ROW],
+        candidate_skus=[_LUMA_SKU],
+        customer_request=customer_request,
+    ) in {"nearby", "missing"}
+
+
+def test_customer_quantity_does_not_promote_generic_or_missing_query() -> None:
+    assert (
+        classify_product_match(
+            "workstations for eight people",
+            [_LUMA_ROW],
+            customer_request=_LUMA_AGGREGATE_REQUEST,
+        )
+        == "generic"
+    )
+    assert (
+        classify_product_match(
+            "LUMA9719-4 walnut for eight people",
+            [],
+            customer_request=_LUMA_AGGREGATE_REQUEST,
+        )
+        == "missing"
     )
 
 
