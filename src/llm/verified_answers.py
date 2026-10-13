@@ -6,7 +6,13 @@ from dataclasses import dataclass
 from typing import Literal
 
 from src.dialogue.catalog_refs import fold_catalog_homoglyphs
-from src.dialogue.count_words import head_count, parse_count_word, strip_head_counts
+from src.dialogue.count_words import (
+    COUNT_PATTERN,
+    count_value,
+    head_count,
+    parse_count_word,
+    strip_head_counts,
+)
 from src.llm.catalog_families import catalog_text_families
 from src.llm.money import BUDGET_AED_CURRENCY_PATTERN
 from src.services.customer_language import is_arabic_customer_language
@@ -1446,6 +1452,12 @@ _DIMENSION_CODE_RE = re.compile(r"^\d+(?:[x*]\d+)+$")
 _MODEL_CODE_WORD_EXCLUSIONS = frozenset(
     {"person", "people", "seat", "seats", "seater", "pcs", "pc", "mm", "cm", "aed"}
 )
+_NAMED_MODEL_QUANTITY_RE = re.compile(
+    rf"(?<![\w-])(?P<count>{COUNT_PATTERN})\s+"
+    r"(?P<item>(?:(?!and\b|or\b|for\b)[a-z0-9][a-z0-9-]*\s+){0,6}"
+    r"(?:workstations|desks|benches|tables|units|pieces))\b",
+    re.IGNORECASE,
+)
 
 
 def _fold_model_text(text: str) -> str:
@@ -1486,7 +1498,43 @@ def _query_names_model_reference(folded_query: str, reference: str) -> bool:
     return re.search(rf"(?<![a-z0-9]){pattern}(?![a-z0-9])", folded_query) is not None
 
 
-def _model_reference_details_agree(query: str, candidate: str) -> bool:
+def _matches_aggregate_model_capacity(
+    query: str,
+    references: Sequence[str],
+    requested_capacity: int,
+    candidate_capacity: int,
+) -> bool:
+    """Multiple units of this model may serve a stated aggregate head count."""
+    folded_query = _fold_model_text(query)
+    for match in _NAMED_MODEL_QUANTITY_RE.finditer(folded_query):
+        quantity = count_value(match.group("count"))
+        if quantity is None or quantity < 2:
+            continue
+        if not any(
+            _query_names_model_reference(match.group("item"), reference)
+            for reference in references
+        ):
+            continue
+        # A capacity before the product noun ("two eight-person LUMA ...")
+        # describes each unit, even when an aggregate need follows it.
+        if _capacity_value(folded_query[: match.end()]) is not None:
+            continue
+        tail = re.split(r"[.;!?\n]", folded_query[match.end() :], maxsplit=1)[0]
+        if not re.search(r"\bfor\b", tail) or re.search(
+            r"\b(?:and|or|each|per)\b", tail
+        ):
+            continue
+        if (
+            _capacity_value(tail) == requested_capacity
+            and quantity * candidate_capacity == requested_capacity
+        ):
+            return True
+    return False
+
+
+def _model_reference_details_agree(
+    query: str, candidate: str, references: Sequence[str]
+) -> bool:
     """A named model is the item only if the named finish and size agree too."""
     query_tokens = _tokenize(_fold_model_text(query))
     candidate_tokens = _tokenize(_fold_model_text(candidate))
@@ -1500,6 +1548,9 @@ def _model_reference_details_agree(query: str, candidate: str) -> bool:
         requested_capacity is None
         or candidate_capacity is None
         or requested_capacity == candidate_capacity
+        or _matches_aggregate_model_capacity(
+            query, references, requested_capacity, candidate_capacity
+        )
     )
 
 
@@ -1523,7 +1574,7 @@ def _matches_named_model_reference(
         _query_names_model_reference(folded_query, reference)
         for reference in references
         if reference
-    ) and _model_reference_details_agree(query, details_text)
+    ) and _model_reference_details_agree(query, details_text, references)
 
 
 _MONEY_AMOUNT_RE = re.compile(

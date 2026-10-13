@@ -839,6 +839,64 @@ def test_named_model_with_appended_seat_count_is_exact() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("query", "row", "sku"),
+    [
+        (
+            "We’re considering two LUMA 9719-4 workstations in walnut for eight "
+            "people. Our furniture budget is AED 6,000. Don’t prepare a "
+            "quotation yet.",
+            _LUMA_ROW,
+            _LUMA_SKU,
+        ),
+        (
+            "Three LUMA 9719-4 workstations in walnut for twelve people",
+            _LUMA_ROW,
+            _LUMA_SKU,
+        ),
+        (
+            "2 SKYLAND NOVO 2400 workstations for a team of eight",
+            _NOVO_ROW,
+            None,
+        ),
+        (
+            "Twenty-five NOVO 2400 workstations for 100 people",
+            _NOVO_ROW,
+            None,
+        ),
+        (
+            "Two AERO 5500 workstations for twelve people",
+            "Six person workstation SKYLAND AERO 5500\nWorkstations",
+            None,
+        ),
+    ],
+)
+def test_named_model_quantity_accounts_for_aggregate_team_capacity(
+    query: str, row: str, sku: str | None
+) -> None:
+    assert classify_product_match(query, [row], candidate_skus=[sku]) == "exact"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Two LUMA 9719-4 workstations in oak for eight people",
+        "LUMA 9719-4 eight-person workstation in walnut",
+        "Two eight-person LUMA 9719-4 workstations in walnut for eight people",
+        "Two LUMA 9719-4 workstations in walnut for eight people each",
+        "Two LUMA 9719-4 workstations in walnut for eight people per workstation",
+        "Three LUMA 9719-4 workstations in walnut for eight people",
+        "Two NOVO 2400 workstations; LUMA 9719-4 in walnut for eight people",
+        "Two LUMA 9719-4 workstations and chairs in walnut for eight people",
+    ],
+)
+def test_named_model_aggregate_capacity_keeps_product_constraints(query: str) -> None:
+    assert (
+        classify_product_match(query, [_LUMA_ROW], candidate_skus=[_LUMA_SKU])
+        == "nearby"
+    )
+
+
 def test_finish_carried_only_by_the_sku_still_confirms_the_named_model() -> None:
     query = "LUMA workstation SKYLAND 9719-4 walnut"
 
