@@ -2,7 +2,7 @@
 
 ## October 13 tester feedback — local candidate
 
-- Parent `tj-i2b1`; findings `tj-i2b1.1` (false mismatch caveats), `.2`
+- Epic `tj-i2b1`; findings `tj-i2b1.1` (false mismatch caveats), `.2`
   (missing updated summary), `.3` (literal refusal persistence), `.4`
   (missing photos for structured catalog titles).
 - Branch `codex/tester-feedback-20261013`, isolated worktree
@@ -23,6 +23,10 @@
   Local acceptance:1271 tests, Ruff/format and Mypy194files passed. Final
   same-model replay passes with qty3/budget6000/consentdeclined, no real sends.
   Total smoke costUSD0.02932057; no product-fix deployment yet.
+- Local implementation closed; continue the same epic using
+  `docs/prompts/2026-10-13-tester-feedback-epic.md`. Cleanup/ownership receipt:
+  `docs/reports/2026-10-13-tester-feedback-closeout.md`. Task checkout retained;
+  clean equivalent capacity/guard worktrees and local branches removed.
 - Preserve dirty primary checkout and other owners' work. Existing Wazzup guard,
   test0665 sender/allowlist, restore mode and customer/held queues are unchanged.
 - docs-reviewed: updated - source feedback, replay inputs and correction report.
@@ -151,6 +155,8 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 
 ## Explicit defers
 
+- tj-i2b1: product main integration/deployment and fresh affected-scenario/photo
+  receipt pending new-chat owner authority; four code children locally accepted.
 - tj-zc6k: identify and stop the external Wazzup callback writer. Enabled guard
   recovers routing but does not remove that integration's write access.
 - tj-uvld: AC02 provider stock/lifecycle coverage and paging stability need
