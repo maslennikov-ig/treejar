@@ -1,45 +1,42 @@
 # Orchestrator Handoff
 
+## October 13 tester feedback — local candidate
+
+- Parent `tj-i2b1`; findings `tj-i2b1.1` (false mismatch caveats), `.2`
+  (missing updated summary), `.3` (literal refusal persistence).
+- Branch `codex/tester-feedback-20261013`, isolated worktree
+  `/home/me/code/treejar/.worktrees/tester-feedback-20261013`, base `32c95f6`.
+  Original submitted feedback retained privately; sanitized evidence is under
+  `docs/client-answers/2026-10-13-tester-feedback/`.
+- Source fixes retain named model/finish/unit constraints, recover explicit
+  multi-unit quantity lost from model search queries, distinguish broad needs
+  from missing exact items, and expose the committed selection/budget to replies.
+  Requested summaries remain model-owned; retained customer budgets now
+  survive output grounding, with old catalog prices still requiring new evidence.
+- Literal evidence accepts one presentation quote pair only when the unchanged
+  excerpt occurs in the current message. No paraphrase/history/permission gate
+  changes. Explicit quote holds must be recorded, not just promised in prose.
+- Acceptance/delivery details: `docs/reports/2026-10-13-tester-feedback-fixes.md`.
+  Local acceptance:1264 tests, Ruff/format and Mypy194files passed. Final
+  same-model replay passes with qty3/budget6000/consentdeclined, no real sends.
+  Total smoke costUSD0.02932057; no product-fix deployment yet.
+- Preserve dirty primary checkout and other owners' work. Existing Wazzup guard,
+  test0665 sender/allowlist, restore mode and customer/held queues are unchanged.
+- docs-reviewed: updated - source feedback, replay inputs and correction report.
+  graph-reviewed: no-change-needed - no enabled task-owned graph; existing paths.
+
 ## Wazzup webhook protection — deployed 2026-10-13
 
-- `tj-vqcc`, branch `codex/wazzup-webhook-guard`, isolated worktree
-  `/home/me/code/treejar/.worktrees/wazzup-webhook-guard`.
-  Base refreshed to remote `92111c5`; its five intervening commits are docs and
-  retained stock evidence. Primary dirty work and other worktrees preserved.
-- Owner requested protection after the October 12 direct callback reverted to
-  the exact audit receiver again. Manual restoration on October 13 plus the
-  owner's fresh `...0921` message proved text and three photos actually received;
-  `tj-spg1` is closed. Incident receipts are on `codex/whatsapp-ingress-20261012`.
-- Implemented opt-in `WAZZUP_WEBHOOK_GUARD_ENABLED` (default `false`): startup
-  and minute worker check, Redis-owned lease, two validated reads, preserved
-  subscriptions, verified PATCH result, bounded administrator notification.
-  Callback query secrets and provider error bodies are excluded from logs.
-- Owner explicitly authorized deployment/activation. Live app+worker release
-  `d2de7b3f47260cbb88114fc42f8cb6c85e27832d`; canonical CI38425819094
-  passed Ruff, Mypy,4470 tests/27 gated skips, separate pgvector1test and deploy.
-  Local89 focused tests and54 official mutable-pin/manifest tests passed.
-- Guard flag is effective true. Startup16:04:11UTC and minute16:05:00
-  returned `ok`; fresh provider/config proof preserved callback/subscriptions,
-  restore-mode sender/allowlist/Telegram fingerprint and held queues.
-- Controlled16:05:44UTC deployed repair test used real provider/Redis, with
-  wrong-host observations injected only in memory: one real PATCH to the
-  already-correct callback, subscription readback and lease release passed.
-  The real callback was never diverted; this is not a natural overwrite receipt.
-- Live provider probe rejected callback-only PATCH with HTTP 400; guard uses
-  the documented subscription-bearing request already verified by manual repairs.
-- Runbook and premortem: `docs/ops/wazzup-webhook-guard.md`.
-- Delivery/rollback receipt: `docs/reports/2026-10-13-wazzup-webhook-guard-delivery.md`.
-  Private rollback `/opt/noor/.hotfix-backups/tj-vqcc-20261013T154629Z`.
-- Fresh postdeployment natural message from owner...0921 to bot...0665 is
-  requested and pending; `tj-vqcc` stays in progress. Earlier received text/photos
-  are predeployment proof only.
-- Explicit defer `tj-zc6k`: exact competing writer and permanent account
-  ownership remain unknown. This guard recovers changes; another integration
-  can still change the account. Provider has no conditional-write guarantee;
-  a race after the final read remains possible and is checked on readback.
-- docs-reviewed: updated - README, env flag, runbook and live delivery receipt.
-  graph-reviewed: no-change-needed - no enabled task-owned graph; new job uses
-  the existing worker/provider boundaries.
+- `tj-vqcc`: live app+worker `d2de7b3f47260cbb88114fc42f8cb6c85e27832d`,
+  guard enabled. CI38425819094 passed4470/27, Ruff/Mypy and deploy.
+- Startup/minute checks and controlled real-provider repair passed; the real
+  callback was never diverted. Test0665 and protected settings retained.
+- Runbook `docs/ops/wazzup-webhook-guard.md`; deployment/rollback receipt
+  `docs/reports/2026-10-13-wazzup-webhook-guard-delivery.md`.
+- Fresh postdeployment owner...0921 message is still pending; earlier actual
+  received text/photos and tester questionnaire precede this deployment.
+- External configuration writer remains UNKNOWN under `tj-zc6k`. Guard recovers
+  changes but does not revoke that integration's write access.
 
 Updated: 2026-10-04
 Current branch: codex/tj-uvld-stock-sync
