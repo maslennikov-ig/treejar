@@ -26,7 +26,7 @@ changed_files:
   - src/llm/verified_answers.py
   - tests/test_verified_answers.py
 explicit_defers:
-  - canonical CI/runtime and fresh actual selection/retained budget proof stay with root
+  - competing callback writer tj-zc6k remains outside this product artifact
 ---
 
 # Summary
@@ -65,7 +65,10 @@ These local checks do not establish a new live model choice or provider receipt.
 CanonicalCI38549111605 succeeded on a72da15:4712passed/27gatedskips,
 lint/typecheck/deploy passed; semantic-evidence skipped. App+worker both match
 all six source hashes and protected configuration after10:26:30UTC rollout.
-Fresh natural model selection/quantity/retained budget acceptance remains pending.
+Fresh natural requests received10:37:50 and10:43:24UTC prove savedLUMA2then3,
+retained6000budget/declined consent, exact replies and grounded updated summary.
+Owner confirms first-turn photos and second-turn summary received; full receipt
+is in2026-10-14-tester-epic-completion-delivery.md. Root acceptance is complete.
 
 # Risks / Follow-ups
 

@@ -1,6 +1,6 @@
 # October tester epic completion and delivery
 
-Status: IN PROGRESS. Date:2026-10-14. Parent:tj-i2b1.
+Status: ACCEPTED product epic; external writer BLOCKED. Date:2026-10-14. Parent:tj-i2b1.
 Owner instruction: identify and remove repeated audit callback changes and
 finish all incomplete work from the independent review. This authorizes the
 reviewed product/CI correction delivery to canonical Noor, preserving test0665.
@@ -332,3 +332,87 @@ for required fresh2unit message then separate3unit/samebudget/held update. Owner
 asked to send one new message after deployment; previous09:25failure cannot
 establish new source acceptance. Private receipts retained under local
 tester-feedback/20261014; no old message replay or extra paid smoke performed.
+
+## Fresh first-turn acceptance on installed a72da15
+
+Owner's separate two-unit request reached Noor10:37:50.641012UTC, source
+f87d8008-d378-4694-ba28-5ab6463cbc2d; assistant
+c72033cc-2934-4b4f-99f9-e44e8c868928 completed10:39:10.084686UTC.
+Read-only10:41:20 state contains only walnutLUMA9719-4 SKU quantity2,
+budget6000, quotationconsentdeclined and quote_sentfalse; no quotation effect
+keys. Current literal intent evidence equals the customer message.
+Reply confirms2units/8people/Dubai/AED6000 and grounded1883each/3766total
+without the old false exact-match/closest caveat or another selection question.
+Browsing-only CT1065 photo request did not add coffee tables to selecteditems.
+
+Provider accepted text9a307242-98bf-4985-8fa2-abe6efa516d2 and three photos:
+OakDevonfc910ee7-66e5-4cb2-8dfa-b4f5655f5a59,
+LUMA4c2973b88-a967-4820-88c5-2008e800a2fb,
+WengeMagic46044745-533d-43ee-8512-247c65b91182; all status sent.
+No other finish or LUMA2 photo was sent; three caption-only audit rows are not
+additional sends. At this first-only observation handset receipt and the
+separate update were pending; both were subsequently accepted below.
+Completed private receipt: tester-feedback/20261014/
+owner-first-a72-completed.private.json,0600. No replay or synthetic send.
+
+10:41:34UTC fresh runtime readback still matches livea72da15/sixsourcehashes,
+protectedfingerprint/guard/restore, stockdeltafalse/modelgpt6luna/queue0.
+Provider callback is again audit.treejartrading.ae. This confirms recurring
+external route drift despite recovery; tj-zc6k remains blocked/actorUNKNOWN.
+The successful natural first turn does not establish route stability.
+
+## Separate quantity-update and owner acceptance
+
+Second natural message c5dcd4db-a909-490e-850c-f64a81c87a97 reached Noor
+10:43:24.560580UTC, after the first turn completed. It requested three units
+for twelve people, the same walnut finish and same budget; it did not repeat
+6000. Assistant57fae0c2-87bc-461b-9649-82be55f623cf completed
+10:43:42.857955UTC. Read-only10:44:42 state has the same LUMA9719-4 walnut SKU
+quantity3, retainedbudget6000 and consentdeclined; quote_sentfalse and no
+quotation effect keys. Literal intent evidence matches this second message.
+
+Actual reply gives three four-person workstations, twelve people, Dubai,
+AED6000budget and current grounded1883each/5649total, with quotation held.
+No old two-unit/eight-person summary or false catalog caveat remains. Wazzup
+accepted new text10e89f31-5a15-4a11-8d68-cf9c03b4cbf9 status sent.
+This summary-only update did not request or promise new photos, so no repeat
+media was expected or sent. Completed private receipt:
+tester-feedback/20261014/owner-second-a72-completed.private.json,0600.
+
+Owner explicitly confirms: "Я получил только ответ. Фотографии были только
+в предыдущем ответе." The preceding question specified both CT1065 finishes
+and the three-unit/AED6000/AED5649 reply. Handset receipt is accepted for the
+first requested photos and the second updated summary, independently of the
+provider's sent statuses. Both turns were genuinely new owner messages on the
+installed release; no old-message replay, synthetic send or extra paid smoke.
+
+Additional SQL READONLY10:46:39UTC: no linkedCRMcontact/deal, deal_amountnull,
+no quotation effect keys or pending_quotation. No quotation was prepared or
+sent. This receipt stays private beside the two completed customer turn files.
+
+All four existing product findings are accepted on source/CI/runtime and the
+fresh two-turn receipt boundary. Beads children1-3 and parent closed10:50UTC;
+photo child4 retains its historical closure and fresh confirmation. External
+writer tj-zc6k stays blocked/UNKNOWN with the prepared unsent owner action;
+uninterrupted routing is not accepted. Stock provider/delta/24h gates remain
+outside this epic and delta stays disabled. Original smoke totalUSD0.04873962.
+
+## Final scoped closeout
+
+Reuse root1429affected checks/full static acceptance and canonical4712/27CI
+on the exact installed a72da15 source. Only delivery/handoff/artifact metadata
+changed afterwards; repin mutable handoff digests and run metadata/process/
+artifact verification before the documentation push. Final metadata10passed
+0.27s; process/artifact validation and diff checks passed. This is a task closeout;
+the unrelated current stock stage is not closed or repurposed.
+
+Docs-reviewed:updated - actual two-turn receipt, owner confirmation and external
+blocker are current. Graph-reviewed:no-change-needed - stable paths unchanged;
+no enabled task-owned graph requires refresh. Both model workers and reviewer
+are completed; their accepted clean equivalent checkouts were already removed.
+The root checkout/branch becomes a safe-local cleanup candidate only after
+documentation is clean and verified published to fresh main. Native non-force
+removal and expected-old-SHA ref deletion then leave source on main and private
+receipts/rollback images intact. Preserve every unrelated worktree/session,
+customer original and the dirty primary; its tracked diff SHA256 remains
+7e23c1c0227f95dee93a666a1b37afe90f3fddf48d03cb6f21561630801d9af0.

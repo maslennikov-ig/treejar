@@ -2,14 +2,14 @@
 
 ## October tester feedback — authorized completion2026-10-14
 
-- Epic `tj-i2b1`; findings `tj-i2b1.1` (false mismatch caveats), `.2`
+- Accepted epic `tj-i2b1`; findings `tj-i2b1.1` (false mismatch caveats), `.2`
   (missing updated summary), `.3` (literal refusal persistence), `.4`
   (missing photos for structured catalog titles).
-- Delivery branch `codex/tj-i2b1-complete-20261014`, isolated worktree
-  `.worktrees/tj-i2b1-complete-20261014`, approved source4b032c7 plus CI fix6d4663f.
-- Prior14Oct09:25UTC owner request on527fe1f delivered3providerphotos.
-  Budget6000/consentdeclined saved; named selection empty and false caveat.
-  Mixed-query a72da15live/CI4712passed27skips; fresh2/3unitstateproofpending.
+- Delivered sourcea72da15 onmain; approved source4b032c7 plus CI fix6d4663f.
+- Livea72da15/CI4712passed27skips:10:37fresh request saved2LUMA/6000/declined;
+  separate10:43update saved3LUMA/12people, retained6000 and declined quote.
+  Owner confirms photos in first reply and updated summary in second;
+  no quotation effect or quote_sent. Prior527fe1f failure stays in delivery report.
 - Source fixes retain named model/finish/unit constraints, recover explicit
   multi-unit quantity lost from model search queries, distinguish broad needs
   from missing exact items, and expose the committed selection/budget to replies.
@@ -26,7 +26,7 @@
   Total smoke costUSD0.04873962; latestcapturescurrenttext,3units/6000/held,
   budgetstopbeforefinalreply. App/workera72da15 deployed14Oct10:26UTC.
 - Accepted source4b032c7 adds DB tz/index/client fixes (`tj-535g`), LLM/name/
-  quantity consistency, repo/Docker hygiene and `tj-bgwu`; engine11353lines.
+  quantity consistency, repo/Docker hygiene and `tj-bgwu`; engine11360lines.
   Independent root4555/20and96CI/metadata checks passed. Canonical CI38526089347
   passed4584/27,Ruff/Mypy194,semantic gate/deploy; tj-7ize accepted/closed.
 - Authority/preflight/rollback and delivery: `docs/reports/2026-10-14-tester-epic-completion-delivery.md`.
@@ -47,7 +47,7 @@
   by Wazzup201 and owner-confirmed received. Callback/settings stable17:26UTC;
   `tj-vqcc` closed. Independent photo defect belongs to `tj-i2b1.4` above.
 - Writer identity remainsUNKNOWN:14Oct GETs show Noor then audit again while
-  cron repeatedly reportsrestored. tj-zc6kblocked: no auditSSH/Wazzupadmin access;
+  cron reportsrestored;14Oct10:41GETagainaudit. tj-zc6kblocked: no account/audit access;
   provider-side owner action: `docs/ops/wazzup-callback-owner-action-20261014.md`.
 
 Updated: 2026-10-04
