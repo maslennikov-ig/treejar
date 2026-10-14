@@ -1228,6 +1228,131 @@ def test_named_model_in_an_absent_finish_is_not_exact() -> None:
     )
 
 
+_CT_1065_WENGE = "Coffee table, COFFEE, CT 1065, 1000х650х400, Wenge magic"
+_CT_1065_OAK = "Coffee table, COFFEE, CT 1065, 1000х650х400, Oak Devon"
+_CT_1065_WALNUT = "Coffee table, COFFEE, CT 1065, 1000х650х400, Walnut Dallas"
+_CT_1065_MULTI_FINISH_QUERY = (
+    "CT 1065 coffee table in Oak Devon and Wenge Magic; show product photos"
+)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        _CT_1065_MULTI_FINISH_QUERY,
+        "CT 1065 coffee table, Oak Devon finish and Wenge Magic finish; show product photos",
+    ],
+)
+def test_actual_named_model_multiple_finishes_are_exact_catalog_variants(
+    query: str,
+) -> None:
+    assert (
+        classify_product_match(
+            query,
+            [_CT_1065_WENGE, _CT_1065_OAK, _CT_1065_WALNUT],
+            candidate_skus=["00-07015316", "00-07015317", "00-07052840"],
+        )
+        == "exact"
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "rows"),
+    [
+        (_CT_1065_MULTI_FINISH_QUERY, [_CT_1065_OAK, _CT_1065_WALNUT]),
+        (_CT_1065_MULTI_FINISH_QUERY, [_CT_1065_WENGE]),
+        (
+            _CT_1065_MULTI_FINISH_QUERY,
+            [_CT_1065_OAK, _CT_1065_WENGE.replace("CT 1065", "CT 1075")],
+        ),
+        (
+            _CT_1065_MULTI_FINISH_QUERY,
+            [_CT_1065_OAK, _CT_1065_WENGE.replace("1000х650х400", "1200х650х400")],
+        ),
+        (
+            _CT_1065_MULTI_FINISH_QUERY,
+            [_CT_1065_OAK, _CT_1065_WENGE.replace("Coffee table", "Meeting table")],
+        ),
+        (
+            _CT_1065_MULTI_FINISH_QUERY,
+            [
+                _CT_1065_OAK.replace("Coffee table", "Meeting table"),
+                _CT_1065_WENGE.replace("Coffee table", "Meeting table"),
+            ],
+        ),
+        (
+            _CT_1065_MULTI_FINISH_QUERY,
+            [
+                _CT_1065_OAK,
+                _CT_1065_WENGE.replace("Coffee table", "Round coffee table"),
+            ],
+        ),
+        (
+            _CT_1065_MULTI_FINISH_QUERY,
+            [_CT_1065_OAK.replace("Oak Devon", "Oak Loft"), _CT_1065_WENGE],
+        ),
+        (
+            _CT_1065_MULTI_FINISH_QUERY.replace("coffee table", "meeting table"),
+            [_CT_1065_OAK, _CT_1065_WENGE],
+        ),
+        (
+            _CT_1065_MULTI_FINISH_QUERY.replace("coffee table", "round coffee table"),
+            [_CT_1065_OAK, _CT_1065_WENGE],
+        ),
+        (
+            _CT_1065_MULTI_FINISH_QUERY.replace(
+                "coffee table", "1200x650x400 coffee table"
+            ),
+            [_CT_1065_OAK, _CT_1065_WENGE],
+        ),
+        (
+            _CT_1065_MULTI_FINISH_QUERY.replace("CT 1065", "CT 1065 and CT 1075"),
+            [_CT_1065_OAK, _CT_1065_WENGE.replace("CT 1065", "CT 1075")],
+        ),
+        (
+            "LUMA 9719-4 eight-person workstation in Oak Devon and Wenge Magic",
+            [
+                "Four person workstation SKYLAND LUMA 9719-4, Oak Devon",
+                "Four person workstation SKYLAND LUMA 9719-4, Wenge Magic",
+            ],
+        ),
+        (
+            "LUMA 9719-4 four-person workstation in Oak Devon and Wenge Magic",
+            [
+                "Four person workstation SKYLAND LUMA 9719-4, Oak Devon",
+                "Eight person workstation SKYLAND LUMA 9719-4, Wenge Magic",
+            ],
+        ),
+    ],
+)
+def test_named_model_multiple_finishes_keep_each_catalog_variant_constraint(
+    query: str, rows: list[str]
+) -> None:
+    assert classify_product_match(query, rows) == "nearby"
+
+
+def test_named_model_multiple_finishes_keep_explicit_matching_dimensions() -> None:
+    assert (
+        classify_product_match(
+            _CT_1065_MULTI_FINISH_QUERY.replace(
+                "coffee table", "1000x650x400 coffee table"
+            ),
+            [_CT_1065_OAK, _CT_1065_WENGE],
+        )
+        == "exact"
+    )
+
+
+def test_named_model_one_bicolor_finish_preserves_single_row_matching() -> None:
+    assert (
+        classify_product_match(
+            "CT 1065 coffee table in black and white",
+            ["Coffee table, CT 1065, black and white"],
+        )
+        == "exact"
+    )
+
+
 def test_bare_number_does_not_name_a_model() -> None:
     assert classify_product_match("novo 2400", [_NOVO_ROW]) == "exact"
     assert classify_product_match("novo 1600 table", [_NOVO_ROW]) == "nearby"

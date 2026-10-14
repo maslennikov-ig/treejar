@@ -1448,6 +1448,18 @@ _PRODUCT_FINISH_TERMS = frozenset(
         "yellow",
     }
 )
+_COMPOUND_FINISH_PATTERN = (
+    rf"(?:{'|'.join(sorted(_PRODUCT_FINISH_TERMS))})\s+"
+    r"[a-z][a-z0-9-]+(?:\s+finish)?"
+)
+_NAMED_FINISH_LIST_RE = re.compile(
+    rf"(?P<finishes>{_COMPOUND_FINISH_PATTERN}"
+    rf"(?:\s+and\s+{_COMPOUND_FINISH_PATTERN})+)\b",
+    re.IGNORECASE,
+)
+_VARIANT_QUERY_FILLER_TERMS = frozenset(
+    {"photo", "photos", "picture", "pictures", "image", "images", "finish", "finishes"}
+)
 _MODEL_CODE_TOKEN_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _DIMENSION_CODE_RE = re.compile(r"^\d+(?:[x*]\d+)+$")
 _MODEL_CODE_WORD_EXCLUSIONS = frozenset(
@@ -1696,6 +1708,77 @@ def _matches_named_model_reference(
     ) and _model_reference_details_agree(
         query, details_text, references, customer_request=customer_request
     )
+
+
+def _matches_named_model_finish_variants(
+    query: str, candidates: Sequence[str], skus: Sequence[str | None]
+) -> bool | None:
+    """Prove each named finish on matching variants of one catalog product.
+
+    Return None for queries outside the explicit compound-finish list syntax.
+    Two ordinary colours may describe one bicolour item, so that existing
+    single-row reading stays unchanged.
+    """
+    folded_query = _fold_model_text(query)
+    finish_list = _NAMED_FINISH_LIST_RE.search(folded_query)
+    if finish_list is None:
+        return None
+    variants = tuple(
+        dict.fromkeys(
+            re.sub(r"\s+finish$", "", part)
+            for part in re.split(r"\s+and\s+", finish_list.group("finishes"))
+        )
+    )
+    if len(variants) < 2 or any(len(variant.split()) != 2 for variant in variants):
+        return None
+    core_query = (
+        folded_query[: finish_list.start("finishes")]
+        + folded_query[finish_list.end("finishes") :]
+    )
+    requested_table_types = re.findall(r"\b(coffee|meeting)\s+tables?\b", core_query)
+    groups: dict[tuple[frozenset[str], int | None], set[str]] = {}
+    requested_capacity = _capacity_value(folded_query)
+    for candidate, sku in zip(candidates, skus, strict=True):
+        capacity = _capacity_value(candidate)
+        if requested_capacity is not None and requested_capacity != capacity:
+            continue
+        name_line = _fold_model_text(candidate.split("\n", 1)[0])
+        if any(
+            not re.search(rf"\b{kind}\s+tables?\b", name_line.split(",", 1)[0])
+            for kind in requested_table_types
+        ):
+            continue
+        references = _candidate_model_references(candidate)
+        without_references = core_query
+        for reference in references:
+            pattern = r"[\s-]*".join(re.escape(part) for part in reference.split())
+            without_references = re.sub(
+                rf"(?<![a-z0-9]){pattern}(?![a-z0-9])", " ", without_references
+            )
+        core_terms = (
+            _tokenize(_MONEY_AMOUNT_RE.sub(" ", strip_head_counts(without_references)))
+            - _PRODUCT_MATCH_FILLER_TERMS
+            - _VARIANT_QUERY_FILLER_TERMS
+        )
+        for variant in variants:
+            finish_pattern = rf"(?<![a-z0-9]){re.escape(variant)}(?![a-z0-9])"
+            if (
+                re.search(finish_pattern, f"{name_line}\n{_fold_model_text(sku or '')}")
+                is None
+            ):
+                continue
+            variant_query = (
+                folded_query[: finish_list.start("finishes")]
+                + variant
+                + folded_query[finish_list.end("finishes") :]
+            )
+            if not _matches_named_model_reference(variant_query, candidate, sku):
+                continue
+            base_terms = frozenset(_tokenize(re.sub(finish_pattern, " ", name_line)))
+            if not all(_term_variants(term) & base_terms for term in core_terms):
+                continue
+            groups.setdefault((base_terms, capacity), set()).add(variant)
+    return any(set(variants).issubset(found) for found in groups.values())
 
 
 _MONEY_AMOUNT_RE = re.compile(
@@ -2057,13 +2140,17 @@ def classify_product_match(
         else [None] * len(candidates)
     )
 
-    if any(
+    variant_match = _matches_named_model_finish_variants(query, candidates, skus)
+    if variant_match:
+        return "exact"
+
+    if variant_match is None and any(
         _matches_structured_workstation_constraints(query, candidate)
         for candidate in candidates
     ):
         return "exact"
 
-    if any(
+    if variant_match is None and any(
         _matches_named_model_reference(
             query, candidate, sku, customer_request=customer_request
         )
@@ -2083,12 +2170,16 @@ def classify_product_match(
         token for token in query_tokens if token not in _PRODUCT_MATCH_FILLER_TERMS
     } | _generic_item_quantity_tokens(normalized_query)
 
-    if exact_terms and any(
-        all(
-            any(variant in candidate for variant in _term_variants(term))
-            for term in exact_terms
+    if (
+        variant_match is None
+        and exact_terms
+        and any(
+            all(
+                any(variant in candidate for variant in _term_variants(term))
+                for term in exact_terms
+            )
+            for candidate in candidate_tokens
         )
-        for candidate in candidate_tokens
     ):
         return "exact"
 
