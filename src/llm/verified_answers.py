@@ -1460,8 +1460,9 @@ _NAMED_MODEL_QUANTITY_RE = re.compile(
     re.IGNORECASE,
 )
 _NAMED_MODEL_QUANTITY_SUFFIX_RE = re.compile(
-    r"(?:^|[,.;!?\n])\s*"
-    r"(?P<item>[^,.;!?\n]+?)\bfor\s+(?P<capacity>[^,.;!?\n]+),\s*"
+    r"(?:^|[.;!?\n])\s*"
+    r"(?P<item>[^.;!?\n]+?)\bfor\s+(?P<capacity>[^,.;!?\n]+?)"
+    r"(?:,\s*|\s+(?:using|with)\s+)"
     rf"(?P<count>{COUNT_PATTERN})\s+"
     r"(?P<unit>workstations|desks|benches|tables|units|pieces)\b"
     r"(?=\s*(?:$|[,.;!?]))",
@@ -1507,6 +1508,18 @@ def _query_names_model_reference(folded_query: str, reference: str) -> bool:
     return re.search(rf"(?<![a-z0-9]){pattern}(?![a-z0-9])", folded_query) is not None
 
 
+def _has_explicit_item_quantity(text: str, references: Sequence[str]) -> bool:
+    # A numeric model suffix in `NOVO 240 workstation` is an identifier, not
+    # 240 requested units. Remove only literal references to this catalog row.
+    without_references = text
+    for reference in sorted(references, key=len, reverse=True):
+        pattern = r"[\s-]*".join(re.escape(part) for part in reference.split())
+        without_references = re.sub(
+            rf"(?<![a-z0-9]){pattern}(?![a-z0-9])", " model ", without_references
+        )
+    return _NAMED_MODEL_QUANTITY_RE.search(without_references) is not None
+
+
 def _matches_aggregate_model_capacity(
     query: str,
     references: Sequence[str],
@@ -1532,7 +1545,7 @@ def _matches_aggregate_model_capacity(
         if (
             not re.search(r"\bfor\b", tail)
             or re.search(r"\b(?:and|or|each|per)\b", tail)
-            or _NAMED_MODEL_QUANTITY_RE.search(tail)
+            or _has_explicit_item_quantity(tail, references)
         ):
             continue
         if (
@@ -1551,7 +1564,7 @@ def _matches_suffix_aggregate_model_capacity(
     requested_capacity: int,
     candidate_capacity: int,
 ) -> bool:
-    """Bind an adjacent `MODEL for N people, Q units` to this model only."""
+    """Bind `MODEL for N people, Q units` or `using Q units` to this model."""
     for match in _NAMED_MODEL_QUANTITY_SUFFIX_RE.finditer(folded_query):
         quantity = count_value(match.group("count"))
         if quantity is None or quantity < 2:
@@ -1561,12 +1574,20 @@ def _matches_suffix_aggregate_model_capacity(
         stripped_capacity = strip_head_counts(capacity, replacement="\x00")
         if (
             _capacity_value(item) is not None
-            or _NAMED_MODEL_QUANTITY_RE.search(item)
+            or _has_explicit_item_quantity(item, references)
             or re.search(r"\b(?:and|or|each|per|plus)\b|[&/]", item)
             or stripped_capacity.count("\x00") != 1
             or _tokenize(stripped_capacity)
             or _capacity_value(capacity) != requested_capacity
             or quantity * candidate_capacity != requested_capacity
+        ):
+            continue
+        finish_attributes = [part.strip() for part in item.split(",")[1:]]
+        if any(
+            _tokenize(attribute) - _PRODUCT_FINISH_TERMS - {"finish", "color", "colour"}
+            or not (_tokenize(attribute) & _PRODUCT_FINISH_TERMS)
+            for attribute in finish_attributes
+            if attribute
         ):
             continue
         item_references = _candidate_model_references(item)
@@ -1584,9 +1605,9 @@ def _matches_suffix_aggregate_model_capacity(
             rf"\b(?:{re.escape(singular_unit)}|{re.escape(unit)})\b", item
         ):
             continue
-        # Extra quantities/items after the suffix cannot be borrowed. A trailing
-        # budget is request context, not another product or capacity constraint.
-        tail = re.split(r"[.;!?\n]", folded_query[match.end() :], maxsplit=1)[0]
+        # Check the whole remaining request: a later sentence may change the
+        # quantity or model. A trailing budget is harmless request context.
+        tail = folded_query[match.end() :]
         if _tokenize(_MONEY_AMOUNT_RE.sub(" ", tail)) - _PRODUCT_MATCH_FILLER_TERMS:
             continue
         return True
@@ -1607,7 +1628,7 @@ def _query_allows_aggregate_model_capacity(
     folded_query = _fold_model_text(query)
     if re.search(r"\b(?:each|per)\b", folded_query):
         return False
-    if _NAMED_MODEL_QUANTITY_RE.search(folded_query):
+    if _has_explicit_item_quantity(folded_query, references):
         # An explicit count, including `..., two units`, must stand on its own;
         # the literal customer request cannot override a conflicting query.
         return False

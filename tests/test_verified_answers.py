@@ -879,11 +879,17 @@ def test_named_model_quantity_accounts_for_aggregate_team_capacity(
     assert classify_product_match(query, [row], candidate_skus=[sku]) == "exact"
 
 
-def test_live_named_model_suffix_quantity_confirms_the_exact_catalog_row() -> None:
-    query = (
+@pytest.mark.parametrize(
+    "query",
+    [
         "Exact walnut LUMA 9719-4 workstation for 12 people, three units, "
-        "budget AED 6000"
-    )
+        "budget AED 6000",
+        "LUMA 9719-4 workstation, walnut finish, for 12 people using 3 units",
+    ],
+)
+def test_live_named_model_suffix_quantity_confirms_the_exact_catalog_row(
+    query: str,
+) -> None:
 
     assert (
         classify_product_match(
@@ -942,6 +948,21 @@ def test_live_named_model_suffix_quantity_confirms_the_exact_catalog_row() -> No
             "Six person bench SKYLAND AERO 5500\nWorkstations",
             None,
         ),
+        (
+            "NOVO 240 workstation for twelve people, three units",
+            "Four person workstation SKYLAND NOVO 240\nWorkstations",
+            None,
+        ),
+        (
+            "LUMA 9719-4 workstation in walnut for twelve people, three units. Budget AED 6000",
+            _LUMA_ROW,
+            _LUMA_SKU,
+        ),
+        (
+            "LUMA 9719-4 workstation in walnut for twelve people, three units; budget AED 6000",
+            _LUMA_ROW,
+            _LUMA_SKU,
+        ),
     ],
 )
 def test_named_model_suffix_quantity_accounts_for_aggregate_capacity(
@@ -971,6 +992,16 @@ def test_named_model_suffix_quantity_accounts_for_aggregate_capacity(
         "Three LUMA 9719-4 workstations in walnut for twelve people, two units",
         "LUMA 9719-4 workstation in walnut for twelve people, three units or six units",
         "LUMA 9719-4 workstation in walnut for twelve people, maybe three units",
+        "LUMA 9719-4 workstation, oak finish, for twelve people using three units",
+        "LUMA 9719-4 eight-person workstation, walnut finish, for twelve people using three units",
+        "LUMA 9719-4 workstation, walnut finish, for twelve people each using three units",
+        "LUMA 9719-4 workstation, walnut finish, for twelve people using three units per workstation",
+        "LUMA 9719-4 workstation, walnut finish, for twelve people using two units",
+        "LUMA 9719-4 workstation, walnut finish, NOVO 2400 workstation, for twelve people using three units",
+        "LUMA 9719-4 workstation, walnut finish, chairs, for twelve people using three units",
+        "LUMA 9719-4 workstation, walnut finish, for twelve people using three chairs",
+        "LUMA 9719-4 workstation, walnut finish, for twelve people using two or three units",
+        "LUMA 9719-4 workstation, walnut finish, for twelve people using three units. Actually two units",
     ],
 )
 def test_named_model_suffix_quantity_keeps_product_and_quantity_constraints(
@@ -978,6 +1009,61 @@ def test_named_model_suffix_quantity_keeps_product_and_quantity_constraints(
 ) -> None:
     assert (
         classify_product_match(query, [_LUMA_ROW], candidate_skus=[_LUMA_SKU])
+        == "nearby"
+    )
+
+
+@pytest.mark.parametrize(
+    "later_request",
+    [
+        "; actually two units",
+        ". Two units instead",
+        "; switch to NOVO 2400",
+        ". Use NOVO 2400 instead",
+    ],
+)
+@pytest.mark.parametrize("with_customer_fallback", [False, True])
+def test_named_model_suffix_quantity_rejects_later_conflicting_requests(
+    later_request: str, with_customer_fallback: bool
+) -> None:
+    query = (
+        "LUMA 9719-4 workstation in walnut for twelve people, three units"
+        + later_request
+    )
+
+    assert (
+        classify_product_match(
+            query,
+            [_LUMA_ROW],
+            candidate_skus=[_LUMA_SKU],
+            customer_request=(
+                "Three LUMA 9719-4 workstations in walnut for twelve people"
+                if with_customer_fallback
+                else None
+            ),
+        )
+        == "nearby"
+    )
+
+
+def test_short_named_model_code_does_not_block_literal_quantity_fallback() -> None:
+    assert (
+        classify_product_match(
+            "NOVO 240 workstation for twelve people",
+            ["Four person workstation SKYLAND NOVO 240\nWorkstations"],
+            customer_request="Three NOVO 240 workstations for twelve people",
+        )
+        == "exact"
+    )
+
+
+def test_short_named_model_code_keeps_explicit_quantity_constraints() -> None:
+    assert (
+        classify_product_match(
+            "NOVO 240 workstation for twelve people, two units",
+            ["Four person workstation SKYLAND NOVO 240\nWorkstations"],
+            customer_request="Three NOVO 240 workstations for twelve people",
+        )
         == "nearby"
     )
 
@@ -1003,6 +1089,8 @@ def test_shortened_named_query_reuses_literal_customer_suffix_quantity() -> None
         "LUMA9719-4 walnut for twelve people, one unit",
         "LUMA9719-4 walnut for twelve people, two or three units",
         "LUMA9719-4 walnut for twelve people, three units, two units",
+        "LUMA9719-4 workstation, walnut finish, for twelve people using two units",
+        "LUMA9719-4 workstation, walnut finish, for twelve people using two or three units",
     ],
 )
 def test_literal_customer_quantity_cannot_override_explicit_query_suffix(
