@@ -7,9 +7,9 @@
   (missing photos for structured catalog titles).
 - Delivery branch `codex/tj-i2b1-complete-20261014`, isolated worktree
   `.worktrees/tj-i2b1-complete-20261014`, approved source4b032c7 plus CI fix6d4663f.
-- Fresh14Oct07:24UTC owner message delivered with4photos (owner confirmed).
-  Live check failed: false quantity/finish caveats and uncommitted state.
-  Corrections994d6f1/54d3c5a live527fe1f;CI4671passed/27skipped; stateproofpending.
+- Fresh14Oct09:25UTC owner request delivered on527fe1f with3providerphotos.
+  Budget6000/consentdeclined saved; named selection empty and false caveat.
+  Mixed-query sourcecc6bc57 accepted1429/static; CI/live/freshstateproofpending.
 - Source fixes retain named model/finish/unit constraints, recover explicit
   multi-unit quantity lost from model search queries, distinguish broad needs
   from missing exact items, and expose the committed selection/budget to replies.
@@ -159,8 +159,8 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 
 ## Explicit defers
 
-- tj-i2b1: old589f302 reply+photos owner-confirmed; corrections live527fe1f/
-  CI4671passed; fresh actual updated/held/retained state pending.
+- tj-i2b1: live527fe1f saved budget/hold but mixed query false-nearby/selection[].
+  Mixed-query sourcecc6bc57accepted; delivery/fresh updated/retained proof pending.
 - tj-zc6k: stop recurring writer via account owner/provider; no audit SSH or
   Wazzup admin access available. Enabled guard recovers but cannot revoke keys.
 - tj-uvld: AC02 provider stock/lifecycle coverage and paging stability need

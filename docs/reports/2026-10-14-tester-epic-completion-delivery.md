@@ -235,3 +235,76 @@ Completed catalog worker5111370 is clean and all three commits patch-equivalent
 to freshmain527fe1f; two owned files identical. Removed withoutforce; exact
 localref deletion used expected-oldSHA5111370. Root deliverycheckout retained
 for real acceptance; unrelated branches/worktrees/private originals retained.
+
+## Fresh natural owner check on527fe1f —09:25UTC
+
+Owner sent the requested single two-unit/budget6000/hold/CTphotos message.
+Incoming provider911d8104-1303-4880-bae6-da79fba4c925, localfc4e93bf-c2e4-
+4128-ab79-fe68e9eb0649. Runtime v4 records actual received_at09:25:26.709758UTC,
+recorded_at09:26:07.814954UTC, assistant63b3b6be-22b1-4d1e-a88b-8463faad4764,
+usage provider_reported and text_provenance=model. Provider message timestamps
+are minute-truncated; they are not used as the actual ingress time.
+
+Real Wazzup textfaeeee33-96f1-4b28-888f-97903e965498 and3media7171b46e-
+b8ca-4ecf-b560-4b626e92b001/e4477eb8-5eb6-46ce-9770-1f387069013f/
+841609f3-b61d-410d-8968-bc73efc40eb3 are status sent. This proves provider
+acceptance, not new owner receipt. Three caption-only audit rows have no
+provider IDs and do not represent three additional sends.
+
+Positive current proof: stored budget6000 and quotation consentdeclined,
+literal model intent matches the current owner message; quote_sentfalse and
+no quotation-effect keys. Remaining failure: stored selection[], and the
+reply calls the exact4-person walnut LUMA a closest/unconfirmed match.
+It gives2units/8people/1883x2=3766 but asks whether to keep it as a candidate.
+Do not close the epic or ask the quantity-update test yet.
+
+Worker trace explains the changed failure shape: one search query combines
+`walnut LUMA 9719-4 workstation for 4 people, and CT 1065 coffee tables Oak
+Devon and Wenge Magic with photos`; requirements writeitems0/budget6000.
+Both catalog query parts separately pass, while the combined query and each
+singleton are nearby. Root owns caller/model-recording evidence; delegated
+classifier repair is isolated in codex/tj-i2b1-mixed-search-20261014 atmain
+bdedf90, limited to verified_answers.py and its tests. Product-specific
+attributes must stay bound to each clause; complete mixed-query confidence
+and per-row media membership are distinct checks. No further paid replay,
+provider mutation, previous-message replay or synthetic user send.
+
+09:28:21UTC live release/source/safety readback is still527fe1f with all6
+expected hashes, fingerprint57552c05, guard/restoretrue, deltafalse, queue0;
+provider again returns audit host. Externalwriter stays blocked/UNKNOWN.
+Private first-turn receipt: local tester-feedback/20261014/
+owner-first-live527fe1f.private.json (0700 directory,0600 file).
+
+Prepared next rollback09:47:29UTC in /opt/noor/.hotfix-backups/
+tj-i2b1-mixed-20261014T094729Z (0700 directory/0600 files): current527fe1f
+app+worker images retained as noor-i2b1-mixed-rollback-app/worker:
+20261014t094729z, original.env and compose retained. EnvSHA5ab1406c is unchanged;
+no customer state/queue rewind. Preflight1342MiB available RAM/full2GiBswap,
+82GBdiskfree; current app+worker0restarts/OOMfalse. Build/recreation will use
+only the existing scoped preserve-test-worker delivery path after acceptance.
+
+## Mixed-query source acceptance
+
+Classifier child45fca98/0b89889 accepted asroot0942941/3847f18; root caller/
+tool-contract cc6bc570df7ea5d48d739cb1a639361d075bfc7d. Mixed whole-query
+confidence requires every explicitly separated named product; exact media uses
+per-candidate membership without an unchecked resolved-key union. Unresolved
+explicit references cannot stay exact. Positive evidence directs model-owned
+recording of explicit chosen SKU quantities, preserving hold and browsing-only
+requests. No semantic selection router or blanket forced-item rule was added.
+
+Root actual pipeline RED1 then GREEN4 plus12named-reference cases. Final
+selected15-file set1429passed6.33s (includes10repin tests); fullRuff/format433/
+Mypy194/diff passed. One import-order lint issue was corrected cosmetically
+after functional acceptance; no behavior changed. Child138focused checks
+passed. Independent review initially found two P2 alias/location boundaries;
+both fixed and re-read with no remaining findings. Full canonical CI, live
+source/readback and actual corrected2unit then3unit/retainedbudget/held proofs
+are still pending; earlier527fe1f first-turn failure remains the real baseline.
+
+Read-only live native reference parser on the exact model query returned no
+extracted/resolved/unresolved SKU references, consistent with the retrieval
+fixture's empty resolver stub. It makes no provider/stock/model call. Current
+live source remains527fe1f until authorized canonical rollout. No extra paid
+smoke or owner-message replay; original bounded smoke total staysUSD0.04873962.
+Detailed accepted leaf artifact:2026-10-14-mixed-product-query-correction.md.
