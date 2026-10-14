@@ -1456,7 +1456,15 @@ _MODEL_CODE_WORD_EXCLUSIONS = frozenset(
 _NAMED_MODEL_QUANTITY_RE = re.compile(
     rf"(?<![\w-])(?P<count>{COUNT_PATTERN})\s+"
     r"(?P<item>(?:(?!and\b|or\b|for\b)[a-z0-9][a-z0-9-]*\s+){0,6}"
-    r"(?:workstations|desks|benches|tables|units|pieces))\b",
+    r"(?:workstations?|desks?|bench(?:es)?|tables?|units?|pieces?))\b",
+    re.IGNORECASE,
+)
+_NAMED_MODEL_QUANTITY_SUFFIX_RE = re.compile(
+    r"(?:^|[,.;!?\n])\s*"
+    r"(?P<item>[^,.;!?\n]+?)\bfor\s+(?P<capacity>[^,.;!?\n]+),\s*"
+    rf"(?P<count>{COUNT_PATTERN})\s+"
+    r"(?P<unit>workstations|desks|benches|tables|units|pieces)\b"
+    r"(?=\s*(?:$|[,.;!?]))",
     re.IGNORECASE,
 )
 
@@ -1521,8 +1529,10 @@ def _matches_aggregate_model_capacity(
         if _capacity_value(folded_query[: match.end()]) is not None:
             continue
         tail = re.split(r"[.;!?\n]", folded_query[match.end() :], maxsplit=1)[0]
-        if not re.search(r"\bfor\b", tail) or re.search(
-            r"\b(?:and|or|each|per)\b", tail
+        if (
+            not re.search(r"\bfor\b", tail)
+            or re.search(r"\b(?:and|or|each|per)\b", tail)
+            or _NAMED_MODEL_QUANTITY_RE.search(tail)
         ):
             continue
         if (
@@ -1530,6 +1540,56 @@ def _matches_aggregate_model_capacity(
             and quantity * candidate_capacity == requested_capacity
         ):
             return True
+    return _matches_suffix_aggregate_model_capacity(
+        folded_query, references, requested_capacity, candidate_capacity
+    )
+
+
+def _matches_suffix_aggregate_model_capacity(
+    folded_query: str,
+    references: Sequence[str],
+    requested_capacity: int,
+    candidate_capacity: int,
+) -> bool:
+    """Bind an adjacent `MODEL for N people, Q units` to this model only."""
+    for match in _NAMED_MODEL_QUANTITY_SUFFIX_RE.finditer(folded_query):
+        quantity = count_value(match.group("count"))
+        if quantity is None or quantity < 2:
+            continue
+        item = match.group("item")
+        capacity = match.group("capacity")
+        stripped_capacity = strip_head_counts(capacity, replacement="\x00")
+        if (
+            _capacity_value(item) is not None
+            or _NAMED_MODEL_QUANTITY_RE.search(item)
+            or re.search(r"\b(?:and|or|each|per|plus)\b|[&/]", item)
+            or stripped_capacity.count("\x00") != 1
+            or _tokenize(stripped_capacity)
+            or _capacity_value(capacity) != requested_capacity
+            or quantity * candidate_capacity != requested_capacity
+        ):
+            continue
+        item_references = _candidate_model_references(item)
+        if not item_references or not all(
+            any(
+                _query_names_model_reference(ref, candidate_ref)
+                for candidate_ref in references
+            )
+            for ref in item_references
+        ):
+            continue
+        unit = match.group("unit")
+        singular_unit = "bench" if unit == "benches" else unit.removesuffix("s")
+        if unit not in {"units", "pieces"} and not re.search(
+            rf"\b(?:{re.escape(singular_unit)}|{re.escape(unit)})\b", item
+        ):
+            continue
+        # Extra quantities/items after the suffix cannot be borrowed. A trailing
+        # budget is request context, not another product or capacity constraint.
+        tail = re.split(r"[.;!?\n]", folded_query[match.end() :], maxsplit=1)[0]
+        if _tokenize(_MONEY_AMOUNT_RE.sub(" ", tail)) - _PRODUCT_MATCH_FILLER_TERMS:
+            continue
+        return True
     return False
 
 
@@ -1547,11 +1607,9 @@ def _query_allows_aggregate_model_capacity(
     folded_query = _fold_model_text(query)
     if re.search(r"\b(?:each|per)\b", folded_query):
         return False
-    if any(
-        _query_names_model_reference(match.group("item"), ref)
-        for match in _NAMED_MODEL_QUANTITY_RE.finditer(folded_query)
-        for ref in references
-    ):
+    if _NAMED_MODEL_QUANTITY_RE.search(folded_query):
+        # An explicit count, including `..., two units`, must stand on its own;
+        # the literal customer request cannot override a conflicting query.
         return False
     # A shortened query may retain "MODEL for eight people" while dropping
     # the unit count. "Eight-person MODEL" still states per-unit capacity.
