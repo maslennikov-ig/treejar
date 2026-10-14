@@ -156,19 +156,25 @@ async def test_two_named_skus_in_one_query_both_resolve(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("unknown_finish", ["grey", "black"])
 async def test_unknown_named_sku_is_reported_not_found(
     monkeypatch: pytest.MonkeyPatch,
+    unknown_finish: str,
 ) -> None:
     monkeypatch.setattr(engine_module, "rag_search_products", _vector_results())
     ctx = _ctx(_CatalogDb(_CATALOG))
 
-    result = await search_products(ctx, "CH 460 black and CH 999 grey")  # type: ignore[arg-type]
+    result = await search_products(  # type: ignore[arg-type]
+        ctx, f"CH 460 black and CH 999 {unknown_finish}"
+    )
 
     assert isinstance(result, ToolReturn)
-    assert "Requested catalog reference not found in the catalog: CH 999 grey" in (
-        result.return_value
+    assert (
+        f"Requested catalog reference not found in the catalog: CH 999 {unknown_finish}"
+        in result.return_value
     )
     assert "SKU: CH 460 black" in result.return_value
+    assert "closest alternatives" in str(result.content).casefold()
 
 
 @pytest.mark.asyncio

@@ -285,6 +285,7 @@ from src.llm.verified_answers import (
     classify_product_match,
     is_quote_or_proposal_hold,
     is_quote_or_proposal_request,
+    is_requested_product_candidate,
     query_names_specific_item,
 )
 from src.llm.verified_answers import (
@@ -9216,10 +9217,6 @@ async def search_products(
             f"{product.category or ''}"
         )
 
-    resolved_reference_keys = {
-        str(getattr(product, "id", None) or product.sku)
-        for product in resolved_reference_products
-    }
     # The SKU often carries the finish ("...-9719-4-Walnut") the name leaves
     # out, and a customer may quote it; it is passed separately so its code
     # fragments never count as product words.
@@ -9229,21 +9226,20 @@ async def search_products(
         candidate_skus=[str(product.sku) for product in results.products],
         customer_request=ctx.deps.user_query,
     )
-    if resolved_reference_keys:
-        # The customer named these rows by code and the catalog has them.
-        product_match = "exact"
+    if product_match == "exact" and reference_resolution.unresolved_references:
+        # A matching returned row does not resolve another absent named SKU.
+        product_match = "nearby"
     exact_media_product_keys: set[str] | None = None
     if product_match == "exact":
-        exact_keys = resolved_reference_keys | {
+        exact_keys = {
             str(getattr(product, "id", None) or product.sku)
             for product in results.products
-            if classify_product_match(
+            if is_requested_product_candidate(
                 effective_query,
-                [_product_match_text(product)],
-                candidate_skus=[str(product.sku)],
+                _product_match_text(product),
+                candidate_sku=str(product.sku),
                 customer_request=ctx.deps.user_query,
             )
-            == "exact"
         }
         if exact_keys:
             exact_media_product_keys = exact_keys

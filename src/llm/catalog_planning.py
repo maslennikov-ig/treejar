@@ -2146,6 +2146,17 @@ def _product_search_response_contract(
     else:
         contract_parts = [
             "Relevant catalog results were found for this customer message.",
+            "The returned rows confirm the requested product references and "
+            "stated catalog attributes for this search. Present those matches "
+            "as verified products, using only the returned facts.",
+            "When the customer chooses a matching model and gives its quantity "
+            "as a requirement, call record_customer_requirements with every "
+            "resolved chosen SKU and quantity before replying. Record the "
+            "consultation selection even if quotation preparation is declined "
+            "or deferred; recording items does not grant quotation consent. "
+            "A request only to compare products or see their photos does not "
+            "choose them. Preserve existing choices for unrelated photo "
+            "requests, and change them only as the customer requests.",
             "In your next reply, lead with up to 3 concrete options from these results before any generic qualifying questions, but respect an explicit smaller maximum in the customer's request.",
             "Use only facts already present in tool results; do not invent specs or allocate more units than returned catalog stock.",
             "Treejar Catalog price is the customer-facing commercial truth by default.",
