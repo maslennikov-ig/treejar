@@ -209,3 +209,29 @@ noor-i2b1-live-rollback-worker:20261014t081837z retained. App/worker0restarts,
 OOMfalse; DB/Redis/nginx starttimes unchanged.1462MBavailable/82GBdiskfree.
 EnvironmentSHA5ab1406c4e331be7baa03b7412dd8749f065b5c88a28d348e0607b5a7d021948
 retained; do not rewind customer DB/queues on rollback.
+
+## Correction release/runtime acceptance
+
+Main527fe1fa6f0df91aa309121ab9719c3e4c11faa4 deployed app+worker08:44:42UTC.
+CanonicalCI38536867395SUCCESS:4671passed/27gatedskips91.32s; lint/typecheck/
+changes/deploySUCCESS. Semantic-evidence jobskipped; no new independent
+bridge/model pass is claimed. Root source1378/format432/Mypy194 and10repin
+tests passed.
+
+Live readback08:48:37UTC and independentworker source check: all six owned/
+protectedsource hashes match; both releases527fe1f; .env byte-identical to
+08:18rollback, protectedfingerprint57552c05 unchanged. Guard/restoretrue,
+stockdeltafalse, mainmodelgpt6luna, queue0, publichealthDB/RedisOK. App/worker
+0restarts/OOMfalse; DB/Redis/nginx starttimes unchanged.
+
+Provider still returns audit host; externalwriter remainsblockedwithout
+account/admin/audit access. Guard code/registration retained; no key changed.
+At08:52:26UTC no postcorrection natural owner message/outbound row yet; old
+emptyselection/nullbudget/notrequestedconsent unchanged. This is a baseline,
+not current acceptance. Owner was asked one fresh two-unit/budget6000/held/
+CTphotos message; a separate no-budget-number update will prove retention.
+
+Completed catalog worker5111370 is clean and all three commits patch-equivalent
+to freshmain527fe1f; two owned files identical. Removed withoutforce; exact
+localref deletion used expected-oldSHA5111370. Root deliverycheckout retained
+for real acceptance; unrelated branches/worktrees/private originals retained.
