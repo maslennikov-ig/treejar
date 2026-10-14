@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from src.llm import verified_answers as verified_answers_module
@@ -1350,6 +1353,252 @@ def test_named_model_one_bicolor_finish_preserves_single_row_matching() -> None:
             ["Coffee table, CT 1065, black and white"],
         )
         == "exact"
+    )
+
+
+_ACTUAL_MIXED_PRODUCT_QUERY = (
+    "walnut LUMA 9719-4 workstation for 4 people, and CT 1065 coffee tables "
+    "Oak Devon and Wenge Magic with photos"
+)
+_ACTUAL_MIXED_CUSTOMER_REQUEST = (
+    "I need two walnut LUMA 9719-4 workstations for eight people in Dubai. "
+    "My budget is AED 6000. Do not prepare a quotation. "
+    "Please show CT 1065 coffee tables in Oak Devon and Wenge Magic with photos."
+)
+
+
+@pytest.fixture(scope="module")
+def actual_mixed_product_catalog() -> tuple[list[str], list[str]]:
+    rows = json.loads(
+        (
+            Path(__file__).parent
+            / "fixtures/catalog_snapshot_2026-10-14_tester_subset.json"
+        ).read_text()
+    )
+    return (
+        [
+            f"{row['name_en']}\n{row['description_en'] or ''}\n{row['category'] or ''}"
+            for row in rows
+        ],
+        [row["sku"] for row in rows],
+    )
+
+
+def test_actual_mixed_named_products_are_exact_when_every_clause_is_supported(
+    actual_mixed_product_catalog: tuple[list[str], list[str]],
+) -> None:
+    texts, skus = actual_mixed_product_catalog
+
+    assert (
+        classify_product_match(
+            _ACTUAL_MIXED_PRODUCT_QUERY,
+            texts,
+            candidate_skus=skus,
+            customer_request=_ACTUAL_MIXED_CUSTOMER_REQUEST,
+        )
+        == "exact"
+    )
+
+
+def test_mixed_named_products_keep_literal_customer_quantity_in_its_own_clause(
+    actual_mixed_product_catalog: tuple[list[str], list[str]],
+) -> None:
+    texts, skus = actual_mixed_product_catalog
+
+    assert (
+        classify_product_match(
+            _ACTUAL_MIXED_PRODUCT_QUERY.replace("for 4 people", "for eight people"),
+            texts,
+            candidate_skus=skus,
+            customer_request=_ACTUAL_MIXED_CUSTOMER_REQUEST,
+        )
+        == "exact"
+    )
+
+
+@pytest.mark.parametrize("location", ["Atlantis", "Abu Custom"])
+def test_mixed_named_products_keep_unknown_locality_discriminators_conservative(
+    actual_mixed_product_catalog: tuple[list[str], list[str]], location: str
+) -> None:
+    texts, skus = actual_mixed_product_catalog
+
+    assert (
+        classify_product_match(
+            _ACTUAL_MIXED_PRODUCT_QUERY.replace("for 4 people", "for eight people"),
+            texts,
+            candidate_skus=skus,
+            customer_request=_ACTUAL_MIXED_CUSTOMER_REQUEST.replace(
+                "in Dubai", f"in {location}"
+            ),
+        )
+        == "nearby"
+    )
+
+
+@pytest.mark.parametrize("attribute", ["brand Dubai", "Dubai finish"])
+def test_mixed_named_products_keep_explicit_location_named_brand_or_finish(
+    actual_mixed_product_catalog: tuple[list[str], list[str]], attribute: str
+) -> None:
+    texts, skus = actual_mixed_product_catalog
+
+    assert (
+        classify_product_match(
+            _ACTUAL_MIXED_PRODUCT_QUERY.replace(
+                "walnut LUMA", f"{attribute} walnut LUMA"
+            ),
+            texts,
+            candidate_skus=skus,
+            customer_request=_ACTUAL_MIXED_CUSTOMER_REQUEST,
+        )
+        == "nearby"
+    )
+
+
+@pytest.mark.parametrize(
+    "missing_sku",
+    [_LUMA_SKU, "00-07015316", "00-07015317"],
+)
+def test_mixed_named_products_require_each_model_and_each_finish(
+    actual_mixed_product_catalog: tuple[list[str], list[str]], missing_sku: str
+) -> None:
+    texts, skus = actual_mixed_product_catalog
+    rows = [
+        (text, sku) for text, sku in zip(texts, skus, strict=True) if sku != missing_sku
+    ]
+
+    assert (
+        classify_product_match(
+            _ACTUAL_MIXED_PRODUCT_QUERY,
+            [text for text, _ in rows],
+            candidate_skus=[sku for _, sku in rows],
+            customer_request=_ACTUAL_MIXED_CUSTOMER_REQUEST,
+        )
+        == "nearby"
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        _ACTUAL_MIXED_PRODUCT_QUERY.replace("walnut LUMA", "oak LUMA"),
+        _ACTUAL_MIXED_PRODUCT_QUERY.replace("for 4 people", "for eight people each"),
+        _ACTUAL_MIXED_PRODUCT_QUERY.replace(
+            "walnut LUMA 9719-4 workstation for 4 people",
+            "Three walnut LUMA 9719-4 workstations for eight people",
+        ),
+        _ACTUAL_MIXED_PRODUCT_QUERY.replace("CT 1065", "CT 1075"),
+        _ACTUAL_MIXED_PRODUCT_QUERY.replace("CT 1065", "CT 1065 and CT 1075"),
+        _ACTUAL_MIXED_PRODUCT_QUERY.replace("coffee tables", "meeting tables"),
+        _ACTUAL_MIXED_PRODUCT_QUERY.replace("coffee tables", "round coffee tables"),
+        _ACTUAL_MIXED_PRODUCT_QUERY.replace(
+            "coffee tables", "1200x650x400 coffee tables"
+        ),
+        _ACTUAL_MIXED_PRODUCT_QUERY.replace("Oak Devon", "Oak Loft"),
+        _ACTUAL_MIXED_PRODUCT_QUERY.replace("Wenge Magic", "Walnut Dallas"),
+    ],
+)
+def test_mixed_named_products_keep_each_clauses_literal_constraints(
+    actual_mixed_product_catalog: tuple[list[str], list[str]], query: str
+) -> None:
+    texts, skus = actual_mixed_product_catalog
+    # Exclude the unrequested Walnut Dallas sibling so a missing finish cannot
+    # be borrowed from the walnut workstation in the other clause.
+    rows = [
+        (text, sku)
+        for text, sku in zip(texts, skus, strict=True)
+        if sku != "00-07052840"
+    ]
+
+    assert (
+        classify_product_match(
+            query,
+            [text for text, _ in rows],
+            candidate_skus=[sku for _, sku in rows],
+            customer_request=_ACTUAL_MIXED_CUSTOMER_REQUEST,
+        )
+        == "nearby"
+    )
+
+
+def test_mixed_query_singleton_does_not_claim_complete_search_coverage(
+    actual_mixed_product_catalog: tuple[list[str], list[str]],
+) -> None:
+    texts, skus = actual_mixed_product_catalog
+
+    for text, sku in zip(texts, skus, strict=True):
+        assert (
+            classify_product_match(
+                _ACTUAL_MIXED_PRODUCT_QUERY, [text], candidate_skus=[sku]
+            )
+            != "exact"
+        )
+
+
+def test_mixed_named_products_keep_repeated_separators_and_finish_conjunctions(
+    actual_mixed_product_catalog: tuple[list[str], list[str]],
+) -> None:
+    texts, skus = actual_mixed_product_catalog
+
+    assert (
+        classify_product_match(
+            _ACTUAL_MIXED_PRODUCT_QUERY.replace(", and CT", ", and, CT"),
+            texts,
+            candidate_skus=skus,
+        )
+        == "exact"
+    )
+
+
+def test_mixed_named_products_expose_per_candidate_membership_separately(
+    actual_mixed_product_catalog: tuple[list[str], list[str]],
+) -> None:
+    texts, skus = actual_mixed_product_catalog
+
+    assert {
+        sku
+        for text, sku in zip(texts, skus, strict=True)
+        if verified_answers_module.is_requested_product_candidate(
+            _ACTUAL_MIXED_PRODUCT_QUERY,
+            text,
+            candidate_sku=sku,
+            customer_request=_ACTUAL_MIXED_CUSTOMER_REQUEST,
+        )
+    } == {_LUMA_SKU, "00-07015316", "00-07015317"}
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        _ACTUAL_MIXED_PRODUCT_QUERY.replace("for 4 people", "for eight people each"),
+        _ACTUAL_MIXED_PRODUCT_QUERY.replace("walnut LUMA", "oak LUMA"),
+    ],
+)
+def test_mixed_query_candidate_membership_keeps_its_own_capacity_and_finish(
+    actual_mixed_product_catalog: tuple[list[str], list[str]], query: str
+) -> None:
+    texts, skus = actual_mixed_product_catalog
+    index = skus.index(_LUMA_SKU)
+
+    assert not verified_answers_module.is_requested_product_candidate(
+        query,
+        texts[index],
+        candidate_sku=_LUMA_SKU,
+        customer_request=_ACTUAL_MIXED_CUSTOMER_REQUEST,
+    )
+
+
+def test_mixed_query_candidate_membership_keeps_its_own_dimensions(
+    actual_mixed_product_catalog: tuple[list[str], list[str]],
+) -> None:
+    texts, skus = actual_mixed_product_catalog
+    index = skus.index("00-07015316")
+
+    assert not verified_answers_module.is_requested_product_candidate(
+        _ACTUAL_MIXED_PRODUCT_QUERY.replace(
+            "coffee tables", "1200x650x400 coffee tables"
+        ),
+        texts[index],
+        candidate_sku=skus[index],
     )
 
 

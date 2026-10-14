@@ -13,7 +13,11 @@ from src.dialogue.count_words import (
     parse_count_word,
     strip_head_counts,
 )
-from src.llm.catalog_families import catalog_text_families
+from src.llm.catalog_families import (
+    CATALOG_PRODUCT_FAMILIES,
+    catalog_text_families,
+    contains_catalog_term,
+)
 from src.llm.money import BUDGET_AED_CURRENCY_PATTERN
 from src.services.customer_language import is_arabic_customer_language
 
@@ -1252,6 +1256,18 @@ def _explicit_structured_discriminators(query: str) -> set[str]:
         value.casefold()
         for match in _STRUCTURED_ATTRIBUTE_VALUE_RE.finditer(query)
         if (value := next((group for group in match.groups() if group), None))
+        and not (
+            match.group("modifier")
+            and any(
+                re.match(
+                    r"\s+".join(re.escape(part) for part in place.split())
+                    + r"(?![\w-])",
+                    query[match.start("modifier") :],
+                    re.IGNORECASE,
+                )
+                for place in _LOCATION_TERMS
+            )
+        )
     }
     values = {token for raw_value in raw_values for token in _tokenize(raw_value)}
     return values - _STRUCTURED_DISCRIMINATOR_EXCLUSIONS
@@ -1462,6 +1478,7 @@ _VARIANT_QUERY_FILLER_TERMS = frozenset(
 )
 _MODEL_CODE_TOKEN_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _DIMENSION_CODE_RE = re.compile(r"^\d+(?:[x*]\d+)+$")
+_EXPLICIT_DIMENSION_RE = re.compile(r"\d+(?:\s*[x*]\s*\d+)+")
 _MODEL_CODE_WORD_EXCLUSIONS = frozenset(
     {"person", "people", "seat", "seats", "seater", "pcs", "pc", "mm", "cm", "aed"}
 )
@@ -1518,6 +1535,125 @@ def _candidate_model_references(candidate: str) -> tuple[str, ...]:
 def _query_names_model_reference(folded_query: str, reference: str) -> bool:
     pattern = r"[\s-]*".join(re.escape(part) for part in reference.split())
     return re.search(rf"(?<![a-z0-9]){pattern}(?![a-z0-9])", folded_query) is not None
+
+
+def _query_model_references(query: str) -> tuple[str, ...]:
+    prepared = _EXPLICIT_DIMENSION_RE.sub(
+        " ", _MONEY_AMOUNT_RE.sub(" ", strip_head_counts(_fold_model_text(query)))
+    )
+    excluded = (
+        _PRODUCT_MATCH_FILLER_TERMS
+        | _PRODUCT_NEED_TERMS
+        | _PRODUCT_FINISH_TERMS
+        | _STOPWORDS
+        | {"quantity", "units", "pieces", "width", "height", "length", "depth"}
+    )
+    return tuple(
+        reference
+        for reference in _candidate_model_references(prepared)
+        if " " not in reference
+        or (
+            reference.split()[0] not in excluded
+            and parse_count_word(reference.split()[0]) is None
+        )
+    )
+
+
+def _references_overlap(first: Sequence[str], second: Sequence[str]) -> bool:
+    return any(
+        _query_names_model_reference(left, right)
+        or _query_names_model_reference(right, left)
+        for left in first
+        for right in second
+    )
+
+
+def _explicit_product_queries(query: str) -> tuple[str, ...] | None:
+    """Split only punctuation boundaries introducing a distinct model code.
+
+    Finish conjunctions and attributes without a new model remain attached to
+    their product. Unseparated comparisons retain their existing reading.
+    """
+    separators = list(re.finditer(r"[,;.!?\n]\s*(?:and\s+)?", query, re.IGNORECASE))
+    starts = [0]
+    ends: list[int] = []
+    for index, separator in enumerate(separators):
+        head_end = (
+            separators[index + 1].start() if index + 1 < len(separators) else len(query)
+        )
+        before = _query_model_references(query[starts[-1] : separator.start()])
+        after = _query_model_references(query[separator.end() : head_end])
+        if before and after and not _references_overlap(before, after):
+            ends.append(separator.start())
+            starts.append(separator.end())
+    if len(starts) < 2:
+        return None
+    return tuple(
+        query[start:end].strip()
+        for start, end in zip(starts, [*ends, len(query)], strict=True)
+    )
+
+
+def _customer_request_for_product_query(
+    query: str, customer_request: str | None
+) -> str | None:
+    if customer_request is None:
+        return None
+    parts = _explicit_product_queries(customer_request)
+    if parts is None:
+        return customer_request
+    references = _query_model_references(query)
+    matching = [
+        part
+        for part in parts
+        if _references_overlap(references, _query_model_references(part))
+    ]
+    return matching[0] if len(matching) == 1 else customer_request
+
+
+def _candidate_matches_product_constraints(
+    query: str, candidate: str, sku: str | None
+) -> bool:
+    folded_query = _fold_model_text(query)
+    name = _fold_model_text(candidate.split("\n", 1)[0])
+    references = [*_candidate_model_references(candidate)]
+    if sku:
+        references.append(" ".join(_MODEL_CODE_TOKEN_RE.findall(_fold_model_text(sku))))
+    requested_references = _query_model_references(query)
+    if not requested_references or not all(
+        _references_overlap([reference], references)
+        for reference in requested_references
+    ):
+        return False
+    type_query = strip_head_counts(folded_query)
+    primary_name = name.split(",", 1)[0]
+    if any(
+        contains_catalog_term(type_query, term)
+        and not contains_catalog_term(primary_name, term)
+        for _, terms in CATALOG_PRODUCT_FAMILIES
+        for term in terms
+    ) or any(
+        not re.search(rf"\b{kind}\s+tables?\b", primary_name)
+        for kind in re.findall(r"\b(coffee|meeting)\s+tables?\b", type_query)
+    ):
+        return False
+
+    def dimensions(text: str) -> set[str]:
+        return {
+            re.sub(r"\s+", "", value).replace("*", "x")
+            for value in _EXPLICIT_DIMENSION_RE.findall(text)
+        }
+
+    if not dimensions(folded_query).issubset(dimensions(name)):
+        return False
+    if any(
+        not re.search(rf"\b{shape}\b", primary_name)
+        for shape in re.findall(r"\b(round|square|oval|rectangular)\b", type_query)
+    ):
+        return False
+    return not (
+        _capacity_value(folded_query) is not None and _capacity_value(candidate) is None
+    )
 
 
 def _has_explicit_item_quantity(text: str, references: Sequence[str]) -> bool:
@@ -2140,6 +2276,29 @@ def classify_product_match(
         else [None] * len(candidates)
     )
 
+    product_queries = _explicit_product_queries(query)
+    if product_queries is not None:
+        matches: list[ProductMatch] = []
+        for product_query in product_queries:
+            applicable = [
+                (candidate, sku)
+                for candidate, sku in zip(candidates, skus, strict=True)
+                if _candidate_matches_product_constraints(product_query, candidate, sku)
+            ]
+            matches.append(
+                classify_product_match(
+                    product_query,
+                    [candidate for candidate, _ in applicable],
+                    candidate_skus=[sku for _, sku in applicable],
+                    customer_request=_customer_request_for_product_query(
+                        product_query, customer_request
+                    ),
+                )
+            )
+        if all(match == "exact" for match in matches):
+            return "exact"
+        return "missing" if all(match == "missing" for match in matches) else "nearby"
+
     variant_match = _matches_named_model_finish_variants(query, candidates, skus)
     if variant_match:
         return "exact"
@@ -2200,3 +2359,66 @@ def classify_product_match(
         return "nearby"
 
     return "missing"
+
+
+def is_requested_product_candidate(
+    query: str,
+    candidate: str,
+    *,
+    candidate_sku: str | None = None,
+    customer_request: str | None = None,
+) -> bool:
+    """Whether a row matches its own request, without claiming whole coverage.
+
+    Callers must establish complete search coverage separately before using
+    this membership proof to choose exact-result media.
+    """
+    product_queries = _explicit_product_queries(query)
+    for product_query in product_queries or (query,):
+        folded_query = _fold_model_text(product_query)
+        finish_list = _NAMED_FINISH_LIST_RE.search(folded_query)
+        if (product_queries is not None or finish_list is not None) and not (
+            _candidate_matches_product_constraints(
+                product_query, candidate, candidate_sku
+            )
+        ):
+            continue
+        scoped_customer_request = _customer_request_for_product_query(
+            product_query, customer_request
+        )
+        if finish_list is None:
+            if (
+                classify_product_match(
+                    product_query,
+                    [candidate],
+                    candidate_skus=[candidate_sku],
+                    customer_request=scoped_customer_request,
+                )
+                == "exact"
+            ):
+                return True
+            continue
+        for part in re.split(r"\s+and\s+", finish_list.group("finishes")):
+            variant = re.sub(r"\s+finish$", "", part)
+            name = _fold_model_text(candidate.split("\n", 1)[0])
+            identity = f"{name}\n{_fold_model_text(candidate_sku or '')}"
+            if not re.search(
+                rf"(?<![a-z0-9]){re.escape(variant)}(?![a-z0-9])", identity
+            ):
+                continue
+            variant_query = (
+                folded_query[: finish_list.start("finishes")]
+                + variant
+                + folded_query[finish_list.end("finishes") :]
+            )
+            if (
+                classify_product_match(
+                    variant_query,
+                    [candidate],
+                    candidate_skus=[candidate_sku],
+                    customer_request=scoped_customer_request,
+                )
+                == "exact"
+            ):
+                return True
+    return False
