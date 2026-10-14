@@ -6,13 +6,16 @@ Runtime engine imports preserve existing patch points without a module cycle.
 from __future__ import annotations
 
 import datetime
+import inspect
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from copy import deepcopy
+from functools import wraps
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
-from pydantic_ai import RunContext
+from pydantic_ai import ModelRetry, RunContext
 
 from src.dialogue.decision_state import REQUIREMENTS_SUMMARY_DIRECTIVE
 from src.dialogue.order_state import (
@@ -21,7 +24,7 @@ from src.dialogue.order_state import (
     quotation_consent_is_grounded,
     quote_workflow_from_metadata,
 )
-from src.llm.catalog_planning import SalesDeps
+from src.llm.catalog_planning import CustomerWriteRejection, SalesDeps
 
 logger = logging.getLogger("src.llm.engine")
 
@@ -37,6 +40,127 @@ MAX_RECORDED_QUANTITY = 10_000
 MAX_RECORDED_BUDGET_AED = 100_000_000.0
 MAX_RECORDED_TEXT_CHARS = 200
 _EVIDENCE_QUOTE_PAIRS = {('"', '"'), ("'", "'"), ("“", "”"), ("‘", "’")}
+
+
+class CustomerWritePolicyRejection(str):
+    """An action prohibited by state policy; follow the tool's alternative."""
+
+    prohibited_fields: frozenset[str]
+
+    def __new__(
+        cls, message: str, prohibited_fields: frozenset[str]
+    ) -> CustomerWritePolicyRejection:
+        result = super().__new__(cls, message)
+        result.prohibited_fields = prohibited_fields
+        return result
+
+
+def _customer_write_fields(name: str, arguments: dict[str, Any]) -> frozenset[str]:
+    """Track requested tool fields, without interpreting customer wording."""
+    fields: set[str] = set()
+    if name == "record_customer_intent":
+        if arguments.get("quotation_consent") is not None:
+            fields.add("quotation_consent")
+        if arguments.get("accept_sent_quotation"):
+            fields.add("accept_sent_quotation")
+        fields.update(
+            f"detail:{detail.field}" for detail in arguments.get("details") or []
+        )
+    else:
+        if (
+            arguments.get("items")
+            or arguments.get("replace_items")
+            or arguments.get("remove_skus")
+        ):
+            fields.add("items")
+        for name in (
+            "budget_cap_aed",
+            "needed_by",
+            "decision_authority",
+            "company_activity",
+        ):
+            if arguments.get(name) is not None:
+                fields.add(name)
+    return frozenset(fields)
+
+
+def retry_rejected_customer_write(
+    func: Callable[..., Awaitable[str]],
+) -> Callable[..., Awaitable[str]]:
+    """Make a rejected state write corrective feedback to the tool-using model.
+
+    Keep direct Python callers' descriptive result contract; the registered
+    agent tool uses PydanticAI's existing bounded retry budget. This neither
+    infers intent nor relaxes the underlying evidence/state validation.
+    """
+
+    signature = inspect.signature(func)
+
+    @wraps(func)
+    async def checked(ctx: RunContext[SalesDeps], *args: Any, **kwargs: Any) -> str:
+        fields = _customer_write_fields(
+            func.__name__, signature.bind(ctx, *args, **kwargs).arguments
+        )
+        result = await func(ctx, *args, **kwargs)
+        pending = ctx.deps.pending_customer_write_rejections
+        previous = pending.get(func.__name__)
+        if result.startswith("Not recorded:"):
+            required = fields | (previous.required_fields if previous else frozenset())
+            if isinstance(result, CustomerWritePolicyRejection):
+                required -= result.prohibited_fields
+            if required or not isinstance(result, CustomerWritePolicyRejection):
+                pending[func.__name__] = CustomerWriteRejection(
+                    reason=str(result), required_fields=required
+                )
+            else:
+                pending.pop(func.__name__, None)
+            raise ModelRetry(
+                result + " The requested change was not saved. Correct the tool "
+                "arguments using current customer and catalog evidence before "
+                "claiming that the change or quotation decision was recorded. "
+                "For record_customer_intent, pass evidence=null to capture the "
+                "current customer message verbatim instead of copying quotations."
+            )
+        if (
+            previous
+            and fields
+            and result != "Nothing to record."
+            and "Not recorded:" not in result
+        ):
+            remaining = previous.required_fields - fields
+            if remaining:
+                pending[func.__name__] = CustomerWriteRejection(
+                    reason=previous.reason, required_fields=remaining
+                )
+            else:
+                pending.pop(func.__name__, None)
+        return result
+
+    return checked
+
+
+def require_resolved_customer_writes(ctx: RunContext[SalesDeps]) -> None:
+    """A rejected write stays unresolved until its tool confirms correction."""
+    pending = getattr(ctx.deps, "pending_customer_write_rejections", {})
+    if pending:
+        rejected = "\n".join(
+            f"{name} (unsaved fields: {', '.join(sorted(rejection.required_fields))}): "
+            f"{rejection.reason}"
+            for name, rejection in pending.items()
+        )
+        raise ModelRetry(
+            "Customer state changes remain unsaved:\n" + rejected + "\nCorrect "
+            "these tools before a final answer or quotation. Copy one continuous "
+            "literal excerpt for evidence; do not join separate quotations or "
+            "paraphrase the current message. For record_customer_intent, prefer "
+            "evidence=null to capture the current message verbatim. An unrelated successful tool or "
+            "a text promise does not resolve the rejected write."
+        )
+
+
+async def validate_customer_writes(ctx: RunContext[SalesDeps], response: str) -> str:
+    require_resolved_customer_writes(ctx)
+    return response
 
 
 def _literal_current_evidence(evidence: str, current: str) -> str | None:
@@ -139,14 +263,16 @@ def _sync_dialogue_slots_from_details(
 
 async def record_customer_intent(
     ctx: RunContext[SalesDeps],
-    evidence: str,
+    evidence: str | None = None,
     quotation_consent: Literal["granted", "declined", "deferred"] | None = None,
     details: list[CustomerDetailEvidence] | None = None,
     accept_sent_quotation: bool = False,
 ) -> str:
     """Record your contextual interpretation of the CURRENT customer message.
 
-    Copy evidence literally from the current message, never history. Judge short
+    Prefer evidence=null: the tool captures the CURRENT customer message verbatim.
+    An optional string must be one literal excerpt, never joined quotes or history.
+    Judge short
     answers against the last assistant offer and history. Consent is permission
     to prepare a quotation, not order acceptance. Each detail needs its own
     evidence; customer_type='individual' means an explicitly personal purchase.
@@ -175,7 +301,9 @@ async def record_customer_intent(
     current = ctx.deps.user_query
     if any(not d.value.strip() for d in details or []):
         return "Not recorded: detail values must not be blank."
-    literal_evidence = _literal_current_evidence(evidence, current)
+    literal_evidence = _literal_current_evidence(
+        current if evidence is None else evidence, current
+    )
     if literal_evidence is None:
         return "Not recorded: evidence must be a literal excerpt of the current customer message."
     evidence = literal_evidence
@@ -189,21 +317,26 @@ async def record_customer_intent(
     if any(
         d.field == "customer_type" and d.value != "individual" for d in details or []
     ):
-        return "Not recorded: customer_type must be individual; use company for a business."
+        return CustomerWritePolicyRejection(
+            "Not recorded: customer_type must be individual; use company for a business.",
+            frozenset({"detail:customer_type"}),
+        )
     if quotation_consent == "deferred" and not _quotation_on_the_table(ctx.deps):
         # A deferral answers an offer; with none made, the reply would put a
         # quotation "on hold" the customer never discussed (tj-2ey4).
-        return (
+        return CustomerWritePolicyRejection(
             "Not recorded: no quotation has been offered or asked for, so there is "
             "nothing to defer. If the customer chose products, record that with "
-            "record_customer_requirements and offer to prepare the quotation."
+            "record_customer_requirements and offer to prepare the quotation.",
+            frozenset({"quotation_consent"}),
         )
     if quotation_consent == "granted" and not _quotation_on_the_table(ctx.deps):
-        return (
+        return CustomerWritePolicyRejection(
             "Not recorded: quotation consent needs the customer to ask for a "
             "quotation or to answer your offer of one. This message chooses or "
             "confirms products; record that with record_customer_requirements and "
-            "offer to prepare the quotation. Do not ask for quotation details yet."
+            "offer to prepare the quotation. Do not ask for quotation details yet.",
+            frozenset({"quotation_consent"}),
         )
     pii_map = ctx.deps.pii_map
     evidence = unmask_pii(evidence, pii_map)
@@ -226,7 +359,10 @@ async def record_customer_intent(
             or shortfall.get("source_message_id") == ctx.deps.source_message_id
         )
     ):
-        return "Not recorded: stock is short. Wait for a new customer decision after the shortage message; do not reuse consent from this turn."
+        return CustomerWritePolicyRejection(
+            "Not recorded: stock is short. Wait for a new customer decision after the shortage message; do not reuse consent from this turn.",
+            frozenset({"quotation_consent"}),
+        )
     if (
         accept_sent_quotation
         and _has_sent_proposal(conversation)
@@ -241,9 +377,15 @@ async def record_customer_intent(
         or _metadata_quotation_decision_status(conversation.metadata_ or {})
         not in {"", "pending"}
     ):
-        return "Not recorded: no sent quotation is awaiting acceptance."
+        return CustomerWritePolicyRejection(
+            "Not recorded: no sent quotation is awaiting acceptance.",
+            frozenset({"accept_sent_quotation"}),
+        )
     if accept_sent_quotation and quotation_consent in {"declined", "deferred"}:
-        return "Not recorded: acceptance conflicts with declined or deferred consent."
+        return CustomerWritePolicyRejection(
+            "Not recorded: acceptance conflicts with declined or deferred consent.",
+            frozenset({"accept_sent_quotation"}),
+        )
     original_metadata = deepcopy(conversation.metadata_)
     original_name = conversation.customer_name
     try:

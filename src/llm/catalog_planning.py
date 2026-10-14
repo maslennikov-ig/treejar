@@ -2242,6 +2242,12 @@ def _stock_follow_up_contract(*, selection_closed: bool = False) -> str:
     )
 
 
+@dataclass(frozen=True)
+class CustomerWriteRejection:
+    reason: str
+    required_fields: frozenset[str]
+
+
 @dataclass
 class SalesDeps:
     db: SkipValidation[AsyncSession]
@@ -2301,6 +2307,9 @@ class SalesDeps:
     catalog_decision: CatalogDecision | None = None
     executed_tool_names: list[str] = field(default_factory=list)
     recovery_tool_traces: list[RuntimeToolTrace] = field(default_factory=list)
+    pending_customer_write_rejections: dict[str, CustomerWriteRejection] = field(
+        default_factory=dict
+    )
 
 
 _PRICE_FIGURE_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
@@ -3004,7 +3013,10 @@ def _track_sales_tool(func: Callable[..., Any]) -> Callable[..., Any]:
         outcome = "ok"
         logger.info("llm.sales_tool.start tool=%s", func.__name__)
         try:
-            return await func(ctx, *args, **kwargs)
+            result = await func(ctx, *args, **kwargs)
+            if isinstance(result, str) and result.startswith("Not recorded:"):
+                outcome = "rejected"
+            return result
         except BaseException as exc:
             outcome = type(exc).__name__
             raise

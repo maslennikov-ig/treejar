@@ -195,6 +195,11 @@ from src.llm.customer_intent_tools import (
 from src.llm.customer_intent_tools import (
     record_proposal_response as _record_proposal_response_impl,
 )
+from src.llm.customer_intent_tools import (
+    require_resolved_customer_writes,
+    retry_rejected_customer_write,
+    validate_customer_writes,
+)
 from src.llm.escalation_policy import critical_escalation_decision
 from src.llm.escalation_tools import (
     escalate_to_manager as _escalate_to_manager_impl,
@@ -8762,7 +8767,7 @@ def _quotation_tools_withdrawn(deps: SalesDeps) -> bool:
     returns when record_customer_intent records a new request with literal
     current-message evidence. That tool remains available while declined.
     """
-    return (
+    return bool(getattr(deps, "pending_customer_write_rejections", {})) or (
         quote_workflow_from_metadata(deps.conversation.metadata_).consent
         is QuoteConsent.DECLINED
     )
@@ -8793,7 +8798,7 @@ async def _prepare_sales_tools(
         ]
         if withdrawn:
             logger.info(
-                "quotation tools %s withdrawn after a declined quotation for "
+                "quotation tools %s withdrawn while consent or requirements are unresolved for "
                 "conversation %s",
                 sorted(tool_def.name for tool_def in withdrawn),
                 ctx.deps.conversation.id,
@@ -8867,6 +8872,7 @@ sales_agent = Agent(
         PATH_CORE_CHAT, model_name=CORE_CHAT_MODEL_NAME
     ),
 )
+sales_agent.output_validator(validate_customer_writes)
 
 
 # The prose rewrite is a text transformation, not a sales turn, and it gets its
@@ -8911,7 +8917,9 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
         "the proposal it answers. "
         "Ask if the intended action is ambiguous. Use record_customer_intent to "
         "persist quotation consent, customer details or acceptance of a sent "
-        "quotation with literal current-message evidence. An explicit refusal "
+        "quotation with literal current-message evidence. Prefer evidence=null "
+        "in record_customer_intent to capture the current message verbatim; "
+        "do not manually join separate quotations. An explicit refusal "
         "or request to put quotation preparation on hold must be recorded with "
         "record_customer_intent before replying, even during product planning. "
         "Saying that no quotation will be prepared does not persist that "
@@ -9805,15 +9813,16 @@ async def update_language(ctx: RunContext[SalesDeps], language: Language) -> str
     return f"Language updated to {language.value}."
 
 
-# Keep public engine imports and tool registration stable after extraction.
-record_customer_intent = sales_agent.tool(sequential=True)(
-    _track_sales_tool(_record_customer_intent_impl)
-)
+# Direct callers retain descriptive validation results; registered state writes
+# send rejections through the agent's bounded argument-correction mechanism.
+record_customer_intent = _track_sales_tool(_record_customer_intent_impl)
+sales_agent.tool(sequential=True)(retry_rejected_customer_write(record_customer_intent))
 record_proposal_response = sales_agent.tool(sequential=True)(
     _track_sales_tool(_record_proposal_response_impl)
 )
-record_customer_requirements = sales_agent.tool(sequential=True)(
-    _track_sales_tool(_record_customer_requirements_impl)
+record_customer_requirements = _track_sales_tool(_record_customer_requirements_impl)
+sales_agent.tool(sequential=True)(
+    retry_rejected_customer_write(record_customer_requirements)
 )
 
 
@@ -10332,6 +10341,7 @@ async def create_quotation(
     Args:
         items: List of the SKUs and quantities to include in the quote.
     """
+    require_resolved_customer_writes(ctx)
     # tj-uz6j.9. A transient Zoho failure defers the quote instead of raising.
     return await run_quotation_with_inventory_deferral(ctx, items, _create_quotation)
 
@@ -10348,6 +10358,7 @@ def _quotation_stock_shortfall_message(
 async def _create_quotation(
     ctx: RunContext[SalesDeps], items: list[QuotationItem]
 ) -> str:
+    require_resolved_customer_writes(ctx)
     logger.info(f"LLM Tool called: create_quotation(items={items})")
 
     metadata = ctx.deps.conversation.metadata_

@@ -1,0 +1,82 @@
+{
+  "id": "D-October14-live-combined",
+  "source_conversation": "01089560-500f-4c41-931c-1a6c324b8e29",
+  "description": "Exact owner live multi-request message, then quantity/retained-budget follow-up; no real sends.",
+  "customer": {
+    "phone": "+971500000014",
+    "language": "en"
+  },
+  "fixtures": {
+    "catalog": "tests/fixtures/catalog_snapshot_2026-10-14_tester_subset.json"
+  },
+  "turns": [
+    {
+      "text": "I need two walnut LUMA 9719-4 workstations for eight people in Dubai. My budget is AED 6000. Please do not prepare a quotation yet.” “Make it three units for twelve people in the same walnut finish. Keep the same budget and summarise the updated requirements. Do not prepare a quotation.” “Please show me CT 1065 coffee tables in Oak Devon and Wenge Magic, with photos"
+    },
+    {
+      "text": "Keep those three walnut LUMA units for twelve people and the same budget. Please summarise my workstation requirements. Do not prepare a quotation."
+    }
+  ],
+  "checks": [
+    {
+      "type": "no_structured_leak"
+    },
+    {
+      "type": "positive_answer",
+      "turn": 1,
+      "require_patterns": [
+        "9719-4",
+        "walnut",
+        "6[, ]?000",
+        "CT\\s*1065",
+        "Oak Devon",
+        "Wenge Magic"
+      ],
+      "forbid_patterns": [
+        "exact requested workstation.*not confirmed",
+        "exact requested workstation.*isn['’]t confirmed"
+      ]
+    },
+    {
+      "type": "positive_answer",
+      "turn": 2,
+      "require_patterns": [
+        "9719-4",
+        "walnut",
+        "6[, ]?000",
+        "\\b(?:12|twelve)\\b",
+        "\\b(?:3|three)\\b"
+      ],
+      "forbid_patterns": [
+        "shall I.*quotation",
+        "would you like.*quotation"
+      ]
+    },
+    {
+      "type": "records_items_without_alternative",
+      "turn": 2,
+      "skus": [
+        "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut"
+      ],
+      "alternative_patterns": [
+        "9719-2"
+      ]
+    },
+    {
+      "type": "media_covers_offered",
+      "turn": 1,
+      "items": [
+        {
+          "label": "CT1065Oak",
+          "offered_pattern": "Oak Devon",
+          "media_pattern": "00-07015317"
+        },
+        {
+          "label": "CT1065Wenge",
+          "offered_pattern": "Wenge Magic",
+          "media_pattern": "00-07015316"
+        }
+      ]
+    }
+  ]
+}

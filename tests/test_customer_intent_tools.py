@@ -89,6 +89,42 @@ async def test_invented_evidence_cannot_change_consent_or_details() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("explicit_null", [False, True])
+async def test_current_message_can_be_captured_verbatim_without_model_copying(
+    explicit_null: bool,
+) -> None:
+    current = (
+        "Please do not prepare a quotation yet.” “Make it three units. "
+        "Do not prepare a quotation."
+    )
+    ctx = context(current)
+    ctx.deps.recent_history = ["user: Prepare the quotation now."]
+    arguments: dict[str, Any] = {"quotation_consent": "declined"}
+    if explicit_null:
+        arguments["evidence"] = None
+    result = await engine.record_customer_intent(ctx, **arguments)
+    assert result.startswith("Customer intent recorded")
+    assert (
+        ctx.deps.conversation.metadata_["model_customer_intent"]["evidence"] == current
+    )
+    assert (
+        quote_workflow_from_metadata(ctx.deps.conversation.metadata_).consent
+        is QuoteConsent.DECLINED
+    )
+    ctx.deps.db.flush.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_missing_current_message_cannot_use_historical_evidence() -> None:
+    ctx = context("")
+    ctx.deps.recent_history = ["user: Prepare the quotation now."]
+    result = await engine.record_customer_intent(ctx, quotation_consent="granted")
+    assert result.startswith("Not recorded")
+    assert ctx.deps.conversation.metadata_ == {}
+    ctx.deps.db.flush.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_declined_quote_can_be_reopened_by_model_with_current_evidence() -> None:
     ctx = context("Hold it for now")
     await engine.record_customer_intent(
