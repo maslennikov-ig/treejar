@@ -1,12 +1,12 @@
 # Orchestrator Handoff
 
-## October 13 tester feedback — local candidate
+## October tester feedback — authorized completion2026-10-14
 
 - Epic `tj-i2b1`; findings `tj-i2b1.1` (false mismatch caveats), `.2`
   (missing updated summary), `.3` (literal refusal persistence), `.4`
   (missing photos for structured catalog titles).
-- Branch `codex/tester-feedback-20261013`, isolated worktree
-  `/home/me/code/treejar/.worktrees/tester-feedback-20261013`, base `32c95f6`.
+- Delivery branch `codex/tj-i2b1-complete-20261014`, isolated worktree
+  `.worktrees/tj-i2b1-complete-20261014`, approved source4b032c7 plus CI fix6d4663f.
   Original submitted feedback retained privately; sanitized evidence is under
   `docs/client-answers/2026-10-13-tester-feedback/`.
 - Source fixes retain named model/finish/unit constraints, recover explicit
@@ -22,12 +22,12 @@
 - Acceptance/delivery details: `docs/reports/2026-10-13-tester-feedback-fixes.md`.
   Local acceptance:1271 tests, Ruff/format and Mypy194files passed. Final
   same-model replay passes with qty3/budget6000/consentdeclined, no real sends.
-  Total smoke costUSD0.02932057; no product-fix deployment yet.
-- Stacked release candidate `codex/project-consistency-20261013` (worktree
-  `/home/me/code/treejar/.worktrees/project-consistency-20261013` on `e7074ca8`)
-  adds DB tz/index/client fixes (`tj-535g`), LLM/name/quantity consistency,
-  repo/Docker/CI hygiene, `tj-bgwu`, and trims `engine.py` to 11353 lines;
-  full suite 4555 passed/20 skipped, Ruff/format/Mypy 194 files passed.
+  Total smoke costUSD0.02932057; deployment authorized14Oct, live stilld2de7b3.
+- Accepted source4b032c7 adds DB tz/index/client fixes (`tj-535g`), LLM/name/
+  quantity consistency, repo/Docker hygiene and `tj-bgwu`; engine11353lines.
+  Independent root4555/20,Ruff/format/Mypy194passed. CI runtime-doc correction
+  tj-7ize covers42cases; final root metadata/CI and canonical release pending.
+- Authority/preflight/rollback and delivery: `docs/reports/2026-10-14-tester-epic-completion-delivery.md`.
 - Cleanup/ownership receipt: `docs/reports/2026-10-13-tester-feedback-closeout.md`.
   Preserve dirty primary checkout and other owners' work; Wazzup guard, test0665
   sender/allowlist, restore mode and customer/held queues remain unchanged.
@@ -45,8 +45,9 @@
 - Fresh owner...0921 coffee-table message processed at17:17UTC, text accepted
   by Wazzup201 and owner-confirmed received. Callback/settings stable17:26UTC;
   `tj-vqcc` closed. Independent photo defect belongs to `tj-i2b1.4` above.
-- External configuration writer remains UNKNOWN under `tj-zc6k`. Guard recovers
-  changes but does not revoke that integration's write access.
+- tj-zc6k remainsUNKNOWN:14Oct direct GETs show Noor then audit again while
+  cron repeatedly reportsrestored. Owner has no audit SSH/Wazzup admin access;
+  provider-side owner action: `docs/ops/wazzup-callback-owner-action-20261014.md`.
 
 Updated: 2026-10-04
 Current branch: codex/tj-uvld-stock-sync
@@ -157,10 +158,10 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 
 ## Explicit defers
 
-- tj-i2b1: product main integration/deployment and fresh affected-scenario/photo
-  receipt pending new-chat owner authority; four code children locally accepted.
-- tj-zc6k: identify and stop the external Wazzup callback writer. Enabled guard
-  recovers routing but does not remove that integration's write access.
+- tj-i2b1: main/deploy now authorized14Oct; canonical release and fresh actual
+  affected-scenario/photo receipt pending. Four code children locally accepted.
+- tj-zc6k: stop recurring writer via account owner/provider; no audit SSH or
+  Wazzup admin access available. Enabled guard recovers but cannot revoke keys.
 - tj-uvld: AC02 provider stock/lifecycle coverage and paging stability need
   read-only causal before/after observations and complete delta membership.
   History access is now available; no owner console step is pending. Owner
@@ -169,8 +170,8 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
   still pending; code delivered, no claim of optimized production savings yet.
 - tj-4kot: outside account consumer (~50requests/min) incident remains open;
   cooldown fix delivered in25a8c08; external load resolution remains unproved.
-- tj-535g: monitoring fix a4cc1a7 included in `codex/project-consistency-20261013`;
-  remains undeployed until merge/deploy authority is granted.
+- tj-535g: source a4cc1a7 included in authorized4b032c7 delivery; monitoring
+  activation remains unchanged. Source delivery pending canonical release.
 - Zoho quotation live E2E remains unverified; no real messages were sent here.
 - tj-1baw latency remains separate; tj-bgwu fixed in `codex/project-consistency-20261013`.
 - Paid second reader stays off; reader-gap drift tracked in tj-4q79.
