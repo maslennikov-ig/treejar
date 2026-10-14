@@ -308,3 +308,27 @@ fixture's empty resolver stub. It makes no provider/stock/model call. Current
 live source remains527fe1f until authorized canonical rollout. No extra paid
 smoke or owner-message replay; original bounded smoke total staysUSD0.04873962.
 Detailed accepted leaf artifact:2026-10-14-mixed-product-query-correction.md.
+
+## Mixed-query canonical delivery and runtime
+
+Main a72da157461edc2ad9c9b449c20f8f45385d7bf5 canonicalCI38549111605SUCCESS:
+4712passed/27gatedskips117.65s; lint/type-check/changes/deploySUCCESS.
+Semantic-evidence skipped; this is not a new independent bridge/model result.
+App+worker safely recreated10:26:30.524UTC; DB/Redis/nginx kept their original
+April start times. App+worker0restarts/OOMfalse and publichealthDB/RedisOK.
+
+10:29:39UTC app readback and separate worker readback: both releasea72da15,
+all6source hashes match accepted source; protectedfingerprint57552c05 unchanged.
+Original.env is byte-identical to09:47rollback. Guard/restoretrue, deltafalse,
+mainmodelopenai/gpt-6-luna, queue0, guard function/startup/minute registration
+valid. CallbackNoor and subscriptions unchanged at this observation only;
+previous recurrence/account-access block remains unresolved, so writer removal
+and uninterrupted route stability are not accepted.
+
+Completed child45fca98/0b89889 both negativegit-cherry against freshmaina72da15;
+two owned files identical, worktree clean and agent completed. Removed without
+force, local branch ref deleted with expected-old0b89889. Root checkout retained
+for required fresh2unit message then separate3unit/samebudget/held update. Owner
+asked to send one new message after deployment; previous09:25failure cannot
+establish new source acceptance. Private receipts retained under local
+tester-feedback/20261014; no old message replay or extra paid smoke performed.

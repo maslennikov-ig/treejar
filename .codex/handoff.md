@@ -7,9 +7,9 @@
   (missing photos for structured catalog titles).
 - Delivery branch `codex/tj-i2b1-complete-20261014`, isolated worktree
   `.worktrees/tj-i2b1-complete-20261014`, approved source4b032c7 plus CI fix6d4663f.
-- Fresh14Oct09:25UTC owner request delivered on527fe1f with3providerphotos.
+- Prior14Oct09:25UTC owner request on527fe1f delivered3providerphotos.
   Budget6000/consentdeclined saved; named selection empty and false caveat.
-  Mixed-query sourcecc6bc57 accepted1429/static; CI/live/freshstateproofpending.
+  Mixed-query a72da15live/CI4712passed27skips; fresh2/3unitstateproofpending.
 - Source fixes retain named model/finish/unit constraints, recover explicit
   multi-unit quantity lost from model search queries, distinguish broad needs
   from missing exact items, and expose the committed selection/budget to replies.
@@ -24,7 +24,7 @@
   Historical local acceptance:1271 tests, Ruff/format/Mypy194 passed. Earlier
   fixture replay passed with qty3/budget6000/consentdeclined, no real sends.
   Total smoke costUSD0.04873962; latestcapturescurrenttext,3units/6000/held,
-  budgetstopbeforefinalreply. App/worker527fe1f deployed14Oct08:44UTC.
+  budgetstopbeforefinalreply. App/workera72da15 deployed14Oct10:26UTC.
 - Accepted source4b032c7 adds DB tz/index/client fixes (`tj-535g`), LLM/name/
   quantity consistency, repo/Docker hygiene and `tj-bgwu`; engine11353lines.
   Independent root4555/20and96CI/metadata checks passed. Canonical CI38526089347
@@ -37,7 +37,7 @@
 
 ## Wazzup webhook protection — deployed 2026-10-13
 
-- `tj-vqcc`guard retained in live527fe1f. CI38536867395 and postdeploy readback
+- `tj-vqcc`guard retained in livea72da15. CI38549111605 and postdeploy readback
   pass; original guard CI38425819094/4470/27 remains historical proof.
 - Startup/minute checks and controlled real-provider repair passed; the real
   callback was never diverted. Test0665 and protected settings retained.
@@ -72,9 +72,9 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 - Source observation and successful dataset coverage are distinct. Multi-page
   delta requires two identical complete reads; changed pages abort publication.
   This safeguard does not establish provider paging/operation completeness.
-- Stock source unchanged in live app+worker527fe1f after authorized tester
+- Stock source unchanged in live app+workera72da15 after authorized tester
   delivery. Stock-stage4451/27CI and4458/20local are historical; current full
-  canonicalCI4671/27passed. Delta gate remains off.
+  canonicalCI4712/27passed. Delta gate remains off.
 - .env/safety fingerprints unchanged; DB/Redis/nginx containers retained.
 - New v2/legacy:2557 rows,48h TTL. UTC[14:50:52,14:53:10):
  13GET/13HTTP200,1successful full cycle; not optimized24h evidence.
@@ -132,7 +132,7 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 
 ## Operating boundary
 
-- Live527fe1f, TEST_CHANNEL_RESTORE_MODE=true; protected app/worker safety
+- Livea72da15, TEST_CHANNEL_RESTORE_MODE=true; protected app/worker safety
   fingerprints equal predeploy. Approved0665 sender/allowlist and Telegram
   phone isolation unchanged. Owner-authorized Wazzup guard flag is now true;
   guard repeatedly restores callback; provider subscription flags unchanged.
@@ -159,8 +159,8 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 
 ## Explicit defers
 
-- tj-i2b1: live527fe1f saved budget/hold but mixed query false-nearby/selection[].
-  Mixed-query sourcecc6bc57accepted; delivery/fresh updated/retained proof pending.
+- tj-i2b1: earlier527fe1f saved budget/hold but failed mixed matching/selection.
+  Corrected a72da15live/CI4712passed; fresh2/3unit retained/held proof pending.
 - tj-zc6k: stop recurring writer via account owner/provider; no audit SSH or
   Wazzup admin access available. Enabled guard recovers but cannot revoke keys.
 - tj-uvld: AC02 provider stock/lifecycle coverage and paging stability need

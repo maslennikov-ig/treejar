@@ -13,8 +13,8 @@ model_reasoning_rationale: Isolated catalog confidence leaf; root owns caller, s
 status: accepted
 delivery_method: cherry-pick
 accepted_by_orchestrator: yes
-cleanup_status: pending
-cleanup_notes: Clean completed child retained until main patch-equivalence and actual delivery proof.
+cleanup_status: cleaned
+cleanup_notes: Both commits patch-equivalent to maina72da15 and owned files identical; clean completed child removed without force, exact branch ref deleted using expected0b89889.
 risk_level: medium
 verification:
   - worker RED6 and GREEN138 focused checks; scoped Ruff/format/Mypy/diff passed
@@ -61,6 +61,11 @@ whole Ruff/format433files/Mypy194sourcefiles passed. Pipeline covers the actual
 combined query and omitted requested variants, with exactly the three requested
 matching media rows. Independent alias/location findings were fixed and re-read.
 These local checks do not establish a new live model choice or provider receipt.
+
+CanonicalCI38549111605 succeeded on a72da15:4712passed/27gatedskips,
+lint/typecheck/deploy passed; semantic-evidence skipped. App+worker both match
+all six source hashes and protected configuration after10:26:30UTC rollout.
+Fresh natural model selection/quantity/retained budget acceptance remains pending.
 
 # Risks / Follow-ups
 
