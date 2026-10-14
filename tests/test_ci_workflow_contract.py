@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shlex
 from pathlib import Path
 
@@ -12,6 +13,36 @@ def _load_ci_workflow():
         Path(".github/workflows/ci.yml").read_text(encoding="utf-8"),
         Loader=yaml.BaseLoader,
     )
+
+
+def _matches_ci_path_pattern(path: str, pattern: str) -> bool:
+    """Match the exact paths, * and ** globs used in this workflow."""
+    regex = re.escape(pattern)
+    regex = regex.replace(r"\*\*/", "(?:.*/)?")
+    regex = regex.replace(r"\*\*", ".*").replace(r"\*", "[^/]*")
+    return re.fullmatch(regex, path) is not None
+
+
+def _path_filter_matches(event_filter, changed_files: list[str]) -> bool:
+    if "paths" not in event_filter:
+        ignored_patterns = event_filter.get("paths-ignore", [])
+        return any(
+            not any(
+                _matches_ci_path_pattern(path, pattern) for pattern in ignored_patterns
+            )
+            for path in changed_files
+        )
+
+    # GitHub evaluates `paths` in order; a positive match can re-include a path
+    # excluded by an earlier negative pattern. One included file runs the job.
+    for path in changed_files:
+        included = False
+        for pattern in event_filter["paths"]:
+            if _matches_ci_path_pattern(path, pattern.removeprefix("!")):
+                included = not pattern.startswith("!")
+        if included:
+            return True
+    return False
 
 
 def _assert_test_job_fetches_full_history(workflow) -> None:
@@ -39,27 +70,70 @@ def _assert_test_job_fetches_full_history(workflow) -> None:
     assert checkout_steps[0].get("with", {}).get("fetch-depth") == "0"
 
 
-def test_ci_workflow_skips_docs_and_orchestration_only_changes() -> None:
+def test_ci_workflow_uses_ordered_paths_for_runtime_document_exceptions() -> None:
     workflow = _load_ci_workflow()
 
-    expected_ignored_paths = {
-        ".codex/**",
-        ".beads/**",
-        "docs/**",
-        "**/*.md",
+    expected_excluded_paths = {
+        "!.codex/**",
+        "!.beads/**",
+        "!docs/**",
+        "!*.md",
+        "!**/*.md",
     }
 
-    push_ignored_paths = set(workflow["on"]["push"].get("paths-ignore", []))
-    pull_request_ignored_paths = set(
-        workflow["on"]["pull_request"].get("paths-ignore", [])
-    )
-
-    assert expected_ignored_paths.issubset(push_ignored_paths)
-    assert expected_ignored_paths.issubset(pull_request_ignored_paths)
+    for event in ("push", "pull_request"):
+        event_filter = workflow["on"][event]
+        assert event_filter["branches"] == ["main"]
+        assert "paths-ignore" not in event_filter
+        assert expected_excluded_paths.issubset(event_filter["paths"])
 
     assert "changes" in workflow["jobs"]
     assert "changes" in workflow["jobs"]["deploy"]["needs"]
     assert "needs.changes.outputs.deploy == 'true'" in workflow["jobs"]["deploy"]["if"]
+
+
+@pytest.mark.parametrize("event", ["push", "pull_request"])
+@pytest.mark.parametrize(
+    ("changed_files", "expected_run"),
+    [
+        pytest.param(["docs/faq.md"], True, id="faq-alone"),
+        pytest.param(
+            ["docs/04-sales-dialogue-guidelines.md"], True, id="sales-rules-alone"
+        ),
+        pytest.param(
+            ["docs/faq.md", "docs/reports/receipt.md"], True, id="faq-and-report"
+        ),
+        pytest.param(["docs/reports/receipt.md"], False, id="report-markdown-only"),
+        pytest.param(["docs/reports/receipt.html"], False, id="report-html-only"),
+        pytest.param(["docs/ops/runbook.md"], False, id="ordinary-doc-only"),
+        pytest.param(["docs/faq.md.backup"], False, id="faq-backup-only"),
+        pytest.param(["README.md"], False, id="root-markdown-only"),
+        pytest.param(["src/README.md"], False, id="nested-markdown-only"),
+        pytest.param([".codex/orchestrator.toml"], False, id="orchestration-only"),
+        pytest.param([".beads/issues.jsonl"], False, id="tracker-only"),
+        pytest.param(
+            [".codex/stages/ci/summary.md", ".beads/issues.jsonl"],
+            False,
+            id="orchestration-and-tracker",
+        ),
+        pytest.param(["src/main.py"], True, id="source-only"),
+        pytest.param(["tests/test_ci_workflow_contract.py"], True, id="test-only"),
+        pytest.param([".github/workflows/ci.yml"], True, id="workflow-only"),
+        pytest.param(
+            ["src/main.py", "docs/reports/receipt.md"], True, id="source-and-report"
+        ),
+        pytest.param(
+            ["docs/reports/receipt.md", "src/main.py"], True, id="report-and-source"
+        ),
+        pytest.param([], False, id="no-changed-files"),
+    ],
+)
+def test_ci_path_filters_run_only_when_an_included_file_changed(
+    event: str, changed_files: list[str], expected_run: bool
+) -> None:
+    workflow = _load_ci_workflow()
+
+    assert _path_filter_matches(workflow["on"][event], changed_files) is expected_run
 
 
 def test_ci_test_job_fetches_full_history_for_scope_provenance() -> None:

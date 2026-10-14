@@ -3,24 +3,28 @@ name: CI
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '.codex/**'
-      - '.beads/**'
-      - 'docs/**'
-      - '*.md'
-      - '**/*.md'
-      - '!docs/faq.md'
-      - '!docs/04-sales-dialogue-guidelines.md'
+    paths:
+      - '**'
+      - '!.codex/**'
+      - '!.beads/**'
+      - '!docs/**'
+      - '!*.md'
+      - '!**/*.md'
+      # Runtime inputs re-enter after the broad docs/Markdown exclusions.
+      - 'docs/faq.md'
+      - 'docs/04-sales-dialogue-guidelines.md'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - '.codex/**'
-      - '.beads/**'
-      - 'docs/**'
-      - '*.md'
-      - '**/*.md'
-      - '!docs/faq.md'
-      - '!docs/04-sales-dialogue-guidelines.md'
+    paths:
+      - '**'
+      - '!.codex/**'
+      - '!.beads/**'
+      - '!docs/**'
+      - '!*.md'
+      - '!**/*.md'
+      # Runtime inputs re-enter after the broad docs/Markdown exclusions.
+      - 'docs/faq.md'
+      - 'docs/04-sales-dialogue-guidelines.md'
   workflow_dispatch:
 
 permissions:
