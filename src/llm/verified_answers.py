@@ -1251,23 +1251,37 @@ def _capacity_value(text: str) -> int | None:
     return head_count(_normalize(text))
 
 
+def _is_plain_location_modifier(query: str, match: re.Match[str]) -> bool:
+    if not match.group("modifier"):
+        return False
+    modifier = query[match.start("modifier") :]
+    for place in sorted(_LOCATION_TERMS, key=len, reverse=True):
+        location = re.match(
+            r"\s+".join(re.escape(part) for part in place.split()) + r"(?![\w-])",
+            modifier,
+            re.IGNORECASE,
+        )
+        if location is not None:
+            # A city name can also be an explicitly named finish/brand. Use
+            # the longest known place so `Dubai Marina color` cannot fall
+            # back to a shorter, apparently unqualified `Dubai` modifier.
+            return (
+                re.match(
+                    r"\s+(?:finish|colou?r|brand|family|line|model|series)\b",
+                    modifier[location.end() :],
+                    re.IGNORECASE,
+                )
+                is None
+            )
+    return False
+
+
 def _explicit_structured_discriminators(query: str) -> set[str]:
     raw_values = {
         value.casefold()
         for match in _STRUCTURED_ATTRIBUTE_VALUE_RE.finditer(query)
         if (value := next((group for group in match.groups() if group), None))
-        and not (
-            match.group("modifier")
-            and any(
-                re.match(
-                    r"\s+".join(re.escape(part) for part in place.split())
-                    + r"(?![\w-])",
-                    query[match.start("modifier") :],
-                    re.IGNORECASE,
-                )
-                for place in _LOCATION_TERMS
-            )
-        )
+        and not _is_plain_location_modifier(query, match)
     }
     values = {token for raw_value in raw_values for token in _tokenize(raw_value)}
     return values - _STRUCTURED_DISCRIMINATOR_EXCLUSIONS
@@ -1627,10 +1641,25 @@ def _candidate_matches_product_constraints(
         return False
     type_query = strip_head_counts(folded_query)
     primary_name = name.split(",", 1)[0]
+    category = candidate.split("\n")[-1] if len(candidate.split("\n")) >= 3 else ""
+    identity_type = _fold_model_text(f"{category}\n{sku or ''}")
+
+    def matches_type(family: str, term: str) -> bool:
+        if contains_catalog_term(primary_name, term):
+            return True
+        # A face-to-face table may be a workstation by its catalog category
+        # or SKU. Its physical name must still belong to workspace, and an
+        # explicitly coffee/meeting table is not promoted to a workstation.
+        return (
+            family == "workspace"
+            and "workspace" in catalog_text_families(primary_name)
+            and not re.search(r"\b(?:coffee|meeting)\s+tables?\b", primary_name)
+            and contains_catalog_term(identity_type, term)
+        )
+
     if any(
-        contains_catalog_term(type_query, term)
-        and not contains_catalog_term(primary_name, term)
-        for _, terms in CATALOG_PRODUCT_FAMILIES
+        contains_catalog_term(type_query, term) and not matches_type(family, term)
+        for family, terms in CATALOG_PRODUCT_FAMILIES
         for term in terms
     ) or any(
         not re.search(rf"\b{kind}\s+tables?\b", primary_name)

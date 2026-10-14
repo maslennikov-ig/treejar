@@ -1455,6 +1455,95 @@ def test_mixed_named_products_keep_explicit_location_named_brand_or_finish(
 
 
 @pytest.mark.parametrize(
+    "attribute",
+    [
+        "in Dubai finish",
+        "in Dubai color",
+        "in Dubai colour",
+        "in Dubai brand",
+        "in Abu Dhabi finish",
+        "in Dubai Marina color",
+    ],
+)
+def test_mixed_named_products_do_not_erase_explicit_qualified_city_attributes(
+    actual_mixed_product_catalog: tuple[list[str], list[str]], attribute: str
+) -> None:
+    texts, skus = actual_mixed_product_catalog
+
+    assert (
+        classify_product_match(
+            _ACTUAL_MIXED_PRODUCT_QUERY.replace("for 4 people", "for eight people"),
+            texts,
+            candidate_skus=skus,
+            customer_request=_ACTUAL_MIXED_CUSTOMER_REQUEST.replace(
+                "in Dubai", attribute
+            ),
+        )
+        == "nearby"
+    )
+
+
+@pytest.mark.parametrize(
+    ("category", "sku"),
+    [
+        ("Workstations", "NOVO-2400-Walnut"),
+        ("", "OF-HAI-Novo-Workstation-RJ 2400-Walnut"),
+    ],
+)
+def test_mixed_named_products_keep_grounded_workspace_category_and_sku_aliases(
+    category: str, sku: str
+) -> None:
+    row = (
+        f"4 Person Face to Face Table SKYLAND NOVO 2400\nFace to face desk.\n{category}"
+    )
+    query = (
+        "NOVO2400 workstation for 4 people, and CT1065 coffee tables "
+        "Oak Devon and Wenge Magic"
+    )
+
+    assert (
+        classify_product_match(
+            query,
+            [row, _CT_1065_OAK, _CT_1065_WENGE],
+            candidate_skus=[sku, "00-07015317", "00-07015316"],
+        )
+        == "exact"
+    )
+    assert verified_answers_module.is_requested_product_candidate(
+        query, row, candidate_sku=sku
+    )
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        "4 Person Face to Face Table SKYLAND NOVO 2400\nA useful workstation.\nCoffee Table",
+        "4 Person Chair SKYLAND NOVO 2400\nFace to face chair.\nWorkstations",
+        "4 Person Coffee Table SKYLAND NOVO 2400\nCoffee table.\nWorkstations",
+    ],
+)
+def test_mixed_workspace_alias_keeps_wrong_family_and_specialized_type_uncertain(
+    row: str,
+) -> None:
+    query = (
+        "NOVO2400 workstation for 4 people, and CT1065 coffee tables "
+        "Oak Devon and Wenge Magic"
+    )
+
+    assert (
+        classify_product_match(
+            query,
+            [row, _CT_1065_OAK, _CT_1065_WENGE],
+            candidate_skus=["NOVO-2400-Walnut", "00-07015317", "00-07015316"],
+        )
+        == "nearby"
+    )
+    assert not verified_answers_module.is_requested_product_candidate(
+        query, row, candidate_sku="NOVO-2400-Walnut"
+    )
+
+
+@pytest.mark.parametrize(
     "missing_sku",
     [_LUMA_SKU, "00-07015316", "00-07015317"],
 )
