@@ -9,7 +9,7 @@
   `.worktrees/tj-i2b1-complete-20261014`, approved source4b032c7 plus CI fix6d4663f.
 - Fresh14Oct07:24UTC owner message delivered with4photos (owner confirmed).
   Live check failed: false quantity/finish caveats and uncommitted state.
-  Corrections994d6f1/54d3c5a live527fe1f;CI4671/27passed; freshstateproofpending.
+  Corrections994d6f1/54d3c5a live527fe1f;CI4671passed/27skipped; stateproofpending.
 - Source fixes retain named model/finish/unit constraints, recover explicit
   multi-unit quantity lost from model search queries, distinguish broad needs
   from missing exact items, and expose the committed selection/budget to replies.
@@ -21,8 +21,8 @@
 - Media recognizes explicit comma-delimited model codes and a literal finish
   on the same reply line. Actual CT1065 text retains2photos, not the third variant.
 - Acceptance/delivery details: `docs/reports/2026-10-13-tester-feedback-fixes.md`.
-  Historical local acceptance:1271 tests, Ruff/format/Mypy194 passed. Final
-  same-model replay passes with qty3/budget6000/consentdeclined, no real sends.
+  Historical local acceptance:1271 tests, Ruff/format/Mypy194 passed. Earlier
+  fixture replay passed with qty3/budget6000/consentdeclined, no real sends.
   Total smoke costUSD0.04873962; latestcapturescurrenttext,3units/6000/held,
   budgetstopbeforefinalreply. App/worker527fe1f deployed14Oct08:44UTC.
 - Accepted source4b032c7 adds DB tz/index/client fixes (`tj-535g`), LLM/name/
@@ -46,7 +46,7 @@
 - Fresh owner...0921 coffee-table message processed at17:17UTC, text accepted
   by Wazzup201 and owner-confirmed received. Callback/settings stable17:26UTC;
   `tj-vqcc` closed. Independent photo defect belongs to `tj-i2b1.4` above.
-- tj-zc6k remainsUNKNOWN:14Oct direct GETs show Noor then audit again while
+- Writer identity remainsUNKNOWN:14Oct GETs show Noor then audit again while
   cron repeatedly reportsrestored. tj-zc6kblocked: no auditSSH/Wazzupadmin access;
   provider-side owner action: `docs/ops/wazzup-callback-owner-action-20261014.md`.
 
@@ -135,7 +135,7 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 - Live527fe1f, TEST_CHANNEL_RESTORE_MODE=true; protected app/worker safety
   fingerprints equal predeploy. Approved0665 sender/allowlist and Telegram
   phone isolation unchanged. Owner-authorized Wazzup guard flag is now true;
-  direct callback/subscription configuration is retained.
+  guard repeatedly restores callback; provider subscription flags unchanged.
 - Current owner authority covers tj-uvld push/merge/deploy with delta gate off.
 - Warehouse mutations are explicitly excluded by current owner instruction.
   Requested diagnostic access uses existing EU Self Client, six exact READ
@@ -143,7 +143,7 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
   CRM client configuration, refresh/cached tokens and production env preserved.
   Permanent reauthorization/revocation, permissions changes and real messages
   still require separate approval.
-  No paid model reader/calls were used.
+  Stock investigation used no paid model reader/calls.
 - Website products.is_active, catalog prices and embeddings remain owned by
   their existing sync; stock state never writes those fields.
 
@@ -159,8 +159,8 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 
 ## Explicit defers
 
-- tj-i2b1: live589f302 reply+photos owner-confirmed; actual suffix-match and
-  corrected527fe1f/CI4671passed; fresh actual updated/held/retained state pending.
+- tj-i2b1: old589f302 reply+photos owner-confirmed; corrections live527fe1f/
+  CI4671passed; fresh actual updated/held/retained state pending.
 - tj-zc6k: stop recurring writer via account owner/provider; no audit SSH or
   Wazzup admin access available. Enabled guard recovers but cannot revoke keys.
 - tj-uvld: AC02 provider stock/lifecycle coverage and paging stability need
