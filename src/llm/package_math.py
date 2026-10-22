@@ -233,6 +233,13 @@ def _find_occurrences(
     return merged
 
 
+def _row_words(name: str, sku: str) -> set[str]:
+    words = set(_words(f"{name} {sku}"))
+    for word in list(words):
+        words.update(part for part in re.split(r"[-./]", word) if part)
+    return words
+
+
 def _qualifiers_fit(words: Sequence[str], start: int, row_words: set[str]) -> bool:
     """Do the words right after the reference describe this row?
 
@@ -307,6 +314,38 @@ def _generic_item_quantities(words: Sequence[str]) -> list[tuple[int, str | None
     return found
 
 
+def names_product(text: str, *, name: str, sku: str = "") -> bool:
+    """Does the text name this exact row by its model code?
+
+    ``LUMA 9719-4 workstation walnut, three for twelve people`` names the LUMA
+    9719-4 row even though the surrounding words make a text match look partial.
+    """
+
+    words = _words(text)
+    keys = product_reference_keys(name, sku)
+    if not words or not keys:
+        return False
+    row_words = _row_words(name, sku)
+    return any(
+        _qualifiers_fit(words, occurrence.end, row_words)
+        for occurrence in _find_occurrences(words, keys)
+    )
+
+
+def named_product_keys(text: str, products: Iterable[object]) -> set[str]:
+    """Keys (id, else SKU) of the rows the text names by model code."""
+
+    return {
+        str(getattr(product, "id", None) or getattr(product, "sku", ""))
+        for product in products
+        if names_product(
+            text,
+            name=str(getattr(product, "name_en", "") or ""),
+            sku=str(getattr(product, "sku", "") or ""),
+        )
+    }
+
+
 def explicit_item_quantity(
     customer_text: str,
     *,
@@ -328,7 +367,7 @@ def explicit_item_quantity(
     keys = product_reference_keys(name, sku)
     if not keys:
         return None
-    row_words = set(_words(f"{name} {sku}"))
+    row_words = _row_words(name, sku)
     occurrences = [
         occurrence
         for occurrence in _find_occurrences(words, keys)
@@ -433,6 +472,8 @@ def line_math_text(line: PricedLine) -> str:
         f"({format_money(line.total_incl_vat)} {line.currency} incl. 5% VAT; "
         f"5% VAT = {format_money(line.vat_amount)} {line.currency})."
     )
+    if line.explicit:
+        text += " The customer gave this quantity: state this subtotal in the reply."
     if line.stock is not None:
         if line.stock >= line.quantity:
             text += f" Stock check: {line.stock} in stock covers {line.quantity}."
@@ -521,6 +562,12 @@ def _cheapest_by_family(lines: Iterable[PricedLine], family: str) -> PricedLine 
         and line.seats_covered is not None
         and (line.stock is None or line.stock >= line.quantity)
     ]
+    # A team's package seats its people at desks: visitor chairs are not the
+    # chairs a workstation package is priced with.
+    if family == "seating":
+        candidates = [
+            line for line in candidates if "visitor" not in line.name.casefold()
+        ]
     if not candidates:
         return None
     return min(candidates, key=lambda line: (line.subtotal_excl_vat, line.name))
@@ -567,6 +614,8 @@ __all__ = [
     "explicit_item_quantity",
     "line_math_text",
     "multi_item_total_text",
+    "named_product_keys",
+    "names_product",
     "product_reference_keys",
     "seat_based_units",
     "turnkey_package_text",

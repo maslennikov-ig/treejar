@@ -30,6 +30,8 @@ from src.llm.package_math import (
 )
 from src.models.product_links import product_canonical_url
 
+_PACK_NOTE_RE = re.compile(r"\b\d+\s*pcs?\b|\bctn\b|\bcarton\b", re.IGNORECASE)
+
 
 def _normalize_text(text: str) -> str:
     return " ".join(text.casefold().split())
@@ -86,6 +88,10 @@ def _priced_line_for_turn(
     explicit = quantity is not None
     seats_covered: int | None = None
     if quantity is None:
+        if _PACK_NOTE_RE.search(name):
+            # "Visitor Chair ... (2 pcs\\1 ctn)": the price unit is ambiguous,
+            # so no seat count is multiplied by it.
+            return None
         capacity = _name_seat_capacity(name, family)
         quantity = seat_based_units(
             requested_seats, family=family, name_capacity=capacity

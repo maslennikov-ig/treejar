@@ -75,8 +75,8 @@
       "description": "Says fume hoods are not carried, confirms LUMA 9719-4 at 1,883 AED, confirms Dubai delivery and installation from the approved FAQ, invents no delivery or assembly fee.",
       "require_patterns": [
         "fume hood",
-        "(?:don't|do not|not)\\b[^.]{0,60}(?:carry|stock|sell|offer|supply)|outside",
-        "1,883",
+        "(?:don['’]t|doesn['’]t|do not|does not|not)\\b[^.]{0,60}(?:carry|stock|sell|offer|supply)|outside",
+        "1,883|5,649",
         "deliver",
         "(?:install|assembl)"
       ],

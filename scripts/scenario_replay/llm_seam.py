@@ -145,7 +145,7 @@ class CostMeter:
             results.append(
                 {
                     "tool_call_id": call_id,
-                    "content": _content_text(message.get("content"))[:8000],
+                    "content": _content_text(message.get("content"))[:20000],
                 }
             )
         return results

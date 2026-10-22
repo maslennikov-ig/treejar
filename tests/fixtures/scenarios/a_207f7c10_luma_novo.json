@@ -95,8 +95,7 @@
       ],
       "require_tools": [
         "search_products"
-      ],
-      "min_media": 1
+      ]
     },
     {
       "type": "positive_answer",

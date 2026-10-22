@@ -82,6 +82,15 @@ def test_explicit_item_quantity_reads_only_what_the_customer_wrote(
         assert explicit_item_quantity(text, name=name, sku=sku) == quantity, name
 
 
+def test_a_named_model_code_marks_the_row_as_named() -> None:
+    from src.llm.package_math import names_product
+
+    query = "LUMA 9719-4 workstation walnut, three workstations for 12 people"
+    assert names_product(query, name=LUMA[0], sku=LUMA[1])
+    assert not names_product(query, name=CH460[0], sku=CH460[1])
+    assert not names_product("CH 616 NEW black", name=CH616[0], sku=CH616[1])
+
+
 def test_reference_keys_name_the_model_code() -> None:
     assert "luma 9719-4" in product_reference_keys(*LUMA)
     assert product_reference_keys(*CH616_NEW) == ("ch 616",)
@@ -128,7 +137,8 @@ def test_line_math_states_quantity_unit_subtotal_vat_and_stock() -> None:
     assert line_math_text(line) == (
         "Verified line math (3 unit(s) as requested by the customer): 3 × "
         "1,883.00 AED = 5,649.00 AED excl. 5% VAT (5,931.45 AED incl. 5% VAT; "
-        "5% VAT = 282.45 AED). Stock check: 30 in stock covers 3."
+        "5% VAT = 282.45 AED). The customer gave this quantity: state this "
+        "subtotal in the reply. Stock check: 30 in stock covers 3."
     )
 
 

@@ -232,7 +232,7 @@ from src.llm.package_evidence import (
     _turn_package_math_blocks,
     enrich_stock_answer,
 )
-from src.llm.package_math import line_math_text, unit_price_vat_text
+from src.llm.package_math import line_math_text, named_product_keys, unit_price_vat_text
 from src.llm.pii import EMAIL_PATTERN, PHONE_PATTERN, mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
 from src.llm.quotation_deferral import (
@@ -9863,6 +9863,8 @@ async def search_products(
         [_product_match_text(product) for product in results.products],
         candidate_skus=[str(product.sku) for product in results.products],
     )
+    # tj-asty: a model code the query names ("LUMA 9719-4") is a named row too.
+    resolved_reference_keys |= named_product_keys(effective_query, results.products)
     if resolved_reference_keys:
         # The customer named these rows by code and the catalog has them.
         product_match = "exact"

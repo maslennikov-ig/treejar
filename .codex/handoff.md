@@ -6,6 +6,12 @@ Current stage id: tj-polish-0924
 Status: Live-check follow-ups (consent grounding, earlier-offer carry-forward,
 colour-sibling media, shared count words) delivered on top of 33a2b02.
 
+## Stage tj-asty (2026-10-22): surpass Nikita — local, not deployed
+- Branch codex/tj-asty-surpass-nikita; summary .codex/stages/tj-asty/summary.md;
+  report docs/reports/2026-10-22-nikita-vs-noor-benchmark.md section 4.
+- Deploy needs separate owner approval. Grace window ships off (0).
+- Explicit defer: tj-z3hw delivery-fee facts are absent from docs/faq.md.
+
 ## Telegram webhook drift 2026-09-28
 - Outside token holder deleted the webhook (third /reset failure). Worker cron
   reconcile_telegram_webhook repairs drift each minute, alerts hourly at most.

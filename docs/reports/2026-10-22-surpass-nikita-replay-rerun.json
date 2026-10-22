@@ -1,0 +1,2207 @@
+{
+  "run": {
+    "mode": "live model via OpenRouter; intercepted tools/DB/Redis/messaging",
+    "requested_main_model": "openai/gpt-6-luna",
+    "models_called": [
+      "openai/gpt-6-luna"
+    ],
+    "reasoning_sent": [
+      "{\"effort\": \"medium\"}"
+    ],
+    "git": {
+      "head": "a92212a0eef3feb0dd556ac1576774c6522a26d6",
+      "branch": "codex/tj-asty-surpass-nikita",
+      "dirty_paths": 51
+    },
+    "catalog": {
+      "tests/fixtures/catalog_snapshot_2026-09-23.json": "40bb4aea54fbb657e30d79293e9d4cbceabc930bc60a6d92e5206a02a5214698"
+    },
+    "max_cost_usd": 0.035,
+    "total_cost_usd": 0.01693454,
+    "cost_sources": [
+      "provider"
+    ],
+    "model_calls": 20,
+    "stopped_by_budget": null,
+    "scenarios_not_run": [],
+    "network_blocked": [],
+    "elapsed_s": 166.4,
+    "limitations": [
+      "Vector search is replaced by deterministic lexical ranking over the snapshot; the production SQL filters (active, price bounds, in_stock_only -> stock>0) are reproduced exactly, ordering is not.",
+      "Knowledge-base RAG and DB bot-behaviour rules return nothing; the file-based approved FAQ (src/llm/company_faq.py) still applies.",
+      "Zoho item rate equals the snapshot catalog price; live stock equals snapshot stock except the scenario's live_stock_overrides.",
+      "create_quotation runs its real consent and required-detail gates; at the first Zoho call it is short-circuited to a fake success (quote number, follow-up metadata), with no Zoho, PDF or send.",
+      "Customer is new (CRM lookup returns nothing); Telegram, CRM and Wazzup are recorders. record_* tools are the real state tools.",
+      "The system_prompts table is empty, so the in-code default prompt components are used; any production DB prompt override is not reproduced."
+    ],
+    "checks_rerun_offline": true
+  },
+  "scenarios": [
+    {
+      "id": "C",
+      "file": "tests/fixtures/scenarios/c_fa224cab_luma_quote_consent.json",
+      "source_conversation": "fa224cab",
+      "description": "Nadia, 12 people, three LUMA 9719-4 in walnut, AED 6,000; delivery/assembly; then wrong-layout 'yes' and 'keep it'.",
+      "cost_usd": 0.0054177,
+      "turns": [
+        {
+          "index": 1,
+          "user": "Hi, I'm Nadia. We're furnishing a new office in Dubai for twelve people and want three LUMA 9719-4 workstations in walnut, budget AED 6,000.",
+          "elapsed_s": 30.6,
+          "model_calls": [
+            {
+              "index": 1,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.00034308,
+              "cost_source": "provider",
+              "prompt_tokens": 5881,
+              "completion_tokens": 568,
+              "cached_tokens": 5878,
+              "reasoning_tokens": 384,
+              "finish_reason": "tool_calls",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_calls": [
+                {
+                  "id": "call_vLbtqZViyOtrkNDm3oIrZnJS",
+                  "name": "search_products",
+                  "arguments": {
+                    "query": "LUMA 9719-4 workstation walnut, exact model and finish",
+                    "max_price": null,
+                    "min_price": null,
+                    "max_results": 5,
+                    "requested_seats": 12,
+                    "complete_coverage": true,
+                    "budget_cap_aed": 6000,
+                    "families": [
+                      "workspace"
+                    ],
+                    "requested_fact_domains": null,
+                    "require_lumbar_support": false,
+                    "complementary_search": false,
+                    "resend_images": false
+                  }
+                },
+                {
+                  "id": "call_mdkUNC8Jo9Pzn3cgNAPQOEJ1",
+                  "name": "record_customer_requirements",
+                  "arguments": {
+                    "items": null,
+                    "budget_cap_aed": 6000,
+                    "needed_by": null,
+                    "decision_authority": null,
+                    "company_activity": null,
+                    "replace_items": false,
+                    "remove_skus": null
+                  }
+                },
+                {
+                  "id": "call_NI9GRPWXZEckvUJD4MFCJutC",
+                  "name": "advance_stage",
+                  "arguments": {
+                    "next_stage": "qualifying"
+                  }
+                }
+              ],
+              "elapsed_s": 10.23
+            },
+            {
+              "index": 2,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.00065318,
+              "cost_source": "provider",
+              "prompt_tokens": 8063,
+              "completion_tokens": 599,
+              "cached_tokens": 5688,
+              "reasoning_tokens": 516,
+              "finish_reason": "tool_calls",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_calls": [
+                {
+                  "id": "call_2hTAtCwjsH38HJosvBakIiP9",
+                  "name": "record_customer_requirements",
+                  "arguments": {
+                    "items": [
+                      {
+                        "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+                        "quantity": 3
+                      }
+                    ],
+                    "budget_cap_aed": 6000,
+                    "needed_by": null,
+                    "decision_authority": null,
+                    "company_activity": null,
+                    "replace_items": false,
+                    "remove_skus": null
+                  }
+                }
+              ],
+              "tool_results": [
+                {
+                  "tool_call_id": "call_vLbtqZViyOtrkNDm3oIrZnJS",
+                  "content": "Target coverage: 12 of 12 seats across the returned in-stock variants.\n---\nName: Four person workstation SKYLAND LUMA 9719-4\nSKU: OF-HAI-Luma-Workstation-RJ 9719-4-Walnut\nCustomer-facing catalog price: 1883.00 AED (excl. 5% VAT; 1,977.15 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 30 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: SKYLAND LUMA 9719-4 – Four-Person Workstation Designed for team collaboration, the LUMA 9719-4 is a modern four-person workstation featuring screen dividers and three-drawer mobile pedestals for each user. The 25mm thick E1 laminate chipboard tabletop ensures durability, while the 40x40mm powder-coated metal U-shaped frames provide excellent stability. This workstation fosters team efficiency while allowing each employee their own dedicated space, making it ideal for modern office environments. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/four-person-workstation-skyland-luma-9719-4\nVerified line math (3 unit(s) as requested by the customer): 3 × 1,883.00 AED = 5,649.00 AED excl. 5% VAT (5,931.45 AED incl. 5% VAT; 5% VAT = 282.45 AED). The customer gave this quantity: state this subtotal in the reply. Stock check: 30 in stock covers 3.\nCatalog price basis: full 4-seat SKU unit (not per seat).\n[Note: Image of this product will be sent to the customer's WhatsApp after the text reply. Do not include raw image file URLs (such as r2.dev links) in your response; you may include the canonical Product page link (https://treejartrading.ae/product/...) when helpful.]\n---\nName: Single workstation SKYLAND LUMA 9719-1\nSKU: OF-HAI-Luma-Workstation-RJ 9719-1-Walnut\nCustomer-facing catalog price: 491.00 AED (excl. 5% VAT; 515.55 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 28 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: SKYLAND LUMA 9719-1 – Single-Person Workstation For professionals who require a dedicated workspace, the LUMA 9719-1 provides a spacious work surface, a screen divider for privacy, and a three-drawer pedestal for storage. Its compact yet highly functional design makes it perfect for individual offices, private workspaces, and remote work setups. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/single-workstation-skyland-luma-9719-1\n---\nName: Two person workstation SKYLAND LUMA 9719-2\nSKU: OF-HAI-Luma-Workstation-RJ 9719-2-Walnut\nCustomer-facing catalog price: 941.00 AED (excl. 5% VAT; 988.05 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 13 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: SKYLAND LUMA 9719-2 – Two-Person Workstation A compact and functional workstation for two employees, the LUMA 9719-2 provides a balance of privacy and collaboration. Featuring screen dividers, mobile pedestals, and sturdy metal frames, this workstation is ideal for startups, co-working spaces, and office environments where teamwork is key. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/two-person-workstation-skyland-luma-9719-2\nCatalog price basis: full 2-seat SKU unit (not per seat).\n---\nName: 4 Person Face to Face Table SKYLAND NOVO 2400\nSKU: OF-YED-NOVO-Workstation-63LW-1.2T-6-white\nCustomer-facing catalog price: 1813.00 AED (excl. 5% VAT; 1,903.65 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 29 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: SKYLAND NOVO 2400 – 4-Person Workstation The SKYLAND NOVO 2400 is a modern 4-person workstation, perfect for open-plan offices. Featuring a durable 25mm melamine-coated tabletop, powder-coated metal legs, and integrated cable grommets, it ensures a sleek and organized workspace. Grey fabric divider panels provide privacy while maintaining collaboration. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/4-person-face-to-face-table-skyland-novo-2400\nVerified line math (3 unit(s) for 12 seat(s)): 3 × 1,813.00 AED = 5,439.00 AED excl. 5% VAT (5,710.95 AED incl. 5% VAT; 5% VAT = 271.95 AED). Stock check: 29 in stock covers 3.\nCatalog price basis: full 4-seat SKU unit (not per seat).\n---\nName: Three person liner table SKYLAND NOVO 3600\nSKU: OF-YED-NOVO-Table-63LW-1.2T-4-white\nCustomer-facing catalog price: 2205.00 AED (excl. 5% VAT; 2,315.25 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 8 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: 3P liner table SKYLAND NOVO 3600 - Designed for Teamwork The NOVO 3600 is a three-person workstation that optimizes office space while ensuring a comfortable working environment. Soft grey dividers enhance focus, while the spacious tabletop provides ample room for equipment and materials. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/three-person-liner-table-skyland-novo-3600\nVerified line math (4 unit(s) for 12 seat(s)): 4 × 2,205.00 AED = 8,820.00 AED excl. 5% VAT (9,261.00 AED incl. 5% VAT; 5% VAT = 441.00 AED). Stock check: 8 in stock covers 4.\nCatalog price basis: full 3-seat SKU unit (not per seat).\n---\n3 × Four person workstation SKYLAND LUMA 9719-4: Budget check (cap 6,000.00 AED): FITS within budget both excl. VAT (5,649.00 AED) and incl. 5% VAT (5,931.45 AED); 68.55 AED remaining after VAT."
+                },
+                {
+                  "tool_call_id": "call_mdkUNC8Jo9Pzn3cgNAPQOEJ1",
+                  "content": "Recorded: budget 6000 AED. Carry what you recorded into your reply so the customer can correct it -- alongside the answer, never instead of one. A turn whose whole content is a confirmation of what they just said is not a reply."
+                },
+                {
+                  "tool_call_id": "call_NI9GRPWXZEckvUJD4MFCJutC",
+                  "content": "Successfully advanced to stage qualifying. New system instructions will apply on the next turn."
+                }
+              ],
+              "elapsed_s": 9.44
+            },
+            {
+              "index": 3,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.00089051,
+              "cost_source": "provider",
+              "prompt_tokens": 8537,
+              "completion_tokens": 1026,
+              "cached_tokens": 5996,
+              "reasoning_tokens": 893,
+              "finish_reason": "stop",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_results": [
+                {
+                  "tool_call_id": "call_2hTAtCwjsH38HJosvBakIiP9",
+                  "content": "Recorded: 3 x OF-HAI-Luma-Workstation-RJ 9719-4-Walnut; budget 6000 AED. Carry what you recorded into your reply so the customer can correct it -- alongside the answer, never instead of one. A turn whose whole content is a confirmation of what they just said is not a reply."
+                }
+              ],
+              "text": "For your 12-person Dubai office, *3 × SKYLAND LUMA 9719-4 in walnut* is the selected configuration. *30 are in stock.*\n\n• Subtotal: *AED 5,649 excl. 5% VAT*  \n• Total: *AED 5,931.45 incl. 5% VAT*  \n• Your *AED 6,000 budget fits*, with AED 68.55 remaining including VAT.\n\nI’ve noted 3 workstations and a budget of AED 6,000. Are you the final approver for this project, or are you coordinating for someone else?",
+              "elapsed_s": 10.84
+            }
+          ],
+          "cost_usd": 0.00188677,
+          "status": "ok",
+          "reply": "Hello, I'm Noor from Treejar. We supply office furniture across the UAE, and I quote from our own catalog with confirmed prices and stock.\n\nFor your 12-person Dubai office, *3 × SKYLAND LUMA 9719-4 in walnut* is the selected configuration. *30 are in stock.*\n\n• Subtotal: *AED 5,649 excl. 5% VAT*  \n• Total: *AED 5,931.45 incl. 5% VAT*  \n• Your *AED 6,000 budget fits*, with AED 68.55 remaining including VAT.\n\nI’ve noted 3 workstations and a budget of AED 6,000. Are you the final approver for this project, or are you coordinating for someone else?",
+          "route": {
+            "label": "openai/gpt-6-luna",
+            "text_provenance": "model",
+            "usage_provenance": "provider_reported",
+            "repair_flags": [],
+            "repair_judge": null,
+            "emitted_asks": []
+          },
+          "tools_called": [
+            {
+              "name": "search_products",
+              "arguments": {
+                "query": "LUMA 9719-4 workstation walnut, exact model and finish",
+                "max_price": null,
+                "min_price": null,
+                "max_results": 5,
+                "requested_seats": 12,
+                "complete_coverage": true,
+                "budget_cap_aed": 6000,
+                "families": [
+                  "workspace"
+                ],
+                "requested_fact_domains": null,
+                "require_lumbar_support": false,
+                "complementary_search": false,
+                "resend_images": false
+              },
+              "model_call": 1
+            },
+            {
+              "name": "record_customer_requirements",
+              "arguments": {
+                "items": null,
+                "budget_cap_aed": 6000,
+                "needed_by": null,
+                "decision_authority": null,
+                "company_activity": null,
+                "replace_items": false,
+                "remove_skus": null
+              },
+              "model_call": 1
+            },
+            {
+              "name": "advance_stage",
+              "arguments": {
+                "next_stage": "qualifying"
+              },
+              "model_call": 1
+            },
+            {
+              "name": "record_customer_requirements",
+              "arguments": {
+                "items": [
+                  {
+                    "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+                    "quantity": 3
+                  }
+                ],
+                "budget_cap_aed": 6000,
+                "needed_by": null,
+                "decision_authority": null,
+                "company_activity": null,
+                "replace_items": false,
+                "remove_skus": null
+              },
+              "model_call": 2
+            }
+          ],
+          "media": [
+            {
+              "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+              "product_key": "f85020bc-853b-44a0-a03d-636a96fe75b8",
+              "caption": "Four person workstation SKYLAND LUMA 9719-4 — 1883.00 AED",
+              "url": "https://pub-8072e26459e04e68b5648029c22f894d.r2.dev/products/cmlv58zos006f12u6ih6uvcgl/Frame_2021.jpg"
+            }
+          ],
+          "media_sends": [
+            {
+              "service": "wazzup",
+              "method": "send_media",
+              "args": [],
+              "kwargs": {
+                "url": "https://pub-8072e26459e04e68b5648029c22f894d.r2.dev/products/cmlv58zos006f12u6ih6uvcgl/Frame_2021.jpg",
+                "caption": null,
+                "content": null
+              }
+            }
+          ],
+          "external_calls": [
+            {
+              "service": "zoho_crm",
+              "method": "find_contact_by_phone",
+              "args": [
+                "<phone>"
+              ],
+              "kwargs": {}
+            },
+            {
+              "service": "zoho_inventory",
+              "method": "get_stock_bulk",
+              "args": [
+                [
+                  "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+                  "OF-HAI-Luma-Workstation-RJ 9719-1-Walnut",
+                  "OF-HAI-Luma-Workstation-RJ 9719-2-Walnut",
+                  "OF-YED-NOVO-Workstation-63LW-1.2T-6-white",
+                  "OF-YED-NOVO-Table-63LW-1.2T-4-white"
+                ]
+              ],
+              "kwargs": {}
+            }
+          ],
+          "catalog_searches": [
+            {
+              "query": "LUMA 9719-4 workstation walnut, exact model and finish",
+              "min_price": null,
+              "max_price": null,
+              "limit": 5,
+              "in_stock_only": true,
+              "results": [
+                "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+                "OF-HAI-Luma-Workstation-RJ 9719-1-Walnut",
+                "OF-HAI-Luma-Workstation-RJ 9719-2-Walnut",
+                "OF-YED-NOVO-Workstation-63LW-1.2T-6-white",
+                "OF-YED-NOVO-Table-63LW-1.2T-4-white"
+              ]
+            }
+          ],
+          "state": {
+            "sales_stage": "qualifying",
+            "customer_name": "Nadia",
+            "language": "en",
+            "escalation_status": "none",
+            "selected_items": [
+              {
+                "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+                "quantity": 3,
+                "name": "Four person workstation SKYLAND LUMA 9719-4"
+              }
+            ],
+            "slots": {
+              "customer_name": "Nadia",
+              "budget_cap_aed": 6000.0
+            },
+            "last_proposal": {
+              "question": "Are you the final approver for this project, or are you coordinating for someone else?",
+              "items": [
+                {
+                  "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+                  "name": "Four person workstation SKYLAND LUMA 9719-4",
+                  "unit_price": "1883.0"
+                }
+              ],
+              "asked_at": "2026-10-22T13:42:44.893403+00:00"
+            },
+            "quote_workflow": {
+              "version": 2,
+              "consent": "not_requested",
+              "lifecycle": "consultation"
+            },
+            "metadata_keys": [
+              "catalog_planning_v1",
+              "dialogue_kernel"
+            ]
+          },
+          "db": {
+            "reads": {
+              "conversation_summaries": 1,
+              "messages": 1,
+              "system_prompts": 9,
+              "outbound_message_audits": 3,
+              "products": 1
+            },
+            "adds": {
+              "Message": 2,
+              "OutboundMessageAudit": 2
+            },
+            "errors": [],
+            "conversation_writes": []
+          },
+          "warnings": []
+        },
+        {
+          "index": 2,
+          "user": "Do you provide delivery and assembly in Dubai?",
+          "elapsed_s": 4.2,
+          "model_calls": [
+            {
+              "index": 4,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.000238625,
+              "cost_source": "provider",
+              "prompt_tokens": 6402,
+              "completion_tokens": 296,
+              "cached_tokens": 6170,
+              "reasoning_tokens": 263,
+              "finish_reason": "stop",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "text": "Yes, Treejar provides professional delivery and installation (assembly) in Dubai. The exact cost and schedule can be confirmed in the quotation.",
+              "elapsed_s": 4.23
+            }
+          ],
+          "cost_usd": 0.00023863,
+          "status": "ok",
+          "reply": "Yes, Treejar provides professional delivery and installation (assembly) in Dubai. The exact cost and schedule can be confirmed in the quotation.",
+          "route": {
+            "label": "openai/gpt-6-luna",
+            "text_provenance": "model",
+            "usage_provenance": "provider_reported",
+            "repair_flags": [],
+            "repair_judge": null,
+            "emitted_asks": []
+          },
+          "tools_called": [],
+          "media": [],
+          "media_sends": [],
+          "external_calls": [
+            {
+              "service": "zoho_crm",
+              "method": "find_contact_by_phone",
+              "args": [
+                "<phone>"
+              ],
+              "kwargs": {}
+            }
+          ],
+          "catalog_searches": [],
+          "state": {
+            "sales_stage": "qualifying",
+            "customer_name": "Nadia",
+            "language": "en",
+            "escalation_status": "none",
+            "selected_items": [
+              {
+                "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+                "quantity": 3,
+                "name": "Four person workstation SKYLAND LUMA 9719-4"
+              }
+            ],
+            "slots": {
+              "customer_name": "Nadia",
+              "budget_cap_aed": 6000.0
+            },
+            "last_proposal": null,
+            "quote_workflow": {
+              "version": 2,
+              "consent": "not_requested",
+              "lifecycle": "consultation"
+            },
+            "metadata_keys": [
+              "catalog_planning_v1",
+              "dialogue_kernel"
+            ]
+          },
+          "db": {
+            "reads": {
+              "conversation_summaries": 1,
+              "messages": 1,
+              "system_prompts": 3
+            },
+            "adds": {
+              "Message": 2
+            },
+            "errors": [],
+            "conversation_writes": []
+          },
+          "warnings": []
+        },
+        {
+          "index": 3,
+          "user": "ыгку",
+          "elapsed_s": 13.3,
+          "model_calls": [
+            {
+              "index": 5,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.001128925,
+              "cost_source": "provider",
+              "prompt_tokens": 6288,
+              "completion_tokens": 686,
+              "cached_tokens": 0,
+              "reasoning_tokens": 635,
+              "finish_reason": "tool_calls",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_calls": [
+                {
+                  "id": "call_aJ2PfxfgfCwoS4AZ12DhwIxU",
+                  "name": "record_customer_intent",
+                  "arguments": {
+                    "evidence": "ыгку (reads as “sure” in context)",
+                    "quotation_consent": "granted",
+                    "details": null,
+                    "accept_sent_quotation": false
+                  }
+                }
+              ],
+              "elapsed_s": 8.33
+            },
+            {
+              "index": 6,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.000132275,
+              "cost_source": "provider",
+              "prompt_tokens": 6365,
+              "completion_tokens": 119,
+              "cached_tokens": 6285,
+              "reasoning_tokens": 77,
+              "finish_reason": "tool_calls",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_calls": [
+                {
+                  "id": "call_5b1wZxciapA4Czo7y0HIBr9F",
+                  "name": "record_customer_intent",
+                  "arguments": {
+                    "evidence": "ыгку",
+                    "quotation_consent": "granted",
+                    "details": null,
+                    "accept_sent_quotation": false
+                  }
+                }
+              ],
+              "tool_results": [
+                {
+                  "tool_call_id": "call_aJ2PfxfgfCwoS4AZ12DhwIxU",
+                  "content": "Not recorded: evidence must be a literal excerpt of the current customer message."
+                }
+              ],
+              "elapsed_s": 2.34
+            },
+            {
+              "index": 7,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.0008928,
+              "cost_source": "provider",
+              "prompt_tokens": 6503,
+              "completion_tokens": 160,
+              "cached_tokens": 0,
+              "reasoning_tokens": 115,
+              "finish_reason": "stop",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_results": [
+                {
+                  "tool_call_id": "call_5b1wZxciapA4Czo7y0HIBr9F",
+                  "content": "Customer intent recorded. No quotation was created and no manager was notified; use the relevant tool if needed."
+                }
+              ],
+              "text": "Thanks, Nadia. To prepare your quotation, please share your *company name* (or confirm you’re buying as an individual), the *specific Dubai delivery address*, and your *email address*.",
+              "elapsed_s": 2.59
+            }
+          ],
+          "cost_usd": 0.002154,
+          "status": "ok",
+          "reply": "Thanks, Nadia. To prepare your quotation, please share your *company name* (or confirm you’re buying as an individual), the *specific Dubai delivery address*, and your *email address*.",
+          "route": {
+            "label": "openai/gpt-6-luna",
+            "text_provenance": "model",
+            "usage_provenance": "provider_reported",
+            "repair_flags": [],
+            "repair_judge": null,
+            "emitted_asks": []
+          },
+          "tools_called": [
+            {
+              "name": "record_customer_intent",
+              "arguments": {
+                "evidence": "ыгку (reads as “sure” in context)",
+                "quotation_consent": "granted",
+                "details": null,
+                "accept_sent_quotation": false
+              },
+              "model_call": 5
+            },
+            {
+              "name": "record_customer_intent",
+              "arguments": {
+                "evidence": "ыгку",
+                "quotation_consent": "granted",
+                "details": null,
+                "accept_sent_quotation": false
+              },
+              "model_call": 6
+            }
+          ],
+          "media": [],
+          "media_sends": [],
+          "external_calls": [
+            {
+              "service": "zoho_crm",
+              "method": "find_contact_by_phone",
+              "args": [
+                "<phone>"
+              ],
+              "kwargs": {}
+            }
+          ],
+          "catalog_searches": [],
+          "state": {
+            "sales_stage": "qualifying",
+            "customer_name": "Nadia",
+            "language": "en",
+            "escalation_status": "none",
+            "selected_items": [
+              {
+                "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+                "quantity": 3,
+                "name": "Four person workstation SKYLAND LUMA 9719-4"
+              }
+            ],
+            "slots": {
+              "customer_name": "Nadia",
+              "budget_cap_aed": 6000.0
+            },
+            "last_proposal": null,
+            "quote_workflow": {
+              "version": 2,
+              "consent": "granted",
+              "lifecycle": "quote_requested"
+            },
+            "metadata_keys": [
+              "catalog_planning_v1",
+              "dialogue_kernel",
+              "model_customer_intent",
+              "order_runtime"
+            ]
+          },
+          "db": {
+            "reads": {
+              "conversation_summaries": 1,
+              "messages": 1,
+              "system_prompts": 9
+            },
+            "adds": {
+              "Message": 2
+            },
+            "errors": [],
+            "conversation_writes": []
+          },
+          "warnings": []
+        },
+        {
+          "index": 4,
+          "user": "keep it",
+          "elapsed_s": 10.4,
+          "model_calls": [
+            {
+              "index": 8,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.0011383,
+              "cost_source": "provider",
+              "prompt_tokens": 6375,
+              "completion_tokens": 683,
+              "cached_tokens": 0,
+              "reasoning_tokens": 627,
+              "finish_reason": "stop",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "text": "Sure—I’ll keep the selection as *3 walnut LUMA 9719-4 workstations*. To prepare the quotation, I still need your company name (or confirmation you’re buying as an individual), the specific delivery address, and your email.",
+              "elapsed_s": 10.37
+            }
+          ],
+          "cost_usd": 0.0011383,
+          "status": "ok",
+          "reply": "Sure—I’ll keep the selection as *3 walnut LUMA 9719-4 workstations*. To prepare the quotation, I still need your company name (or confirmation you’re buying as an individual), the specific delivery address, and your email.",
+          "route": {
+            "label": "openai/gpt-6-luna",
+            "text_provenance": "model",
+            "usage_provenance": "provider_reported",
+            "repair_flags": [],
+            "repair_judge": null,
+            "emitted_asks": []
+          },
+          "tools_called": [],
+          "media": [],
+          "media_sends": [],
+          "external_calls": [
+            {
+              "service": "zoho_crm",
+              "method": "find_contact_by_phone",
+              "args": [
+                "<phone>"
+              ],
+              "kwargs": {}
+            }
+          ],
+          "catalog_searches": [],
+          "state": {
+            "sales_stage": "qualifying",
+            "customer_name": "Nadia",
+            "language": "en",
+            "escalation_status": "none",
+            "selected_items": [
+              {
+                "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+                "quantity": 3,
+                "name": "Four person workstation SKYLAND LUMA 9719-4"
+              }
+            ],
+            "slots": {
+              "customer_name": "Nadia",
+              "budget_cap_aed": 6000.0
+            },
+            "last_proposal": null,
+            "quote_workflow": {
+              "version": 2,
+              "consent": "granted",
+              "lifecycle": "quote_requested"
+            },
+            "metadata_keys": [
+              "catalog_planning_v1",
+              "dialogue_kernel",
+              "model_customer_intent",
+              "order_runtime"
+            ]
+          },
+          "db": {
+            "reads": {
+              "conversation_summaries": 1,
+              "messages": 1,
+              "system_prompts": 3
+            },
+            "adds": {
+              "Message": 2
+            },
+            "errors": [],
+            "conversation_writes": []
+          },
+          "warnings": []
+        }
+      ],
+      "checks": [
+        {
+          "type": "no_structured_leak",
+          "description": "No turn sends raw JSON/claim-contract payload as the customer reply.",
+          "status": "pass",
+          "evidence": []
+        },
+        {
+          "type": "no_unconfirmed_claim",
+          "description": "No reply says a named/selected product 'isn't confirmed' / 'not confirmed'.",
+          "status": "pass",
+          "evidence": [],
+          "missing_turns": []
+        },
+        {
+          "type": "positive_answer",
+          "description": "Turn 2 answers delivery and installation positively.",
+          "status": "pass",
+          "evidence": {
+            "required": {
+              "deliver": true,
+              "install|assembl": true
+            },
+            "forbidden_hits": []
+          }
+        },
+        {
+          "type": "prior_bot_asked",
+          "description": "Records whether the reply before 'ыгку' asked whether to prepare a quotation.",
+          "status": "not_observed",
+          "evidence": []
+        },
+        {
+          "type": "proceeds_to_quote",
+          "description": "'ыгку' and 'keep it' proceed to quotation details (or a quotation) with no re-listing of options.",
+          "status": "pass",
+          "evidence": [
+            {
+              "turn": 3,
+              "proceeds": true,
+              "relisting_hits": [],
+              "tools": [
+                "record_customer_intent",
+                "record_customer_intent"
+              ]
+            },
+            {
+              "turn": 4,
+              "proceeds": true,
+              "relisting_hits": [],
+              "tools": []
+            }
+          ],
+          "missing_turns": []
+        },
+        {
+          "type": "tool_evidence",
+          "description": "AC01/AC03: 3 × LUMA 9719-4 = 5,649.00 AED excl. 5% VAT, 5,931.45 AED incl., FITS the 6,000 AED budget, with the product page link.",
+          "status": "pass",
+          "evidence": {
+            "required": {
+              "3 × 1,883\\.00 AED = 5,649\\.00 AED excl\\. 5% VAT \\(5,931\\.45 AED incl\\. 5% VAT": true,
+              "FITS within budget both excl\\. VAT \\(5,649\\.00 AED\\) and incl\\. 5% VAT \\(5,931\\.45 AED\\); 68\\.55 AED remaining": true,
+              "Product page: https://treejartrading\\.ae/product/": true
+            },
+            "forbidden_hits": [],
+            "tools": [
+              "search_products",
+              "record_customer_requirements",
+              "advance_stage",
+              "record_customer_requirements"
+            ],
+            "missing_tools": [],
+            "media_count": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "C-Layan",
+      "file": "tests/fixtures/scenarios/c_layan_arabic_6p_wholesale.json",
+      "source_conversation": "nikita-shadow-2026-10-22-C",
+      "description": "Layan (Arabic): 6-person Dubai office, 6 workstations seats + 6 chairs within 10,000 AED, no quotation yet; then a 55-workstation floor project, a custom 4.5 m walnut meeting table with built-in power and a wholesale discount request (B2B handoff).",
+      "cost_usd": 0.00595235,
+      "turns": [
+        {
+          "index": 1,
+          "user": "مرحباً، اسمي ليان. نجهز مكتباً جديداً في دبي لـ 6 موظفين ونحتاج محطة عمل لـ 6 أشخاص مع 6 كراسي مكتبية مريحة، والميزانية الإجمالية 10,000 درهم. لا نريد عرض سعر رسمي الآن، فقط اقترحوا الخيارات المتوفرة مع الأسعار.",
+          "elapsed_s": 16.1,
+          "model_calls": [
+            {
+              "index": 9,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.00023385,
+              "cost_source": "provider",
+              "prompt_tokens": 5958,
+              "completion_tokens": 348,
+              "cached_tokens": 5955,
+              "reasoning_tokens": 129,
+              "finish_reason": "tool_calls",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_calls": [
+                {
+                  "id": "call_KXnQ5nqG6ukNmzXBdmO8qKJU",
+                  "name": "update_language",
+                  "arguments": {
+                    "language": "ar"
+                  }
+                },
+                {
+                  "id": "call_m93YkM6oYtpjVjoj1I7PlpQQ",
+                  "name": "search_products",
+                  "arguments": {
+                    "query": "محطة عمل مكتبية لـ6 أشخاص مع 6 كراسي مكتبية مريحة، خيارات ضمن ميزانية إجمالية 10,000 درهم",
+                    "max_price": null,
+                    "min_price": null,
+                    "max_results": 10,
+                    "requested_seats": 6,
+                    "complete_coverage": true,
+                    "budget_cap_aed": 10000,
+                    "families": [
+                      "workspace",
+                      "seating"
+                    ],
+                    "requested_fact_domains": null,
+                    "require_lumbar_support": false,
+                    "complementary_search": false,
+                    "resend_images": false
+                  }
+                },
+                {
+                  "id": "call_pUXd3rf5uowEhG1h2pa6c9zC",
+                  "name": "record_customer_requirements",
+                  "arguments": {
+                    "items": null,
+                    "budget_cap_aed": 10000,
+                    "needed_by": null,
+                    "decision_authority": null,
+                    "company_activity": null,
+                    "replace_items": false,
+                    "remove_skus": null
+                  }
+                },
+                {
+                  "id": "call_tAcxr0KBvJ7EdpaCbNK8g6ok",
+                  "name": "advance_stage",
+                  "arguments": {
+                    "next_stage": "qualifying"
+                  }
+                }
+              ],
+              "elapsed_s": 4.48
+            },
+            {
+              "index": 10,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.00113169,
+              "cost_source": "provider",
+              "prompt_tokens": 9924,
+              "completion_tokens": 1091,
+              "cached_tokens": 5689,
+              "reasoning_tokens": 811,
+              "finish_reason": "stop",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_results": [
+                {
+                  "tool_call_id": "call_KXnQ5nqG6ukNmzXBdmO8qKJU",
+                  "content": "Language updated to ar."
+                },
+                {
+                  "tool_call_id": "call_m93YkM6oYtpjVjoj1I7PlpQQ",
+                  "content": "Weak catalog matches only (not a reliable exact match):\n---\nName: 4 Person Face to Face Table SKYLAND NOVO 2400\nSKU: OF-YED-NOVO-Workstation-63LW-1.2T-6-white\nCustomer-facing catalog price: 1813.00 AED (excl. 5% VAT; 1,903.65 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 29 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: SKYLAND NOVO 2400 – 4-Person Workstation The SKYLAND NOVO 2400 is a modern 4-person workstation, perfect for open-plan offices. Featuring a durable 25mm melamine-coated tabletop, powder-coated metal legs, and integrated cable grommets, it ensures a sleek and organized workspace. Grey fabric divider panels provide privacy while maintaining collaboration. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/4-person-face-to-face-table-skyland-novo-2400\nVerified line math (2 unit(s) for 6 seat(s)): 2 × 1,813.00 AED = 3,626.00 AED excl. 5% VAT (3,807.30 AED incl. 5% VAT; 5% VAT = 181.30 AED). Stock check: 29 in stock covers 2.\nCatalog price basis: full 4-seat SKU unit (not per seat).\n[Note: Image of this product will be sent to the customer's WhatsApp after the text reply. Do not include raw image file URLs (such as r2.dev links) in your response; you may include the canonical Product page link (https://treejartrading.ae/product/...) when helpful.]\n---\nName: MEETING TABLE SKYLAND NOVO 3200\nSKU: OF-YED-NOVO-Table-63LW-1.2T-10-white\nCustomer-facing catalog price: 1997.00 AED (excl. 5% VAT; 2,096.85 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 14 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: MEETING TABLE SKYLAND NOVO 3200 – More Space for Ideas and Decisions The NOVO 3200 is a larger version of the classic meeting table. Its well-thought-out design fits seamlessly into any modern office. The wide surface ensures participants feel comfortable, while metal legs guarantee stability. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/meeting-table-skyland-novo-3200\n[Note: Image of this product will be sent to the customer's WhatsApp after the text reply. Do not include raw image file URLs (such as r2.dev links) in your response; you may include the canonical Product page link (https://treejartrading.ae/product/...) when helpful.]\n---\nName: 6 Person Face to Face Table SKYLAND NOVO 3600\nSKU: OF-YED-NOVO-Workstation-63LW-1.2T-7-white\nCustomer-facing catalog price: 2598.00 AED (excl. 5% VAT; 2,727.90 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 8 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: SKYLAND NOVO 3600 – 6-Person Workstation Designed for efficient teamwork, the SKYLAND NOVO 3600 accommodates six employees with ample workspace. Its premium white tabletop, grey metal legs, and fabric divider panels create a comfortable and structured work environment. Built-in cable management keeps desks tidy and clutter-free. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/6-person-face-to-face-table-skyland-novo-3600\nVerified line math (1 unit(s) for 6 seat(s)): 1 × 2,598.00 AED = 2,598.00 AED excl. 5% VAT (2,727.90 AED incl. 5% VAT; 5% VAT = 129.90 AED). Stock check: 8 in stock covers 1.\nCatalog price basis: full 6-seat SKU unit (not per seat).\n[Note: Image of this product will be sent to the customer's WhatsApp after the text reply. Do not include raw image file URLs (such as r2.dev links) in your response; you may include the canonical Product page link (https://treejartrading.ae/product/...) when helpful.]\n---\nName: Executive Office Chair CH 460 black\nSKU: CH 460 black\nCustomer-facing catalog price: 801.00 AED (excl. 5% VAT; 841.05 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 34 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: 1.Plywood interior instruction                                             2.Armrest: chrome armrest with PU Pads                               3.Aircraft mechanism with 2 position locked                  4.Gas lift: Class 3 metal chrome                                            5.Base:350mm metal chrome base                                                         6.Casters: 50mm BIFMA Nylon casters\nProduct page: https://treejartrading.ae/product/executive-office-chair-ch-460-black\nVerified line math (6 unit(s) for 6 seat(s)): 6 × 801.00 AED = 4,806.00 AED excl. 5% VAT (5,046.30 AED incl. 5% VAT; 5% VAT = 240.30 AED). Stock check: 34 in stock covers 6.\n[Note: Image of this product will be sent to the customer's WhatsApp after the text reply. Do not include raw image file URLs (such as r2.dev links) in your response; you may include the canonical Product page link (https://treejartrading.ae/product/...) when helpful.]\n---\nName: File cabinet SKYLAND LUMA 9753\nSKU: OF-HAI-Luma-Cabinet-RJ 9753-Walnut\nCustomer-facing catalog price: 888.00 AED (excl. 5% VAT; 932.40 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 9 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: SKYLAND LUMA 9753 – Spacious File Cabinet for Secure Storage The SKYLAND LUMA 9753 offers ample storage space for office essentials. Crafted from durable E1 laminate chipboard, it features wooden swing doors for a clean and minimalist look. A perfect solution for offices requiring secure document organization with a modern touch. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/file-cabinet-skyland-luma-9753\n[Note: Image of this product will be sent to the customer's WhatsApp after the text reply. Do not include raw image file URLs (such as r2.dev links) in your response; you may include the canonical Product page link (https://treejartrading.ae/product/...) when helpful.]\n---\nName: End Table SKYLAND NOVO 1000\nSKU: OF-YED-NOVO-Table-63LW-1.2T-17-white\nCustomer-facing catalog price: 539.00 AED (excl. 5% VAT; 565.95 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 20 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: End Table SKYLAND NOVO 1000 – Stylish Coffee Table for Offices or Waiting Areas This elegant coffee table is ideal for reception areas and lounge spaces. An open shelf underneath provides extra storage for magazines or office supplies, while the sleek design complements any modern interior. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/end-table-skyland-novo-1000\n[Note: Image of this product will be sent to the customer's WhatsApp after the text reply. Do not include raw image file URLs (such as r2.dev links) in your response; you may include the canonical Product page link (https://treejartrading.ae/product/...) when helpful.]\n---\nName: Small table SKYLAND LUMA 9721A\nSKU: OF-HAI-Luma-Table-RJ 9721A-Walnut\nCustomer"
+                },
+                {
+                  "tool_call_id": "call_pUXd3rf5uowEhG1h2pa6c9zC",
+                  "content": "Recorded: budget 10000 AED. Carry what you recorded into your reply so the customer can correct it -- alongside the answer, never instead of one. A turn whose whole content is a confirmation of what they just said is not a reply."
+                },
+                {
+                  "tool_call_id": "call_tAcxr0KBvJ7EdpaCbNK8g6ok",
+                  "content": "Successfully advanced to stage qualifying. New system instructions will apply on the next turn."
+                }
+              ],
+              "text": "أفهم أنكم تجهزون مكتباً لـ6 موظفين، وميزانيتكم الإجمالية 10,000 درهم. وبما أن النتائج لا تثبت مطابقة كاملة لاحتياجكم، فهذه *تركيبة بديلة مرتبطة* وليست عرض سعر رسمي:\n\n• محطة عمل SKYLAND NOVO 3600 لـ6 أشخاص: *2,598 درهماً*، متوفر منها 8.  \nhttps://treejartrading.ae/product/6-person-face-to-face-table-skyland-novo-3600\n\n• 6 كراسي Executive Office Chair CH 145 grey NEW: *596 درهماً للكرسي*، متوفر منها 48.  \nhttps://treejartrading.ae/product/executive-office-chair-ch-145-grey-new\n\n*إجمالي التركيبة:* 6,174 درهماً قبل ضريبة 5%، و6,482.70 درهماً شامل الضريبة؛ وهي ضمن ميزانيتكم، مع 3,517.30 درهماً متبقية بعد الضريبة. جميع الأسعار أعلاه قبل ضريبة 5% ما لم يُذكر غير ذلك. ولم أُنشئ عرض سعر رسمي.\n\nلأفهم سياق التجهيز بشكل أفضل: ما دوركِ في مشروع تجهيز المكتب؟",
+              "elapsed_s": 11.62
+            }
+          ],
+          "cost_usd": 0.00136554,
+          "status": "ok",
+          "reply": "مرحبًا، أنا Noor من Treejar. نورّد أثاث المكاتب في الإمارات، وأعمل من كتالوجنا وأؤكد كل سعر وتوفر قبل إرساله.\n\nأفهم أنكم تجهزون مكتباً لـ6 موظفين، وميزانيتكم الإجمالية 10,000 درهم. وبما أن النتائج لا تثبت مطابقة كاملة لاحتياجكم، فهذه *تركيبة بديلة مرتبطة* وليست عرض سعر رسمي:\n\n• محطة عمل SKYLAND NOVO 3600 لـ6 أشخاص: *2,598 درهماً*، متوفر منها 8.  \nhttps://treejartrading.ae/product/6-person-face-to-face-table-skyland-novo-3600\n\n• 6 كراسي Executive Office Chair CH 145 grey NEW: *596 درهماً للكرسي*، متوفر منها 48.  \nhttps://treejartrading.ae/product/executive-office-chair-ch-145-grey-new\n\n*إجمالي التركيبة:* 6,174 درهماً قبل ضريبة 5%، و6,482.70 درهماً شامل الضريبة؛ وهي ضمن ميزانيتكم، مع 3,517.30 درهماً متبقية بعد الضريبة. جميع الأسعار أعلاه قبل ضريبة 5% ما لم يُذكر غير ذلك. ولم أُنشئ عرض سعر رسمي.\n\nلأفهم سياق التجهيز بشكل أفضل: ما دوركِ في مشروع تجهيز المكتب؟",
+          "route": {
+            "label": "openai/gpt-6-luna",
+            "text_provenance": "model",
+            "usage_provenance": "provider_reported",
+            "repair_flags": [],
+            "repair_judge": null,
+            "emitted_asks": []
+          },
+          "tools_called": [
+            {
+              "name": "update_language",
+              "arguments": {
+                "language": "ar"
+              },
+              "model_call": 9
+            },
+            {
+              "name": "search_products",
+              "arguments": {
+                "query": "محطة عمل مكتبية لـ6 أشخاص مع 6 كراسي مكتبية مريحة، خيارات ضمن ميزانية إجمالية 10,000 درهم",
+                "max_price": null,
+                "min_price": null,
+                "max_results": 10,
+                "requested_seats": 6,
+                "complete_coverage": true,
+                "budget_cap_aed": 10000,
+                "families": [
+                  "workspace",
+                  "seating"
+                ],
+                "requested_fact_domains": null,
+                "require_lumbar_support": false,
+                "complementary_search": false,
+                "resend_images": false
+              },
+              "model_call": 9
+            },
+            {
+              "name": "record_customer_requirements",
+              "arguments": {
+                "items": null,
+                "budget_cap_aed": 10000,
+                "needed_by": null,
+                "decision_authority": null,
+                "company_activity": null,
+                "replace_items": false,
+                "remove_skus": null
+              },
+              "model_call": 9
+            },
+            {
+              "name": "advance_stage",
+              "arguments": {
+                "next_stage": "qualifying"
+              },
+              "model_call": 9
+            }
+          ],
+          "media": [
+            {
+              "sku": "OF-YED-NOVO-Workstation-63LW-1.2T-7-white",
+              "product_key": "4c4d65e2-e4b5-454f-b933-c9d08fd066cd",
+              "caption": "6 Person Face to Face Table SKYLAND NOVO 3600 — 2598.00 AED",
+              "url": "https://pub-8072e26459e04e68b5648029c22f894d.r2.dev/products/listing-machine/OF-YED-NOVO-Workstation-63LW-1.2T-7-white/lifestyle-ai.jpg"
+            },
+            {
+              "sku": "CH 145 grey NEW",
+              "product_key": "b8cccc04-b717-4a42-b370-38a66b1cd691",
+              "caption": "Executive Office Chair CH 145 grey NEW — 596.00 AED",
+              "url": "https://pub-8072e26459e04e68b5648029c22f894d.r2.dev/products/cmmp3werk004j64bpalaww4ml/main.jpg"
+            }
+          ],
+          "media_sends": [
+            {
+              "service": "wazzup",
+              "method": "send_media",
+              "args": [],
+              "kwargs": {
+                "url": "https://pub-8072e26459e04e68b5648029c22f894d.r2.dev/products/listing-machine/OF-YED-NOVO-Workstation-63LW-1.2T-7-white/lifestyle-ai.jpg",
+                "caption": null,
+                "content": null
+              }
+            },
+            {
+              "service": "wazzup",
+              "method": "send_media",
+              "args": [],
+              "kwargs": {
+                "url": "https://pub-8072e26459e04e68b5648029c22f894d.r2.dev/products/cmmp3werk004j64bpalaww4ml/main.jpg",
+                "caption": null,
+                "content": null
+              }
+            }
+          ],
+          "external_calls": [
+            {
+              "service": "zoho_crm",
+              "method": "find_contact_by_phone",
+              "args": [
+                "<phone>"
+              ],
+              "kwargs": {}
+            },
+            {
+              "service": "zoho_inventory",
+              "method": "get_stock_bulk",
+              "args": [
+                [
+                  "OF-YED-NOVO-Workstation-63LW-1.2T-6-white",
+                  "OF-YED-NOVO-Table-63LW-1.2T-10-white",
+                  "OF-YED-NOVO-Workstation-63LW-1.2T-7-white",
+                  "CH 460 black",
+                  "OF-HAI-Luma-Cabinet-RJ 9753-Walnut",
+                  "OF-YED-NOVO-Table-63LW-1.2T-17-white",
+                  "OF-HAI-Luma-Table-RJ 9721A-Walnut",
+                  "OF-YED-NOVO-DISCTABLE-900-white",
+                  "OF-YED-NOVO-Table-63LW-1.2T-3-white",
+                  "CH 145 grey NEW"
+                ]
+              ],
+              "kwargs": {}
+            }
+          ],
+          "catalog_searches": [
+            {
+              "query": "محطة عمل مكتبية لـ6 أشخاص مع 6 كراسي مكتبية مريحة، خيارات ضمن ميزانية إجمالية 10,000 درهم",
+              "min_price": null,
+              "max_price": null,
+              "limit": 10,
+              "in_stock_only": true,
+              "results": [
+                "OF-YED-NOVO-Workstation-63LW-1.2T-6-white",
+                "OF-YED-NOVO-Table-63LW-1.2T-10-white",
+                "OF-YED-NOVO-Workstation-63LW-1.2T-7-white",
+                "CH 460 black",
+                "OF-HAI-Luma-Cabinet-RJ 9753-Walnut",
+                "OF-YED-NOVO-Table-63LW-1.2T-17-white",
+                "OF-HAI-Luma-Table-RJ 9721A-Walnut",
+                "OF-YED-NOVO-DISCTABLE-900-white",
+                "OF-YED-NOVO-Table-63LW-1.2T-3-white",
+                "CH 145 grey NEW"
+              ]
+            }
+          ],
+          "state": {
+            "sales_stage": "qualifying",
+            "customer_name": "ليان",
+            "language": "ar",
+            "escalation_status": "none",
+            "selected_items": [],
+            "slots": {
+              "customer_name": "ليان",
+              "budget_cap_aed": 10000.0
+            },
+            "last_proposal": {
+              "question": "لأفهم سياق التجهيز بشكل أفضل: ما دوركِ في مشروع تجهيز المكتب؟",
+              "items": [
+                {
+                  "sku": "OF-YED-NOVO-Workstation-63LW-1.2T-7-white",
+                  "name": "6 Person Face to Face Table SKYLAND NOVO 3600",
+                  "unit_price": "2598.0"
+                },
+                {
+                  "sku": "CH 145 grey NEW",
+                  "name": "Executive Office Chair CH 145 grey NEW",
+                  "unit_price": "596.0"
+                }
+              ],
+              "asked_at": "2026-10-22T13:43:28.913829+00:00"
+            },
+            "quote_workflow": {
+              "version": 2,
+              "consent": "not_requested",
+              "lifecycle": "consultation"
+            },
+            "metadata_keys": [
+              "dialogue_kernel"
+            ]
+          },
+          "db": {
+            "reads": {
+              "conversation_summaries": 1,
+              "messages": 1,
+              "system_prompts": 6,
+              "outbound_message_audits": 5
+            },
+            "adds": {
+              "Message": 2,
+              "OutboundMessageAudit": 4
+            },
+            "errors": [],
+            "conversation_writes": []
+          },
+          "warnings": []
+        },
+        {
+          "index": 2,
+          "user": "شكراً. لدينا أيضاً مشروع لتجهيز الطابق بالكامل: نحتاج 55 محطة عمل، بالإضافة إلى تفصيل طاولة اجتماعات خاصة بطول 4.5 متر من خشب الجوز مع وحدات كهرباء مدمجة، ونريد خصم جملة خاص. كيف نرتب ذلك؟",
+          "elapsed_s": 50.3,
+          "model_calls": [
+            {
+              "index": 11,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.000435065,
+              "cost_source": "provider",
+              "prompt_tokens": 6300,
+              "completion_tokens": 621,
+              "cached_tokens": 5764,
+              "reasoning_tokens": 438,
+              "finish_reason": "tool_calls",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_calls": [
+                {
+                  "id": "call_HoZatPNFqXF5D96DRQ9BJ14N",
+                  "name": "search_products",
+                  "arguments": {
+                    "query": "standard office workstations for a 55-person office floor, multiple design options",
+                    "max_price": null,
+                    "min_price": null,
+                    "max_results": 5,
+                    "requested_seats": 55,
+                    "complete_coverage": true,
+                    "budget_cap_aed": null,
+                    "families": [
+                      "workspace"
+                    ],
+                    "requested_fact_domains": [
+                      "footprint"
+                    ],
+                    "require_lumbar_support": false,
+                    "complementary_search": false,
+                    "resend_images": false
+                  }
+                },
+                {
+                  "id": "call_dgBEU7WPNpjmtNXP1qFT4Zgu",
+                  "name": "escalate_to_manager",
+                  "arguments": {
+                    "reason": "Customer has a bulk floor project for 55 workstations and requests a custom 4.5-metre walnut meeting table with built-in power modules, requiring B2B wholesale and made-to-order handoff.",
+                    "escalation_type": "general"
+                  }
+                }
+              ],
+              "elapsed_s": 8.63
+            },
+            {
+              "index": 12,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.00127844,
+              "cost_source": "provider",
+              "prompt_tokens": 8898,
+              "completion_tokens": 1641,
+              "cached_tokens": 5689,
+              "reasoning_tokens": 1231,
+              "finish_reason": "stop",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_results": [
+                {
+                  "tool_call_id": "call_HoZatPNFqXF5D96DRQ9BJ14N",
+                  "content": "Closest catalog alternatives (exact requested item not confirmed):\n---\nTarget coverage: 55 of 55 seats across the returned in-stock variants.\n---\nName: 2 Person Face to Face Table SKYLAND NOVO 1200\nSKU: OF-YED-NOVO-Workstation-63LW-1.2T-5-white\nCustomer-facing catalog price: 1029.00 AED (excl. 5% VAT; 1,080.45 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 44 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: 2P WS TABLE SKYLAND NOVO 1200 - Two person wokstation The NOVO 1200 - 2P WS is a practical solution for small offices. Its compact size allows for efficient use of space, while the ergonomic design ensures comfort. Privacy panels provide each employee with a personal workspace. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/2-person-face-to-face-table-skyland-novo-1200\nVerified line math (28 unit(s) for 55 seat(s)): 28 × 1,029.00 AED = 28,812.00 AED excl. 5% VAT (30,252.60 AED incl. 5% VAT; 5% VAT = 1,440.60 AED). Stock check: 44 in stock covers 28.\nCatalog price basis: full 2-seat SKU unit (not per seat).\nRequested fact status: footprint_dimensions=not_stated\n[Note: Image of this product will be sent to the customer's WhatsApp after the text reply. Do not include raw image file URLs (such as r2.dev links) in your response; you may include the canonical Product page link (https://treejartrading.ae/product/...) when helpful.]\n---\nName: Single workstation SKYLAND LUMA 9719-1\nSKU: OF-HAI-Luma-Workstation-RJ 9719-1-Walnut\nCustomer-facing catalog price: 491.00 AED (excl. 5% VAT; 515.55 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 28 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: SKYLAND LUMA 9719-1 – Single-Person Workstation For professionals who require a dedicated workspace, the LUMA 9719-1 provides a spacious work surface, a screen divider for privacy, and a three-drawer pedestal for storage. Its compact yet highly functional design makes it perfect for individual offices, private workspaces, and remote work setups. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/single-workstation-skyland-luma-9719-1\nRequested fact status: footprint_dimensions=not_stated\n[Note: Image of this product will be sent to the customer's WhatsApp after the text reply. Do not include raw image file URLs (such as r2.dev links) in your response; you may include the canonical Product page link (https://treejartrading.ae/product/...) when helpful.]\n---\nName: Two person workstation SKYLAND LUMA 9719-2\nSKU: OF-HAI-Luma-Workstation-RJ 9719-2-Walnut\nCustomer-facing catalog price: 941.00 AED (excl. 5% VAT; 988.05 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 13 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: SKYLAND LUMA 9719-2 – Two-Person Workstation A compact and functional workstation for two employees, the LUMA 9719-2 provides a balance of privacy and collaboration. Featuring screen dividers, mobile pedestals, and sturdy metal frames, this workstation is ideal for startups, co-working spaces, and office environments where teamwork is key. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/two-person-workstation-skyland-luma-9719-2\nCatalog price basis: full 2-seat SKU unit (not per seat).\nRequested fact status: footprint_dimensions=not_stated\n[Note: Image of this product will be sent to the customer's WhatsApp after the text reply. Do not include raw image file URLs (such as r2.dev links) in your response; you may include the canonical Product page link (https://treejartrading.ae/product/...) when helpful.]\n---\nName: 8 Person Face to Face Table SKYLAND NOVO 4800\nSKU: OF-YED-NOVO-Workstation-63LW-1.2T-8-white\nCustomer-facing catalog price: 3369.00 AED (excl. 5% VAT; 3,537.45 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 9 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: SKYLAND NOVO 4800 – 8-Person Workstation The SKYLAND NOVO 4800 is a spacious 8-person workstation, ideal for large teams. It features a sturdy 25mm melamine top, metal powder-coated legs, and grey fabric dividers for an optimized and private workspace. Its organized layout and cable grommets make it perfect for modern offices. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/8-person-face-to-face-table-skyland-novo-4800\nVerified line math (7 unit(s) for 55 seat(s)): 7 × 3,369.00 AED = 23,583.00 AED excl. 5% VAT (24,762.15 AED incl. 5% VAT; 5% VAT = 1,179.15 AED). Stock check: 9 in stock covers 7.\nCatalog price basis: full 8-seat SKU unit (not per seat).\nRequested fact status: footprint_dimensions=not_stated\n[Note: Image of this product will be sent to the customer's WhatsApp after the text reply. Do not include raw image file URLs (such as r2.dev links) in your response; you may include the canonical Product page link (https://treejartrading.ae/product/...) when helpful.]\n---\nName: 4 Person Face to Face Table SKYLAND NOVO 2400\nSKU: OF-YED-NOVO-Workstation-63LW-1.2T-6-white\nCustomer-facing catalog price: 1813.00 AED (excl. 5% VAT; 1,903.65 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 29 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: SKYLAND NOVO 2400 – 4-Person Workstation The SKYLAND NOVO 2400 is a modern 4-person workstation, perfect for open-plan offices. Featuring a durable 25mm melamine-coated tabletop, powder-coated metal legs, and integrated cable grommets, it ensures a sleek and organized workspace. Grey fabric divider panels provide privacy while maintaining collaboration. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/4-person-face-to-face-table-skyland-novo-2400\nVerified line math (14 unit(s) for 55 seat(s)): 14 × 1,813.00 AED = 25,382.00 AED excl. 5% VAT (26,651.10 AED incl. 5% VAT; 5% VAT = 1,269.10 AED). Stock check: 29 in stock covers 14.\nCatalog price basis: full 4-seat SKU unit (not per seat).\nRequested fact status: footprint_dimensions=not_stated\n[Note: Image of this product will be sent to the customer's WhatsApp after the text reply. Do not include raw image file URLs (such as r2.dev links) in your response; you may include the canonical Product page link (https://treejartrading.ae/product/...) when helpful.]\n---\nEarlier in this conversation you already offered the customer, for this kind of item:\n- 6 Person Face to Face Table SKYLAND NOVO 3600 (SKU: OF-YED-NOVO-Workstation-63LW-1.2T-7-white; catalog price 2598.00 AED)\nKeep that option as your lead recommendation and say it is the one you suggested before, unless the customer's current message asks for something different, a criterion it fails, or alternatives. If you add another option, say how it differs from the earlier one. Confirm its stock with get_stock before stating availability."
+                },
+                {
+                  "tool_call_id": "call_dgBEU7WPNpjmtNXP1qFT4Zgu",
+                  "content": "Manager has been notified and will take over this project. In the same reply, present the 2-3 standard in-stock catalog reference options already returned by search_products with their verified prices (excl. 5% VAT) -- their photos are sent automatically -- confirm a manager will handle project pricing and any custom work without promising a discount, lead time or delivery date, and end with one short question for the brief: company name, target delivery timeline and delivery location in the UAE."
+                }
+              ],
+              "text": "أُحيل مشروع الـ55 محطة عمل والطاولة الخاصة إلى المدير ليتولى تسعير المشروع ومراجعة طلب التفصيل. الطاولة بطول 4.5 م من خشب الجوز مع وحدات كهرباء مدمجة غير مؤكدة ضمن خيارات الكتالوج القياسية، ولا أستطيع تأكيد خصم جملة قبل مراجعة المدير.\n\nكخيارات قياسية تغطي 55 موظفاً، إليك تركيبات 56 مقعداً لكل خيار (مقعد إضافي واحد):\n\n• *SKYLAND NOVO 1200، لشخصين:* 28 وحدة؛ 44 متوفرة. سعر الوحدة 1,029 درهماً، والإجمالي 28,812 درهماً قبل ضريبة 5%، أو 30,252.60 درهماً شامل الضريبة.  \nhttps://treejartrading.ae/product/2-person-face-to-face-table-skyland-novo-1200\n\n• *SKYLAND NOVO 4800، لـ8 أشخاص:* 7 وحدات؛ 9 متوفرة. سعر الوحدة 3,369 درهماً، والإجمالي 23,583 درهماً قبل ضريبة 5%، أو 24,762.15 درهماً شامل الضريبة.  \nhttps://treejartrading.ae/product/8-person-face-to-face-table-skyland-novo-4800\n\n• *SKYLAND NOVO 2400، لـ4 أشخاص:* 14 وحدة؛ 29 متوفرة. سعر الوحدة 1,813 درهماً، والإجمالي 25,382 درهماً قبل ضريبة 5%، أو 26,651.10 درهماً شامل الضريبة.  \nhttps://treejartrading.ae/product/4-person-face-to-face-table-skyland-novo-2400\n\nما اسم الشركة، وما الموعد المستهدف وموقع التسليم داخل الإمارات؟",
+              "elapsed_s": 15.27
+            },
+            {
+              "index": 13,
+              "model": "openai/gpt-6-luna",
+              "kind": "text_only",
+              "cost_usd": 0.0028733,
+              "cost_source": "provider",
+              "prompt_tokens": 10187,
+              "completion_tokens": 3200,
+              "cached_tokens": 0,
+              "reasoning_tokens": 1183,
+              "finish_reason": "length",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "text": "{\"claims\":[{\"claim_type\":\"absence\",\"sku\":\"\",\"field_path\":\"search_products.exact_match_status\",\"value\":\"الطاولة الخاصة المطلوبة غير مؤكدة ضمن نتائج الكتالوج\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-5-white\",\"field_path\":\"name\",\"value\":\"2 Person Face to Face Table SKYLAND NOVO 1200\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-5-white\",\"field_path\":\"price_excl_vat\",\"value\":\"1,029.00 AED\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-5-white\",\"field_path\":\"current_stock\",\"value\":\"44\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-5-white\",\"field_path\":\"quantity\",\"value\":\"28\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"derived_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-5-white\",\"field_path\":\"verified_line_math.seats_covered\",\"value\":\"56 seats (55 requested; 1 extra)\",\"source_value\":\"\",\"operation\":\"product\",\"inputs\":[{\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-5-white\",\"field_path\":\"quantity\",\"value\":\"28\",\"customer_stated\":false},{\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-5-white\",\"field_path\":\"description\",\"value\":\"2 person\",\"customer_stated\":false}],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-5-white\",\"field_path\":\"line_subtotal_excl_vat\",\"value\":\"28,812.00 AED\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-5-white\",\"field_path\":\"line_total_incl_vat\",\"value\":\"30,252.60 AED\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-8-white\",\"field_path\":\"name\",\"value\":\"8 Person Face to Face Table SKYLAND NOVO 4800\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-8-white\",\"field_path\":\"price_excl_vat\",\"value\":\"3,369.00 AED\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-8-white\",\"field_path\":\"current_stock\",\"value\":\"9\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-8-white\",\"field_path\":\"quantity\",\"value\":\"7\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"derived_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-8-white\",\"field_path\":\"verified_line_math.seats_covered\",\"value\":\"56 seats (55 requested; 1 extra)\",\"source_value\":\"\",\"operation\":\"product\",\"inputs\":[{\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-8-white\",\"field_path\":\"quantity\",\"value\":\"7\",\"customer_stated\":false},{\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-8-white\",\"field_path\":\"description\",\"value\":\"8 person\",\"customer_stated\":false}],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-8-white\",\"field_path\":\"line_subtotal_excl_vat\",\"value\":\"23,583.00 AED\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-8-white\",\"field_path\":\"line_total_incl_vat\",\"value\":\"24,762.15 AED\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-6-white\",\"field_path\":\"name\",\"value\":\"4 Person Face to Face Table SKYLAND NOVO 2400\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-6-white\",\"field_path\":\"price_excl_vat\",\"value\":\"1,813.00 AED\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-6-white\",\"field_path\":\"current_stock\",\"value\":\"29\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-6-white\",\"field_path\":\"quantity\",\"value\":\"14\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"derived_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-6-white\",\"field_path\":\"verified_line_math.seats_covered\",\"value\":\"56 seats (55 requested; 1 extra)\",\"source_value\":\"\",\"operation\":\"product\",\"inputs\":[{\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-6-white\",\"field_path\":\"quantity\",\"value\":\"14\",\"customer_stated\":false},{\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-6-white\",\"field_path\":\"description\",\"value\":\"4 person\",\"customer_stated\":false}],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-6-white\",\"field_path\":\"line_subtotal_excl_vat\",\"value\":\"25,382.00 AED\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"OF-YED-NOVO-Workstation-63LW-1.2T-6-white\",\"field_path\":\"line_total_incl_vat\",\"value\":\"26,651.10 AED\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"catalog_fact\",\"sku\":\"\",\"field_path\":\"escalate_to_manager.status\",\"value\":\"تم إبلاغ المدير وسيتولى مراجعة المشروع\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false},{\"claim_type\":\"explicit_assumption\",\"sku\":\"\",\"field_path\":\"discount.approval\",\"value\":\"لا يوجد خصم معتمد مؤكد بعد\",\"source_value\":\"\",\"operation\":\"\",\"inputs\":[],\"marker_present\":false,\"confirming_question\":false}],\"answer\":\"أُحيل مشروع تجهيز الطابق إلى المدير لمراجعة تسعير الجملة وطلب الطاولة الخاصة. لم يتأكد بعد من نتائج الكتالوج تطابق الطاولة بطول 4.5 م من خشب الجوز مع وحدات كهرباء مدمجة، ولا أستطيع تأكيد خصم قبل المراجعة.\\n\\nكخيارات قياسية قريبة تغطي 55 موظفاً، كل تركيبة أدناه تسع 56 شخصاً (مقعد إضافي واحد):\\n\\n• *SKYLAND NOVO 1200، لشخصين:* 28 وحدة × 1,029 درهماً = *28,812 درهماً قبل ضريبة 5%*، أو *30,252.60 درهماً شامل الضريبة*. متوفر 44 وحدة.\\nhttps://treejartrading.ae/product/2-person-face-to-face-table-skyland-novo-1200\\n\\n• *SKYLAND NOVO 4800، لـ8 أشخاص:* 7 وحدات × 3,369 درهماً = *23,583 درهماً قبل ضريبة 5%*، أو",
+              "elapsed_s": 26.41
+            }
+          ],
+          "cost_usd": 0.00458681,
+          "status": "ok",
+          "reply": "أُحيل مشروع الـ55 محطة عمل والطاولة الخاصة إلى المدير ليتولى تسعير المشروع ومراجعة طلب التفصيل. الطاولة بطول 4.5 م من خشب الجوز مع وحدات كهرباء مدمجة غير مؤكدة ضمن خيارات الكتالوج القياسية، ولا أستطيع تأكيد خصم جملة قبل مراجعة المدير.\n\nكخيارات قياسية تغطي 55 موظفاً، إليك تركيبات 56 مقعداً لكل خيار (مقعد إضافي واحد):\n\n• *SKYLAND NOVO 1200، لشخصين:* 28 وحدة؛ 44 متوفرة. سعر الوحدة 1,029 درهماً، والإجمالي 28,812 درهماً قبل ضريبة 5%، أو 30,252.60 درهماً شامل الضريبة.  \nhttps://treejartrading.ae/product/2-person-face-to-face-table-skyland-novo-1200\n\n• *SKYLAND NOVO 4800، لـ8 أشخاص:* 7 وحدات؛ 9 متوفرة. سعر الوحدة 3,369 درهماً، والإجمالي 23,583 درهماً قبل ضريبة 5%، أو 24,762.15 درهماً شامل الضريبة.  \nhttps://treejartrading.ae/product/8-person-face-to-face-table-skyland-novo-4800\n\n• *SKYLAND NOVO 2400، لـ4 أشخاص:* 14 وحدة؛ 29 متوفرة. سعر الوحدة 1,813 درهماً، والإجمالي 25,382 درهماً قبل ضريبة 5%، أو 26,651.10 درهماً شامل الضريبة.  \nhttps://treejartrading.ae/product/4-person-face-to-face-table-skyland-novo-2400\n\nما اسم الشركة، وما الموعد المستهدف وموقع التسليم داخل الإمارات؟",
+          "route": {
+            "label": "openai/gpt-6-luna|catalog-fact-repair-fallback",
+            "text_provenance": "model",
+            "usage_provenance": "provider_reported",
+            "repair_flags": [],
+            "repair_judge": null,
+            "emitted_asks": []
+          },
+          "tools_called": [
+            {
+              "name": "search_products",
+              "arguments": {
+                "query": "standard office workstations for a 55-person office floor, multiple design options",
+                "max_price": null,
+                "min_price": null,
+                "max_results": 5,
+                "requested_seats": 55,
+                "complete_coverage": true,
+                "budget_cap_aed": null,
+                "families": [
+                  "workspace"
+                ],
+                "requested_fact_domains": [
+                  "footprint"
+                ],
+                "require_lumbar_support": false,
+                "complementary_search": false,
+                "resend_images": false
+              },
+              "model_call": 11
+            },
+            {
+              "name": "escalate_to_manager",
+              "arguments": {
+                "reason": "Customer has a bulk floor project for 55 workstations and requests a custom 4.5-metre walnut meeting table with built-in power modules, requiring B2B wholesale and made-to-order handoff.",
+                "escalation_type": "general"
+              },
+              "model_call": 11
+            }
+          ],
+          "media": [
+            {
+              "sku": "OF-YED-NOVO-Workstation-63LW-1.2T-5-white",
+              "product_key": "8bdb0898-4082-4ffe-8301-566242caf05d",
+              "caption": "2 Person Face to Face Table SKYLAND NOVO 1200 — 1029.00 AED",
+              "url": "https://pub-8072e26459e04e68b5648029c22f894d.r2.dev/products/cmlv58crs000212u63bisa3mn/Frame34.png"
+            },
+            {
+              "sku": "OF-YED-NOVO-Workstation-63LW-1.2T-8-white",
+              "product_key": "c8703561-e7f0-443e-b9cf-431ab508d956",
+              "caption": "8 Person Face to Face Table SKYLAND NOVO 4800 — 3369.00 AED",
+              "url": "https://pub-8072e26459e04e68b5648029c22f894d.r2.dev/products/listing-machine/OF-YED-NOVO-Workstation-63LW-1.2T-8-white/lifestyle-ai.jpg"
+            },
+            {
+              "sku": "OF-YED-NOVO-Workstation-63LW-1.2T-6-white",
+              "product_key": "71893f29-d314-4fa4-a110-20865f8027f9",
+              "caption": "4 Person Face to Face Table SKYLAND NOVO 2400 — 1813.00 AED",
+              "url": "https://pub-8072e26459e04e68b5648029c22f894d.r2.dev/products/listing-machine/OF-YED-NOVO-Workstation-63LW-1.2T-6-white/lifestyle-ai.jpg"
+            }
+          ],
+          "media_sends": [
+            {
+              "service": "wazzup",
+              "method": "send_media",
+              "args": [],
+              "kwargs": {
+                "url": "https://pub-8072e26459e04e68b5648029c22f894d.r2.dev/products/cmlv58crs000212u63bisa3mn/Frame34.png",
+                "caption": null,
+                "content": null
+              }
+            },
+            {
+              "service": "wazzup",
+              "method": "send_media",
+              "args": [],
+              "kwargs": {
+                "url": "https://pub-8072e26459e04e68b5648029c22f894d.r2.dev/products/listing-machine/OF-YED-NOVO-Workstation-63LW-1.2T-8-white/lifestyle-ai.jpg",
+                "caption": null,
+                "content": null
+              }
+            },
+            {
+              "service": "wazzup",
+              "method": "send_media",
+              "args": [],
+              "kwargs": {
+                "url": "https://pub-8072e26459e04e68b5648029c22f894d.r2.dev/products/listing-machine/OF-YED-NOVO-Workstation-63LW-1.2T-6-white/lifestyle-ai.jpg",
+                "caption": null,
+                "content": null
+              }
+            }
+          ],
+          "external_calls": [
+            {
+              "service": "zoho_crm",
+              "method": "find_contact_by_phone",
+              "args": [
+                "<phone>"
+              ],
+              "kwargs": {}
+            },
+            {
+              "service": "zoho_inventory",
+              "method": "get_stock_bulk",
+              "args": [
+                [
+                  "OF-YED-NOVO-Workstation-63LW-1.2T-5-white",
+                  "OF-HAI-Luma-Workstation-RJ 9719-1-Walnut",
+                  "OF-HAI-Luma-Workstation-RJ 9719-2-Walnut",
+                  "OF-YED-NOVO-Workstation-63LW-1.2T-8-white",
+                  "OF-YED-NOVO-Workstation-63LW-1.2T-6-white"
+                ]
+              ],
+              "kwargs": {}
+            },
+            {
+              "service": "notification",
+              "method": "notify_manager_escalation",
+              "args": [],
+              "kwargs": {
+                "reason": "B2B handoff: the customer asked for a wholesale or bulk project order (20+ units or bulk pricing); furniture made to order (custom dimensions, materials or built-in power). Assistant brief: Customer has a bulk floor project for 55 workstations and requests a custom 4.5-metre walnut meeting table wit",
+                "escalation_type": "general",
+                "pause_bot": true
+              }
+            }
+          ],
+          "catalog_searches": [
+            {
+              "query": "standard office workstations for a 55-person office floor, multiple design options",
+              "min_price": null,
+              "max_price": null,
+              "limit": 5,
+              "in_stock_only": true,
+              "results": [
+                "OF-YED-NOVO-Workstation-63LW-1.2T-5-white",
+                "OF-HAI-Luma-Workstation-RJ 9719-1-Walnut",
+                "OF-HAI-Luma-Workstation-RJ 9719-2-Walnut",
+                "OF-YED-NOVO-Workstation-63LW-1.2T-8-white",
+                "OF-YED-NOVO-Workstation-63LW-1.2T-6-white"
+              ]
+            }
+          ],
+          "state": {
+            "sales_stage": "qualifying",
+            "customer_name": "ليان",
+            "language": "ar",
+            "escalation_status": "pending",
+            "selected_items": [],
+            "slots": {
+              "customer_name": "ليان",
+              "budget_cap_aed": 10000.0
+            },
+            "last_proposal": {
+              "question": "ما اسم الشركة، وما الموعد المستهدف وموقع التسليم داخل الإمارات؟",
+              "items": [
+                {
+                  "sku": "OF-YED-NOVO-Workstation-63LW-1.2T-5-white",
+                  "name": "2 Person Face to Face Table SKYLAND NOVO 1200",
+                  "unit_price": "1029.0"
+                },
+                {
+                  "sku": "OF-YED-NOVO-Workstation-63LW-1.2T-8-white",
+                  "name": "8 Person Face to Face Table SKYLAND NOVO 4800",
+                  "unit_price": "3369.0"
+                },
+                {
+                  "sku": "OF-YED-NOVO-Workstation-63LW-1.2T-6-white",
+                  "name": "4 Person Face to Face Table SKYLAND NOVO 2400",
+                  "unit_price": "1813.0"
+                }
+              ],
+              "asked_at": "2026-10-22T13:44:19.249228+00:00"
+            },
+            "quote_workflow": {
+              "version": 2,
+              "consent": "not_requested",
+              "lifecycle": "consultation"
+            },
+            "metadata_keys": [
+              "catalog_planning_v1",
+              "dialogue_kernel"
+            ]
+          },
+          "db": {
+            "reads": {
+              "conversation_summaries": 1,
+              "messages": 1,
+              "system_prompts": 9,
+              "outbound_message_audits": 7,
+              "products": 1
+            },
+            "adds": {
+              "Message": 2,
+              "OutboundMessageAudit": 6
+            },
+            "errors": [],
+            "conversation_writes": []
+          },
+          "warnings": []
+        }
+      ],
+      "checks": [
+        {
+          "type": "no_structured_leak",
+          "description": "No turn sends raw JSON/claim-contract payload as the customer reply.",
+          "status": "pass",
+          "evidence": []
+        },
+        {
+          "type": "tool_evidence",
+          "description": "AC02: a grounded turnkey package (workstation + 6 chairs) with excl./incl. 5% VAT totals and the 10,000 AED budget verdict reaches the model.",
+          "status": "fail",
+          "evidence": {
+            "required": {
+              "Verified turnkey package math \\(6 seats\\): 1 × 6 Person Face to Face Table SKYLAND NOVO 3600 \\(1 × 2,598\\.00 = 2,598\\.00 AED\\) \\+ 6 × ": false,
+              "AED excl\\. 5% VAT \\([\\d,]+\\.\\d\\d AED incl\\. 5% VAT": true,
+              "Budget check \\(cap 10,000\\.00 AED\\): FITS": false
+            },
+            "forbidden_hits": [],
+            "tools": [
+              "update_language",
+              "search_products",
+              "record_customer_requirements",
+              "advance_stage"
+            ],
+            "missing_tools": [],
+            "media_count": 2
+          }
+        },
+        {
+          "type": "escalation_route",
+          "description": "AC05: a six-person office under budget is an ordinary sale, never a handoff.",
+          "status": "pass",
+          "evidence": {
+            "notifications": [],
+            "escalation_status_after": "none",
+            "reason_matched": true
+          }
+        },
+        {
+          "type": "positive_answer",
+          "description": "Arabic reply: offers a 6-person workstation with chairs, states the package total incl. 5% VAT and that it fits the 10,000 AED budget, and never re-asks the name Layan already gave (the name itself is checked in state.customer_name).",
+          "status": "pass",
+          "evidence": {
+            "required": {
+              "2,598|2598|٢٬?٥٩٨": true,
+              "10,000|10000|١٠٬?٠٠٠": true,
+              "(?:ضريبة|VAT)": true
+            },
+            "forbidden_hits": []
+          }
+        },
+        {
+          "type": "b2b_handoff_with_references",
+          "description": "AC04-AC06: 55 workstations + custom 4.5 m table + wholesale discount: manager handoff (status pending), standard in-stock meeting-table references with photos, and one brief question. Photos go out once per conversation, so references already shown in turn 1 are not sent again; at least one new reference photo is required.",
+          "status": "pass",
+          "evidence": {
+            "escalate_to_manager_called": true,
+            "search_products_called": true,
+            "manager_notified": true,
+            "status_pending": true,
+            "reference_photos": true,
+            "brief_question": true,
+            "media_count": 3,
+            "forbidden_hits": []
+          }
+        },
+        {
+          "type": "escalation_route",
+          "description": "AC04: the wholesale / made-to-order route notifies the manager and pauses the bot.",
+          "status": "pass",
+          "evidence": {
+            "notifications": [
+              {
+                "service": "notification",
+                "method": "notify_manager_escalation",
+                "args": [],
+                "kwargs": {
+                  "reason": "B2B handoff: the customer asked for a wholesale or bulk project order (20+ units or bulk pricing); furniture made to order (custom dimensions, materials or built-in power). Assistant brief: Customer has a bulk floor project for 55 workstations and requests a custom 4.5-metre walnut meeting table wit",
+                  "escalation_type": "general",
+                  "pause_bot": true
+                }
+              }
+            ],
+            "escalation_status_after": "pending",
+            "reason_matched": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "D-Rami",
+      "file": "tests/fixtures/scenarios/d_rami_fume_hood_luma_budget.json",
+      "source_conversation": "nikita-shadow-2026-10-22-D",
+      "description": "Rami: lab fume hoods (out of catalog, non-pausing sourcing lead) + 3 × SKYLAND LUMA 9719-4 with Dubai delivery and assembly; then a 6,000 AED budget check and stock, no quotation.",
+      "cost_usd": 0.00556451,
+      "turns": [
+        {
+          "index": 1,
+          "user": "Hi, I'm Rami. Do you sell laboratory fume hoods? Also, if we order 3 workstations of SKYLAND LUMA 9719-4 for our office in Dubai, do you provide delivery and assembly, and how much does delivery cost?",
+          "elapsed_s": 28.6,
+          "model_calls": [
+            {
+              "index": 14,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.00023142,
+              "cost_source": "provider",
+              "prompt_tokens": 6165,
+              "completion_tokens": 339,
+              "cached_tokens": 6162,
+              "reasoning_tokens": 234,
+              "finish_reason": "tool_calls",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_calls": [
+                {
+                  "id": "call_PGz1ZXoE7RWo6rVEYkN70K5u",
+                  "name": "search_products",
+                  "arguments": {
+                    "query": "SKYLAND LUMA 9719-4 workstation exact model, workstation desks for office Dubai",
+                    "max_price": null,
+                    "min_price": null,
+                    "max_results": 5,
+                    "requested_seats": null,
+                    "complete_coverage": null,
+                    "budget_cap_aed": null,
+                    "families": [
+                      "workspace"
+                    ],
+                    "requested_fact_domains": null,
+                    "require_lumbar_support": false,
+                    "complementary_search": false,
+                    "resend_images": false
+                  }
+                }
+              ],
+              "elapsed_s": 7.57
+            },
+            {
+              "index": 15,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.000336045,
+              "cost_source": "provider",
+              "prompt_tokens": 8038,
+              "completion_tokens": 80,
+              "cached_tokens": 6162,
+              "reasoning_tokens": 0,
+              "finish_reason": "tool_calls",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_calls": [
+                {
+                  "id": "call_NKly7KhDjyaugnkC0SrpZPoV",
+                  "name": "record_customer_requirements",
+                  "arguments": {
+                    "items": [
+                      {
+                        "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+                        "quantity": 3
+                      }
+                    ],
+                    "budget_cap_aed": null,
+                    "needed_by": null,
+                    "decision_authority": null,
+                    "company_activity": null,
+                    "replace_items": false,
+                    "remove_skus": null
+                  }
+                }
+              ],
+              "tool_results": [
+                {
+                  "tool_call_id": "call_PGz1ZXoE7RWo6rVEYkN70K5u",
+                  "content": "Name: Four person workstation SKYLAND LUMA 9719-4\nSKU: OF-HAI-Luma-Workstation-RJ 9719-4-Walnut\nCustomer-facing catalog price: 1883.00 AED (excl. 5% VAT; 1,977.15 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 30 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: SKYLAND LUMA 9719-4 – Four-Person Workstation Designed for team collaboration, the LUMA 9719-4 is a modern four-person workstation featuring screen dividers and three-drawer mobile pedestals for each user. The 25mm thick E1 laminate chipboard tabletop ensures durability, while the 40x40mm powder-coated metal U-shaped frames provide excellent stability. This workstation fosters team efficiency while allowing each employee their own dedicated space, making it ideal for modern office environments. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/four-person-workstation-skyland-luma-9719-4\nVerified line math (3 unit(s) as requested by the customer): 3 × 1,883.00 AED = 5,649.00 AED excl. 5% VAT (5,931.45 AED incl. 5% VAT; 5% VAT = 282.45 AED). The customer gave this quantity: state this subtotal in the reply. Stock check: 30 in stock covers 3.\nCatalog price basis: full 4-seat SKU unit (not per seat).\n[Note: Image of this product will be sent to the customer's WhatsApp after the text reply. Do not include raw image file URLs (such as r2.dev links) in your response; you may include the canonical Product page link (https://treejartrading.ae/product/...) when helpful.]\n---\nName: Single workstation SKYLAND LUMA 9719-1\nSKU: OF-HAI-Luma-Workstation-RJ 9719-1-Walnut\nCustomer-facing catalog price: 491.00 AED (excl. 5% VAT; 515.55 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 28 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: SKYLAND LUMA 9719-1 – Single-Person Workstation For professionals who require a dedicated workspace, the LUMA 9719-1 provides a spacious work surface, a screen divider for privacy, and a three-drawer pedestal for storage. Its compact yet highly functional design makes it perfect for individual offices, private workspaces, and remote work setups. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/single-workstation-skyland-luma-9719-1\n---\nName: Two person workstation SKYLAND LUMA 9719-2\nSKU: OF-HAI-Luma-Workstation-RJ 9719-2-Walnut\nCustomer-facing catalog price: 941.00 AED (excl. 5% VAT; 988.05 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 13 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: SKYLAND LUMA 9719-2 – Two-Person Workstation A compact and functional workstation for two employees, the LUMA 9719-2 provides a balance of privacy and collaboration. Featuring screen dividers, mobile pedestals, and sturdy metal frames, this workstation is ideal for startups, co-working spaces, and office environments where teamwork is key. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/two-person-workstation-skyland-luma-9719-2\nCatalog price basis: full 2-seat SKU unit (not per seat).\n---\nName: 4 Person Face to Face Table SKYLAND NOVO 2400\nSKU: OF-YED-NOVO-Workstation-63LW-1.2T-6-white\nCustomer-facing catalog price: 1813.00 AED (excl. 5% VAT; 1,903.65 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 29 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: SKYLAND NOVO 2400 – 4-Person Workstation The SKYLAND NOVO 2400 is a modern 4-person workstation, perfect for open-plan offices. Featuring a durable 25mm melamine-coated tabletop, powder-coated metal legs, and integrated cable grommets, it ensures a sleek and organized workspace. Grey fabric divider panels provide privacy while maintaining collaboration. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/4-person-face-to-face-table-skyland-novo-2400\nCatalog price basis: full 4-seat SKU unit (not per seat).\n---\nName: Three person liner table SKYLAND NOVO 3600\nSKU: OF-YED-NOVO-Table-63LW-1.2T-4-white\nCustomer-facing catalog price: 2205.00 AED (excl. 5% VAT; 2,315.25 AED incl. 5% VAT; segment-adjusted if applicable)\nCurrent stock: 8 (Zoho-confirmed). Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed\nDescription: 3P liner table SKYLAND NOVO 3600 - Designed for Teamwork The NOVO 3600 is a three-person workstation that optimizes office space while ensuring a comfortable working environment. Soft grey dividers enhance focus, while the spacious tabletop provides ample room for equipment and materials. Available at TreeJar Trading.\nProduct page: https://treejartrading.ae/product/three-person-liner-table-skyland-novo-3600\nCatalog price basis: full 3-seat SKU unit (not per seat)."
+                }
+              ],
+              "elapsed_s": 2.1
+            },
+            {
+              "index": 16,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.00079684,
+              "cost_source": "provider",
+              "prompt_tokens": 8505,
+              "completion_tokens": 929,
+              "cached_tokens": 6354,
+              "reasoning_tokens": 847,
+              "finish_reason": "tool_calls",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_calls": [
+                {
+                  "id": "call_VpIIPHZEUAoUCp3PHkgE1OQ2",
+                  "name": "escalate_to_manager",
+                  "arguments": {
+                    "reason": "Customer asked whether Treejar supplies laboratory fume hoods, specialist equipment outside the office-furniture catalog.",
+                    "escalation_type": "general"
+                  }
+                },
+                {
+                  "id": "call_7D5upctpkxgqCLR9gzIyNFNs",
+                  "name": "advance_stage",
+                  "arguments": {
+                    "next_stage": "qualifying"
+                  }
+                }
+              ],
+              "tool_results": [
+                {
+                  "tool_call_id": "call_NKly7KhDjyaugnkC0SrpZPoV",
+                  "content": "Recorded: 3 x OF-HAI-Luma-Workstation-RJ 9719-4-Walnut. Carry what you recorded into your reply so the customer can correct it -- alongside the answer, never instead of one. A turn whose whole content is a confirmation of what they just said is not a reply."
+                }
+              ],
+              "elapsed_s": 9.95
+            },
+            {
+              "index": 17,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.001399425,
+              "cost_source": "provider",
+              "prompt_tokens": 8552,
+              "completion_tokens": 661,
+              "cached_tokens": 0,
+              "reasoning_tokens": 516,
+              "finish_reason": "stop",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_results": [
+                {
+                  "tool_call_id": "call_VpIIPHZEUAoUCp3PHkgE1OQ2",
+                  "content": "The sourcing request was passed to a manager; you stay in the conversation. Say plainly that Treejar does not carry this item in its office furniture catalog and that a manager can check sourcing options, then answer every other part of the customer's message."
+                },
+                {
+                  "tool_call_id": "call_7D5upctpkxgqCLR9gzIyNFNs",
+                  "content": "Successfully advanced to stage qualifying. New system instructions will apply on the next turn."
+                }
+              ],
+              "text": "Hi Rami — Treejar doesn’t carry laboratory fume hoods in its office-furniture catalog. I’ve asked a manager to check whether sourcing options can be explored.\n\nFor your Dubai office, I’ve recorded *3 × SKYLAND LUMA 9719-4*; please correct me if needed. The three workstations total *AED 5,649 excl. 5% VAT* (*AED 5,931.45 incl. VAT*). *30 are in stock.* Treejar provides professional delivery and installation, including assembly; the delivery cost isn’t confirmed and can be included in a quotation.\n\nWould you like me to prepare a quotation for the three workstations?",
+              "elapsed_s": 8.9
+            }
+          ],
+          "cost_usd": 0.00276373,
+          "status": "ok",
+          "reply": "Hello, I'm Noor from Treejar. We supply office furniture across the UAE, and I quote from our own catalog with confirmed prices and stock.\n\nRami — Treejar doesn’t carry laboratory fume hoods in its office-furniture catalog. I’ve asked a manager to check whether sourcing options can be explored.\n\nFor your Dubai office, I’ve recorded *3 × SKYLAND LUMA 9719-4*; please correct me if needed. The three workstations total *AED 5,649 excl. 5% VAT* (*AED 5,931.45 incl. VAT*). *30 are in stock.* Treejar provides professional delivery and installation, including assembly; the delivery cost isn’t confirmed and can be included in a quotation.\n\nWould you like me to prepare a quotation for the three workstations?",
+          "route": {
+            "label": "openai/gpt-6-luna",
+            "text_provenance": "model",
+            "usage_provenance": "provider_reported",
+            "repair_flags": [],
+            "repair_judge": null,
+            "emitted_asks": []
+          },
+          "tools_called": [
+            {
+              "name": "search_products",
+              "arguments": {
+                "query": "SKYLAND LUMA 9719-4 workstation exact model, workstation desks for office Dubai",
+                "max_price": null,
+                "min_price": null,
+                "max_results": 5,
+                "requested_seats": null,
+                "complete_coverage": null,
+                "budget_cap_aed": null,
+                "families": [
+                  "workspace"
+                ],
+                "requested_fact_domains": null,
+                "require_lumbar_support": false,
+                "complementary_search": false,
+                "resend_images": false
+              },
+              "model_call": 14
+            },
+            {
+              "name": "record_customer_requirements",
+              "arguments": {
+                "items": [
+                  {
+                    "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+                    "quantity": 3
+                  }
+                ],
+                "budget_cap_aed": null,
+                "needed_by": null,
+                "decision_authority": null,
+                "company_activity": null,
+                "replace_items": false,
+                "remove_skus": null
+              },
+              "model_call": 15
+            },
+            {
+              "name": "escalate_to_manager",
+              "arguments": {
+                "reason": "Customer asked whether Treejar supplies laboratory fume hoods, specialist equipment outside the office-furniture catalog.",
+                "escalation_type": "general"
+              },
+              "model_call": 16
+            },
+            {
+              "name": "advance_stage",
+              "arguments": {
+                "next_stage": "qualifying"
+              },
+              "model_call": 16
+            }
+          ],
+          "media": [
+            {
+              "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+              "product_key": "f85020bc-853b-44a0-a03d-636a96fe75b8",
+              "caption": "Four person workstation SKYLAND LUMA 9719-4 — 1883.00 AED",
+              "url": "https://pub-8072e26459e04e68b5648029c22f894d.r2.dev/products/cmlv58zos006f12u6ih6uvcgl/Frame_2021.jpg"
+            }
+          ],
+          "media_sends": [
+            {
+              "service": "wazzup",
+              "method": "send_media",
+              "args": [],
+              "kwargs": {
+                "url": "https://pub-8072e26459e04e68b5648029c22f894d.r2.dev/products/cmlv58zos006f12u6ih6uvcgl/Frame_2021.jpg",
+                "caption": null,
+                "content": null
+              }
+            }
+          ],
+          "external_calls": [
+            {
+              "service": "zoho_crm",
+              "method": "find_contact_by_phone",
+              "args": [
+                "<phone>"
+              ],
+              "kwargs": {}
+            },
+            {
+              "service": "zoho_inventory",
+              "method": "get_stock_bulk",
+              "args": [
+                [
+                  "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+                  "OF-HAI-Luma-Workstation-RJ 9719-1-Walnut",
+                  "OF-HAI-Luma-Workstation-RJ 9719-2-Walnut",
+                  "OF-YED-NOVO-Workstation-63LW-1.2T-6-white",
+                  "OF-YED-NOVO-Table-63LW-1.2T-4-white"
+                ]
+              ],
+              "kwargs": {}
+            },
+            {
+              "service": "notification",
+              "method": "notify_manager_escalation",
+              "args": [],
+              "kwargs": {
+                "reason": "B2B handoff: the customer asked for specialist equipment outside the office furniture catalog. Assistant brief: Customer asked whether Treejar supplies laboratory fume hoods, specialist equipment outside the office-furniture catalog.",
+                "escalation_type": "general",
+                "pause_bot": false
+              }
+            }
+          ],
+          "catalog_searches": [
+            {
+              "query": "SKYLAND LUMA 9719-4 workstation exact model, workstation desks for office Dubai",
+              "min_price": null,
+              "max_price": null,
+              "limit": 5,
+              "in_stock_only": true,
+              "results": [
+                "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+                "OF-HAI-Luma-Workstation-RJ 9719-1-Walnut",
+                "OF-HAI-Luma-Workstation-RJ 9719-2-Walnut",
+                "OF-YED-NOVO-Workstation-63LW-1.2T-6-white",
+                "OF-YED-NOVO-Table-63LW-1.2T-4-white"
+              ]
+            }
+          ],
+          "state": {
+            "sales_stage": "qualifying",
+            "customer_name": "Rami",
+            "language": "en",
+            "escalation_status": "none",
+            "selected_items": [
+              {
+                "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+                "quantity": 3,
+                "name": "Four person workstation SKYLAND LUMA 9719-4"
+              }
+            ],
+            "slots": {
+              "customer_name": "Rami"
+            },
+            "last_proposal": {
+              "question": "Would you like me to prepare a quotation for the three workstations?",
+              "items": [
+                {
+                  "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+                  "name": "Four person workstation SKYLAND LUMA 9719-4",
+                  "unit_price": "1883.0"
+                }
+              ],
+              "asked_at": "2026-10-22T13:44:47.812325+00:00"
+            },
+            "quote_workflow": {
+              "version": 2,
+              "consent": "not_requested",
+              "lifecycle": "consultation"
+            },
+            "metadata_keys": [
+              "dialogue_kernel",
+              "manager_sourcing_leads_notified"
+            ]
+          },
+          "db": {
+            "reads": {
+              "conversation_summaries": 1,
+              "messages": 1,
+              "system_prompts": 12,
+              "outbound_message_audits": 3,
+              "products": 1
+            },
+            "adds": {
+              "Message": 2,
+              "OutboundMessageAudit": 2
+            },
+            "errors": [],
+            "conversation_writes": []
+          },
+          "warnings": []
+        },
+        {
+          "index": 2,
+          "user": "Wait, our total budget for the 3 LUMA 9719-4 workstations is 6,000 AED. Does that fit our budget, and can you confirm how many units are currently in stock? No quotation needed yet.",
+          "elapsed_s": 9.8,
+          "model_calls": [
+            {
+              "index": 18,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.0009383,
+              "cost_source": "provider",
+              "prompt_tokens": 6323,
+              "completion_tokens": 296,
+              "cached_tokens": 0,
+              "reasoning_tokens": 126,
+              "finish_reason": "tool_calls",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_calls": [
+                {
+                  "id": "call_kl7ZjYwbIKu2ghYcdC8zZaeg",
+                  "name": "get_stock",
+                  "arguments": {
+                    "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut"
+                  }
+                },
+                {
+                  "id": "call_pBsHEFX3v95p6jqJ9ZELBvi3",
+                  "name": "record_customer_requirements",
+                  "arguments": {
+                    "items": null,
+                    "budget_cap_aed": 6000,
+                    "needed_by": null,
+                    "decision_authority": null,
+                    "company_activity": null,
+                    "replace_items": false,
+                    "remove_skus": null
+                  }
+                },
+                {
+                  "id": "call_i2ljDzuBDfRwHFGwNWRpYWLm",
+                  "name": "record_customer_intent",
+                  "arguments": {
+                    "evidence": "“our total budget for the 3 LUMA 9719-4 workstations is 6,000 AED” and “No quotation needed yet.”",
+                    "quotation_consent": "deferred",
+                    "details": null,
+                    "accept_sent_quotation": false
+                  }
+                }
+              ],
+              "elapsed_s": 3.33
+            },
+            {
+              "index": 19,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.000935425,
+              "cost_source": "provider",
+              "prompt_tokens": 6904,
+              "completion_tokens": 145,
+              "cached_tokens": 0,
+              "reasoning_tokens": 101,
+              "finish_reason": "tool_calls",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_calls": [
+                {
+                  "id": "call_YTzevD9nsNYrQaoqHaKQi2PO",
+                  "name": "record_customer_intent",
+                  "arguments": {
+                    "evidence": "No quotation needed yet.",
+                    "quotation_consent": "deferred",
+                    "details": null,
+                    "accept_sent_quotation": false
+                  }
+                }
+              ],
+              "tool_results": [
+                {
+                  "tool_call_id": "call_kl7ZjYwbIKu2ghYcdC8zZaeg",
+                  "content": "Zoho-confirmed stock for OF-HAI-Luma-Workstation-RJ 9719-4-Walnut: 30 items available. Tell the customer only the count (e.g. 30 in stock), without naming where it comes from or calling it confirmed. If the customer wants more than this, say how many are in stock (e.g. only 1 in stock); never call the remainder unconfirmed. Customer-facing catalog price: 1883.00 AED (excl. 5% VAT; 1,977.15 AED incl. 5% VAT).\nProduct page: https://treejartrading.ae/product/four-person-workstation-skyland-luma-9719-4\nVerified line math (3 unit(s) as requested by the customer): 3 × 1,883.00 AED = 5,649.00 AED excl. 5% VAT (5,931.45 AED incl. 5% VAT; 5% VAT = 282.45 AED). The customer gave this quantity: state this subtotal in the reply. Stock check: 30 in stock covers 3.\n3 × Four person workstation SKYLAND LUMA 9719-4: Budget check (cap 6,000.00 AED): FITS within budget both excl. VAT (5,649.00 AED) and incl. 5% VAT (5,931.45 AED); 68.55 AED remaining after VAT."
+                },
+                {
+                  "tool_call_id": "call_pBsHEFX3v95p6jqJ9ZELBvi3",
+                  "content": "Recorded: budget 6000 AED. Carry what you recorded into your reply so the customer can correct it -- alongside the answer, never instead of one. A turn whose whole content is a confirmation of what they just said is not a reply."
+                },
+                {
+                  "tool_call_id": "call_i2ljDzuBDfRwHFGwNWRpYWLm",
+                  "content": "Not recorded: evidence must be a literal excerpt of the current customer message."
+                }
+              ],
+              "elapsed_s": 4.32
+            },
+            {
+              "index": 20,
+              "model": "openai/gpt-6-luna",
+              "kind": "tool_agent",
+              "cost_usd": 0.00092705,
+              "cost_source": "provider",
+              "prompt_tokens": 7037,
+              "completion_tokens": 95,
+              "cached_tokens": 0,
+              "reasoning_tokens": 0,
+              "finish_reason": "stop",
+              "reasoning": {
+                "effort": "medium"
+              },
+              "tool_results": [
+                {
+                  "tool_call_id": "call_YTzevD9nsNYrQaoqHaKQi2PO",
+                  "content": "Customer intent recorded. No quotation was created and no manager was notified; use the relevant tool if needed."
+                }
+              ],
+              "text": "Yes, *3 × SKYLAND LUMA 9719-4* fits your *AED 6,000 total budget*: AED 5,649 before VAT or AED 5,931.45 including 5% VAT, leaving AED 68.55 after VAT.\n\nThere are *30 units in stock*. I’ve noted your budget as AED 6,000 for the three workstations, and that you don’t need a quotation yet.",
+              "elapsed_s": 2.1
+            }
+          ],
+          "cost_usd": 0.00280078,
+          "status": "ok",
+          "reply": "Yes, *3 × SKYLAND LUMA 9719-4* fits your *AED 6,000 total budget*: AED 5,649 before VAT or AED 5,931.45 including 5% VAT, leaving AED 68.55 after VAT.\n\nThere are *30 units in stock*. I’ve noted your budget as AED 6,000 for the three workstations, and that you don’t need a quotation yet.",
+          "route": {
+            "label": "openai/gpt-6-luna",
+            "text_provenance": "model",
+            "usage_provenance": "provider_reported",
+            "repair_flags": [],
+            "repair_judge": null,
+            "emitted_asks": []
+          },
+          "tools_called": [
+            {
+              "name": "get_stock",
+              "arguments": {
+                "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut"
+              },
+              "model_call": 18
+            },
+            {
+              "name": "record_customer_requirements",
+              "arguments": {
+                "items": null,
+                "budget_cap_aed": 6000,
+                "needed_by": null,
+                "decision_authority": null,
+                "company_activity": null,
+                "replace_items": false,
+                "remove_skus": null
+              },
+              "model_call": 18
+            },
+            {
+              "name": "record_customer_intent",
+              "arguments": {
+                "evidence": "“our total budget for the 3 LUMA 9719-4 workstations is 6,000 AED” and “No quotation needed yet.”",
+                "quotation_consent": "deferred",
+                "details": null,
+                "accept_sent_quotation": false
+              },
+              "model_call": 18
+            },
+            {
+              "name": "record_customer_intent",
+              "arguments": {
+                "evidence": "No quotation needed yet.",
+                "quotation_consent": "deferred",
+                "details": null,
+                "accept_sent_quotation": false
+              },
+              "model_call": 19
+            }
+          ],
+          "media": [],
+          "media_sends": [],
+          "external_calls": [
+            {
+              "service": "zoho_crm",
+              "method": "find_contact_by_phone",
+              "args": [
+                "<phone>"
+              ],
+              "kwargs": {}
+            },
+            {
+              "service": "zoho_inventory",
+              "method": "get_stock",
+              "args": [
+                "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut"
+              ],
+              "kwargs": {}
+            }
+          ],
+          "catalog_searches": [],
+          "state": {
+            "sales_stage": "qualifying",
+            "customer_name": "Rami",
+            "language": "en",
+            "escalation_status": "none",
+            "selected_items": [
+              {
+                "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut",
+                "quantity": 3,
+                "name": "Four person workstation SKYLAND LUMA 9719-4"
+              }
+            ],
+            "slots": {
+              "customer_name": "Rami",
+              "budget_cap_aed": 6000.0
+            },
+            "last_proposal": null,
+            "quote_workflow": {
+              "version": 2,
+              "consent": "deferred",
+              "lifecycle": "quote_offered"
+            },
+            "metadata_keys": [
+              "dialogue_kernel",
+              "manager_sourcing_leads_notified",
+              "model_customer_intent",
+              "order_runtime"
+            ]
+          },
+          "db": {
+            "reads": {
+              "conversation_summaries": 1,
+              "messages": 1,
+              "system_prompts": 9,
+              "products": 1
+            },
+            "adds": {
+              "Message": 2
+            },
+            "errors": [],
+            "conversation_writes": []
+          },
+          "warnings": []
+        }
+      ],
+      "checks": [
+        {
+          "type": "no_structured_leak",
+          "description": "No turn sends raw JSON/claim-contract payload as the customer reply.",
+          "status": "pass",
+          "evidence": []
+        },
+        {
+          "type": "tool_evidence",
+          "description": "AC01/AC07: 3 × LUMA 9719-4 line math excl./incl. 5% VAT and the canonical product page reach the model.",
+          "status": "pass",
+          "evidence": {
+            "required": {
+              "3 × 1,883\\.00 AED = 5,649\\.00 AED excl\\. 5% VAT \\(5,931\\.45 AED incl\\. 5% VAT; 5% VAT = 282\\.45 AED\\)": true,
+              "Product page: https://treejartrading\\.ae/product/four-person-workstation-skyland-luma-9719-4": true
+            },
+            "forbidden_hits": [],
+            "tools": [
+              "search_products",
+              "record_customer_requirements",
+              "escalate_to_manager",
+              "advance_stage"
+            ],
+            "missing_tools": [],
+            "media_count": 1
+          }
+        },
+        {
+          "type": "escalation_route",
+          "description": "AC05: fume hoods notify a manager as a sourcing lead without pausing the bot.",
+          "status": "pass",
+          "evidence": {
+            "notifications": [
+              {
+                "service": "notification",
+                "method": "notify_manager_escalation",
+                "args": [],
+                "kwargs": {
+                  "reason": "B2B handoff: the customer asked for specialist equipment outside the office furniture catalog. Assistant brief: Customer asked whether Treejar supplies laboratory fume hoods, specialist equipment outside the office-furniture catalog.",
+                  "escalation_type": "general",
+                  "pause_bot": false
+                }
+              }
+            ],
+            "escalation_status_after": "none",
+            "reason_matched": true
+          }
+        },
+        {
+          "type": "positive_answer",
+          "description": "Says fume hoods are not carried, confirms LUMA 9719-4 at 1,883 AED, confirms Dubai delivery and installation from the approved FAQ, invents no delivery or assembly fee.",
+          "status": "pass",
+          "evidence": {
+            "required": {
+              "fume hood": true,
+              "(?:don['’]t|doesn['’]t|do not|does not|not)\\b[^.]{0,60}(?:carry|stock|sell|offer|supply)|outside": true,
+              "1,883|5,649": true,
+              "deliver": true,
+              "(?:install|assembl)": true
+            },
+            "forbidden_hits": []
+          }
+        },
+        {
+          "type": "tool_evidence",
+          "description": "AC03: 5,649.00 AED excl. / 5,931.45 AED incl. 5% VAT both FIT the 6,000 AED budget (68.55 AED left), and Zoho stock is confirmed.",
+          "status": "pass",
+          "evidence": {
+            "required": {
+              "FITS within budget both excl\\. VAT \\(5,649\\.00 AED\\) and incl\\. 5% VAT \\(5,931\\.45 AED\\); 68\\.55 AED remaining after VAT": true,
+              "Zoho-confirmed stock for OF-HAI-Luma-Workstation-RJ 9719-4-Walnut: 30 items available": true
+            },
+            "forbidden_hits": [],
+            "tools": [
+              "get_stock",
+              "record_customer_requirements",
+              "record_customer_intent",
+              "record_customer_intent"
+            ],
+            "missing_tools": [],
+            "media_count": 0
+          }
+        },
+        {
+          "type": "positive_answer",
+          "description": "Restates 5,649 excl. and 5,931.45 incl. 5% VAT, says both fit the 6,000 AED budget, confirms 30 in stock, creates no quotation.",
+          "status": "pass",
+          "evidence": {
+            "required": {
+              "5,649": true,
+              "5,931\\.45": true,
+              "(?:fits|within)[^.]{0,40}budget|budget[^.]{0,60}(?:fits|within)": true,
+              "\\b30\\b": true
+            },
+            "forbidden_hits": []
+          }
+        },
+        {
+          "type": "escalation_route",
+          "description": "A budget and stock question is an ordinary sale: no handoff.",
+          "status": "pass",
+          "evidence": {
+            "notifications": [],
+            "escalation_status_after": "none",
+            "reason_matched": true
+          }
+        }
+      ]
+    }
+  ]
+}
