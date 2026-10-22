@@ -1305,6 +1305,7 @@ _PRODUCT_MATCH_FILLER_TERMS = frozenset(
         "between",
         "both",
         "budget",
+        "bundle",
         "catalog",
         "catalogue",
         "cheap",
@@ -1314,6 +1315,7 @@ _PRODUCT_MATCH_FILLER_TERMS = frozenset(
         "compare",
         "comparing",
         "comparison",
+        "complete",
         "configuration",
         "confirm",
         "cost",
@@ -1327,6 +1329,7 @@ _PRODUCT_MATCH_FILLER_TERMS = frozenset(
         "exact",
         "exactly",
         "find",
+        "full",
         "have",
         "info",
         "information",
@@ -1340,6 +1343,7 @@ _PRODUCT_MATCH_FILLER_TERMS = frozenset(
         "office",
         "option",
         "options",
+        "package",
         "price",
         "prices",
         "pricing",
@@ -1355,7 +1359,9 @@ _PRODUCT_MATCH_FILLER_TERMS = frozenset(
         "stock",
         "suggest",
         "suitable",
+        "total",
         "treejar",
+        "turnkey",
         "under",
         "versus",
         "vs",
@@ -1404,6 +1410,8 @@ _PRODUCT_NEED_TERMS = frozenset(
         "solutions",
         "space",
         "staff",
+        "station",
+        "stations",
         "team",
         "uae",
         "work",
@@ -1532,11 +1540,19 @@ _MONEY_AMOUNT_RE = re.compile(
     rf"|\b\d[\d,.]*\s*(?:{BUDGET_AED_CURRENCY_PATTERN})\b",
     re.IGNORECASE,
 )
+_ITEM_QUANTITY_RE = re.compile(
+    r"\b\d{1,2}\s+(?P<rest>(?:(?:comfortable|ergonomic|office|standard|"
+    r"executive|visitor|mesh|task|modern|matching|separate|individual)\s+){0,2}"
+    r"(?:chairs?|desks?|workstations?|tables?|cabinets?|pedestals?|drawers?|"
+    r"sofas?|pods?|booths?|stations?)\b)",
+    re.IGNORECASE,
+)
 
 
 def query_names_specific_item(query: str) -> bool:
     """Whether the query names a code, brand, finish or model number."""
-    without_amounts = _MONEY_AMOUNT_RE.sub(" ", strip_head_counts(query))
+    without_counts = _ITEM_QUANTITY_RE.sub(r"\g<rest>", strip_head_counts(query))
+    without_amounts = _MONEY_AMOUNT_RE.sub(" ", without_counts)
     named = (
         (
             _explicit_structured_identifiers(query)
