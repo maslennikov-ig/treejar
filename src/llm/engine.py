@@ -238,7 +238,7 @@ from src.llm.package_evidence import (
     _turn_package_math_blocks,
     enrich_stock_answer,
 )
-from src.llm.package_math import line_math_text, named_product_keys, unit_price_vat_text
+from src.llm.package_math import line_math_text, unit_price_vat_text
 from src.llm.pii import EMAIL_PATTERN, PHONE_PATTERN, mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
 from src.llm.quotation_deferral import (
@@ -9238,14 +9238,9 @@ async def search_products(
         candidate_skus=[str(product.sku) for product in results.products],
         customer_request=ctx.deps.user_query,
     )
-    named_keys = named_product_keys(effective_query, results.products)
-    if reference_resolution.unresolved_references:
-        if product_match == "exact":
-            # A matching returned row does not resolve another absent named SKU.
-            product_match = "nearby"
-    elif named_keys:
-        # tj-asty: a model code the query names ("LUMA 9719-4") is a named row too.
-        product_match = "exact"
+    if product_match == "exact" and reference_resolution.unresolved_references:
+        # A matching returned row does not resolve another absent named SKU.
+        product_match = "nearby"
     exact_media_product_keys: set[str] | None = None
     if product_match == "exact":
         exact_keys = {
@@ -9257,7 +9252,7 @@ async def search_products(
                 candidate_sku=str(product.sku),
                 customer_request=ctx.deps.user_query,
             )
-        } | named_keys
+        }
         if exact_keys:
             exact_media_product_keys = exact_keys
 
