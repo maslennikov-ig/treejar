@@ -1,0 +1,126 @@
+{
+  "id": "D-Rami",
+  "source_conversation": "nikita-shadow-2026-10-22-D",
+  "description": "Rami: lab fume hoods (out of catalog, non-pausing sourcing lead) + 3 × SKYLAND LUMA 9719-4 with Dubai delivery and assembly; then a 6,000 AED budget check and stock, no quotation.",
+  "customer": {
+    "phone": "+971500001023",
+    "language": "en"
+  },
+  "fixtures": {
+    "catalog": "tests/fixtures/catalog_snapshot_2026-09-23.json",
+    "live_stock_overrides": {}
+  },
+  "turns": [
+    {
+      "text": "Hi, I'm Rami. Do you sell laboratory fume hoods? Also, if we order 3 workstations of SKYLAND LUMA 9719-4 for our office in Dubai, do you provide delivery and assembly, and how much does delivery cost?",
+      "stub_plan": [
+        {
+          "tool": "search_products",
+          "arguments": {
+            "query": "SKYLAND LUMA 9719-4",
+            "max_results": 2
+          }
+        },
+        {
+          "tool": "escalate_to_manager",
+          "arguments": {
+            "reason": "Customer asked for laboratory fume hoods (not in catalog)",
+            "escalation_type": "general"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Wait, our total budget for the 3 LUMA 9719-4 workstations is 6,000 AED. Does that fit our budget, and can you confirm how many units are currently in stock? No quotation needed yet.",
+      "stub_plan": [
+        {
+          "tool": "get_stock",
+          "arguments": {
+            "sku": "OF-HAI-Luma-Workstation-RJ 9719-4-Walnut"
+          }
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "type": "no_structured_leak",
+      "description": "No turn sends raw JSON/claim-contract payload as the customer reply."
+    },
+    {
+      "type": "tool_evidence",
+      "turn": 1,
+      "description": "AC01/AC07: 3 × LUMA 9719-4 line math excl./incl. 5% VAT and the canonical product page reach the model.",
+      "require_patterns": [
+        "3 × 1,883\\.00 AED = 5,649\\.00 AED excl\\. 5% VAT \\(5,931\\.45 AED incl\\. 5% VAT; 5% VAT = 282\\.45 AED\\)",
+        "Product page: https://treejartrading\\.ae/product/four-person-workstation-skyland-luma-9719-4"
+      ],
+      "require_tools": [
+        "search_products"
+      ],
+      "min_media": 1
+    },
+    {
+      "type": "escalation_route",
+      "turn": 1,
+      "expect_notified": true,
+      "status_after": "none",
+      "reason_pattern": "specialist equipment",
+      "description": "AC05: fume hoods notify a manager as a sourcing lead without pausing the bot."
+    },
+    {
+      "type": "positive_answer",
+      "turn": 1,
+      "live_only": true,
+      "description": "Says fume hoods are not carried, confirms LUMA 9719-4 at 1,883 AED, confirms Dubai delivery and installation from the approved FAQ, invents no delivery or assembly fee.",
+      "require_patterns": [
+        "fume hood",
+        "(?:don't|do not|not)\\b[^.]{0,60}(?:carry|stock|sell|offer|supply)|outside",
+        "1,883",
+        "deliver",
+        "(?:install|assembl)"
+      ],
+      "forbid_patterns": [
+        "\\b30 AED\\b",
+        "AED\\s*30\\b",
+        "assembly (?:is|costs?) (?:AED\\s*)?\\d"
+      ]
+    },
+    {
+      "type": "tool_evidence",
+      "turn": 2,
+      "description": "AC03: 5,649.00 AED excl. / 5,931.45 AED incl. 5% VAT both FIT the 6,000 AED budget (68.55 AED left), and Zoho stock is confirmed.",
+      "require_patterns": [
+        "FITS within budget both excl\\. VAT \\(5,649\\.00 AED\\) and incl\\. 5% VAT \\(5,931\\.45 AED\\); 68\\.55 AED remaining after VAT",
+        "Zoho-confirmed stock for OF-HAI-Luma-Workstation-RJ 9719-4-Walnut: 30 items available"
+      ],
+      "forbid_patterns": [
+        "ABOVE budget",
+        "above the cap"
+      ]
+    },
+    {
+      "type": "positive_answer",
+      "turn": 2,
+      "live_only": true,
+      "description": "Restates 5,649 excl. and 5,931.45 incl. 5% VAT, says both fit the 6,000 AED budget, confirms 30 in stock, creates no quotation.",
+      "require_patterns": [
+        "5,649",
+        "5,931\\.45",
+        "(?:fits|within)[^.]{0,40}budget|budget[^.]{0,60}(?:fits|within)",
+        "\\b30\\b"
+      ],
+      "forbid_patterns": [
+        "(?:above|over|exceed\\w*)\\s+(?:your\\s+|the\\s+)?(?:6,000|budget)",
+        "quotation (?:has been|was) (?:created|prepared)"
+      ]
+    },
+    {
+      "type": "escalation_route",
+      "turn": 2,
+      "expect_notified": false,
+      "status_after": "none",
+      "description": "A budget and stock question is an ordinary sale: no handoff."
+    }
+  ]
+}

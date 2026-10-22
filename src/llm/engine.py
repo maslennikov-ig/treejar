@@ -32,6 +32,7 @@ from src.core.chat_id import base_chat_id
 from src.core.config import settings
 from src.dialogue.catalog_refs import extract_catalog_references
 from src.dialogue.claim_contract import (
+    b2b_handoff_directives,
     comparison_consultation_directive,
     consultative_opening_directive,
     defers_the_purchase,
@@ -224,6 +225,14 @@ from src.llm.money import (
 from src.llm.opening_guard import canonical_opening
 from src.llm.order_quote_routes import QuotationItem, _order_quote_route_for_turn
 from src.llm.order_status import format_order_status
+from src.llm.package_evidence import (
+    _customer_seat_count,
+    _priced_line_claim_fields,
+    _priced_line_for_turn,
+    _turn_package_math_blocks,
+    enrich_stock_answer,
+)
+from src.llm.package_math import line_math_text, unit_price_vat_text
 from src.llm.pii import EMAIL_PATTERN, PHONE_PATTERN, mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
 from src.llm.quotation_deferral import (
@@ -285,6 +294,7 @@ from src.llm.verified_answers import (
 )
 from src.models.conversation import Conversation
 from src.models.product import Product
+from src.models.product_links import product_canonical_url
 from src.rag.embeddings import EmbeddingEngine
 from src.rag.pipeline import search_products as rag_search_products
 from src.schemas.common import Language, SalesStage
@@ -700,6 +710,8 @@ def _turn_runtime_directives(
         directives.append(sizing_assumption_directive())
     if any(requests_product_comparison(text) for text in candidates):
         directives.append(comparison_consultation_directive())
+    # tj-asty.2. Victor's handoff routes each earn their consultative handoff.
+    directives.extend(b2b_handoff_directives(*candidates))
     if candidates and all(
         earns_consultative_opening(text, sales_stage=sales_stage) for text in candidates
     ):
@@ -9983,7 +9995,8 @@ async def search_products(
                 price_line = (
                     "Customer-facing catalog price: "
                     f"{discounted_price:.2f} {r.currency}"
-                    " (segment-adjusted if applicable)"
+                    f" ({unit_price_vat_text(discounted_price, str(r.currency))};"
+                    " segment-adjusted if applicable)"
                 )
                 media_caption = f"{r.name_en} — {discounted_price:.2f} {r.currency}"
             else:
@@ -9993,6 +10006,7 @@ async def search_products(
             price_line = _catalog_price_requires_verification_text()
             media_caption = f"{r.name_en} — price not currently verified"
 
+        canonical_url = product_canonical_url(r)
         desc = (
             f"Name: {r.name_en}\n"
             f"SKU: {r.sku}\n"
@@ -10000,9 +10014,27 @@ async def search_products(
             f"{stock_line}\n"
             f"Description: {r.description_en}"
         )
+        if canonical_url:
+            desc += f"\nProduct page: {canonical_url}"
         product_text = _product_match_text(r)
         product_capacity = _catalog_product_capacity(product_text)
         product_family = _catalog_product_family(product_text)
+        priced_line = _priced_line_for_turn(
+            ctx.deps,
+            sku=sku,
+            name=str(r.name_en),
+            family=product_family,
+            unit_price=discounted_price,
+            currency=str(r.currency),
+            stock=(
+                stock_snapshot.available
+                if stock_snapshot.provenance == "authoritative"
+                else None
+            ),
+            requested_seats=requested_seats or _customer_seat_count(ctx.deps),
+        )
+        if priced_line is not None:
+            desc += "\n" + line_math_text(priced_line)
         row_product_key = str(getattr(r, "id", None) or r.sku)
         result_product_keys.add(row_product_key)
         if (offer_group := _offer_group(r)) is not None:
@@ -10084,6 +10116,7 @@ async def search_products(
                 "subcategory": r.subcategory,
                 "price": r.price,
                 "currency": r.currency,
+                **_priced_line_claim_fields(priced_line, product_url=canonical_url),
             },
         )
         if fact_assessment_active:
@@ -10151,8 +10184,10 @@ async def search_products(
             )
             desc += (
                 "\n[Note: Image of this product "
-                f"{image_delivery_text}. Do not mention or include image URLs "
-                "in your response.]"
+                f"{image_delivery_text}. Do not include raw image file URLs "
+                "(such as r2.dev links) in your response; you may include the "
+                "canonical Product page link (https://treejartrading.ae/product/...) "
+                "when helpful.]"
             )
             await _safe_send_media(
                 url=r.image_url,
@@ -10260,6 +10295,8 @@ async def search_products(
                 ctx.deps.conversation,
                 ctx.deps.catalog_planning,
             )
+
+    formatted_results.extend(_turn_package_math_blocks(ctx.deps))
 
     if product_match == "nearby":
         formatted_results.insert(
@@ -10369,20 +10406,32 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
         )
         return _catalog_price_unavailable_customer_message()
 
+    vat_text = unit_price_vat_text(
+        float(price_decision.unit_price), str(price_decision.currency)
+    )
     if price_decision.source == "catalog":
         price_text = (
             "Customer-facing catalog price: "
-            f"{price_decision.unit_price:.2f} {price_decision.currency}."
+            f"{price_decision.unit_price:.2f} {price_decision.currency} ({vat_text})."
         )
     else:
         price_text = (
             "Zoho-confirmed price: "
-            f"{price_decision.unit_price:.2f} {price_decision.currency}."
+            f"{price_decision.unit_price:.2f} {price_decision.currency} ({vat_text})."
         )
 
     stock_text = (
         f"Zoho-confirmed stock for {sku}: {available_int} items available"
         f"{_STOCK_SHORTFALL_NOTE}. {price_text}"
+    )
+    stock_text += enrich_stock_answer(
+        ctx.deps,
+        sku=sku.strip(),
+        catalog_product=catalog_product,
+        zoho_name=str(stock_info.get("name") or ""),
+        unit_price=float(price_decision.unit_price),
+        currency=str(price_decision.currency),
+        available=available_int,
     )
     if ctx.deps.product_results_seen:
         return ToolReturn(

@@ -145,7 +145,7 @@ class CostMeter:
             results.append(
                 {
                     "tool_call_id": call_id,
-                    "content": _content_text(message.get("content"))[:1500],
+                    "content": _content_text(message.get("content"))[:8000],
                 }
             )
         return results
@@ -296,15 +296,29 @@ def _completion(
 class StubModel:
     """A deterministic no-network model that exercises the wiring.
 
-    First request of a turn: call ``search_products`` with the customer text.
-    After a tool result: name the first catalog rows the tool returned, with
-    their catalog price, and close on a quotation question. Structured output
-    (the repair judge): approve. It is a wiring probe, not a sales model.
+    First request of a turn: run the turn's ``stub_plan`` (one tool call per
+    request) when the scenario gives one, else call ``search_products`` with
+    the customer text. When ``escalate_to_manager`` is offered -- the policy
+    only offers it on a handoff turn -- and the plan did not call it, call it.
+    After the tool results: name up to three catalog rows the turn returned,
+    restate the verified math lines the tools computed, and close on a
+    question. Structured output (the repair judge): approve. It is a wiring
+    probe, not a sales model, so reply-semantics checks are live-only.
     """
+
+    _EVIDENCE_LINE_RE = re.compile(
+        r"^(?:Verified line math|Verified multi-item total|Verified turnkey "
+        r"package math|Budget check|\d+ × [^:\n]+: Budget check)[^\n]*",
+        re.MULTILINE,
+    )
 
     def __init__(self, catalog_rows: Sequence[Mapping[str, Any]]) -> None:
         self._rows = list(catalog_rows)
         self._answered: set[str] = set()
+        self.turn_plan: list[dict[str, Any]] = []
+
+    def start_turn(self, plan: Sequence[Mapping[str, Any]] | None) -> None:
+        self.turn_plan = [dict(step) for step in plan or ()]
 
     def _rows_in(self, text: str) -> list[Mapping[str, Any]]:
         found: list[tuple[int, Mapping[str, Any]]] = []
@@ -320,6 +334,70 @@ class StubModel:
             unique.setdefault(str(row["sku"]), row)
         return list(unique.values())
 
+    @staticmethod
+    def _current_turn(messages: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+        # A tool contract (`ToolReturn.content`) arrives as a user message, so
+        # the turn starts after the last assistant message that ended a turn:
+        # one with text and no tool calls.
+        boundary = max(
+            (
+                i
+                for i, m in enumerate(messages)
+                if m.get("role") == "assistant" and not m.get("tool_calls")
+            ),
+            default=-1,
+        )
+        return list(messages[boundary + 1 :])
+
+    def _reply(self, model: str, turn: Sequence[Mapping[str, Any]]) -> ChatCompletion:
+        tool_texts = [
+            _content_text(m.get("content")) for m in turn if m.get("role") == "tool"
+        ]
+        called = [
+            str((call.get("function") or {}).get("name"))
+            for m in turn
+            if m.get("role") == "assistant"
+            for call in (m.get("tool_calls") or [])
+            if isinstance(call, Mapping)
+        ]
+        rows: list[Mapping[str, Any]] = []
+        for text in tool_texts:
+            for row in self._rows_in(text):
+                if all(str(row["sku"]) != str(r["sku"]) for r in rows):
+                    rows.append(row)
+        lines = [
+            f"{row['name_en']} is AED {float(row['price']):,.0f} per unit (excl. 5% VAT)."
+            for row in rows[:3]
+        ]
+        evidence: list[str] = []
+        for text in tool_texts:
+            for match in self._EVIDENCE_LINE_RE.finditer(text):
+                if match.group(0) not in evidence:
+                    evidence.append(match.group(0))
+        lines.extend(evidence[:4])
+        arabic = any(
+            m.get("role") == "user"
+            and re.search(r"[\u0600-\u06ff]", _content_text(m.get("content")))
+            for m in turn[:1]
+        )
+        if "escalate_to_manager" in called:
+            lines.append(
+                "سيتولى أحد المديرين متابعة المشروع. ما اسم الشركة، وما موعد "
+                "التسليم المطلوب، وما موقع التسليم في الإمارات؟"
+                if arabic
+                else "A manager will take this over. What is your company name, "
+                "target delivery timeline and delivery location in the UAE?"
+            )
+        elif rows:
+            lines.append(
+                "هل ترغب أن أجهز عرض سعر رسمي؟"
+                if arabic
+                else "Would you like me to prepare a quotation?"
+            )
+        if not lines:
+            lines = ["Thank you. Which item would you like to go ahead with?"]
+        return _completion(model=model, content=" ".join(lines))
+
     def __call__(self, kwargs: Mapping[str, Any]) -> ChatCompletion:
         model = str(kwargs.get("model") or "stub")
         names = _tool_names(kwargs)
@@ -332,34 +410,60 @@ class StubModel:
                     ("final_result", {"answer": "approve", "rationale": "stub"})
                 ],
             )
+        turn = self._current_turn(messages)
+        called = [
+            str((call.get("function") or {}).get("name"))
+            for m in turn
+            if m.get("role") == "assistant"
+            for call in (m.get("tool_calls") or [])
+            if isinstance(call, Mapping)
+        ]
+        is_tool_agent = "search_products" in names
+        if is_tool_agent and (last.get("role") == "user" or called):
+            step_index = len(called)
+            if self.turn_plan:
+                if step_index < len(self.turn_plan):
+                    step = self.turn_plan[step_index]
+                    tool = str(step["tool"])
+                    if tool in names:
+                        return _completion(
+                            model=model,
+                            tool_calls=[(tool, dict(step.get("arguments") or {}))],
+                        )
+            elif step_index == 0:
+                text = re.sub(r"\s+", " ", _content_text(last.get("content"))).strip()
+                return _completion(
+                    model=model,
+                    tool_calls=[
+                        ("search_products", {"query": text[:200], "max_results": 3})
+                    ],
+                )
+            if "escalate_to_manager" in names and "escalate_to_manager" not in called:
+                return _completion(
+                    model=model,
+                    tool_calls=[
+                        (
+                            "escalate_to_manager",
+                            {
+                                "reason": "Stub: handoff route offered by policy",
+                                "escalation_type": "general",
+                            },
+                        )
+                    ],
+                )
+            self._answered.update(
+                str(m.get("tool_call_id")) for m in turn if m.get("role") == "tool"
+            )
+            return self._reply(model, turn)
         tool_results = {
             str(m.get("tool_call_id")): _content_text(m.get("content"))
             for m in messages
             if m.get("role") == "tool"
         }
-        answered = [cid for cid in tool_results if cid.startswith("stub-call-")]
-        fresh = [cid for cid in answered if cid not in self._answered]
+        fresh = [cid for cid in tool_results if cid not in self._answered]
         if fresh:
             self._answered.update(fresh)
-            rows = self._rows_in(tool_results[fresh[-1]])[:2]
-            if rows:
-                lines = [
-                    f"{row['name_en']} is AED {float(row['price']):,.0f} per unit."
-                    for row in rows
-                ]
-                return _completion(
-                    model=model,
-                    content=" ".join(lines)
-                    + " Would you like me to prepare a quotation?",
-                )
-        elif last.get("role") == "user" and "search_products" in names:
-            text = re.sub(r"\s+", " ", _content_text(last.get("content"))).strip()
-            return _completion(
-                model=model,
-                tool_calls=[
-                    ("search_products", {"query": text[:200], "max_results": 3})
-                ],
-            )
+            return self._reply(model, turn)
         return _completion(
             model=model,
             content="Thank you. Which item would you like to go ahead with?",

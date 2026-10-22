@@ -67,7 +67,6 @@ def test_only_customer_evidenced_critical_cases_are_allowed(
     "customer_text",
     [
         "I need a manager desk and four chairs.",
-        "I need 200 chairs delivered next week.",
         "Can you make this in a custom colour?",
         "No, thanks.",
         "What is your return policy?",

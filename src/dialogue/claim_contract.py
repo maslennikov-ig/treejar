@@ -34,6 +34,7 @@ from enum import StrEnum
 from typing import Literal
 
 from src.dialogue.count_words import EN_COUNT_WORD_PATTERN
+from src.llm.money import amount_with_uae_vat
 
 ClaimType = Literal[
     "catalog_fact",
@@ -438,11 +439,11 @@ def _restatable_numbers(
     per_input = [_numbers_in(item.value) for item in inputs]
     allowed: set[float] = set().union(*per_input) if per_input else set()
     if operation == "comparison":
-        return allowed
+        return _with_uae_vat_variants(allowed)
     if any(len(numbers) != 1 for numbers in per_input):
         # Arithmetic over an input that carries no number, or several, is not
         # something the runtime can restate.
-        return allowed
+        return _with_uae_vat_variants(allowed)
     operands = [next(iter(numbers)) for numbers in per_input]
     if operation == "sum":
         allowed.add(round(sum(operands), 6))
@@ -453,7 +454,31 @@ def _restatable_numbers(
         for operand in operands:
             product *= operand
         allowed.add(round(product, 6))
-    return allowed
+    return _with_uae_vat_variants(allowed)
+
+
+def _with_uae_vat_variants(numbers: set[float]) -> set[float]:
+    """Add the 5% UAE VAT figures each restatable number implies.
+
+    `tj-asty.1`. Catalog prices exclude VAT, so a reply that checks a budget
+    states the VAT component and the VAT-inclusive total as well. Both are the
+    same fixed multiplication of a figure that is already restatable -- never a
+    number of the model's own -- so they are restatable too: `x × 1.05` and
+    `x × 0.05`, to the cent and unrounded.
+    """
+
+    expanded = set(numbers)
+    for number in numbers:
+        _excl, vat, incl = amount_with_uae_vat(number)
+        expanded.update(
+            {
+                vat,
+                incl,
+                round(number * 0.05, 6),
+                round(number * 1.05, 6),
+            }
+        )
+    return expanded
 
 
 _NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)*")
@@ -648,6 +673,16 @@ def row_from_catalog_product(
         if text:
             fields[str(name)] = text
 
+    # `tj-asty.1`. Catalog prices exclude 5% UAE VAT. The VAT component and
+    # the VAT-inclusive price are fixed derivations of the stored price, so the
+    # row carries them as known values a reply may restate.
+    price = _numeric_price((extras or {}).get("price"))
+    if price is not None:
+        excl, vat, incl = amount_with_uae_vat(price)
+        fields.setdefault("price_excl_vat", f"{excl:.2f}")
+        fields.setdefault("price_incl_vat", f"{incl:.2f}")
+        fields.setdefault("vat_amount", f"{vat:.2f}")
+
     specifications = (attributes or {}).get("specifications")
     if isinstance(specifications, Mapping):
         for name, value in specifications.items():
@@ -675,6 +710,18 @@ def row_from_catalog_product(
             absent.add(f"attributes.{name}")
 
     return RetrievedRow(sku=str(sku), fields=fields, absent_fields=frozenset(absent))
+
+
+def _numeric_price(value: object) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        price = float(str(value).replace(",", "").strip())
+    except ValueError:
+        return None
+    if price != price or price <= 0 or price in {float("inf")}:
+        return None
+    return price
 
 
 _SIZING_PEOPLE_RE = re.compile(
@@ -1121,7 +1168,77 @@ def project_consultation_directive() -> str:
         "Quote every figure at the catalog price. On a quantity this size, "
         "availability for "
         "the whole order matters more than the lowest unit price: say plainly "
-        "if stock covers it, and if it does not, say what does."
+        "if stock covers it, and if it does not, say what does. Catalog prices "
+        "exclude 5% VAT: label them excl. 5% VAT, and where the tool output "
+        "gives verified line or package math, restate its subtotal excl. 5% "
+        "VAT, its total incl. 5% VAT and its budget check exactly as given."
+    )
+
+
+B2B_HANDOFF_BUCKETS = frozenset({"wholesale_or_bulk_project", "custom_made_to_order"})
+"""Handoff routes on which the customer still gets in-stock reference options."""
+
+
+def b2b_handoff_directives(*texts: str) -> tuple[str, ...]:
+    """One consultative handoff directive per route the turn earns.
+
+    Wholesale and made-to-order share one reference-and-brief directive, so a
+    message that is both (55 workstations and a custom table) gets it once.
+    """
+
+    from src.llm.escalation_policy import b2b_handoff_buckets
+
+    buckets = dict.fromkeys(
+        bucket for text in texts if text for bucket in b2b_handoff_buckets(text)
+    )
+    directives: list[str] = []
+    reference_added = False
+    for bucket in buckets:
+        if bucket in B2B_HANDOFF_BUCKETS:
+            if reference_added:
+                continue
+            reference_added = True
+        directives.append(b2b_handoff_reference_directive(bucket))
+    return tuple(directives)
+
+
+def b2b_handoff_reference_directive(reason_bucket: str) -> str:
+    """The consultative handoff a wholesale or made-to-order request earns.
+
+    `tj-asty.2`. Victor's rule for the Treejar line is that a wholesale order
+    and goods made to order go to a manager. Handing over alone leaves the
+    customer with nothing to look at until the manager writes; the client's
+    previous bot did better than that, giving two or three catalog references
+    and asking a qualifying question so the manager starts from a brief. This
+    does the same, and the references carry their WhatsApp photos.
+    """
+
+    if reason_bucket == "specialist_out_of_catalog_scope":
+        return (
+            "The customer asked for specialist equipment outside Treejar's office "
+            "furniture catalog. Say plainly, in one sentence, that Treejar does not "
+            "carry it, without suggesting a substitute product for it. Call "
+            "escalate_to_manager once so a manager can see the sourcing request; "
+            "it does not pause you. Then answer every other part of the "
+            "customer's message in full in this same reply."
+        )
+    focus = (
+        "a bulk or wholesale order"
+        if reason_bucket == "wholesale_or_bulk_project"
+        else "furniture made to order"
+    )
+    return (
+        f"This turn is {focus}, which Treejar hands to a manager. In this same "
+        "reply: (1) call search_products for the closest standard in-stock "
+        "catalog items (for a custom table, the largest standard meeting tables; "
+        "for a bulk order, the standard item they asked about) and present 2-3 "
+        "of them with their verified price excl. 5% VAT and stock -- their "
+        "photos are sent automatically; (2) call escalate_to_manager with a "
+        "specific reason; (3) confirm a manager will take over the project "
+        "pricing and any custom work, without promising a discount, a lead "
+        "time or a delivery date; (4) end with one short question collecting "
+        "the brief: company name, target delivery timeline and delivery "
+        "location in the UAE. Reply in the customer's language."
     )
 
 

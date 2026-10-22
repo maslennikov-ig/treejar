@@ -38,6 +38,7 @@ from pydantic_ai.usage import RunUsage
 
 import src.llm.engine as engine
 from src.core.config import settings
+from src.dialogue.claim_contract import B2B_HANDOFF_BUCKETS
 from src.dialogue.decision_state import record_assistant_proposal
 from src.dialogue.order_guards import quotation_claimed_without_call
 from src.dialogue.order_state import (
@@ -63,7 +64,11 @@ from src.llm.catalog_planning import (
     grounded_amounts_for_turn,
 )
 from src.llm.company_faq import with_approved_faq
-from src.llm.escalation_policy import critical_escalation_decision
+from src.llm.escalation_policy import (
+    NON_PAUSING_HANDOFF_TRIGGERS,
+    b2b_handoff_buckets,
+    critical_escalation_decision,
+)
 from src.llm.grounding_output import GroundingOutputAction
 from src.llm.outbound_reply_guard import finalize_customer_reply_text
 from src.llm.pii import (
@@ -498,6 +503,9 @@ class _Turn:
                 previous_reply=(
                     engine._last_assistant_message(response_deps.recent_history) or None
                 ),
+                handoff_brief_allowed=_handoff_brief_allowed(
+                    response_deps, self.combined_text
+                ),
             ),
             provenance=provenance,
         )
@@ -767,6 +775,16 @@ async def _finalize_turn_response(
     return response
 
 
+def _handoff_brief_allowed(deps: Any, customer_text: str) -> bool:
+    """A wholesale or made-to-order handoff happened on this turn."""
+
+    if "escalate_to_manager" not in (getattr(deps, "executed_tool_names", None) or ()):
+        return False
+    return any(
+        bucket in B2B_HANDOFF_BUCKETS for bucket in b2b_handoff_buckets(customer_text)
+    )
+
+
 def _repair_manager_handoff_reason(trace: RepairJudgeTrace) -> str:
     guards = ",".join(sorted({flag.guard_name for flag in trace.flags})) or "unknown"
     outcome = trace.rejection_reason or trace.answer
@@ -796,6 +814,10 @@ async def _apply_repair_fallback(
             turn.deps, "quote_acceptance_recorded_this_turn", False
         ),
     )
+    if decision.trigger in NON_PAUSING_HANDOFF_TRIGGERS:
+        # A sourcing lead never takes the conversation off the bot, so a failed
+        # repair on that turn stays autonomous like any other noncritical turn.
+        decision = replace(decision, allowed=False)
     if not active_handoff and decision.allowed and decision.escalation_type is not None:
         await notify_manager_escalation(
             conversation=turn.deps.conversation,

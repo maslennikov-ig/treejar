@@ -117,6 +117,11 @@ class ReplyPolicyState:
     grounded_amounts: tuple[object, ...] | None = None
     required_tool_disclosure: str | None = None
     previous_reply: str | None = None
+    # tj-asty.2. A wholesale or made-to-order handoff closes with one brief
+    # question (company, timeline, delivery location) for the manager. Those
+    # are quote-detail words, but here they collect the manager's brief, not a
+    # quotation the customer has not asked for.
+    handoff_brief_allowed: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -700,7 +705,9 @@ def render_reply(
         guard=partial(
             guard_premature_quote_detail_collection,
             language=state.language,
-            quote_consent_granted=AskKind.QUOTE_DETAILS in permitted_asks,
+            quote_consent_granted=(
+                AskKind.QUOTE_DETAILS in permitted_asks or state.handoff_brief_allowed
+            ),
         ),
     )
     raised_flags.extend(flags)

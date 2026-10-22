@@ -303,8 +303,9 @@ async def test_build_system_prompt_keeps_first_turn_orders_autonomous() -> None:
         db, redis, SalesStage.GREETING.value, language="en"
     )
 
-    assert "wholesale, MOQ" in prompt
-    assert "a first-turn order request, even with quantity and logistics" in prompt
+    assert "installation, MOQ, quotation" in prompt
+    assert "a first-turn order request below the wholesale threshold" in prompt
+    assert "even with quantity\n  and logistics" in prompt
     assert "product confirmation and quotation first" in prompt
     assert "Escalate only for these critical situations" in prompt
 
@@ -339,8 +340,12 @@ async def test_build_system_prompt_preserves_non_escalation_for_bulk_and_addon_d
         db, redis, SalesStage.GREETING.value, language="en"
     )
 
-    assert "wholesale, MOQ" in prompt
-    assert "bulk, quotation, customization" in prompt
+    # tj-asty.2: Victor's routes moved wholesale/bulk and made-to-order out of
+    # the never-escalate list; MOQ, quotations and colour options stay in it.
+    assert "installation, MOQ, quotation" in prompt
+    assert "colour/finish option" in prompt
+    assert "ordinary no-match search" in prompt
+    assert "Treejar B2B handoff routes" in prompt
     assert "refusal of an optional add-on" in prompt
     assert '"No" to chairs after choosing a workstation' in prompt
 

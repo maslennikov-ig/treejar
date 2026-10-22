@@ -84,6 +84,31 @@
         "1,?813"
       ],
       "asked_pattern": "novo|price|cost|compare"
+    },
+    {
+      "type": "tool_evidence",
+      "turn": 2,
+      "description": "AC01/AC07: unit prices carry excl./incl. 5% VAT and the canonical product page; no raw R2 image URL is offered as text.",
+      "require_patterns": [
+        "1,?883\\.00 AED \\(excl\\. 5% VAT; 1,977\\.15 AED incl\\. 5% VAT",
+        "Product page: https://treejartrading\\.ae/product/four-person-workstation-skyland-luma-9719-4"
+      ],
+      "require_tools": [
+        "search_products"
+      ],
+      "min_media": 1
+    },
+    {
+      "type": "positive_answer",
+      "turn": 2,
+      "description": "AC07: no raw image-storage URL reaches the customer text.",
+      "require_patterns": [
+        ".+"
+      ],
+      "forbid_patterns": [
+        "r2\\.dev",
+        "pub-[a-z0-9]+\\.r2"
+      ]
     }
   ]
 }

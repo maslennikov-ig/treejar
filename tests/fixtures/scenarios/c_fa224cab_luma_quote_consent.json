@@ -53,7 +53,8 @@
       "forbid_patterns": [
         "(?:do not|don['’]t|cannot|can['’]t|unable to|not able to)\\s+(?:offer|provide|arrange|include|do|handle)",
         "not (?:available|included|offered|provided)"
-      ]
+      ],
+      "live_only": true
     },
     {
       "type": "prior_bot_asked",
@@ -74,6 +75,21 @@
         "9719-[12]\\b",
         "\\boptions\\b",
         "alternatives?"
+      ],
+      "live_only": true
+    },
+    {
+      "type": "tool_evidence",
+      "turn": 1,
+      "description": "AC01/AC03: 3 × LUMA 9719-4 = 5,649.00 AED excl. 5% VAT, 5,931.45 AED incl., FITS the 6,000 AED budget, with the product page link.",
+      "require_patterns": [
+        "3 × 1,883\\.00 AED = 5,649\\.00 AED excl\\. 5% VAT \\(5,931\\.45 AED incl\\. 5% VAT",
+        "FITS within budget both excl\\. VAT \\(5,649\\.00 AED\\) and incl\\. 5% VAT \\(5,931\\.45 AED\\); 68\\.55 AED remaining",
+        "Product page: https://treejartrading\\.ae/product/"
+      ],
+      "forbid_patterns": [
+        "ABOVE budget",
+        "above the cap"
       ]
     }
   ]

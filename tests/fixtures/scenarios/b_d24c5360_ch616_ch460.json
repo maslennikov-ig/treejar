@@ -46,6 +46,27 @@
         "CH 615",
         "alternative",
         "instead of"
+      ],
+      "live_only": true
+    },
+    {
+      "type": "tool_evidence",
+      "turn": 2,
+      "description": "AC01: the turn's tool evidence carries 1 × CH 616 NEW black + 3 × CH 460 black = 2,698.00 AED excl. 5% VAT (2,832.90 AED incl. 5% VAT).",
+      "require_patterns": [
+        "Verified multi-item total: .*1 × Operative Office Chair CH 616 NEW black \\(295\\.00 AED\\)",
+        "3 × Executive Office Chair CH 460 black \\(2,403\\.00 AED\\)",
+        "= 2,698\\.00 AED excl\\. 5% VAT \\(2,832\\.90 AED incl\\. 5% VAT"
+      ]
+    },
+    {
+      "type": "positive_answer",
+      "turn": 2,
+      "live_only": true,
+      "description": "AC01: the reply restates the verified multi-item total excl./incl. 5% VAT.",
+      "require_patterns": [
+        "2,698",
+        "2,832\\.90|VAT"
       ]
     }
   ]
