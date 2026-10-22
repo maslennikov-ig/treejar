@@ -1,5 +1,11 @@
 # Orchestrator Handoff
 
+## Stage tj-asty (2026-10-22): surpass Nikita — authorized production delivery
+- Branch codex/tj-asty-surpass-nikita merged to main; summary .codex/stages/tj-asty/summary.md;
+  report docs/reports/2026-10-22-nikita-vs-noor-benchmark.md section 4.
+- Grace window ships off (0).
+- Explicit defer: tj-z3hw delivery-fee facts are absent from docs/faq.md.
+
 ## October tester feedback — authorized completion2026-10-14
 
 - Accepted epic `tj-i2b1`; findings `tj-i2b1.1` (false mismatch caveats), `.2`

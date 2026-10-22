@@ -241,7 +241,132 @@ def no_structured_leak(
     return _result(spec, "fail" if hits else "pass", hits)
 
 
+def _tool_result_text(turn: Turn) -> str:
+    return "\n".join(
+        str(result.get("content") or "")
+        for call in turn.get("model_calls") or []
+        for result in call.get("tool_results") or []
+    )
+
+
+def _escalation_notifications(turn: Turn) -> list[Mapping[str, Any]]:
+    return [
+        call
+        for call in turn.get("external_calls") or []
+        if call.get("method") == "notify_manager_escalation"
+    ]
+
+
+def tool_evidence(spec: Mapping[str, Any], turns: Sequence[Turn]) -> dict[str, Any]:
+    """Deterministic pipeline evidence: what the tools computed and returned.
+
+    Reads the tool results the model was given, not the reply, so it holds in
+    dry mode as well as live: the arithmetic and the handoff policy are the
+    runtime's, whatever the model then writes.
+    """
+
+    turn = _turn(turns, int(spec["turn"]))
+    if turn is None or turn.get("reply") is None:
+        return _result(spec, "incomplete", "turn did not run")
+    text = _tool_result_text(turn)
+    tools = [str(c.get("name")) for c in _tool_calls(turn)]
+    required = {
+        p: bool(re.search(p, text, re.IGNORECASE))
+        for p in spec.get("require_patterns", [])
+    }
+    forbidden = [
+        m.group(0)
+        for p in spec.get("forbid_patterns", [])
+        for m in re.finditer(p, text, re.IGNORECASE)
+    ]
+    missing_tools = [t for t in spec.get("require_tools", []) if t not in tools]
+    media_count = len(turn.get("media") or [])
+    media_ok = media_count >= int(spec.get("min_media", 0))
+    ok = all(required.values()) and not forbidden and not missing_tools and media_ok
+    return _result(
+        spec,
+        "pass" if ok else "fail",
+        {
+            "required": required,
+            "forbidden_hits": forbidden,
+            "tools": tools,
+            "missing_tools": missing_tools,
+            "media_count": media_count,
+        },
+    )
+
+
+def escalation_route(spec: Mapping[str, Any], turns: Sequence[Turn]) -> dict[str, Any]:
+    """Did the turn notify a manager, on which route, and is the bot paused?"""
+
+    turn = _turn(turns, int(spec["turn"]))
+    if turn is None or turn.get("reply") is None:
+        return _result(spec, "incomplete", "turn did not run")
+    notifications = _escalation_notifications(turn)
+    status_after = (turn.get("state") or {}).get("escalation_status")
+    expect_notified = bool(spec.get("expect_notified", True))
+    reason_ok = True
+    if spec.get("reason_pattern") and notifications:
+        reason_ok = any(
+            re.search(
+                spec["reason_pattern"],
+                str((n.get("kwargs") or {}).get("reason") or ""),
+                re.IGNORECASE,
+            )
+            for n in notifications
+        )
+    status_ok = status_after == spec["status_after"] if "status_after" in spec else True
+    ok = (bool(notifications) == expect_notified) and reason_ok and status_ok
+    return _result(
+        spec,
+        "pass" if ok else "fail",
+        {
+            "notifications": notifications,
+            "escalation_status_after": status_after,
+            "reason_matched": reason_ok,
+        },
+    )
+
+
+def b2b_handoff_with_references(
+    spec: Mapping[str, Any], turns: Sequence[Turn]
+) -> dict[str, Any]:
+    """Handoff plus in-stock references with photos plus one brief question."""
+
+    turn = _turn(turns, int(spec["turn"]))
+    if turn is None or turn.get("reply") is None:
+        return _result(spec, "incomplete", "turn did not run")
+    reply = _reply(turn)
+    tools = [str(c.get("name")) for c in _tool_calls(turn)]
+    media_count = len(turn.get("media") or [])
+    rows = {
+        "escalate_to_manager_called": "escalate_to_manager" in tools,
+        "search_products_called": "search_products" in tools,
+        "manager_notified": bool(_escalation_notifications(turn)),
+        "status_pending": (turn.get("state") or {}).get("escalation_status")
+        == "pending",
+        "reference_photos": media_count >= int(spec.get("min_media", 2)),
+        "brief_question": bool(
+            re.search(spec["brief_question_pattern"], reply, re.IGNORECASE)
+        ),
+    }
+    forbidden = [
+        m.group(0)
+        for p in spec.get("forbid_patterns", [])
+        for m in re.finditer(p, reply, re.IGNORECASE)
+    ]
+    ok = all(rows.values()) and not forbidden
+    return _result(
+        spec,
+        "pass" if ok else "fail",
+        {**rows, "media_count": media_count, "forbidden_hits": forbidden},
+    )
+
+
 CHECKS: dict[str, CheckFn] = {
+    "tool_evidence": tool_evidence,
+    "escalation_route": escalation_route,
+    "b2b_handoff_with_references": b2b_handoff_with_references,
     "no_structured_leak": no_structured_leak,
     "no_unconfirmed_claim": no_unconfirmed_claim,
     "media_covers_offered": media_covers_offered,
@@ -254,10 +379,29 @@ CHECKS: dict[str, CheckFn] = {
 
 
 def run_checks(
-    specs: Sequence[Mapping[str, Any]], turns: Sequence[Turn]
+    specs: Sequence[Mapping[str, Any]],
+    turns: Sequence[Turn],
+    *,
+    mode: str = "live",
 ) -> list[dict[str, Any]]:
+    """Run every declared check; reply-semantics checks are live-only.
+
+    A check marked ``"live_only": true`` judges what the model wrote. The dry
+    stub is a wiring probe that writes canned text, so in dry mode such a check
+    is reported ``not_applicable`` rather than failed or passed.
+    """
+
     results = []
     for spec in specs:
+        if spec.get("live_only") and mode != "live":
+            results.append(
+                _result(
+                    spec,
+                    "not_applicable",
+                    "live-only reply check; the dry stub writes canned text",
+                )
+            )
+            continue
         check = CHECKS.get(str(spec.get("type")))
         if check is None:
             results.append(_result(spec, "error", f"unknown check {spec.get('type')}"))

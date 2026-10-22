@@ -705,7 +705,7 @@ class TestScenario7OrderHandoffGuard:
         mock_search_knowledge: AsyncMock,
         mock_prompt: AsyncMock,
     ) -> None:
-        message = "I need 200 chairs delivered to Dubai Marina by next week"
+        message = "I need 12 chairs delivered to Dubai Marina by next week"
         mock_prompt.return_value = "You are Noor. STAGE: SOLUTION."
         mock_build_history.return_value = [
             ModelRequest(parts=[UserPromptPart(content=message)])

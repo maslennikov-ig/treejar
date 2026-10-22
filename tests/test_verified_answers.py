@@ -1804,3 +1804,16 @@ def test_query_names_specific_item_retains_model_codes_and_dimensions(
     query: str,
 ) -> None:
     assert verified_answers_module.query_names_specific_item(query)
+
+
+def test_complete_multi_item_need_query_with_item_quantity_is_generic() -> None:
+    query = (
+        "Complete workspace configuration for 6 employees: workstation/workspace "
+        "station seating 6 people and 6 comfortable office chairs, total budget "
+        "AED 10,000, Dubai"
+    )
+    candidates = [
+        "6 Person Face to Face Table SKYLAND NOVO 3600\n6-Person Workstation",
+        "Executive office chair CH 145 black Chrome\nErgonomic office chair",
+    ]
+    assert classify_product_match(query, candidates) == "generic"

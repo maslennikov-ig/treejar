@@ -1434,7 +1434,16 @@ async def _process_batch_inner(
                     channel_phone=inbound_channel_phone,
                 )
 
-            # 2. Manual takeover: manager writes when no escalation is active
+            # 2. Manual takeover: manager writes when no escalation is active.
+            # AC08: a manager reply (including one inside the first-turn grace
+            # window) pauses the bot via the existing manual_takeover status,
+            # which stays silent instead of sending the PENDING fallback reply.
+            if has_manager_message:
+                metadata = (
+                    dict(conv.metadata_) if isinstance(conv.metadata_, dict) else {}
+                )
+                metadata["last_manager_message_at"] = datetime.now(UTC).isoformat()
+                conv.metadata_ = metadata
             if has_manager_message and not should_pause_bot_for_escalation(
                 conv.escalation_status
             ):

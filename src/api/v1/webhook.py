@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import logging
 import secrets
 import time
 from datetime import UTC, datetime
 from functools import lru_cache
+from typing import Any, NamedTuple
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -14,7 +16,14 @@ from pydantic import ValidationError
 from src.core.config import settings
 from src.core.database import async_session_factory
 from src.schemas import WazzupWebhookPayload
-from src.services.inbound_batch import inbound_chat_reference, inbound_queue_key
+from src.services.inbound_batch import (
+    DEFAULT_INBOUND_BATCH_DEFER_SECONDS,
+    FIRST_TURN_GRACE_MARKER_BUFFER_SECONDS,
+    inbound_chat_reference,
+    inbound_grace_key,
+    inbound_queue_key,
+    resolve_inbound_batch_defer_seconds,
+)
 from src.services.outbound_audit import update_wazzup_statuses
 from src.services.proposal_followup import apply_proposal_read_statuses
 
@@ -344,15 +353,110 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
         batch_ref = inbound_chat_reference(msg.chatId)
         await redis.rpush(inbound_queue_key(batch_ref), msg.model_dump_json())
 
-        # Enqueue job with a 5-second defer to allow batching
         # Use time-windowed job ID: same window = dedup, new window = new job
         window = int(time.time()) // 10  # 10-second windows
         job_id = f"wazzup_batch_{batch_ref}_{window}"
-        await arq_pool.enqueue_job(
-            "process_incoming_batch",
-            batch_ref=batch_ref,
-            _job_id=job_id,
-            _defer_by=5,
-        )
+        defer_by = DEFAULT_INBOUND_BATCH_DEFER_SECONDS
+        grace_key: str | None = None
+        if author_type != "manager":
+            decision = await _client_grace_schedule(redis, batch_ref, msg.chatId)
+            if decision.skip_enqueue:
+                # An open first-turn grace job will drain this queue.
+                continue
+            if decision.job_id is not None:
+                job_id = decision.job_id
+                defer_by = decision.defer_by
+                grace_key = inbound_grace_key(batch_ref)
+
+        try:
+            await arq_pool.enqueue_job(
+                "process_incoming_batch",
+                batch_ref=batch_ref,
+                _job_id=job_id,
+                _defer_by=defer_by,
+            )
+        except Exception:
+            if grace_key is not None:
+                # Do not leave a marker that would swallow later messages.
+                await redis.delete(grace_key)
+            raise
 
     return JSONResponse({"ok": True}, status_code=200)
+
+
+class _GraceDecision(NamedTuple):
+    """How one client message is scheduled under the first-turn grace."""
+
+    skip_enqueue: bool = False
+    job_id: str | None = None
+    defer_by: int = DEFAULT_INBOUND_BATCH_DEFER_SECONDS
+
+
+_STANDARD_SCHEDULE = _GraceDecision()
+_SKIP_SCHEDULE = _GraceDecision(skip_enqueue=True)
+_GRACE_RESOLVE_TIMEOUT_SECONDS = 2.0
+
+
+async def _grace_marker_open_seconds(redis: Any, grace_key: str) -> float | None:
+    """Return seconds until the grace job is due, or None when no marker exists."""
+    pttl = await redis.pttl(grace_key)
+    if not isinstance(pttl, int) or isinstance(pttl, bool) or pttl < 0:
+        return None
+    return pttl / 1000 - FIRST_TURN_GRACE_MARKER_BUFFER_SECONDS
+
+
+async def _resolve_client_defer(chat_id: str) -> int:
+    try:
+        async with async_session_factory() as db:
+            return await asyncio.wait_for(
+                resolve_inbound_batch_defer_seconds(db, phone=chat_id),
+                timeout=_GRACE_RESOLVE_TIMEOUT_SECONDS,
+            )
+    except Exception:
+        logger.warning("First-turn grace lookup failed; using standard defer")
+        return DEFAULT_INBOUND_BATCH_DEFER_SECONDS
+
+
+async def _client_grace_schedule(
+    redis: Any, batch_ref: str, chat_id: str
+) -> _GraceDecision:
+    """Decide how a client message is scheduled under the first-turn grace.
+
+    Returns the standard 5-second windowed job, a skip while an open grace job
+    will drain the queue, or a grace ``(job_id, defer)`` for a new window.
+
+    The marker ``wazzup:inbound:grace:<batch_ref>`` lives for
+    ``grace + buffer`` seconds and is claimed with SET NX so concurrent first
+    messages open exactly one window. Later client messages inside the window
+    are only queued: no early 5-second job is scheduled, so the whole first
+    turn is answered by the grace job. The grace job id carries a ``grace``
+    tag and the opening timestamp so it never collides with 10-second window
+    ids or with a retained result of an earlier grace job. Once the grace job
+    is due (only the buffer remains), messages fall back to the standard job.
+    Manager messages bypass this and keep the standard job, so a manager reply
+    during the window is processed promptly and pauses the bot.
+    """
+    grace_key = inbound_grace_key(batch_ref)
+    remaining = await _grace_marker_open_seconds(redis, grace_key)
+    if remaining is not None:
+        return _SKIP_SCHEDULE if remaining > 0 else _STANDARD_SCHEDULE
+
+    defer = await _resolve_client_defer(chat_id)
+    if defer <= DEFAULT_INBOUND_BATCH_DEFER_SECONDS:
+        return _STANDARD_SCHEDULE
+
+    opened_at = int(time.time())
+    claimed = await redis.set(
+        grace_key,
+        str(opened_at),
+        ex=defer + FIRST_TURN_GRACE_MARKER_BUFFER_SECONDS,
+        nx=True,
+    )
+    if not claimed:
+        # A concurrent webhook opened the window; its job drains this queue.
+        return _SKIP_SCHEDULE
+    logger.info("First-turn manager grace opened: defer_seconds=%d", defer)
+    return _GraceDecision(
+        job_id=f"wazzup_batch_{batch_ref}_grace_{opened_at}",
+        defer_by=defer,
+    )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 AMOUNT_TOKEN_PATTERN = r"\d[\d,]*(?:\.\d+)?"
 
@@ -18,6 +18,9 @@ AMOUNT_TOKEN_PATTERN = r"\d[\d,]*(?:\.\d+)?"
 # whether it was meant.
 BUDGET_AED_CURRENCY_PATTERN = r"AED|DHS|dirhams?"
 """What a customer might type when naming a budget. Read as intent, not fact."""
+
+BUDGET_AR_CURRENCY_PATTERN = rf"درهم|{BUDGET_AED_CURRENCY_PATTERN}"
+"""The same, after an Arabic budget word (`tj-asty.1`)."""
 
 CUSTOMER_OUTPUT_CURRENCY_PATTERN = r"(?:\bAED\b|درهم)"
 """What we ourselves write. Narrow on purpose: grounding checks every match."""
@@ -69,3 +72,51 @@ def find_customer_output_amounts(text: str) -> tuple[str, ...]:
 
 def contains_customer_output_currency(text: str) -> bool:
     return _CUSTOMER_OUTPUT_CURRENCY_RE.search(str(text or "")) is not None
+
+
+# `tj-asty.1`. Treejar catalog prices exclude UAE VAT (`priceExclVAT`). The
+# rate lives here, once, so the tool evidence, the claim contract and the
+# budget check all derive the VAT-inclusive figure the same way and to the same
+# cent. Decimal with half-up rounding is what an invoice does; binary floats
+# would round 5,931.445 either way depending on representation.
+UAE_VAT_RATE = Decimal("0.05")
+UAE_VAT_MULTIPLIER = Decimal("1.05")
+_CENT = Decimal("0.01")
+
+
+def _to_decimal(amount: float | int | Decimal | str) -> Decimal:
+    if isinstance(amount, Decimal):
+        return amount
+    return Decimal(str(amount))
+
+
+def round_money(amount: float | int | Decimal | str) -> float:
+    """Round a money amount to the cent, half-up, as an invoice does."""
+
+    return float(_to_decimal(amount).quantize(_CENT, rounding=ROUND_HALF_UP))
+
+
+def amount_with_uae_vat(
+    amount: float | int | Decimal | str,
+) -> tuple[float, float, float]:
+    """Return ``(excl_vat, vat_amount, incl_vat)`` rounded to the cent.
+
+    ``incl_vat`` is always ``excl_vat + vat_amount`` exactly, so the three
+    figures a reply restates can never disagree with one another.
+    """
+
+    excl = _to_decimal(amount).quantize(_CENT, rounding=ROUND_HALF_UP)
+    vat = (excl * UAE_VAT_RATE).quantize(_CENT, rounding=ROUND_HALF_UP)
+    return float(excl), float(vat), float(excl + vat)
+
+
+def line_subtotal(quantity: int, unit_price: float | int | Decimal | str) -> float:
+    """``quantity × unit_price`` to the cent, without float drift."""
+
+    return round_money(_to_decimal(unit_price) * Decimal(int(quantity)))
+
+
+def format_money(amount: float | int | Decimal | str) -> str:
+    """Render ``5931.45`` as ``5,931.45`` -- the form the tool evidence uses."""
+
+    return f"{round_money(amount):,.2f}"

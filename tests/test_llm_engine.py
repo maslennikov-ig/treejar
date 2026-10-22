@@ -1762,7 +1762,7 @@ async def test_noncritical_first_turn_order_cannot_access_escalation_tool(
         messaging_client=messaging,
         pii_map={},
         tool_mode="order_handoff",
-        user_query="I need 200 chairs delivered to Dubai Marina by next week",
+        user_query="I need 12 chairs delivered to Dubai Marina by next week",
     )
     seen_tool_names: list[set[str]] = []
 
@@ -1774,7 +1774,7 @@ async def test_noncritical_first_turn_order_cannot_access_escalation_tool(
 
     with sales_agent.override(model=FunctionModel(model_fn)):
         await sales_agent.run(
-            "I need 200 chairs delivered to Dubai Marina by next week",
+            "I need 12 chairs delivered to Dubai Marina by next week",
             deps=deps,
         )
 
@@ -13843,7 +13843,7 @@ def test_an_ordinary_turn_adds_nothing_it_has_not_earned() -> None:
     directives stand down on.
     """
 
-    assert engine_module._turn_runtime_directives("Please send me 20 chairs.") == (
+    assert engine_module._turn_runtime_directives("Please send me 12 chairs.") == (
         substantive_reply_directive(),
     )
 

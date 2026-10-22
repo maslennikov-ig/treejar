@@ -31,6 +31,7 @@ async def notify_manager_escalation(
     escalation_type: EscalationType = EscalationType.GENERAL,
     pdf_bytes: bytes | None = None,
     pdf_filename: str = "quotation.pdf",
+    pause_bot: bool = True,
 ) -> None:
     """
     Notify the manager about a soft escalation via logging and Telegram.
@@ -43,6 +44,9 @@ async def notify_manager_escalation(
         escalation_type: Type of escalation (determines button layout).
         pdf_bytes: Optional PDF file bytes to attach as Telegram document.
         pdf_filename: Filename for the PDF attachment.
+        pause_bot: Hand the conversation to the manager. ``False`` records the
+            escalation and alerts the manager while the bot keeps answering
+            (`tj-asty.2`: a sourcing lead for out-of-catalog equipment).
     """
     phone_display = (
         conversation.phone
@@ -59,7 +63,8 @@ async def notify_manager_escalation(
     )
 
     # Persist the escalation row so manager-review jobs and audit paths can track it.
-    conversation.escalation_status = EscalationStatus.PENDING.value
+    if pause_bot:
+        conversation.escalation_status = EscalationStatus.PENDING.value
     db.add(
         Escalation(
             conversation_id=conversation.id,

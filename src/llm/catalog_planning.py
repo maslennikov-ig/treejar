@@ -43,9 +43,11 @@ from src.llm.catalog_families import (
 from src.llm.money import (
     AMOUNT_TOKEN_PATTERN,
     BUDGET_AED_CURRENCY_PATTERN,
+    BUDGET_AR_CURRENCY_PATTERN,
     canonical_amount,
 )
 from src.llm.outbound_reply_guard import looks_like_structured_payload
+from src.llm.package_math import PricedLine
 from src.llm.response_policy import AskKind, append_required_tool_disclosure
 from src.llm.response_runtime import LLMResponse, ProductMediaPayload
 from src.llm.verified_answers import (
@@ -251,8 +253,27 @@ _CATALOG_BUDGET_CAP_RE = re.compile(
     rf"(?:\s*(?P<currency_after>{BUDGET_AED_CURRENCY_PATTERN}))?\b|"
     rf"\b(?P<currency_leading>{BUDGET_AED_CURRENCY_PATTERN})\s*"
     rf"(?P<amount_leading>{AMOUNT_TOKEN_PATTERN})\s+"
-    r"(?:or\s+less|max(?:imum)?|cap)\b)",
+    r"(?:or\s+less|max(?:imum)?|cap)\b"
+    # tj-asty.1: the budget named as such, in English or Arabic, before or
+    # after its amount (see `test_package_math` for the phrasings).
+    rf"|\bbudget\b\s*(?:(?:is|of|:|=|around|about)\s*)?"
+    rf"(?:{BUDGET_AED_CURRENCY_PATTERN})\s*(?P<amount_budget_a>{AMOUNT_TOKEN_PATTERN})"
+    rf"|\bbudget\b\s*(?:(?:is|of|:|=|around|about)\s*)?"
+    rf"(?P<amount_budget_b>{AMOUNT_TOKEN_PATTERN})\s*(?:{BUDGET_AED_CURRENCY_PATTERN})\b"
+    rf"|\bbudget\b[^.?!\n]{{0,60}}?\b(?:is|of)\s+"
+    rf"(?:(?:{BUDGET_AED_CURRENCY_PATTERN})\s*)?(?P<amount_budget_c>{AMOUNT_TOKEN_PATTERN})"
+    rf"(?:\s*(?:{BUDGET_AED_CURRENCY_PATTERN}))?\b"
+    r"|(?:ال|ب)?ميزاني[ةه](?:\s+(?:الإجمالية|الاجمالية|الكلية))?\s*(?:هي\s*|:\s*)?"
+    rf"(?P<amount_budget_ar>{AMOUNT_TOKEN_PATTERN})(?:\s*(?:{BUDGET_AR_CURRENCY_PATTERN}))?)",
     re.IGNORECASE,
+)
+_BUDGET_AMOUNT_GROUPS = (
+    "amount_before",
+    "amount_leading",
+    "amount_budget_a",
+    "amount_budget_b",
+    "amount_budget_c",
+    "amount_budget_ar",
 )
 _PER_ITEM_PRICE_RE = re.compile(
     r"\b(?:each|apiece|per\s+[\w-]+)\b|(?:لكل|للقطعة)",
@@ -1152,12 +1173,18 @@ def _budget_clause(
     return normalized[clause_start:clause_end]
 
 
+_ARABIC_AMOUNT_CHARS = str.maketrans("٠١٢٣٤٥٦٧٨٩٬٫", "0123456789,.")
+
+
 def _catalog_budget_constraints(text: str) -> CatalogBudgetConstraints:
-    normalized = _normalize_text(text)
+    normalized = _normalize_text(text).translate(_ARABIC_AMOUNT_CHARS)
     total_cap: float | None = None
     per_item_cap: float | None = None
     for match in _CATALOG_BUDGET_CAP_RE.finditer(normalized):
-        raw_amount = match.group("amount_before") or match.group("amount_leading")
+        raw_amount = next(
+            (match.group(name) for name in _BUDGET_AMOUNT_GROUPS if match.group(name)),
+            None,
+        )
         normalized_amount = canonical_amount(raw_amount)
         if normalized_amount is None:
             continue
@@ -2062,6 +2089,17 @@ def _requested_catalog_evidence_gaps(
     return tuple(gaps)
 
 
+VAT_MATH_CONTRACT = (
+    "Catalog prices exclude 5% UAE VAT: whenever you state a price, label it "
+    "excl. 5% VAT. When the tool output contains Verified line math, a "
+    "Verified multi-item total, Verified turnkey package math or a Budget "
+    "check, restate those exact figures -- subtotal excl. 5% VAT, total incl. "
+    "5% VAT and the budget verdict -- and never compute a total of your own. "
+    "You may add the Product page link of an option you name."
+)
+"""tj-asty.1/.3. The arithmetic is the tool's; the reply only restates it."""
+
+
 def _product_search_response_contract(
     *,
     match_kind: Literal["exact", "generic", "nearby", "missing", "empty"] = "exact",
@@ -2072,7 +2110,12 @@ def _product_search_response_contract(
     specific_item_requested: bool = True,
 ) -> str:
     if closed_selection_skus and match_kind in {"exact", "generic", "nearby"}:
-        return " ".join(_closed_selection_contract_parts(closed_selection_skus))
+        return " ".join(
+            (
+                *_closed_selection_contract_parts(closed_selection_skus),
+                VAT_MATH_CONTRACT,
+            )
+        )
     if match_kind == "nearby":
         contract_parts = [
             "Catalog results were found, but they are the closest alternatives rather than a confirmed exact match."
@@ -2180,6 +2223,9 @@ def _product_search_response_contract(
             "call the current option cheapest or minimum."
         )
 
+    if match_kind != "empty":
+        contract_parts.append(VAT_MATH_CONTRACT)
+
     if search_budget_exhausted:
         contract_parts.extend(
             [
@@ -2241,9 +2287,11 @@ def _stock_follow_up_contract(*, selection_closed: bool = False) -> str:
             "Use this stock/price fact for the item the customer has already chosen "
             "and continue the next step; do not return to listing options. "
             "Zoho confirms operational stock; Treejar Catalog price remains the "
-            "customer-facing commercial truth when present."
+            "customer-facing commercial truth when present. "
+            f"{VAT_MATH_CONTRACT}"
         )
     return (
+        f"{VAT_MATH_CONTRACT} "
         "Use this stock/price fact to strengthen the concrete options you already have. "
         "Zoho confirms operational stock; Treejar Catalog price remains the customer-facing commercial truth when present. "
         "Do not replace or invalidate catalog price with Zoho rate in the customer reply. "
@@ -2321,6 +2369,9 @@ class SalesDeps:
     pending_customer_write_rejections: dict[str, CustomerWriteRejection] = field(
         default_factory=dict
     )
+    # tj-asty.1. Catalog rows priced at a defensible quantity this turn, so a
+    # later search or stock check can total the package across them.
+    turn_priced_lines: dict[str, PricedLine] = field(default_factory=dict)
 
 
 _PRICE_FIGURE_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")

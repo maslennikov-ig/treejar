@@ -1,0 +1,127 @@
+{
+  "id": "C-Layan",
+  "source_conversation": "nikita-shadow-2026-10-22-C",
+  "description": "Layan (Arabic): 6-person Dubai office, 6 workstations seats + 6 chairs within 10,000 AED, no quotation yet; then a 55-workstation floor project, a custom 4.5 m walnut meeting table with built-in power and a wholesale discount request (B2B handoff).",
+  "customer": {
+    "phone": "+971500001022",
+    "language": "ar"
+  },
+  "fixtures": {
+    "catalog": "tests/fixtures/catalog_snapshot_2026-09-23.json",
+    "live_stock_overrides": {}
+  },
+  "turns": [
+    {
+      "text": "مرحباً، اسمي ليان. نجهز مكتباً جديداً في دبي لـ 6 موظفين ونحتاج محطة عمل لـ 6 أشخاص مع 6 كراسي مكتبية مريحة، والميزانية الإجمالية 10,000 درهم. لا نريد عرض سعر رسمي الآن، فقط اقترحوا الخيارات المتوفرة مع الأسعار.",
+      "stub_plan": [
+        {
+          "tool": "search_products",
+          "arguments": {
+            "query": "6 person workstation",
+            "requested_seats": 6,
+            "budget_cap_aed": 10000,
+            "families": [
+              "workspace",
+              "seating"
+            ],
+            "max_results": 4
+          }
+        },
+        {
+          "tool": "search_products",
+          "arguments": {
+            "query": "office chair",
+            "requested_seats": 6,
+            "families": [
+              "workspace",
+              "seating"
+            ],
+            "complementary_search": false,
+            "max_results": 4
+          }
+        }
+      ]
+    },
+    {
+      "text": "شكراً. لدينا أيضاً مشروع لتجهيز الطابق بالكامل: نحتاج 55 محطة عمل، بالإضافة إلى تفصيل طاولة اجتماعات خاصة بطول 4.5 متر من خشب الجوز مع وحدات كهرباء مدمجة، ونريد خصم جملة خاص. كيف نرتب ذلك؟",
+      "stub_plan": [
+        {
+          "tool": "search_products",
+          "arguments": {
+            "query": "meeting table SKYLAND",
+            "max_results": 3
+          }
+        },
+        {
+          "tool": "escalate_to_manager",
+          "arguments": {
+            "reason": "55 workstations floor project, custom 4.5 m walnut meeting table with built-in power, wholesale discount",
+            "escalation_type": "general"
+          }
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "type": "no_structured_leak",
+      "description": "No turn sends raw JSON/claim-contract payload as the customer reply."
+    },
+    {
+      "type": "tool_evidence",
+      "turn": 1,
+      "description": "AC02: a grounded turnkey package (workstation + 6 chairs) with excl./incl. 5% VAT totals and the 10,000 AED budget verdict reaches the model.",
+      "require_patterns": [
+        "Verified turnkey package math \\(6 seats\\): 1 × 6 Person Face to Face Table SKYLAND NOVO 3600 \\(1 × 2,598\\.00 = 2,598\\.00 AED\\) \\+ 6 × ",
+        "AED excl\\. 5% VAT \\([\\d,]+\\.\\d\\d AED incl\\. 5% VAT",
+        "Budget check \\(cap 10,000\\.00 AED\\): FITS"
+      ],
+      "require_tools": [
+        "search_products"
+      ],
+      "min_media": 1
+    },
+    {
+      "type": "escalation_route",
+      "turn": 1,
+      "expect_notified": false,
+      "status_after": "none",
+      "description": "AC05: a six-person office under budget is an ordinary sale, never a handoff."
+    },
+    {
+      "type": "positive_answer",
+      "turn": 1,
+      "live_only": true,
+      "description": "Arabic reply: offers a 6-person workstation with chairs, states the package total incl. 5% VAT and that it fits the 10,000 AED budget, and never re-asks the name Layan already gave (the name itself is checked in state.customer_name).",
+      "require_patterns": [
+        "2,598|2598|٢٬?٥٩٨",
+        "10,000|10000|١٠٬?٠٠٠",
+        "(?:ضريبة|VAT)"
+      ],
+      "forbid_patterns": [
+        "تجاوز(?:ت)? الميزانية",
+        "above (?:your )?budget",
+        "ما (?:اسمك|اسمكم)|اسمكم الكريم|لم يصل(?:نا)? الاسم"
+      ]
+    },
+    {
+      "type": "b2b_handoff_with_references",
+      "turn": 2,
+      "min_media": 1,
+      "description": "AC04-AC06: 55 workstations + custom 4.5 m table + wholesale discount: manager handoff (status pending), standard in-stock meeting-table references with photos, and one brief question. Photos go out once per conversation, so references already shown in turn 1 are not sent again; at least one new reference photo is required.",
+      "brief_question_pattern": "(?:اسم الشركة|الشركة|موعد|الجدول الزمني|التسليم|موقع|company|timeline|delivery location)[^?؟]*[?؟]",
+      "forbid_patterns": [
+        "\\d+\\s*(?:-|–|to)\\s*\\d+\\s*(?:weeks|أسابيع)",
+        "خصم\\s+\\d+\\s*%"
+      ]
+    },
+    {
+      "type": "escalation_route",
+      "turn": 2,
+      "expect_notified": true,
+      "status_after": "pending",
+      "reason_pattern": "wholesale|bulk|made to order",
+      "description": "AC04: the wholesale / made-to-order route notifies the manager and pauses the bot."
+    }
+  ]
+}

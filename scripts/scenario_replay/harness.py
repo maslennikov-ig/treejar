@@ -184,6 +184,7 @@ class Replay:
             else frozenset()
         )
         self.meter: CostMeter | None = None
+        self.stub: StubModel | None = None
 
     # -- patches ---------------------------------------------------------------
 
@@ -199,6 +200,7 @@ class Replay:
 
         config = self.config
         responder = StubModel(catalog_rows) if config.mode == "stub" else None
+        self.stub = responder
         self.meter = meter = CostMeter(
             max_cost_usd=config.max_cost_usd,
             price_in_per_mtok=config.price_in_per_mtok,
@@ -278,9 +280,19 @@ class Replay:
                     **{
                         k: v
                         for k, v in kwargs.items()
-                        if k in {"reason", "escalation_type"}
+                        if k in {"reason", "escalation_type", "pause_bot"}
                     },
                 )
+                # Mirror the one state change the real manager alert makes, so
+                # a handoff turn leaves the conversation as production would:
+                # paused, unless the route is a non-pausing sourcing lead.
+                conversation = kwargs.get("conversation")
+                if (
+                    name == "notify_manager_escalation"
+                    and conversation is not None
+                    and kwargs.get("pause_bot", True)
+                ):
+                    conversation.escalation_status = "pending"
 
             return _record
 
@@ -450,6 +462,8 @@ class Replay:
         )
         try:
             for number, turn_spec in enumerate(scenario["turns"], start=1):
+                if self.stub is not None:
+                    self.stub.start_turn(turn_spec.get("stub_plan"))
                 record = await self._run_turn(
                     scenario_id=str(scenario["id"]),
                     number=number,
@@ -468,7 +482,7 @@ class Replay:
         finally:
             store.close()
             self.store = None
-        checks = run_checks(scenario.get("checks", []), turns)
+        checks = run_checks(scenario.get("checks", []), turns, mode=self.config.mode)
         cost = round(sum(t.get("cost_usd", 0.0) for t in turns), 8)
         self._echo(f"--- Scenario {scenario['id']} cost ${cost:.6f}")
         for check in checks:
@@ -661,6 +675,11 @@ def recheck_receipt(receipt: dict[str, Any]) -> dict[str, Any]:
 
     for scenario in receipt["scenarios"]:
         spec = load_scenario(REPO_ROOT / scenario["file"])
-        scenario["checks"] = run_checks(spec.get("checks", []), scenario["turns"])
+        mode = (
+            "live" if str(receipt["run"].get("mode", "")).startswith("live") else "stub"
+        )
+        scenario["checks"] = run_checks(
+            spec.get("checks", []), scenario["turns"], mode=mode
+        )
     receipt["run"]["checks_rerun_offline"] = True
     return receipt

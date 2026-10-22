@@ -61,8 +61,55 @@ async def test_dry_replay_runs_every_turn_through_the_pipeline() -> None:
         "no_structured_leak",
         "no_unconfirmed_claim",
         "records_items_without_alternative",
+        "tool_evidence",
+        "positive_answer",
     }
     json.dumps(receipt)
+
+
+SCENARIO_C_LAYAN = (
+    ROOT / "tests" / "fixtures" / "scenarios" / "c_layan_arabic_6p_wholesale.json"
+)
+SCENARIO_D_RAMI = (
+    ROOT / "tests" / "fixtures" / "scenarios" / "d_rami_fume_hood_luma_budget.json"
+)
+
+
+@pytest.mark.asyncio
+async def test_nikita_benchmark_scenarios_pass_every_dry_check() -> None:
+    """tj-asty.5: C-Layan and D-Rami exercise the new pipeline end to end."""
+
+    receipt = await Replay(
+        ReplayConfig(
+            scenario_paths=[SCENARIO_C_LAYAN, SCENARIO_D_RAMI],
+            mode="stub",
+            echo=False,
+        )
+    ).run()
+
+    statuses = {
+        (scenario["id"], check["type"], index): check["status"]
+        for scenario in receipt["scenarios"]
+        for index, check in enumerate(scenario["checks"])
+    }
+    assert "fail" not in statuses.values(), statuses
+    assert "pass" in statuses.values()
+
+    layan, rami = receipt["scenarios"]
+    # Wholesale + made-to-order handoff pauses the bot after its reply.
+    assert layan["turns"][1]["state"]["escalation_status"] == "pending"
+    assert len(layan["turns"][1]["media"]) >= 2
+    # The fume-hood sourcing lead notifies a manager without pausing the bot,
+    # so the budget question on the next turn is still answered.
+    rami_first, rami_second = rami["turns"]
+    assert rami_first["state"]["escalation_status"] == "none"
+    notified = [
+        call
+        for call in rami_first["external_calls"]
+        if call["method"] == "notify_manager_escalation"
+    ]
+    assert notified and notified[0]["kwargs"]["pause_bot"] is False
+    assert rami_second["status"] == "ok" and rami_second["reply"]
 
 
 @pytest.mark.asyncio
