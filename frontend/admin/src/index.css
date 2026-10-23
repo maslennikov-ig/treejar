@@ -47,3 +47,8 @@ body {
   background: var(--admin-chart-surface);
   box-shadow: var(--admin-chart-shadow);
 }
+
+.recharts-tooltip-wrapper {
+  z-index: 50 !important;
+  opacity: 1 !important;
+}

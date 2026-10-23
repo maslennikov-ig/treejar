@@ -6,6 +6,7 @@ import {
     CHART_SUBTITLE_CLASS,
     CHART_TITLE_CLASS,
     CHART_TOOLTIP_STYLE,
+    CHART_TOOLTIP_WRAPPER_STYLE,
 } from './chartTheme';
 import { HelpTooltip } from '@/components/HelpTooltip';
 import { useI18n } from '@/i18n';
@@ -60,7 +61,11 @@ function DonutBlock({
             {hasData ? (
                 <>
                     <div className="relative mx-auto h-[128px] w-full max-w-[180px]">
-                        <ResponsiveContainer width="100%" height={128}>
+                        <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center">
+                            <span className="text-lg font-semibold leading-5 text-[var(--admin-chart-title)]">{formatNumber(total)}</span>
+                            <span className="text-[10px] uppercase text-[var(--admin-chart-muted)]">{t('chart.total')}</span>
+                        </div>
+                        <ResponsiveContainer className="relative z-10" width="100%" height={128}>
                             <PieChart>
                                 <Pie
                                     data={slices}
@@ -78,15 +83,12 @@ function DonutBlock({
                                     ))}
                                 </Pie>
                                 <Tooltip
+                                    wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
                                     contentStyle={CHART_TOOLTIP_STYLE}
                                     formatter={(value: number, name: string) => [formatNumber(value), name]}
                                 />
                             </PieChart>
                         </ResponsiveContainer>
-                        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                            <span className="text-lg font-semibold leading-5 text-[var(--admin-chart-title)]">{formatNumber(total)}</span>
-                            <span className="text-[10px] uppercase text-[var(--admin-chart-muted)]">{t('chart.total')}</span>
-                        </div>
                     </div>
                     <ul className="mt-3 space-y-2" data-segment-legend="">
                         {slices.map((slice) => {

@@ -91,6 +91,7 @@ try {
     assert.match(pieSource, /innerRadius=\{38\}/);
     assert.match(pieSource, /outerRadius=\{56\}/);
     assert.match(pieSource, /paddingAngle=\{3\}/);
+    assert.match(pieSource, /CHART_TOOLTIP_WRAPPER_STYLE/, 'Pie tooltip should use high z-index wrapper style above center total');
     assert.doesNotMatch(pieSource, /grid-cols-2/, 'Donuts should stack vertically instead of a fixed two-column grid');
 
     const appSource = await readFile(path.join(frontendRoot, 'src', 'App.tsx'), 'utf8');
@@ -121,7 +122,7 @@ try {
         platform: 'node',
         write: false,
         plugins: [stubPlugin],
-        external: ['react', 'react/jsx-runtime'],
+        external: ['react', 'react-dom', 'react/jsx-runtime'],
         tsconfig: path.join(frontendRoot, 'tsconfig.json'),
     });
     const bundlePath = path.join(tempDir, 'charts.mjs');

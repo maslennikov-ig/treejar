@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useI18n } from '@/i18n';
 
 const TOOLTIP_WIDTH = 288;
@@ -86,9 +87,21 @@ export function HelpTooltip({
             left: position.left,
             width: position.width,
             transform: position.placement === 'top' ? 'translateY(-100%)' : undefined,
-            zIndex: 1000,
+            zIndex: 9999,
+            opacity: 1,
         }
         : undefined;
+
+    const tooltipNode = open && position ? (
+        <span
+            id={tooltipId}
+            role="tooltip"
+            style={style}
+            className="pointer-events-none whitespace-normal rounded-md border border-[#1e293b] bg-[#0b1c30] px-3 py-2 text-left text-xs font-normal normal-case leading-5 tracking-normal text-white opacity-100 shadow-xl transition-opacity duration-[40ms]"
+        >
+            {text}
+        </span>
+    ) : null;
 
     return (
         <span className={['relative inline-flex align-middle', className].filter(Boolean).join(' ')}>
@@ -112,16 +125,7 @@ export function HelpTooltip({
             >
                 ?
             </button>
-            {open && position && (
-                <span
-                    id={tooltipId}
-                    role="tooltip"
-                    style={style}
-                    className="pointer-events-none whitespace-normal rounded-md bg-[#0b1c30] px-3 py-2 text-left text-xs font-normal normal-case leading-5 tracking-normal text-white shadow-lg transition-opacity duration-[40ms]"
-                >
-                    {text}
-                </span>
-            )}
+            {tooltipNode && (typeof document !== 'undefined' && document.body ? createPortal(tooltipNode, document.body) : tooltipNode)}
         </span>
     );
 }

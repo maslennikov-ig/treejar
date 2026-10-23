@@ -325,6 +325,8 @@ const ru = {
     // Canonical sync
     'sync.kbButton': 'Синхронизировать базу Treejar',
     'sync.rulesButton': 'Загрузить правила Treejar',
+    'sync.kbHelp': 'Эталонные статьи базы знаний (24 шт.) хранятся в PostgreSQL на этом сервере с векторными эмбеддингами. Кнопка сверяет БД с базовым каталогом и восстанавливает случайно удаленные или измененные статьи.',
+    'sync.rulesHelp': 'Эталонные правила поведения Noor (8 шт.) хранятся в PostgreSQL на этом сервере с векторными эмбеддингами. Кнопка сверяет БД с базовым набором и восстанавливает удаленные или архивные правила.',
     'sync.kbConfirm': 'Синхронизировать базовую базу знаний Treejar? Записи будут созданы, обновлены или восстановлены, и бот сразу начнет их использовать.',
     'sync.rulesConfirm': 'Загрузить базовые правила Treejar? Это изменит инструкции живого бота со следующего сообщения клиента.',
     'sync.running': 'Синхронизация...',
@@ -1012,6 +1014,8 @@ const en: Record<TranslationKey, string> = {
     // Canonical sync
     'sync.kbButton': 'Sync canonical Treejar KB',
     'sync.rulesButton': 'Load canonical Treejar rules',
+    'sync.kbHelp': 'Canonical knowledge base articles (24) live in PostgreSQL on this server with vector embeddings. This button reconciles the database with the built-in catalog and restores deleted or modified entries.',
+    'sync.rulesHelp': 'Canonical Noor behavior rules (8) live in PostgreSQL on this server with vector embeddings. This button reconciles the database with the built-in rule set and restores deleted or archived rules.',
     'sync.kbConfirm': 'Sync the canonical Treejar knowledge base? Entries will be created, updated or restored and the bot starts using them immediately.',
     'sync.rulesConfirm': 'Load the canonical Treejar rules? This changes the live bot instructions from the next customer message.',
     'sync.running': 'Syncing...',

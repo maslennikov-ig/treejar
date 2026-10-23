@@ -1,5 +1,10 @@
 /** Shared chart tokens for the CRM dashboard light and dark themes. */
 
+export const CHART_TOOLTIP_WRAPPER_STYLE: React.CSSProperties = {
+    zIndex: 50,
+    pointerEvents: 'none',
+};
+
 export const CHART_TOOLTIP_STYLE: React.CSSProperties = {
     backgroundColor: 'var(--admin-chart-tooltip-bg)',
     border: '1px solid var(--admin-chart-tooltip-border)',
@@ -7,6 +12,8 @@ export const CHART_TOOLTIP_STYLE: React.CSSProperties = {
     color: 'var(--admin-chart-tooltip-text)',
     fontSize: '13px',
     boxShadow: 'var(--admin-chart-shadow)',
+    opacity: 1,
+    zIndex: 50,
 };
 
 export const CHART_CARD_CLASS =

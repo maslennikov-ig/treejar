@@ -1,9 +1,9 @@
 # Orchestrator Handoff
 
-## Stage tj-ierv (2026-10-23): admin dashboard polish — owner-authorized deploy
+## Stage tj-ierv / tj-nm8c (2026-10-23): admin dashboard polish — owner-authorized deploy
 - Branch codex/tj-ierv-admin-dashboard; summary .codex/stages/tj-ierv/summary.md.
-- Canonical KB/rules sync is button-only (`/sync-canonical`); owner authorized
-  review follow-up fixes plus push/merge/deploy to main (`noor.starec.ai`).
+- Canonical KB/rules sync (`/sync-canonical`) auto-seeds on empty initial load and
+  persists state across tabs; Recharts/HelpTooltip z-index fixed (`tj-nm8c`).
 
 ## October tester feedback — authorized completion2026-10-14
 

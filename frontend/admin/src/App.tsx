@@ -34,7 +34,8 @@ import FunnelEfficiencyChart from '@/components/charts/FunnelEfficiencyChart';
 import SalesBarChart from '@/components/charts/SalesBarChart';
 import SegmentPieChart from '@/components/charts/SegmentPieChart';
 import AIQualityControlsPanel from '@/components/AIQualityControlsPanel';
-import CanonicalSyncButton from '@/components/CanonicalSyncButton';
+import CanonicalSyncButton, { runCanonicalSync } from '@/components/CanonicalSyncButton';
+import type { CanonicalSyncKind } from '@/components/CanonicalSyncButton';
 import EnableManualModeButton, { scopesNeedingManualMode } from '@/components/EnableManualModeButton';
 import { HelpTooltip, SectionInfoBanner } from '@/components/HelpTooltip';
 import {
@@ -920,6 +921,8 @@ function ResetPreviewCard({
     );
 }
 
+const autoSeededCanonicalKinds = new Set<CanonicalSyncKind>();
+
 function KnowledgeBaseView({ globalSearch = '' }: { globalSearch?: string }) {
     const { t, label } = useI18n();
     const [entries, setEntries] = useState<AdminKnowledgeBaseRead[]>([]);
@@ -940,10 +943,19 @@ function KnowledgeBaseView({ globalSearch = '' }: { globalSearch?: string }) {
         () => async () => {
             const params = new URLSearchParams({ page_size: '50' });
             if (search.trim()) params.set('search', search.trim());
-            const [entryPayload, candidatePayload] = await Promise.all([
+            let [entryPayload, candidatePayload] = await Promise.all([
                 fetchKnowledgeBaseEntries(params),
                 fetchKnowledgeBaseCandidates(new URLSearchParams({ status: 'needs_confirmation' })),
             ]);
+            if (!search.trim() && entryPayload.items.length === 0 && !autoSeededCanonicalKinds.has('knowledge')) {
+                autoSeededCanonicalKinds.add('knowledge');
+                try {
+                    await runCanonicalSync('knowledge');
+                    entryPayload = await fetchKnowledgeBaseEntries(params);
+                } catch {
+                    // Keep empty state visible if background auto-seed fails.
+                }
+            }
             setEntries(entryPayload.items);
             setCandidates(candidatePayload.items);
             setLoaded(true);
@@ -1225,7 +1237,16 @@ function BotRulesView({ globalSearch = '' }: { globalSearch?: string }) {
             const params = new URLSearchParams({ page_size: '50' });
             if (search.trim()) params.set('search', search.trim());
             if (status) params.set('status', status);
-            const payload = await fetchBotRules(params);
+            let payload = await fetchBotRules(params);
+            if (!search.trim() && status === 'active' && payload.items.length === 0 && !autoSeededCanonicalKinds.has('botRules')) {
+                autoSeededCanonicalKinds.add('botRules');
+                try {
+                    await runCanonicalSync('botRules');
+                    payload = await fetchBotRules(params);
+                } catch {
+                    // Keep empty state visible if background auto-seed fails.
+                }
+            }
             setRules(payload.items);
             setLoaded(true);
             if (!selected && payload.items[0]) {

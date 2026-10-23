@@ -23,6 +23,12 @@
   wired header search, reset preview card, RU|EN i18n (`treejar_admin_lang`,
   default ru), donut fix, EscalationReasons + FunnelEfficiency charts;
   backend `escalation_by_reason`, `sales_stage_distribution`.
+- tj-nm8c (follow-up UI/UX fixes): Recharts tooltip `wrapperStyle={{ zIndex: 50 }}`
+  and `SegmentPieChart` DOM stacking so donut center totals never bleed through
+  hover tooltips; `HelpTooltip` portaled to `document.body` (`zIndex: 9999`,
+  `opacity: 1`); `CanonicalSyncButton` persists in-flight/last sync state across
+  tab switches, includes a `HelpTooltip` explaining sync semantics, and
+  `KnowledgeBaseView`/`BotRulesView` auto-seed once per session on empty initial load.
 
 ## Deviations from spec/plan (resolved against repo facts)
 - KB content: no free-assembly, 7-day return, warranty-term, working-hours or

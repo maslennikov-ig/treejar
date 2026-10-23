@@ -8,6 +8,7 @@ import {
     CHART_META_CLASS,
     CHART_TITLE_CLASS,
     CHART_TOOLTIP_STYLE,
+    CHART_TOOLTIP_WRAPPER_STYLE,
 } from './chartTheme';
 import { HelpTooltip } from '@/components/HelpTooltip';
 import { useI18n } from '@/i18n';
@@ -53,7 +54,7 @@ export default function SalesBarChart({
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
                     <XAxis dataKey="name" stroke={CHART_AXIS_STROKE} fontSize={CHART_AXIS_FONT_SIZE} />
                     <YAxis stroke={CHART_AXIS_STROKE} fontSize={CHART_AXIS_FONT_SIZE} />
-                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={(value) => [value, t('chart.count')]} />
+                    <Tooltip wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE} contentStyle={CHART_TOOLTIP_STYLE} formatter={(value) => [value, t('chart.count')]} />
                     <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={50}>
                         {data.map((entry, index) => (
                             <Cell key={index} fill={entry.fill} />

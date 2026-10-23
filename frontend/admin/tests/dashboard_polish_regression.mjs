@@ -36,6 +36,7 @@ const STUBS = new Map([
         export const Clock = Icon;
         export const FileText = Icon;
         export const Gauge = Icon;
+        export const HelpCircle = Icon;
         export const MessageCircle = Icon;
         export const Package = Icon;
         export const RefreshCw = Icon;
@@ -114,7 +115,7 @@ try {
         platform: 'node',
         write: false,
         plugins: [stubPlugin],
-        external: ['react', 'react/jsx-runtime'],
+        external: ['react', 'react-dom', 'react/jsx-runtime'],
         tsconfig: path.join(frontendRoot, 'tsconfig.json'),
     });
     const bundlePath = path.join(tempDir, 'polish.mjs');

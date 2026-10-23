@@ -142,7 +142,7 @@ try {
         platform: 'node',
         write: false,
         plugins: [aliasPlugin],
-        external: ['react', 'react/jsx-runtime', 'react-dom/server'],
+        external: ['react', 'react-dom', 'react/jsx-runtime', 'react-dom/server'],
         tsconfig: path.join(frontendRoot, 'tsconfig.json'),
     });
 

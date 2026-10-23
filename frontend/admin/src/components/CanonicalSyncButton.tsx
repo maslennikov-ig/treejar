@@ -1,14 +1,51 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { syncCanonicalBotRules, syncCanonicalKnowledgeBase } from '@/api/crm';
+import { HelpTooltip } from '@/components/HelpTooltip';
 import { useI18n } from '@/i18n';
 import type { AdminCanonicalSyncResult } from '@/types/crm';
 
 export type CanonicalSyncKind = 'knowledge' | 'botRules';
 
+const inFlightByKind: Partial<Record<CanonicalSyncKind, Promise<AdminCanonicalSyncResult>>> = {};
+const lastResultByKind: Partial<Record<CanonicalSyncKind, AdminCanonicalSyncResult>> = {};
+const lastErrorByKind: Partial<Record<CanonicalSyncKind, string>> = {};
+const listeners = new Set<() => void>();
+
+function notifyListeners() {
+    for (const listener of listeners) {
+        listener();
+    }
+}
+
+export async function runCanonicalSync(kind: CanonicalSyncKind): Promise<AdminCanonicalSyncResult> {
+    const existing = inFlightByKind[kind];
+    if (existing) {
+        return existing;
+    }
+    delete lastErrorByKind[kind];
+    const promise = (kind === 'knowledge' ? syncCanonicalKnowledgeBase() : syncCanonicalBotRules())
+        .then((response) => {
+            lastResultByKind[kind] = response;
+            delete inFlightByKind[kind];
+            notifyListeners();
+            return response;
+        })
+        .catch((err) => {
+            lastErrorByKind[kind] = err instanceof Error ? err.message : String(err);
+            delete inFlightByKind[kind];
+            notifyListeners();
+            throw err;
+        });
+    inFlightByKind[kind] = promise;
+    notifyListeners();
+    return promise;
+}
+
 /**
  * Button that loads the canonical Treejar knowledge base or bot rules through
- * the admin API (after a localized confirm), shows the result counts inline and
- * lets the caller refetch its list.
+ * the admin API (after a localized confirm), persists in-flight/result state
+ * across tab switches, shows the result counts inline and lets the caller
+ * refetch its list.
  */
 export default function CanonicalSyncButton({
     kind,
@@ -22,27 +59,34 @@ export default function CanonicalSyncButton({
     tone?: 'light' | 'dark';
 }) {
     const { t } = useI18n();
-    const [busy, setBusy] = useState(false);
-    const [result, setResult] = useState<AdminCanonicalSyncResult | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    const [, setTick] = useState(0);
+    const busy = Boolean(inFlightByKind[kind]);
+    const result = lastResultByKind[kind] ?? null;
+    const error = lastErrorByKind[kind] ?? null;
+
+    useEffect(() => {
+        const listener = () => setTick((count) => count + 1);
+        listeners.add(listener);
+        const activePromise = inFlightByKind[kind];
+        if (activePromise && onSynced) {
+            void activePromise.then((res) => onSynced(res)).catch(() => undefined);
+        }
+        return () => {
+            listeners.delete(listener);
+        };
+    }, [kind, onSynced]);
 
     const buttonLabel = kind === 'knowledge' ? t('sync.kbButton') : t('sync.rulesButton');
+    const helpText = kind === 'knowledge' ? t('sync.kbHelp') : t('sync.rulesHelp');
     const confirmText = kind === 'knowledge' ? t('sync.kbConfirm') : t('sync.rulesConfirm');
 
     async function handleClick() {
         if (!globalThis.confirm(confirmText)) return;
-        setBusy(true);
-        setError(null);
         try {
-            const response = kind === 'knowledge'
-                ? await syncCanonicalKnowledgeBase()
-                : await syncCanonicalBotRules();
-            setResult(response);
+            const response = await runCanonicalSync(kind);
             await onSynced?.(response);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : t('common.unknownError'));
-        } finally {
-            setBusy(false);
+        } catch {
+            // Error is stored in lastErrorByKind[kind] and rendered below.
         }
     }
 
@@ -54,9 +98,12 @@ export default function CanonicalSyncButton({
 
     return (
         <div className="space-y-2" data-canonical-sync={kind}>
-            <button type="button" disabled={busy} onClick={() => void handleClick()} className={buttonClass}>
-                {busy ? t('sync.running') : buttonLabel}
-            </button>
+            <div className="inline-flex items-center gap-1.5">
+                <button type="button" disabled={busy} onClick={() => void handleClick()} className={buttonClass}>
+                    {busy ? t('sync.running') : buttonLabel}
+                </button>
+                <HelpTooltip text={helpText} tone={tone} />
+            </div>
             {result && (
                 <p
                     className={tone === 'dark' ? 'text-xs text-emerald-200' : 'text-xs leading-5 text-[#166534]'}

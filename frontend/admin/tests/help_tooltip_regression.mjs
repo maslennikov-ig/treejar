@@ -20,6 +20,8 @@ try {
     assert.match(source, /'Escape'/, 'HelpTooltip should close on Escape');
     assert.match(source, /duration-\[40ms\]/, 'Tooltip transition should be below 50ms');
     assert.match(source, /position: 'fixed'/, 'Tooltip should escape clipping containers');
+    assert.match(source, /zIndex:\s*9999/, 'Tooltip should use high zIndex above charts and overlays');
+    assert.match(source, /createPortal/, 'Tooltip should portal to document.body when available');
     assert.match(source, /window\.innerWidth/, 'Tooltip should clamp to the viewport');
     assert.doesNotMatch(source, /\btitle=/, 'HelpTooltip must not use the native title attribute');
 
@@ -37,7 +39,7 @@ try {
         format: 'esm',
         platform: 'node',
         write: false,
-        external: ['react', 'react/jsx-runtime'],
+        external: ['react', 'react-dom', 'react/jsx-runtime'],
         tsconfig: path.join(frontendRoot, 'tsconfig.json'),
     });
 
