@@ -170,7 +170,7 @@ async def get_admin_bot_rule(
     rule_id: uuid.UUID,
 ) -> AdminBotRuleRead:
     rule = await db.get(BotBehaviorRule, rule_id)
-    if rule is None or rule.archived_at is not None:
+    if rule is None:
         raise HTTPException(status_code=404, detail="Bot behavior rule not found")
     return _read(rule)
 
@@ -223,7 +223,7 @@ async def update_admin_bot_rule(
     request: object | None,
 ) -> AdminBotRuleRead:
     rule = await db.get(BotBehaviorRule, rule_id)
-    if rule is None or rule.archived_at is not None:
+    if rule is None:
         raise HTTPException(status_code=404, detail="Bot behavior rule not found")
 
     update_data = body.model_dump(exclude_unset=True)
@@ -373,7 +373,7 @@ async def test_admin_bot_rule(
     body: AdminBotRulePreviewRequest,
 ) -> AdminBotRulePreviewResponse:
     rule = await db.get(BotBehaviorRule, rule_id)
-    if rule is None or rule.archived_at is not None:
+    if rule is None:
         raise HTTPException(status_code=404, detail="Bot behavior rule not found")
 
     preview = await preview_admin_bot_rules(db=db, body=body)

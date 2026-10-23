@@ -132,6 +132,9 @@ export function formatCriteriaLabel(key: string): string {
 
 function isGlm5Model(model: string): boolean {
     const normalized = model.toLowerCase();
+    if (normalized.includes('glm-5.2')) {
+        return false;
+    }
     return normalized.includes('glm-5') || normalized.includes('glm5');
 }
 

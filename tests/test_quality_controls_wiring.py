@@ -429,3 +429,43 @@ async def test_admin_manager_review_endpoint_uses_gate_settings(
     assert "criteria" in captured["evaluator_kwargs"]
     assert callable(captured["before_llm_call"])
     assert callable(captured["after_llm_call"])
+
+
+@pytest.mark.asyncio
+async def test_release_daily_call_returns_slot_and_manager_payload_preserves_excluded_rules() -> (
+    None
+):
+    from src.quality.config import release_ai_quality_daily_call_from_ctx
+    from src.quality.manager_job import (
+        _evaluation_payload,
+        _manager_result_from_attempt_payload,
+    )
+    from src.quality.manager_schemas import (
+        ManagerCriterionScore,
+        ManagerEvaluationResult,
+    )
+
+    redis = FakeRedis()
+    config = _manual_config(max_calls_per_run=1, max_calls_per_day=1)
+    gate = evaluate_ai_quality_run_gate(
+        config, scope=AIQualityScope.RED_FLAGS, trigger="manual"
+    )
+    ctx = {"redis": redis}
+
+    assert await reserve_ai_quality_daily_call(ctx, gate) is None
+    await release_ai_quality_daily_call_from_ctx(ctx, gate)
+    assert await reserve_ai_quality_daily_call(ctx, gate) is None
+
+    criteria = [
+        ManagerCriterionScore(rule_number=n, rule_name=f"r{n}", score=2, comment="ok")
+        for n in range(1, 11)
+    ]
+    evaluation = ManagerEvaluationResult(
+        criteria=criteria,
+        summary="ok",
+        total_score=20.0,
+        rating="excellent",
+    ).with_excluded_rules(frozenset({1, 2}))
+    payload = _evaluation_payload(evaluation, MagicMock(deal_converted=False))
+    restored, _ = _manager_result_from_attempt_payload(payload)
+    assert restored.excluded_rules == frozenset({1, 2})

@@ -1,4 +1,4 @@
-# Stage tj-ierv — Admin dashboard polish (local, not deployed)
+# Stage tj-ierv — Admin dashboard polish (owner-authorized delivery)
 
 - Branch `codex/tj-ierv-admin-dashboard`, worktree `.worktrees/tj-ierv-admin-dashboard`,
   base `origin/main` 2629bbb. Spec `docs/specs/admin-dashboard-polish/spec.md`,

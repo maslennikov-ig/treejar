@@ -601,6 +601,30 @@ async def consume_ai_quality_daily_call_from_ctx(
     return await reserve_ai_quality_daily_call(ctx, gate, now=now) is None
 
 
+async def release_ai_quality_daily_call_from_ctx(
+    ctx: Mapping[str, Any],
+    gate: AIQualityRunGate,
+    *,
+    now: datetime | None = None,
+) -> None:
+    """Return a reserved UTC-day call slot when an attempt is skipped before LLM call."""
+    if not gate.allowed or gate.max_calls_per_day <= 0:
+        return
+    redis = _ctx_redis(ctx)
+    if redis is None:
+        return
+    day, _ = _utc_day(now)
+    key = _daily_calls_key(gate.scope, day)
+    try:
+        await redis.decr(key)
+    except Exception:
+        logger.warning(
+            "Failed to release AI Quality daily call quota for %s",
+            gate.scope.value,
+            exc_info=True,
+        )
+
+
 def _int_or_none(value: Any) -> int | None:
     if isinstance(value, bytes):
         value = value.decode()

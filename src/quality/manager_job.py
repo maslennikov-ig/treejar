@@ -40,6 +40,7 @@ from src.quality.config import (
     consume_ai_quality_daily_call_from_ctx,
     get_ai_quality_run_gate_from_ctx,
     record_ai_quality_spend_from_ctx,
+    release_ai_quality_daily_call_from_ctx,
     reserve_ai_quality_daily_sample_from_ctx,
 )
 from src.quality.manager_evaluator import (
@@ -133,7 +134,8 @@ def _evaluation_payload(evaluation: Any, metrics: Any) -> dict[str, Any]:
     evaluation_payload = (
         model_dump(mode="json") if callable(model_dump) else vars(evaluation)
     )
-    return {
+    excluded_rules: object = getattr(evaluation, "excluded_rules", frozenset())
+    payload: dict[str, Any] = {
         "evaluation": evaluation_payload,
         "metrics": {
             "first_response_time_seconds": getattr(
@@ -144,6 +146,9 @@ def _evaluation_payload(evaluation: Any, metrics: Any) -> dict[str, Any]:
             "deal_amount": getattr(metrics, "deal_amount", None),
         },
     }
+    if isinstance(excluded_rules, frozenset) and excluded_rules:
+        payload["excluded_rules"] = sorted(excluded_rules)
+    return payload
 
 
 async def _escalation_activity_at(db: Any, escalation: Any) -> datetime:
@@ -202,6 +207,11 @@ def _manager_result_from_attempt_payload(
         raise ValueError("Invalid manager attempt payload")
 
     evaluation = ManagerEvaluationResult.model_validate(evaluation_payload)
+    raw_excluded = payload.get("excluded_rules") if isinstance(payload, dict) else None
+    if isinstance(raw_excluded, list):
+        evaluation = evaluation.with_excluded_rules(
+            frozenset(int(item) for item in raw_excluded if isinstance(item, int))
+        )
     metrics = ManagerMetrics(
         first_response_time_seconds=metrics_payload.get("first_response_time_seconds"),
         message_count=metrics_payload.get("message_count"),
@@ -394,6 +404,8 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
                     provider=_OPENROUTER_PROVIDER,
                 )
                 if lease is None:
+                    if gate.transcript_mode != AIQualityTranscriptMode.DISABLED:
+                        await release_ai_quality_daily_call_from_ctx(ctx, gate)
                     if await _replay_terminal_manager_review(
                         db=db,
                         redis=redis,

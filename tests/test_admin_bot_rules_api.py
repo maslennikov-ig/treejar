@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import AsyncClient
@@ -173,3 +174,57 @@ async def test_create_admin_bot_rule_indexes_and_audits(
     assert rule.has_embedding is True
     assert audit_calls[0]["action"] == "bot_rule.create"
     assert audit_calls[0]["after"]["title"] == "Ask for customer name"
+
+
+@pytest.mark.asyncio
+async def test_update_admin_bot_rule_can_unarchive_rule(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.models.bot_behavior_rule import BotBehaviorRule
+    from src.schemas.admin import AdminBotRuleUpdate
+    from src.services import admin_bot_rules
+
+    rule_id = uuid.uuid4()
+    archived_rule = BotBehaviorRule(
+        id=rule_id,
+        title="Archived rule",
+        type="hard_rule",
+        status="archived",
+        priority=10,
+        scope="global",
+        stage=None,
+        language="en",
+        segment=None,
+        instruction="Do not invent facts.",
+        trigger_examples=["test"],
+        created_by="admin",
+        updated_by="admin",
+        created_at=datetime(2026, 5, 8, 12, 0, 0),
+        updated_at=datetime(2026, 5, 8, 12, 0, 0),
+        archived_at=datetime(2026, 5, 8, 13, 0, 0),
+    )
+
+    class FakeDB:
+        async def get(self, model: object, key: object) -> object | None:
+            assert model is BotBehaviorRule
+            assert key == rule_id
+            return archived_rule
+
+        async def commit(self) -> None:
+            pass
+
+        async def refresh(self, row: object) -> None:
+            pass
+
+    monkeypatch.setattr(admin_bot_rules, "log_admin_action", AsyncMock())
+
+    updated = await admin_bot_rules.update_admin_bot_rule(
+        db=FakeDB(),  # type: ignore[arg-type]
+        rule_id=rule_id,
+        body=AdminBotRuleUpdate(status="active"),
+        request=None,
+    )
+
+    assert updated.status == "active"
+    assert updated.archived_at is None
+    assert archived_rule.archived_at is None

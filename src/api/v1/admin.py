@@ -402,7 +402,9 @@ async def put_admin_ai_quality_controls(
 ) -> AIQualityControlsResponse:
     """Replace SystemConfig-backed AI Quality Controls."""
     saved = await save_ai_quality_controls_config(db, body)
-    return build_ai_quality_response(saved)
+    response = build_ai_quality_response(saved)
+    response.usage_today = await get_ai_quality_usage_today(saved)
+    return response
 
 
 @router.patch("/ai-quality-controls", response_model=AIQualityControlsResponse)
@@ -414,7 +416,9 @@ async def patch_admin_ai_quality_controls(
     current = await get_ai_quality_controls_config(db)
     merged = merge_ai_quality_controls_update(current, body)
     saved = await save_ai_quality_controls_config(db, merged)
-    return build_ai_quality_response(saved)
+    response = build_ai_quality_response(saved)
+    response.usage_today = await get_ai_quality_usage_today(saved)
+    return response
 
 
 @router.get(

@@ -38,6 +38,7 @@ from src.quality.config import (
     consume_ai_quality_daily_call_from_ctx,
     get_ai_quality_run_gate_from_ctx,
     record_ai_quality_spend_from_ctx,
+    release_ai_quality_daily_call_from_ctx,
     reserve_ai_quality_daily_sample_from_ctx,
 )
 from src.quality.evaluator import (
@@ -611,6 +612,8 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
                         cache_telemetry_enabled=gate.cache_telemetry_enabled,
                     )
                     if lease is None:
+                        if gate.transcript_mode != AIQualityTranscriptMode.DISABLED:
+                            await release_ai_quality_daily_call_from_ctx(ctx, gate)
                         if await _replay_terminal_red_flag_delivery(
                             db=db,
                             redis=redis,
@@ -801,6 +804,8 @@ async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
                         cache_telemetry_enabled=gate.cache_telemetry_enabled,
                     )
                     if lease is None:
+                        if gate.transcript_mode != AIQualityTranscriptMode.DISABLED:
+                            await release_ai_quality_daily_call_from_ctx(ctx, gate)
                         if await _replay_terminal_final_review(
                             db=db,
                             redis=redis,

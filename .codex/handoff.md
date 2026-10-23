@@ -1,9 +1,9 @@
 # Orchestrator Handoff
 
-## Stage tj-ierv (2026-10-23): admin dashboard polish — local, not deployed
+## Stage tj-ierv (2026-10-23): admin dashboard polish — owner-authorized deploy
 - Branch codex/tj-ierv-admin-dashboard; summary .codex/stages/tj-ierv/summary.md.
-- Canonical KB/rules sync is button-only (`/sync-canonical`); syncing rules
-  changes live bot prompts; deploy / prod sync need separate owner approval.
+- Canonical KB/rules sync is button-only (`/sync-canonical`); owner authorized
+  review follow-up fixes plus push/merge/deploy to main (`noor.starec.ai`).
 
 ## October tester feedback — authorized completion2026-10-14
 
