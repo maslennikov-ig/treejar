@@ -1,160 +1,164 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useI18n } from '@/i18n';
 
-const TOOLTIP_WIDTH = 288;
-const VIEWPORT_MARGIN = 8;
+import { useI18n } from '../i18n';
 
-interface TooltipPosition {
-    top: number;
-    left: number;
-    width: number;
-    placement: 'top' | 'bottom';
-}
-
-function computeTooltipPosition(rect: DOMRect): TooltipPosition {
-    const viewportWidth = typeof window === 'undefined' ? 1024 : window.innerWidth;
-    const width = Math.min(TOOLTIP_WIDTH, viewportWidth - VIEWPORT_MARGIN * 2);
-    const centered = rect.left + rect.width / 2 - width / 2;
-    const left = Math.max(VIEWPORT_MARGIN, Math.min(centered, viewportWidth - width - VIEWPORT_MARGIN));
-    // Flip below the trigger when there is not enough room above it.
-    const placement: TooltipPosition['placement'] = rect.top > 180 ? 'top' : 'bottom';
-    const top = placement === 'top' ? rect.top - 8 : rect.bottom + 8;
-    return { top, left, width, placement };
-}
-
-/**
- * Accessible "?" help icon. Opens instantly on hover, focus or click (no native
- * `title` delay), closes on mouse leave, blur or Escape, and is positioned with
- * `position: fixed` + viewport clamping so it never clips inside scroll panes.
- */
-export function HelpTooltip({
-    text,
-    label,
-    className,
-    tone = 'light',
-}: {
+export interface HelpTooltipProps {
     text: string;
     label?: string;
     className?: string;
-    tone?: 'light' | 'dark';
-}) {
+}
+
+interface PopoverPosition {
+    top: number;
+    left: number;
+    placement: 'top' | 'bottom';
+}
+
+const POPOVER_WIDTH = 288;
+const VIEWPORT_MARGIN = 12;
+
+export function HelpTooltip({ text, label = '?', className = '' }: HelpTooltipProps) {
+    const id = useId();
+    const triggerRef = useRef<HTMLButtonElement | null>(null);
     const [open, setOpen] = useState(false);
-    const [position, setPosition] = useState<TooltipPosition | null>(null);
-    const buttonRef = useRef<HTMLButtonElement | null>(null);
-    const tooltipId = useId();
+    const [pinned, setPinned] = useState(false);
+    const [position, setPosition] = useState<PopoverPosition>({
+        top: 0,
+        left: 0,
+        placement: 'top',
+    });
 
-    const show = useCallback(() => {
-        const element = buttonRef.current;
-        if (element) {
-            setPosition(computeTooltipPosition(element.getBoundingClientRect()));
+    const updatePosition = () => {
+        const trigger = triggerRef.current;
+        if (!trigger || typeof window === 'undefined') {
+            return;
         }
-        setOpen(true);
-    }, []);
+        const rect = trigger.getBoundingClientRect();
+        const half = POPOVER_WIDTH / 2;
+        const center = rect.left + rect.width / 2;
+        const maxLeft = Math.max(
+            VIEWPORT_MARGIN + half,
+            window.innerWidth - VIEWPORT_MARGIN - half,
+        );
+        const left = Math.min(Math.max(center, VIEWPORT_MARGIN + half), maxLeft);
+        const placement = rect.top > 130 ? 'top' : 'bottom';
+        const top = placement === 'top' ? rect.top - 8 : rect.bottom + 8;
+        setPosition({ top, left, placement });
+    };
 
-    const hide = useCallback(() => setOpen(false), []);
+    const show = () => {
+        updatePosition();
+        setOpen(true);
+    };
 
     useEffect(() => {
-        if (!open || typeof document === 'undefined') return undefined;
-        function onKeyDown(event: KeyboardEvent) {
-            if (event.key === 'Escape') setOpen(false);
+        if (!open) {
+            return;
         }
-        function onScroll() {
-            setOpen(false);
-        }
-        document.addEventListener('keydown', onKeyDown);
-        window.addEventListener('scroll', onScroll, true);
-        window.addEventListener('resize', onScroll);
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setPinned(false);
+                setOpen(false);
+            }
+        };
+        const onPointerDown = (event: MouseEvent) => {
+            if (!triggerRef.current?.contains(event.target as Node)) {
+                setPinned(false);
+                setOpen(false);
+            }
+        };
+        const onViewportChange = () => updatePosition();
+        window.addEventListener('keydown', onKeyDown);
+        window.addEventListener('mousedown', onPointerDown);
+        window.addEventListener('scroll', onViewportChange, true);
+        window.addEventListener('resize', onViewportChange);
         return () => {
-            document.removeEventListener('keydown', onKeyDown);
-            window.removeEventListener('scroll', onScroll, true);
-            window.removeEventListener('resize', onScroll);
+            window.removeEventListener('keydown', onKeyDown);
+            window.removeEventListener('mousedown', onPointerDown);
+            window.removeEventListener('scroll', onViewportChange, true);
+            window.removeEventListener('resize', onViewportChange);
         };
     }, [open]);
 
-    function handleClick(event: ReactMouseEvent<HTMLButtonElement>) {
-        // Do not toggle surrounding <label>/row handlers.
-        event.preventDefault();
-        event.stopPropagation();
-        show();
-    }
-
-    const style: CSSProperties | undefined = position
-        ? {
-            position: 'fixed',
-            top: position.top,
-            left: position.left,
-            width: position.width,
-            transform: position.placement === 'top' ? 'translateY(-100%)' : undefined,
-            zIndex: 9999,
-            opacity: 1,
-        }
-        : undefined;
-
-    const tooltipNode = open && position ? (
+    const visible = open || pinned;
+    const popover = (
         <span
-            id={tooltipId}
+            id={id}
             role="tooltip"
-            style={style}
-            className="pointer-events-none whitespace-normal rounded-md border border-[#1e293b] bg-[#0b1c30] px-3 py-2 text-left text-xs font-normal normal-case leading-5 tracking-normal text-white opacity-100 shadow-xl transition-opacity duration-[40ms]"
+            aria-hidden={!visible}
+            style={{
+                position: 'fixed',
+                top: `${position.top}px`,
+                left: `${position.left}px`,
+                width: `${POPOVER_WIDTH}px`,
+                maxWidth: 'calc(100vw - 24px)',
+                zIndex: 9999,
+                opacity: visible ? 1 : 0,
+                transform:
+                    position.placement === 'top'
+                        ? 'translate(-50%, -100%)'
+                        : 'translate(-50%, 0)',
+            }}
+            className={`admin-tooltip pointer-events-none rounded-lg px-3 py-2 text-left text-xs font-normal normal-case tracking-normal leading-relaxed shadow-xl transition-opacity duration-[40ms] ${
+                visible ? 'opacity-100' : 'opacity-0'
+            }`}
         >
             {text}
         </span>
-    ) : null;
+    );
 
     return (
-        <span className={['relative inline-flex align-middle', className].filter(Boolean).join(' ')}>
+        <span className={`relative inline-flex items-center align-middle ${className}`}>
             <button
-                ref={buttonRef}
+                ref={triggerRef}
                 type="button"
-                aria-label={label ?? text}
-                aria-describedby={open ? tooltipId : undefined}
-                aria-expanded={open}
+                aria-label={text}
+                aria-expanded={visible}
+                aria-describedby={visible ? id : undefined}
                 data-tooltip={text}
                 onMouseEnter={show}
-                onMouseLeave={hide}
+                onMouseLeave={() => {
+                    if (!pinned) {
+                        setOpen(false);
+                    }
+                }}
                 onFocus={show}
-                onBlur={hide}
-                onClick={handleClick}
-                className={
-                    tone === 'dark'
-                        ? 'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-slate-500 text-[10px] font-bold leading-none text-slate-300 hover:border-emerald-300 hover:text-emerald-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400'
-                        : 'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-[#9aa3b5] text-[10px] font-bold leading-none text-[#596179] hover:border-[#0058be] hover:text-[#0058be] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]'
-                }
+                onBlur={() => {
+                    if (!pinned) {
+                        setOpen(false);
+                    }
+                }}
+                onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    updatePosition();
+                    setPinned((current) => {
+                        const next = !current;
+                        setOpen(next);
+                        return next;
+                    });
+                }}
+                className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-[10px] font-bold leading-none text-slate-600 transition-colors duration-[40ms] hover:border-[#2170e4] hover:bg-[#2170e4] hover:text-white focus:border-[#2170e4] focus:bg-[#2170e4] focus:text-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
             >
-                ?
+                {label}
             </button>
-            {tooltipNode && (typeof document !== 'undefined' && document.body ? createPortal(tooltipNode, document.body) : tooltipNode)}
+            {typeof document !== 'undefined' && document.body
+                ? createPortal(popover, document.body)
+                : popover}
         </span>
     );
 }
 
-function readCollapsed(storageKey: string, fallback: boolean): boolean {
-    try {
-        if (typeof window === 'undefined' || !window.localStorage) return fallback;
-        const stored = window.localStorage.getItem(`treejar_admin_banner_${storageKey}`);
-        if (stored === '1') return true;
-        if (stored === '0') return false;
-    } catch {
-        // Storage may be unavailable (private mode); keep the default.
-    }
-    return fallback;
+export interface SectionInfoBannerProps {
+    storageKey: string;
+    title: string;
+    description: string;
+    runtime: string;
+    actions?: React.ReactNode;
+    defaultCollapsed?: boolean;
 }
 
-function writeCollapsed(storageKey: string, value: boolean): void {
-    try {
-        if (typeof window === 'undefined' || !window.localStorage) return;
-        window.localStorage.setItem(`treejar_admin_banner_${storageKey}`, value ? '1' : '0');
-    } catch {
-        // Ignore storage failures.
-    }
-}
-
-/**
- * Collapsible section guide shown at the top of every dashboard view: what the
- * section does and how it connects to the live Noor runtime.
- */
 export function SectionInfoBanner({
     storageKey,
     title,
@@ -162,63 +166,70 @@ export function SectionInfoBanner({
     runtime,
     actions,
     defaultCollapsed = false,
-}: {
-    storageKey: string;
-    title: string;
-    description: string;
-    runtime?: string;
-    actions?: ReactNode;
-    defaultCollapsed?: boolean;
-}) {
+}: SectionInfoBannerProps) {
     const { t } = useI18n();
-    const [collapsed, setCollapsed] = useState(() => readCollapsed(storageKey, defaultCollapsed));
-    const bodyId = useId();
+    const fullKey = `treejar_admin_banner_${storageKey}`;
+    const [collapsed, setCollapsed] = useState<boolean>(() => {
+        try {
+            const stored = globalThis.localStorage?.getItem(fullKey);
+            if (stored === '1') return true;
+            if (stored === '0') return false;
+            return defaultCollapsed;
+        } catch {
+            return defaultCollapsed;
+        }
+    });
 
-    function toggle() {
+    const toggle = () => {
         setCollapsed((current) => {
             const next = !current;
-            writeCollapsed(storageKey, next);
+            try {
+                globalThis.localStorage?.setItem(fullKey, next ? '1' : '0');
+            } catch {
+                // Ignore storage quota / privacy mode failures.
+            }
             return next;
         });
-    }
+    };
 
     return (
-        <div
+        <section
             data-section-banner={storageKey}
-            className="border-b border-[#dbe5ff] bg-[#f3f7ff] px-6 py-3 text-sm text-[#27324a]"
+            className="admin-panel mb-3 rounded-xl px-3.5 py-2 shadow-2xs"
         >
-            <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-2">
-                    <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#0058be] text-[11px] font-bold text-white">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-blue-50 text-xs font-bold text-[#2170e4] dark:bg-blue-950/60 dark:text-blue-400">
                         i
                     </span>
-                    <div className="min-w-0">
-                        <p className="font-semibold text-[#0b1c30]">{title}</p>
-                        {!collapsed && (
-                            <div id={bodyId} className="mt-1 space-y-1 leading-6">
-                                <p>{description}</p>
-                                {runtime && (
-                                    <p className="text-[#3f465c]">
-                                        <span className="font-medium text-[#0b1c30]">{t('banner.runtimeLabel')}</span> {runtime}
-                                    </p>
-                                )}
-                                {actions && <div className="flex flex-wrap gap-2 pt-1">{actions}</div>}
-                            </div>
-                        )}
-                    </div>
+                    <h2 className="truncate text-xs font-bold text-slate-900 dark:text-slate-100">
+                        {title}
+                    </h2>
+                    <HelpTooltip text={`${description} ${t('banner.runtimePrefix')} ${runtime}`} />
                 </div>
-                <button
-                    type="button"
-                    onClick={toggle}
-                    aria-expanded={!collapsed}
-                    aria-controls={bodyId}
-                    className="shrink-0 rounded-md border border-[#c6d3f5] bg-white px-2.5 py-1 text-xs font-medium text-[#0058be] hover:bg-[#eaf1ff]"
-                >
-                    {collapsed ? t('banner.expand') : t('banner.collapse')}
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                    {actions}
+                    <button
+                        type="button"
+                        onClick={toggle}
+                        aria-expanded={!collapsed}
+                        className="admin-subpanel rounded-lg px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                    >
+                        {collapsed ? t('banner.expand') : t('banner.collapse')}
+                    </button>
+                </div>
             </div>
-        </div>
+            {!collapsed && (
+                <div className="mt-2 grid gap-2 border-t border-slate-100 pt-2 text-xs leading-relaxed text-slate-600 md:grid-cols-[1.5fr_1fr] dark:border-slate-800 dark:text-slate-300">
+                    <p>{description}</p>
+                    <p className="admin-subpanel rounded-lg px-3 py-1.5 text-[11px]">
+                        <span className="font-semibold text-slate-900 dark:text-slate-100">
+                            {t('banner.runtimePrefix')}{' '}
+                        </span>
+                        {runtime}
+                    </p>
+                </div>
+            )}
+        </section>
     );
 }
-
-export default HelpTooltip;

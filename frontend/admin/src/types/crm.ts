@@ -170,6 +170,7 @@ export interface AdminKnowledgeBaseRead {
     category: string | null;
     has_embedding: boolean;
     is_auto_generated: boolean;
+    is_canonical_customized?: boolean;
     original_question: string | null;
     manager_draft: string | null;
     created_at: string;
@@ -228,6 +229,9 @@ export interface AdminBotRuleRead {
     instruction: string;
     trigger_examples: string[];
     has_embedding: boolean;
+    source_type?: string;
+    canonical_key?: string | null;
+    is_canonical_customized?: boolean;
     created_by: string;
     updated_by: string;
     created_at: string;
@@ -262,15 +266,111 @@ export interface AdminBotRulePreviewResponse {
     rule_count: number;
 }
 
+export type CanonicalSyncMode = 'safe' | 'full_reset';
+
 export interface AdminCanonicalSyncResult {
     ok: boolean;
     status: string;
+    mode?: CanonicalSyncMode;
     created: number;
     updated: number;
     restored: number;
     unchanged: number;
+    skipped_customized?: number;
+    skipped_deleted?: number;
     total_active: number;
     detail: string | null;
+}
+
+export interface AdminCanonicalSyncPreviewItem {
+    key: string;
+    title: string;
+    category: string | null;
+    status: 'missing' | 'customized' | 'deleted' | 'unchanged' | 'unindexed';
+    changed_fields: string[];
+}
+
+export interface AdminCanonicalSyncPreview {
+    kind: 'knowledge' | 'bot_rules';
+    total_templates: number;
+    will_create: number;
+    customized: number;
+    deleted_or_archived: number;
+    unchanged: number;
+    unindexed: number;
+    items: AdminCanonicalSyncPreviewItem[];
+}
+
+export interface AdminCanonicalSyncStatus {
+    kind: 'knowledge' | 'bot_rules';
+    running: boolean;
+    last_mode: string | null;
+    last_synced_at: string | null;
+    last_result: AdminCanonicalSyncResult | null;
+    total_templates: number;
+    active_canonical_count: number;
+    customized_count: number;
+    unindexed_count: number;
+}
+
+export interface AdminEscalationQueueItem {
+    id: string;
+    conversation_id: string;
+    phone: string;
+    customer_name: string | null;
+    reason: string;
+    category: string;
+    assigned_to: string | null;
+    status: string;
+    notes: string | null;
+    sales_stage: string | null;
+    created_at: string;
+    updated_at: string | null;
+}
+
+export interface AdminCatalogSyncSourceStatus {
+    source: string;
+    last_triggered_at: string | null;
+    last_status: string;
+    job_name: string | null;
+    detail: string | null;
+}
+
+export interface AdminZohoSnapshotStatus {
+    present: boolean;
+    status: 'fresh' | 'stale' | 'missing';
+    item_count: number;
+    updated_at: string | null;
+    age_seconds: number | null;
+    ttl_seconds: number | null;
+}
+
+export interface AdminCatalogStatusResponse {
+    active_products_count: number;
+    total_products_count: number;
+    indexed_products_count: number;
+    sources: Record<string, AdminCatalogSyncSourceStatus>;
+    zoho_snapshot: AdminZohoSnapshotStatus;
+}
+
+export interface AdminSystemHealthContour {
+    id: string;
+    label: string;
+    status: 'ok' | 'warning' | 'error';
+    summary: string;
+    detail: string | null;
+    updated_at: string | null;
+}
+
+export interface AdminSystemHealthResponse {
+    overall_status: 'ok' | 'warning' | 'error';
+    contours: AdminSystemHealthContour[];
+    last_inbound_message_at: string | null;
+    active_kb_count: number;
+    active_bot_rules_count: number;
+    open_escalations_count: number;
+    pending_manager_reviews_count: number;
+    checked_at: string;
 }
 
 export interface AdminResetPreview {

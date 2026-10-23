@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+import time
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
@@ -20,10 +23,25 @@ from src.api.v1.reports import (
     ReportResponse,
     generate_report_endpoint,
 )
+from src.core.config import settings
 from src.core.database import get_db
+from src.core.redis import get_redis_client
+from src.integrations.inventory.stock_state import (
+    LEGACY_KEY as ZOHO_SNAPSHOT_LEGACY_KEY,
+)
+from src.integrations.inventory.stock_state import (
+    STATE_KEY as ZOHO_STOCK_STATE_KEY,
+)
+from src.integrations.inventory.stock_state import (
+    StockState,
+)
+from src.models.bot_behavior_rule import BotBehaviorRule
 from src.models.conversation import Conversation
 from src.models.escalation import Escalation
+from src.models.knowledge_base import KnowledgeBase
 from src.models.manager_review import ManagerReview
+from src.models.message import Message
+from src.models.product import Product
 from src.models.system_config import SystemConfig
 from src.models.system_prompt import SystemPrompt
 from src.quality.config import (
@@ -56,7 +74,14 @@ from src.schemas import (
     SettingsUpdate,
     TimeseriesResponse,
 )
-from src.schemas.admin import RecentFeedbackRead
+from src.schemas.admin import (
+    AdminCatalogStatusResponse,
+    AdminCatalogSyncSourceStatus,
+    AdminSystemHealthContour,
+    AdminSystemHealthResponse,
+    AdminZohoSnapshotStatus,
+    RecentFeedbackRead,
+)
 from src.services.admin_crm import (
     admin_ai_quality_evaluator_kwargs,
     record_admin_ai_quality_spend,
@@ -263,15 +288,303 @@ async def submit_client_self_test(
     return ClientSelfTestSubmitResponse(ok=True, submitted_count=len(body.items))
 
 
+_LAST_CATALOG_SYNC_SOURCES: dict[str, dict[str, Any]] = {}
+
+
+async def _read_zoho_snapshot_status() -> AdminZohoSnapshotStatus:
+    """Inspect Redis for Zoho stock snapshot freshness without external calls."""
+    try:
+        redis = get_redis_client()
+        raw_v2 = await redis.get(ZOHO_STOCK_STATE_KEY)
+        state = StockState.from_raw(raw_v2) if raw_v2 else None
+        if state is not None:
+            latest_ts = max(
+                [
+                    ts
+                    for ts in [
+                        state.full_at,
+                        state.delta_at,
+                        *(state.observed.values() if state.observed else []),
+                    ]
+                    if isinstance(ts, int | float) and ts > 0
+                ],
+                default=None,
+            )
+            ttl = await redis.ttl(ZOHO_STOCK_STATE_KEY)
+            ttl_val = int(ttl) if isinstance(ttl, int) and ttl >= 0 else None
+            age_sec = (
+                max(0, int(time.time() - latest_ts)) if latest_ts is not None else None
+            )
+            updated_dt = (
+                datetime.fromtimestamp(latest_ts, UTC)
+                if latest_ts is not None
+                else None
+            )
+            fresh = age_sec is not None and age_sec <= 3600
+            return AdminZohoSnapshotStatus(
+                present=True,
+                status="fresh" if fresh else "stale",
+                item_count=len(state.items),
+                updated_at=updated_dt,
+                age_seconds=age_sec,
+                ttl_seconds=ttl_val,
+            )
+
+        raw_v1 = await redis.get(ZOHO_SNAPSHOT_LEGACY_KEY)
+        if raw_v1:
+            ttl = await redis.ttl(ZOHO_SNAPSHOT_LEGACY_KEY)
+            ttl_val = int(ttl) if isinstance(ttl, int) and ttl >= 0 else None
+            parsed = json.loads(raw_v1) if isinstance(raw_v1, str | bytes) else {}
+            items = parsed.get("items", parsed) if isinstance(parsed, dict) else {}
+            item_count = len(items) if isinstance(items, dict | list) else 0
+            return AdminZohoSnapshotStatus(
+                present=True,
+                status="fresh" if (ttl_val is None or ttl_val > 300) else "stale",
+                item_count=item_count,
+                updated_at=None,
+                age_seconds=None,
+                ttl_seconds=ttl_val,
+            )
+    except Exception:
+        pass
+    return AdminZohoSnapshotStatus(present=False, status="missing", item_count=0)
+
+
 @router.post("/products/sync", response_model=ProductSyncResponse)
 async def trigger_admin_product_sync(
     request: Request,
     body: Annotated[ProductSyncRequest, Body(default_factory=ProductSyncRequest)],
 ) -> ProductSyncResponse:
     """Queue a protected product sync via the shared admin session."""
-    from src.api.v1.products import sync_products as sync_products_endpoint
+    from src.api.v1.products import (
+        SYNC_JOB_BY_SOURCE,
+    )
+    from src.api.v1.products import (
+        sync_products as sync_products_endpoint,
+    )
 
-    return await sync_products_endpoint(body=body, request=request, _=None)
+    result = await sync_products_endpoint(body=body, request=request, _=None)
+    source_key = "zoho" if body.source.strip().lower() == "zoho" else "treejar"
+    _LAST_CATALOG_SYNC_SOURCES[source_key] = {
+        "source": source_key,
+        "last_triggered_at": datetime.now(UTC),
+        "last_status": "queued",
+        "job_name": SYNC_JOB_BY_SOURCE.get(body.source.strip().lower()),
+        "detail": f"Queued {source_key} sync job",
+    }
+    return result
+
+
+@router.get("/catalog/status", response_model=AdminCatalogStatusResponse)
+async def get_admin_catalog_status(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AdminCatalogStatusResponse:
+    """Return persisted catalog sync status, product counts, and Zoho stock freshness."""
+    active_count = 0
+    total_count = 0
+    indexed_count = 0
+    latest_product_update: datetime | None = None
+    try:
+        active_count = int(
+            await db.scalar(
+                select(func.count())
+                .select_from(Product)
+                .where(Product.is_active.is_(True))
+            )
+            or 0
+        )
+        total_count = int(
+            await db.scalar(select(func.count()).select_from(Product)) or 0
+        )
+        indexed_count = int(
+            await db.scalar(
+                select(func.count())
+                .select_from(Product)
+                .where(Product.is_active.is_(True), Product.embedding.is_not(None))
+            )
+            or 0
+        )
+        latest_product_update = await db.scalar(select(func.max(Product.updated_at)))
+    except Exception:
+        pass
+
+    zoho_snapshot = await _read_zoho_snapshot_status()
+    treejar_mem = _LAST_CATALOG_SYNC_SOURCES.get("treejar")
+    zoho_mem = _LAST_CATALOG_SYNC_SOURCES.get("zoho")
+
+    treejar_status = AdminCatalogSyncSourceStatus(
+        source="treejar",
+        last_triggered_at=(
+            treejar_mem["last_triggered_at"] if treejar_mem else latest_product_update
+        ),
+        last_status=(
+            treejar_mem["last_status"]
+            if treejar_mem
+            else ("synced" if active_count > 0 else "never")
+        ),
+        job_name="sync_products_from_treejar_catalog",
+        detail=(
+            treejar_mem["detail"]
+            if treejar_mem
+            else (f"Active products: {active_count}" if active_count > 0 else None)
+        ),
+    )
+    zoho_status = AdminCatalogSyncSourceStatus(
+        source="zoho",
+        last_triggered_at=(
+            zoho_mem["last_triggered_at"] if zoho_mem else zoho_snapshot.updated_at
+        ),
+        last_status=(
+            zoho_mem["last_status"]
+            if zoho_mem
+            else ("synced" if zoho_snapshot.present else "never")
+        ),
+        job_name="sync_products_from_zoho",
+        detail=(
+            zoho_mem["detail"]
+            if zoho_mem
+            else (
+                f"Snapshot items: {zoho_snapshot.item_count}"
+                if zoho_snapshot.present
+                else None
+            )
+        ),
+    )
+    return AdminCatalogStatusResponse(
+        active_products_count=active_count,
+        total_products_count=total_count,
+        indexed_products_count=indexed_count,
+        sources={"treejar": treejar_status, "zoho": zoho_status},
+        zoho_snapshot=zoho_snapshot,
+    )
+
+
+@router.get("/system/health", response_model=AdminSystemHealthResponse)
+async def get_admin_system_health(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AdminSystemHealthResponse:
+    """Return real operational contour checks without exposing secrets."""
+    now = datetime.now(UTC)
+    active_kb = 0
+    active_rules = 0
+    open_escalations = 0
+    pending_reviews = 0
+    last_inbound: datetime | None = None
+    bot_enabled = True
+
+    try:
+        active_kb = int(
+            await db.scalar(
+                select(func.count())
+                .select_from(KnowledgeBase)
+                .where(KnowledgeBase.deleted_at.is_(None))
+            )
+            or 0
+        )
+        active_rules = int(
+            await db.scalar(
+                select(func.count())
+                .select_from(BotBehaviorRule)
+                .where(
+                    BotBehaviorRule.archived_at.is_(None),
+                    BotBehaviorRule.status == "active",
+                )
+            )
+            or 0
+        )
+        open_escalations = int(
+            await db.scalar(
+                select(func.count())
+                .select_from(Escalation)
+                .where(
+                    Escalation.status.in_(["pending", "in_progress", "manual_takeover"])
+                )
+            )
+            or 0
+        )
+        pending_reviews_list = await list_pending_manager_reviews(db, limit=50)
+        pending_reviews = len(pending_reviews_list)
+        last_inbound = await db.scalar(
+            select(func.max(Message.created_at)).where(Message.role == "user")
+        )
+        bot_cfg = await db.scalar(
+            select(SystemConfig).where(SystemConfig.key == "bot_enabled")
+        )
+        if bot_cfg is not None:
+            bot_enabled = bool(bot_cfg.value)
+    except Exception:
+        pass
+
+    zoho_snapshot = await _read_zoho_snapshot_status()
+    wa_configured = bool(getattr(settings, "wazzup_api_key", None))
+    tg_configured = bool(
+        getattr(settings, "telegram_bot_token", None)
+        and getattr(settings, "telegram_chat_id", None)
+    )
+    llm_configured = bool(getattr(settings, "openrouter_api_key", None))
+
+    contours: list[AdminSystemHealthContour] = [
+        AdminSystemHealthContour(
+            id="whatsapp",
+            label="WhatsApp / Wazzup",
+            status="ok" if (wa_configured and bot_enabled) else "warning",
+            summary="active" if (wa_configured and bot_enabled) else "paused",
+            detail=(
+                f"Last inbound: {last_inbound.isoformat()}"
+                if last_inbound
+                else "Ready for inbound messages"
+            ),
+            updated_at=last_inbound,
+        ),
+        AdminSystemHealthContour(
+            id="telegram",
+            label="Telegram Bot & Alerts",
+            status="ok" if tg_configured else "warning",
+            summary="configured" if tg_configured else "not_configured",
+            detail="Webhook & operator alerts active"
+            if tg_configured
+            else "Missing token or chat ID",
+        ),
+        AdminSystemHealthContour(
+            id="zoho_inventory",
+            label="Zoho Inventory & Stock",
+            status="ok"
+            if zoho_snapshot.status == "fresh"
+            else ("warning" if zoho_snapshot.present else "warning"),
+            summary=zoho_snapshot.status,
+            detail=f"Snapshot SKU count: {zoho_snapshot.item_count}",
+            updated_at=zoho_snapshot.updated_at,
+        ),
+        AdminSystemHealthContour(
+            id="knowledge_rag",
+            label="RAG Knowledge & Rules",
+            status="ok" if (active_kb > 0 and active_rules > 0) else "warning",
+            summary="ready" if (active_kb > 0 and active_rules > 0) else "needs_seed",
+            detail=f"KB: {active_kb}, Rules: {active_rules}",
+        ),
+        AdminSystemHealthContour(
+            id="llm_engine",
+            label="LLM Runtime (OpenRouter)",
+            status="ok" if llm_configured else "warning",
+            summary="connected" if llm_configured else "unconfigured",
+            detail=str(getattr(settings, "openrouter_model_main", "configured")),
+        ),
+    ]
+    overall: Literal["ok", "warning", "error"] = (
+        "error"
+        if any(c.status == "error" for c in contours)
+        else ("warning" if any(c.status == "warning" for c in contours) else "ok")
+    )
+    return AdminSystemHealthResponse(
+        overall_status=overall,
+        contours=contours,
+        last_inbound_message_at=last_inbound,
+        active_kb_count=active_kb,
+        active_bot_rules_count=active_rules,
+        open_escalations_count=open_escalations,
+        pending_manager_reviews_count=pending_reviews,
+        checked_at=now,
+    )
 
 
 @router.get(

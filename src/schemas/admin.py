@@ -225,6 +225,9 @@ class AdminBotRuleRead(UUIDModel):
     instruction: str
     trigger_examples: list[str] = Field(default_factory=list)
     has_embedding: bool = False
+    source_type: str = "manual"
+    canonical_key: str | None = None
+    is_canonical_customized: bool = False
     created_by: str
     updated_by: str
     created_at: datetime
@@ -452,14 +455,55 @@ class AdminActionResult(BaseModel):
     detail: str | None = None
 
 
+CanonicalSyncMode = Literal["safe", "full_reset"]
+
+
+class AdminCanonicalSyncRequest(BaseModel):
+    mode: CanonicalSyncMode = "safe"
+
+
 class AdminCanonicalSyncResult(AdminActionResult):
     """Outcome of syncing canonical Treejar KB articles or bot rules."""
 
+    mode: CanonicalSyncMode = "safe"
     created: int = 0
     updated: int = 0
     restored: int = 0
     unchanged: int = 0
+    skipped_customized: int = 0
+    skipped_deleted: int = 0
     total_active: int = 0
+
+
+class AdminCanonicalSyncPreviewItem(BaseModel):
+    key: str
+    title: str
+    category: str | None = None
+    status: Literal["missing", "customized", "deleted", "unchanged", "unindexed"]
+    changed_fields: list[str] = Field(default_factory=list)
+
+
+class AdminCanonicalSyncPreview(BaseModel):
+    kind: Literal["knowledge", "bot_rules"]
+    total_templates: int
+    will_create: int = 0
+    customized: int = 0
+    deleted_or_archived: int = 0
+    unchanged: int = 0
+    unindexed: int = 0
+    items: list[AdminCanonicalSyncPreviewItem] = Field(default_factory=list)
+
+
+class AdminCanonicalSyncStatus(BaseModel):
+    kind: Literal["knowledge", "bot_rules"]
+    running: bool = False
+    last_mode: str | None = None
+    last_synced_at: datetime | None = None
+    last_result: dict[str, Any] | None = None
+    total_templates: int = 0
+    active_canonical_count: int = 0
+    customized_count: int = 0
+    unindexed_count: int = 0
 
 
 class AdminKnowledgeBaseRead(UUIDModel):
@@ -472,6 +516,7 @@ class AdminKnowledgeBaseRead(UUIDModel):
     category: str | None = None
     has_embedding: bool = False
     is_auto_generated: bool = False
+    is_canonical_customized: bool = False
     original_question: str | None = None
     manager_draft: str | None = None
     created_at: datetime
@@ -535,3 +580,64 @@ class AdminKnowledgeBaseCandidateCreate(BaseModel):
 
 class AdminKnowledgeBaseCandidateReject(BaseModel):
     reason: str | None = Field(default=None, max_length=1000)
+
+
+class AdminEscalationQueueItem(UUIDModel):
+    conversation_id: uuid.UUID
+    phone: str
+    customer_name: str | None = None
+    reason: str
+    category: str = "other"
+    assigned_to: str | None = None
+    status: str
+    notes: str | None = None
+    sales_stage: str | None = None
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
+class AdminCatalogSyncSourceStatus(BaseModel):
+    source: str
+    last_triggered_at: datetime | None = None
+    last_status: str = "never"
+    job_name: str | None = None
+    detail: str | None = None
+
+
+class AdminZohoSnapshotStatus(BaseModel):
+    present: bool = False
+    status: Literal["fresh", "stale", "missing"] = "missing"
+    item_count: int = 0
+    updated_at: datetime | None = None
+    age_seconds: int | None = None
+    ttl_seconds: int | None = None
+
+
+class AdminCatalogStatusResponse(BaseModel):
+    active_products_count: int = 0
+    total_products_count: int = 0
+    indexed_products_count: int = 0
+    sources: dict[str, AdminCatalogSyncSourceStatus] = Field(default_factory=dict)
+    zoho_snapshot: AdminZohoSnapshotStatus = Field(
+        default_factory=AdminZohoSnapshotStatus
+    )
+
+
+class AdminSystemHealthContour(BaseModel):
+    id: str
+    label: str
+    status: Literal["ok", "warning", "error"]
+    summary: str
+    detail: str | None = None
+    updated_at: datetime | None = None
+
+
+class AdminSystemHealthResponse(BaseModel):
+    overall_status: Literal["ok", "warning", "error"] = "ok"
+    contours: list[AdminSystemHealthContour] = Field(default_factory=list)
+    last_inbound_message_at: datetime | None = None
+    active_kb_count: int = 0
+    active_bot_rules_count: int = 0
+    open_escalations_count: int = 0
+    pending_manager_reviews_count: int = 0
+    checked_at: datetime

@@ -18,6 +18,7 @@ from src.schemas.admin import (
     AdminConversationUpdate,
     AdminCustomerListItem,
     AdminEscalationClose,
+    AdminEscalationQueueItem,
     AdminEscalationRead,
     AdminEscalationWrite,
     AdminResetExecuteRequest,
@@ -33,6 +34,7 @@ from src.services.admin_crm import (
     list_admin_audit,
     list_admin_conversations,
     list_admin_customers,
+    list_admin_escalations,
     preview_admin_conversation_reset,
     run_admin_bot_quality_review,
     run_admin_manager_quality_review,
@@ -155,6 +157,26 @@ async def post_conversation_escalation(
         conversation_id=conversation_id,
         body=body,
         request=request,
+    )
+
+
+@router.get(
+    "/escalations",
+    response_model=PaginatedResponse[AdminEscalationQueueItem],
+)
+async def get_escalations(
+    db: DbSession,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    status: str | None = None,
+    search: str | None = None,
+) -> PaginatedResponse[AdminEscalationQueueItem]:
+    return await list_admin_escalations(
+        db=db,
+        page=page,
+        page_size=page_size,
+        status=status,
+        search=search,
     )
 
 

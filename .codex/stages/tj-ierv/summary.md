@@ -29,6 +29,14 @@
   `opacity: 1`); `CanonicalSyncButton` persists in-flight/last sync state across
   tab switches, includes a `HelpTooltip` explaining sync semantics, and
   `KnowledgeBaseView`/`BotRulesView` auto-seed once per session on empty initial load.
+- tj-7ps5 (Admin dashboard UX overhaul, `tj-7ps5.1`–`tj-7ps5.13`): separate cohesive
+  Light/Dark themes (`ThemeProvider`, `treejar_admin_theme`), Variant 1B 9-section
+  sidebar & URL routing, unified 3-tab `QueuesQualityView` with escalation close
+  (`POST /api/v1/admin/crm/escalations/{id}/close`), Variant 5A Bento overview with
+  matched column heights, Variant 2A/3A KB & Bot Rules Master-Detail + diff preview
+  modal (`mode=safe|full_reset`), Variant 4A 2-column Conversations + CRM Drawer +
+  typed `RESET` in `⋯` menu, Variant 6A AIQC Simple Mode in USD, persisted Catalog
+  sync/Zoho stock freshness, live System Health contours, and decomposed `views/*`.
 
 ## Deviations from spec/plan (resolved against repo facts)
 - KB content: no free-assembly, 7-day return, warranty-term, working-hours or

@@ -1,54 +1,229 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  --admin-chart-surface: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-  --admin-chart-border: rgba(15, 23, 42, 0.12);
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Cohesive Light Theme Tokens */
+  --admin-bg: #f8fafc;
+  --admin-surface: #ffffff;
+  --admin-surface-muted: #f1f5f9;
+  --admin-surface-hover: #f8fafc;
+  --admin-sidebar-bg: #ffffff;
+  --admin-sidebar-border: #e2e8f0;
+  --admin-header-bg: rgba(255, 255, 255, 0.92);
+  --admin-border: #e2e8f0;
+  --admin-border-strong: #cbd5e1;
+  --admin-text-primary: #0f172a;
+  --admin-text-secondary: #475569;
+  --admin-text-muted: #64748b;
+  --admin-input-bg: #ffffff;
+  --admin-input-border: #cbd5e1;
+  --admin-accent: #2563eb;
+  --admin-accent-soft: #eff6ff;
+  --admin-tooltip-bg: #ffffff;
+  --admin-tooltip-text: #0f172a;
+  --admin-tooltip-border: #cbd5e1;
+
+  /* Component-level semantic aliases */
+  --bg-app: var(--admin-bg);
+  --bg-surface: var(--admin-surface-muted);
+  --bg-card: var(--admin-surface);
+  --bg-header: var(--admin-header-bg);
+  --bg-hover: var(--admin-surface-hover);
+  --bg-input: var(--admin-input-bg);
+  --border-subtle: var(--admin-border);
+  --border-strong: var(--admin-border-strong);
+  --text-primary: var(--admin-text-primary);
+  --text-secondary: var(--admin-text-secondary);
+  --text-muted: var(--admin-text-muted);
+  --accent-primary: var(--admin-accent);
+  --accent-soft: var(--admin-accent-soft);
+
+  /* Chart Tokens (Light) */
+  --admin-chart-surface: #ffffff;
+  --admin-chart-border: #e2e8f0;
   --admin-chart-title: #0f172a;
-  --admin-chart-muted: #475569;
-  --admin-chart-empty: #64748b;
-  --admin-chart-grid: rgba(30, 41, 59, 0.16);
-  --admin-chart-axis: #64748b;
+  --admin-chart-muted: #64748b;
+  --admin-chart-grid: rgba(15, 23, 42, 0.08);
+  --admin-chart-axis: #475569;
   --admin-chart-tooltip-bg: #ffffff;
-  --admin-chart-tooltip-border: rgba(15, 23, 42, 0.16);
+  --admin-chart-tooltip-border: #cbd5e1;
   --admin-chart-tooltip-text: #0f172a;
-  --admin-chart-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+  --admin-chart-tooltip-muted: #64748b;
 }
 
 :where(.dark, .dark *) {
-  --admin-chart-surface: linear-gradient(135deg, rgba(30, 41, 59, 0.58) 0%, rgba(15, 23, 42, 0.58) 100%);
-  --admin-chart-border: rgba(255, 255, 255, 0.1);
-  --admin-chart-title: #e2e8f0;
+  /* Cohesive Dark Theme Tokens */
+  --admin-bg: #0b1120;
+  --admin-surface: #111827;
+  --admin-surface-muted: #1e293b;
+  --admin-surface-hover: #1e293b;
+  --admin-sidebar-bg: #0f172a;
+  --admin-sidebar-border: #1e293b;
+  --admin-header-bg: rgba(15, 23, 42, 0.92);
+  --admin-border: #1e293b;
+  --admin-border-strong: #334155;
+  --admin-text-primary: #f8fafc;
+  --admin-text-secondary: #cbd5e1;
+  --admin-text-muted: #94a3b8;
+  --admin-input-bg: #0f172a;
+  --admin-input-border: #334155;
+  --admin-accent: #3b82f6;
+  --admin-accent-soft: rgba(59, 130, 246, 0.16);
+  --admin-tooltip-bg: #1e293b;
+  --admin-tooltip-text: #f8fafc;
+  --admin-tooltip-border: #475569;
+
+  /* Component-level semantic aliases */
+  --bg-app: var(--admin-bg);
+  --bg-surface: var(--admin-surface-muted);
+  --bg-card: var(--admin-surface);
+  --bg-header: var(--admin-header-bg);
+  --bg-hover: var(--admin-surface-hover);
+  --bg-input: var(--admin-input-bg);
+  --border-subtle: var(--admin-border);
+  --border-strong: var(--admin-border-strong);
+  --text-primary: var(--admin-text-primary);
+  --text-secondary: var(--admin-text-secondary);
+  --text-muted: var(--admin-text-muted);
+  --accent-primary: var(--admin-accent);
+  --accent-soft: var(--admin-accent-soft);
+
+  /* Chart Tokens (Dark) */
+  --admin-chart-surface: #111827;
+  --admin-chart-border: #1e293b;
+  --admin-chart-title: #f8fafc;
   --admin-chart-muted: #94a3b8;
-  --admin-chart-empty: #64748b;
-  --admin-chart-grid: rgba(148, 163, 184, 0.22);
-  --admin-chart-axis: #94a3b8;
+  --admin-chart-grid: rgba(148, 163, 184, 0.14);
+  --admin-chart-axis: #cbd5e1;
   --admin-chart-tooltip-bg: #1e293b;
-  --admin-chart-tooltip-border: rgba(255, 255, 255, 0.12);
-  --admin-chart-tooltip-text: #e2e8f0;
-  --admin-chart-shadow: none;
+  --admin-chart-tooltip-border: #475569;
+  --admin-chart-tooltip-text: #f8fafc;
+  --admin-chart-tooltip-muted: #94a3b8;
 }
 
 body {
+  font-family: var(--font-sans);
+  background: var(--admin-bg);
+  color: var(--admin-text-primary);
   margin: 0;
-  background: #f8f9ff;
-  color: #0b1c30;
-  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-#root {
-  min-height: 100vh;
+.admin-shell {
+  background-color: var(--admin-bg);
+  color: var(--admin-text-primary);
+}
+
+.admin-sidebar {
+  background-color: var(--admin-sidebar-bg);
+  border-color: var(--admin-sidebar-border);
+  color: var(--admin-text-primary);
+}
+
+.admin-header {
+  background-color: var(--admin-header-bg);
+  border-color: var(--admin-border);
+  color: var(--admin-text-primary);
+}
+
+.admin-panel,
+.admin-card {
+  background-color: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  color: var(--admin-text-primary);
+}
+
+.admin-subpanel {
+  background-color: var(--admin-surface-muted);
+  border: 1px solid var(--admin-border);
+  color: var(--admin-text-primary);
+}
+
+.admin-input {
+  background-color: var(--admin-input-bg);
+  border: 1px solid var(--admin-input-border);
+  color: var(--admin-text-primary);
+}
+
+.admin-input::placeholder {
+  color: var(--admin-text-muted);
+}
+
+.admin-tooltip {
+  background-color: var(--admin-tooltip-bg);
+  color: var(--admin-tooltip-text);
+  border: 1px solid var(--admin-tooltip-border);
 }
 
 .admin-chart-card {
-  border: 1px solid var(--admin-chart-border);
-  background: var(--admin-chart-surface);
-  box-shadow: var(--admin-chart-shadow);
+  background-color: var(--admin-chart-surface);
+  border-color: var(--admin-chart-border);
+  color: var(--admin-chart-title);
 }
 
-.recharts-tooltip-wrapper {
-  z-index: 50 !important;
-  opacity: 1 !important;
+.admin-chart-title {
+  color: var(--admin-chart-title);
+}
+
+.admin-chart-muted {
+  color: var(--admin-chart-muted);
+}
+
+/* Automatic dark-mode surface harmonization for standard utility classes inside .dark */
+.dark .bg-white {
+  background-color: var(--admin-surface) !important;
+}
+
+.dark .bg-white\/90,
+.dark .bg-white\/95 {
+  background-color: var(--admin-header-bg) !important;
+}
+
+.dark .bg-slate-50,
+.dark .bg-slate-50\/80,
+.dark .bg-slate-100 {
+  background-color: var(--admin-surface-muted) !important;
+}
+
+.dark .border-slate-200,
+.dark .border-slate-200\/80,
+.dark .border-slate-100,
+.dark .border-slate-300 {
+  border-color: var(--admin-border) !important;
+}
+
+.dark .text-slate-950,
+.dark .text-slate-900,
+.dark .text-slate-800 {
+  color: var(--admin-text-primary) !important;
+}
+
+.dark .text-slate-700,
+.dark .text-slate-600 {
+  color: var(--admin-text-secondary) !important;
+}
+
+.dark .text-slate-500,
+.dark .text-slate-400 {
+  color: var(--admin-text-muted) !important;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.55);
 }

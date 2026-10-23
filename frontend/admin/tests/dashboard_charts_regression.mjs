@@ -94,10 +94,11 @@ try {
     assert.match(pieSource, /CHART_TOOLTIP_WRAPPER_STYLE/, 'Pie tooltip should use high z-index wrapper style above center total');
     assert.doesNotMatch(pieSource, /grid-cols-2/, 'Donuts should stack vertically instead of a fixed two-column grid');
 
-    const appSource = await readFile(path.join(frontendRoot, 'src', 'App.tsx'), 'utf8');
-    const overview = appSource.slice(appSource.indexOf('function OverviewView'), appSource.indexOf('function SupportView'));
-    assert.match(overview, /<EscalationReasonsChart byReason=\{data\.escalation_by_reason\} rawReasons=\{data\.escalation_reasons\}/);
-    assert.match(overview, /<FunnelEfficiencyChart data=\{data\}/);
+    const overview = await readFile(path.join(frontendRoot, 'src', 'views', 'OverviewView.tsx'), 'utf8');
+    assert.match(overview, /<EscalationReasonsChart[\s\S]*?byReason=\{data\.escalation_by_reason\}[\s\S]*?rawReasons=\{data\.escalation_reasons\}/);
+    assert.match(overview, /<FunnelEfficiencyChart[\s\S]*?data=\{data\}/);
+    assert.match(overview, /data-overview-bento-grid/, 'Overview should use the Variant 5A Bento grid');
+    assert.match(overview, /items-stretch/, 'Bento grid columns should align with items-stretch');
 
     for (const file of ['ConversationsChart.tsx', 'SalesBarChart.tsx']) {
         const source = await readFile(path.join(chartsDir, file), 'utf8');

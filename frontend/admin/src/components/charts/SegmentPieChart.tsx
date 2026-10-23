@@ -1,35 +1,30 @@
 import { motion } from 'framer-motion';
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
+import {
+    ResponsiveContainer,
+    PieChart,
+    Pie,
+    Cell,
+    Tooltip,
+} from 'recharts';
+import { useI18n, type TranslationKey } from '@/i18n';
 import {
     CHART_CARD_CLASS,
-    CHART_EMPTY_CLASS,
-    CHART_SUBTITLE_CLASS,
-    CHART_TITLE_CLASS,
-    CHART_TOOLTIP_STYLE,
+    CHART_MUTED_TEXT_CLASS,
+    CHART_TITLE_TEXT_CLASS,
+    CHART_TOOLTIP_CONTENT_STYLE,
+    CHART_TOOLTIP_ITEM_STYLE,
+    CHART_TOOLTIP_LABEL_STYLE,
     CHART_TOOLTIP_WRAPPER_STYLE,
 } from './chartTheme';
-import { HelpTooltip } from '@/components/HelpTooltip';
-import { useI18n } from '@/i18n';
-import type { TranslationKey } from '@/i18n';
 
-interface SegmentPieChartProps {
+interface Props {
     byLanguage: Record<string, number>;
-    targetVsNontarget: { target: number; nontarget: number };
+    targetVsNontarget: Record<string, number>;
+    onSelectFilter?: (filter: { language?: string; status?: string }) => void;
 }
 
-interface SegmentSlice {
-    key: string;
-    name: string;
-    value: number;
-    fill: string;
-}
-
-const LANGUAGE_COLORS: Record<string, string> = {
-    en: '#3b82f6',
-    ar: '#10b981',
-    ru: '#8b5cf6',
-    other: '#64748b',
-};
+const LANGUAGE_COLORS = ['#6366f1', '#22d3ee', '#f59e0b', '#ec4899'];
+const TARGET_COLORS = ['#10b981', '#ef4444'];
 
 const LANGUAGE_NAME_KEYS: Record<string, TranslationKey> = {
     en: 'chart.lang.en',
@@ -37,35 +32,73 @@ const LANGUAGE_NAME_KEYS: Record<string, TranslationKey> = {
     ru: 'chart.lang.ru',
 };
 
-const TARGET_COLORS = ['#10b981', '#ef4444'];
+interface DonutSlice {
+    code: string;
+    name: string;
+    value: number;
+    pct: number;
+    color: string;
+}
 
-function DonutBlock({
+function buildSlices(
+    entries: Array<[string, number]>,
+    colors: string[],
+    labelFor: (key: string) => string,
+): DonutSlice[] {
+    const clean = entries
+        .map(([key, value]) => [key, Number(value) || 0] as const)
+        .filter(([, value]) => value > 0);
+    const total = clean.reduce((sum, [, value]) => sum + value, 0);
+    return clean.map(([key, value], index) => ({
+        code: key,
+        name: labelFor(key),
+        value,
+        pct: total > 0 ? (value / total) * 100 : 0,
+        color: colors[index % colors.length],
+    }));
+}
+
+function DonutSection({
     title,
-    help,
     slices,
+    emptyLabel,
+    totalLabel,
+    formatNumber,
+    onSliceClick,
 }: {
     title: string;
-    help: string;
-    slices: SegmentSlice[];
+    slices: DonutSlice[];
+    emptyLabel: string;
+    totalLabel: string;
+    formatNumber: (value: number, digits?: number) => string;
+    onSliceClick?: (code: string) => void;
 }) {
-    const { t, formatNumber } = useI18n();
-    const total = slices.reduce((sum, slice) => sum + slice.value, 0);
-    const hasData = slices.some((slice) => slice.value > 0);
+    const total = slices.reduce((sum, item) => sum + item.value, 0);
 
     return (
-        <div className="min-w-0">
-            <div className="mb-2 flex items-center justify-center gap-1.5">
-                <p className={`${CHART_SUBTITLE_CLASS} mb-0`}>{title}</p>
-                <HelpTooltip text={help} />
+        <div className="admin-subpanel flex flex-col justify-center rounded-xl p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+                <p className={`text-xs font-semibold ${CHART_MUTED_TEXT_CLASS}`}>{title}</p>
+                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                    {totalLabel}: {formatNumber(total)}
+                </span>
             </div>
-            {hasData ? (
-                <>
-                    <div className="relative mx-auto h-[128px] w-full max-w-[180px]">
-                        <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center">
-                            <span className="text-lg font-semibold leading-5 text-[var(--admin-chart-title)]">{formatNumber(total)}</span>
-                            <span className="text-[10px] uppercase text-[var(--admin-chart-muted)]">{t('chart.total')}</span>
+            {slices.length === 0 ? (
+                <div className={`flex h-24 items-center justify-center text-xs ${CHART_MUTED_TEXT_CLASS}`}>
+                    {emptyLabel}
+                </div>
+            ) : (
+                <div className="flex items-center gap-3">
+                    <div className="relative h-28 w-28 shrink-0">
+                        <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center text-center">
+                            <span className={`text-[9px] font-semibold uppercase ${CHART_MUTED_TEXT_CLASS}`}>
+                                {totalLabel}
+                            </span>
+                            <span className={`text-sm font-bold ${CHART_TITLE_TEXT_CLASS}`}>
+                                {formatNumber(total)}
+                            </span>
                         </div>
-                        <ResponsiveContainer className="relative z-10" width="100%" height={128}>
+                        <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                                 <Pie
                                     data={slices}
@@ -75,82 +108,122 @@ function DonutBlock({
                                     outerRadius={56}
                                     paddingAngle={3}
                                     dataKey="value"
-                                    nameKey="name"
-                                    isAnimationActive={false}
+                                    strokeWidth={0}
+                                    onClick={(entry: DonutSlice) => {
+                                        if (entry?.code && onSliceClick) {
+                                            onSliceClick(entry.code);
+                                        }
+                                    }}
                                 >
                                     {slices.map((slice) => (
-                                        <Cell key={slice.key} fill={slice.fill} />
+                                        <Cell
+                                            key={slice.code}
+                                            fill={slice.color}
+                                            className={onSliceClick ? 'cursor-pointer' : undefined}
+                                        />
                                     ))}
                                 </Pie>
                                 <Tooltip
                                     wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
-                                    contentStyle={CHART_TOOLTIP_STYLE}
-                                    formatter={(value: number, name: string) => [formatNumber(value), name]}
+                                    contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
+                                    labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+                                    itemStyle={CHART_TOOLTIP_ITEM_STYLE}
+                                    formatter={(value: number, name: string) => [
+                                        `${formatNumber(value)} (${formatNumber(total > 0 ? (value / total) * 100 : 0, 1)}%)`,
+                                        name,
+                                    ]}
                                 />
                             </PieChart>
                         </ResponsiveContainer>
                     </div>
-                    <ul className="mt-3 space-y-2" data-segment-legend="">
-                        {slices.map((slice) => {
-                            const percent = total > 0 ? (slice.value / total) * 100 : 0;
-                            return (
-                                <li key={slice.key} className="text-xs text-[var(--admin-chart-muted)]">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className="flex min-w-0 items-center gap-2">
-                                            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: slice.fill }} />
-                                            <span className="truncate font-medium text-[var(--admin-chart-title)]">{slice.name}</span>
-                                        </span>
-                                        <span className="shrink-0 tabular-nums">
-                                            {formatNumber(slice.value)} · {formatNumber(percent, 1)}%
-                                        </span>
-                                    </div>
-                                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[var(--admin-chart-grid)]">
-                                        <div className="h-full rounded-full" style={{ width: `${percent}%`, backgroundColor: slice.fill }} />
-                                    </div>
-                                </li>
-                            );
-                        })}
+                    <ul className="min-w-0 flex-1 space-y-1.5 text-xs" data-segment-legend>
+                        {slices.map((slice) => (
+                            <li
+                                key={slice.code}
+                                onClick={() => onSliceClick?.(slice.code)}
+                                className={`flex items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5 dark:border-slate-700/70 dark:bg-slate-900/70 ${
+                                    onSliceClick ? 'cursor-pointer hover:border-blue-400' : ''
+                                }`}
+                            >
+                                <span className="flex min-w-0 items-center gap-1.5">
+                                    <span
+                                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                        style={{ backgroundColor: slice.color }}
+                                    />
+                                    <span className={`truncate font-medium ${CHART_TITLE_TEXT_CLASS}`}>
+                                        {slice.name}
+                                    </span>
+                                </span>
+                                <span className={`shrink-0 font-mono text-[11px] ${CHART_MUTED_TEXT_CLASS}`}>
+                                    {formatNumber(slice.value)} · {formatNumber(slice.pct, 1)}%
+                                </span>
+                            </li>
+                        ))}
                     </ul>
-                </>
-            ) : (
-                <div className={`${CHART_EMPTY_CLASS} h-[128px]`}>{t('chart.noData')}</div>
+                </div>
             )}
         </div>
     );
 }
 
-export default function SegmentPieChart({ byLanguage, targetVsNontarget }: SegmentPieChartProps) {
-    const { t } = useI18n();
-
-    const langData: SegmentSlice[] = Object.entries(byLanguage).map(([lang, count]) => {
-        const nameKey = LANGUAGE_NAME_KEYS[lang.toLowerCase()];
-        return {
-            key: lang,
-            name: nameKey ? t(nameKey) : lang.toUpperCase(),
-            value: count,
-            fill: LANGUAGE_COLORS[lang.toLowerCase()] ?? LANGUAGE_COLORS.other,
-        };
+export default function SegmentPieChart({
+    byLanguage,
+    targetVsNontarget,
+    onSelectFilter,
+}: Props) {
+    const { t, formatNumber } = useI18n();
+    const langData = buildSlices(Object.entries(byLanguage), LANGUAGE_COLORS, (key) => {
+        const nameKey = LANGUAGE_NAME_KEYS[key.toLowerCase()];
+        return nameKey ? t(nameKey) : key.toUpperCase();
     });
-
-    const targetData: SegmentSlice[] = [
-        { key: 'target', name: t('chart.target'), value: targetVsNontarget.target, fill: TARGET_COLORS[0] },
-        { key: 'nontarget', name: t('chart.nontarget'), value: targetVsNontarget.nontarget, fill: TARGET_COLORS[1] },
-    ];
+    const targetData = buildSlices(
+        [
+            ['target', targetVsNontarget.target ?? 0],
+            ['nontarget', targetVsNontarget.nontarget ?? 0],
+        ],
+        TARGET_COLORS,
+        (key) => (key === 'target' ? t('chart.target') : t('chart.nontarget')),
+    );
 
     return (
         <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.4 }}
-            className={CHART_CARD_CLASS}
+            transition={{ duration: 0.6, delay: 0.3 }}
+            className={`${CHART_CARD_CLASS} flex h-full flex-col rounded-2xl p-4`}
         >
-            <div className="mb-4 flex items-center gap-2">
-                <h3 className={CHART_TITLE_CLASS}>{t('chart.classification')}</h3>
-                <HelpTooltip text={t('chart.classificationHelp')} />
-            </div>
-            <div className="flex flex-col gap-6">
-                <DonutBlock title={t('chart.byLanguage')} help={t('chart.byLanguageHelp')} slices={langData} />
-                <DonutBlock title={t('chart.targetVsNontarget')} help={t('chart.targetHelp')} slices={targetData} />
+            <h3 className={`mb-3 text-base font-semibold ${CHART_TITLE_TEXT_CLASS}`}>
+                {t('chart.segment.title')}
+            </h3>
+
+            <div className="flex flex-1 flex-col justify-between gap-2.5">
+                <DonutSection
+                    title={t('chart.segment.byLanguage')}
+                    slices={langData}
+                    emptyLabel={t('chart.segment.noData')}
+                    totalLabel={t('chart.segment.total')}
+                    formatNumber={formatNumber}
+                    onSliceClick={
+                        onSelectFilter
+                            ? (code) => onSelectFilter({ language: code.toLowerCase() })
+                            : undefined
+                    }
+                />
+                <DonutSection
+                    title={t('chart.segment.targetSplit')}
+                    slices={targetData}
+                    emptyLabel={t('chart.segment.noData')}
+                    totalLabel={t('chart.segment.total')}
+                    formatNumber={formatNumber}
+                    onSliceClick={
+                        onSelectFilter
+                            ? (code) =>
+                                  onSelectFilter({
+                                      status: code === 'target' ? 'active' : 'closed',
+                                  })
+                            : undefined
+                    }
+                />
             </div>
         </motion.div>
     );

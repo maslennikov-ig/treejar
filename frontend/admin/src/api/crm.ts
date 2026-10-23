@@ -4,17 +4,24 @@ import type {
     AdminBotRulePreviewResponse,
     AdminBotRuleRead,
     AdminBotRuleWrite,
+    AdminCanonicalSyncPreview,
     AdminCanonicalSyncResult,
+    AdminCanonicalSyncStatus,
+    AdminCatalogStatusResponse,
     AdminConversationDetail,
     AdminResetExecuteResult,
     AdminResetPreview,
     AdminConversationUpdate,
     AdminCustomerListItem,
+    AdminEscalationQueueItem,
+    AdminEscalationRead,
     AdminKnowledgeBaseCandidate,
     AdminKnowledgeBaseCandidateReject,
     AdminKnowledgeBasePreview,
     AdminKnowledgeBaseRead,
     AdminKnowledgeBaseWrite,
+    AdminSystemHealthResponse,
+    CanonicalSyncMode,
     PaginatedResponse,
 } from '@/types/crm';
 
@@ -72,6 +79,23 @@ export function updateAdminConversation(
         method: 'PATCH',
         body: JSON.stringify(payload),
     });
+}
+
+export function closeConversationEscalation(
+    escalationId: string,
+    notes?: string,
+): Promise<AdminEscalationRead> {
+    return requestJson(`/crm/escalations/${escalationId}/close`, {
+        method: 'POST',
+        body: JSON.stringify({ notes: notes || null }),
+    });
+}
+
+export function fetchEscalationsQueue(
+    params: URLSearchParams,
+): Promise<PaginatedResponse<AdminEscalationQueueItem>> {
+    const query = params.toString();
+    return requestJson(`/crm/escalations${query ? `?${query}` : ''}`);
 }
 
 export function previewConversationReset(conversationId: string): Promise<AdminResetPreview> {
@@ -220,14 +244,44 @@ export function reindexBotRule(ruleId: string): Promise<AdminBotRuleRead> {
     });
 }
 
-export function syncCanonicalKnowledgeBase(): Promise<AdminCanonicalSyncResult> {
+export function fetchCanonicalKnowledgeBasePreview(): Promise<AdminCanonicalSyncPreview> {
+    return requestJson('/knowledge-base/sync-canonical/preview');
+}
+
+export function fetchCanonicalKnowledgeBaseStatus(): Promise<AdminCanonicalSyncStatus> {
+    return requestJson('/knowledge-base/sync-canonical/status');
+}
+
+export function syncCanonicalKnowledgeBase(
+    mode: CanonicalSyncMode = 'safe',
+): Promise<AdminCanonicalSyncResult> {
     return requestJson('/knowledge-base/sync-canonical', {
         method: 'POST',
+        body: JSON.stringify({ mode }),
     });
 }
 
-export function syncCanonicalBotRules(): Promise<AdminCanonicalSyncResult> {
+export function fetchCanonicalBotRulesPreview(): Promise<AdminCanonicalSyncPreview> {
+    return requestJson('/bot-rules/sync-canonical/preview');
+}
+
+export function fetchCanonicalBotRulesStatus(): Promise<AdminCanonicalSyncStatus> {
+    return requestJson('/bot-rules/sync-canonical/status');
+}
+
+export function syncCanonicalBotRules(
+    mode: CanonicalSyncMode = 'safe',
+): Promise<AdminCanonicalSyncResult> {
     return requestJson('/bot-rules/sync-canonical', {
         method: 'POST',
+        body: JSON.stringify({ mode }),
     });
+}
+
+export function fetchCatalogStatus(): Promise<AdminCatalogStatusResponse> {
+    return requestJson('/catalog/status');
+}
+
+export function fetchSystemHealth(): Promise<AdminSystemHealthResponse> {
+    return requestJson('/system/health');
 }

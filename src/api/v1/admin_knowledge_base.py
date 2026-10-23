@@ -11,7 +11,10 @@ from src.api.v1.admin import require_admin_session
 from src.core.database import get_db
 from src.schemas.admin import (
     AdminActionResult,
+    AdminCanonicalSyncPreview,
+    AdminCanonicalSyncRequest,
     AdminCanonicalSyncResult,
+    AdminCanonicalSyncStatus,
     AdminKnowledgeBaseCandidate,
     AdminKnowledgeBaseCandidateCreate,
     AdminKnowledgeBaseCandidateReject,
@@ -26,9 +29,11 @@ from src.services.admin_knowledge_base import (
     create_admin_kb_candidate,
     create_admin_kb_entry,
     get_admin_kb_entry,
+    get_canonical_admin_kb_sync_status,
     list_admin_kb_candidates,
     list_admin_kb_entries,
     preview_admin_kb_entry,
+    preview_canonical_admin_kb_entries,
     reindex_admin_kb_entries,
     reindex_admin_kb_entry,
     reject_admin_kb_candidate,
@@ -210,11 +215,30 @@ async def post_candidate_reject(
     )
 
 
+@router.get("/sync-canonical/preview", response_model=AdminCanonicalSyncPreview)
+async def get_sync_canonical_preview(
+    db: DbSession,
+) -> AdminCanonicalSyncPreview:
+    return await preview_canonical_admin_kb_entries(db=db)
+
+
+@router.get("/sync-canonical/status", response_model=AdminCanonicalSyncStatus)
+async def get_sync_canonical_status(
+    db: DbSession,
+) -> AdminCanonicalSyncStatus:
+    return await get_canonical_admin_kb_sync_status(db=db)
+
+
 @router.post("/sync-canonical", response_model=AdminCanonicalSyncResult)
 async def post_sync_canonical(
     db: DbSession,
     request: Request,
+    body: Annotated[AdminCanonicalSyncRequest | None, Body()] = None,
 ) -> AdminCanonicalSyncResult:
+    if body is not None:
+        return await sync_canonical_admin_kb_entries(
+            db=db, request=request, mode=body.mode
+        )
     return await sync_canonical_admin_kb_entries(db=db, request=request)
 
 
@@ -222,6 +246,11 @@ async def post_sync_canonical(
 async def post_seed_defaults(
     db: DbSession,
     request: Request,
+    body: Annotated[AdminCanonicalSyncRequest | None, Body()] = None,
 ) -> AdminCanonicalSyncResult:
     """Spec alias (AC01) of ``/sync-canonical``."""
+    if body is not None:
+        return await sync_canonical_admin_kb_entries(
+            db=db, request=request, mode=body.mode
+        )
     return await sync_canonical_admin_kb_entries(db=db, request=request)

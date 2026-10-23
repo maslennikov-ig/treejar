@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
@@ -16,15 +16,20 @@ from src.schemas.admin import (
     AdminBotRuleRead,
     AdminBotRuleUpdate,
     AdminBotRuleWrite,
+    AdminCanonicalSyncPreview,
+    AdminCanonicalSyncRequest,
     AdminCanonicalSyncResult,
+    AdminCanonicalSyncStatus,
 )
 from src.schemas.common import PaginatedResponse
 from src.services.admin_bot_rules import (
     archive_admin_bot_rule,
     create_admin_bot_rule,
     get_admin_bot_rule,
+    get_canonical_admin_bot_rules_sync_status,
     list_admin_bot_rules,
     preview_admin_bot_rules,
+    preview_canonical_admin_bot_rules,
     reindex_admin_bot_rule,
     reindex_admin_bot_rules,
     sync_canonical_admin_bot_rules,
@@ -136,11 +141,30 @@ async def post_reindex_all(
     return await reindex_admin_bot_rules(db=db, request=request)
 
 
+@router.get("/sync-canonical/preview", response_model=AdminCanonicalSyncPreview)
+async def get_sync_canonical_preview(
+    db: DbSession,
+) -> AdminCanonicalSyncPreview:
+    return await preview_canonical_admin_bot_rules(db=db)
+
+
+@router.get("/sync-canonical/status", response_model=AdminCanonicalSyncStatus)
+async def get_sync_canonical_status(
+    db: DbSession,
+) -> AdminCanonicalSyncStatus:
+    return await get_canonical_admin_bot_rules_sync_status(db=db)
+
+
 @router.post("/sync-canonical", response_model=AdminCanonicalSyncResult)
 async def post_sync_canonical(
     db: DbSession,
     request: Request,
+    body: Annotated[AdminCanonicalSyncRequest | None, Body()] = None,
 ) -> AdminCanonicalSyncResult:
+    if body is not None:
+        return await sync_canonical_admin_bot_rules(
+            db=db, request=request, mode=body.mode
+        )
     return await sync_canonical_admin_bot_rules(db=db, request=request)
 
 
@@ -148,6 +172,11 @@ async def post_sync_canonical(
 async def post_seed_defaults(
     db: DbSession,
     request: Request,
+    body: Annotated[AdminCanonicalSyncRequest | None, Body()] = None,
 ) -> AdminCanonicalSyncResult:
     """Spec alias (AC02) of ``/sync-canonical``."""
+    if body is not None:
+        return await sync_canonical_admin_bot_rules(
+            db=db, request=request, mode=body.mode
+        )
     return await sync_canonical_admin_bot_rules(db=db, request=request)

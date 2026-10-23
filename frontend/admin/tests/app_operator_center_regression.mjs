@@ -22,21 +22,10 @@ const STUBS = new Map([
             };
         }
     `],
-    ['@/components/OperatorCenter', `
-        import React from 'react';
-        export default function OperatorCenter() {
-            return React.createElement('div', { id: 'operator-center-marker' }, 'operator center');
-        }
-    `],
     ['@/components/AcceptanceDemo', `
         import React from 'react';
         export default function AcceptanceDemo() {
             return React.createElement('div', { id: 'acceptance-demo-marker' }, 'acceptance demo');
-        }
-    `],
-    ['@/components/StatCard', `
-        export default function StatCard() {
-            return null;
         }
     `],
     ['@/components/charts/ConversationsChart', `
@@ -74,32 +63,44 @@ const STUBS = new Map([
         }
     `],
     ['lucide-react', `
-        import React from 'react';
-
         function Icon() {
             return null;
         }
 
-        export const Star = Icon;
+        export const Activity = Icon;
         export const AlertTriangle = Icon;
+        export const ArrowRight = Icon;
+        export const ArrowUpRight = Icon;
+        export const Award = Icon;
         export const BarChart3 = Icon;
         export const Bell = Icon;
         export const BookOpen = Icon;
         export const Bot = Icon;
         export const Boxes = Icon;
         export const CheckCircle2 = Icon;
+        export const ChevronLeft = Icon;
+        export const ChevronRight = Icon;
         export const ClipboardCheck = Icon;
         export const ClipboardList = Icon;
         export const Clock = Icon;
+        export const Code2 = Icon;
+        export const Database = Icon;
         export const DollarSign = Icon;
+        export const ExternalLink = Icon;
         export const FileText = Icon;
+        export const FlaskConical = Icon;
         export const Gauge = Icon;
         export const HelpCircle = Icon;
         export const History = Icon;
         export const Inbox = Icon;
+        export const Info = Icon;
         export const LifeBuoy = Icon;
         export const MessageCircle = Icon;
+        export const Moon = Icon;
+        export const MoreHorizontal = Icon;
         export const Package = Icon;
+        export const PanelRightOpen = Icon;
+        export const Plus = Icon;
         export const RefreshCw = Icon;
         export const RotateCcw = Icon;
         export const Save = Icon;
@@ -109,8 +110,13 @@ const STUBS = new Map([
         export const ShieldAlert = Icon;
         export const ShieldCheck = Icon;
         export const SlidersHorizontal = Icon;
+        export const Sparkles = Icon;
+        export const Star = Icon;
+        export const Sun = Icon;
         export const Trash2 = Icon;
         export const TrendingUp = Icon;
+        export const X = Icon;
+        export const Zap = Icon;
     `],
 ]);
 
@@ -151,15 +157,19 @@ try {
 
     const moduleUrl = pathToFileURL(bundlePath).href;
     const { default: App } = await import(moduleUrl);
-    const html = renderToStaticMarkup(React.createElement(App));
+    const html = renderToStaticMarkup(React.createElement(App, { initialView: 'conversations' }));
 
     // Default language is Russian.
-    assert.match(html, /Noor CRM/);
+    assert.match(html, /Noor AI/);
     assert.match(html, /Клиенты и диалоги/);
+    assert.match(html, /Очереди и качество/);
+    assert.match(html, /Каталог и остатки/);
+    assert.match(html, /Аудит и статус системы/);
     assert.match(html, /Телефон, имя, Zoho, SO/);
-    assert.match(html, /Выберите клиента, чтобы открыть полную историю переписки/);
+    assert.match(html, /Выберите клиента в списке слева, чтобы открыть переписку/);
     assert.match(html, /data-section-banner="conversations"/, 'Conversations view should start with a section banner');
     assert.match(html, /data-lang-toggle/, 'Header should render the RU | EN toggle');
+    assert.match(html, /data-theme-toggle/, 'Header/Sidebar should render the Light/Dark theme toggle');
     assert.match(html, /<input[^>]*type="search"[^>]*value=""/, 'Header search should be a controlled input');
     assert.doesNotMatch(html, /\btitle="/, 'Dashboard should not rely on native title tooltips');
     for (const englishLabel of ['Reset preview', 'Applied bot rules', 'Customers &amp; Conversations', 'Select a customer', 'Search...']) {
@@ -167,12 +177,19 @@ try {
     }
 
     // English render through the language provider.
-    const htmlEn = renderToStaticMarkup(React.createElement(App, { initialLang: 'en' }));
+    const htmlEn = renderToStaticMarkup(React.createElement(App, { initialLang: 'en', initialView: 'conversations' }));
     assert.match(htmlEn, /Customers &amp; Conversations/);
+    assert.match(htmlEn, /Queues &amp; Quality/);
+    assert.match(htmlEn, /Catalog &amp; Inventory/);
+    assert.match(htmlEn, /Audit &amp; System Health/);
     assert.match(htmlEn, /Phone, name, Zoho, SO/);
-    assert.match(htmlEn, /Select a customer to open the full chat history/);
-    assert.match(htmlEn, /Reset preview/);
+    assert.match(htmlEn, /Select a customer on the left to inspect the full chat history/);
     assert.doesNotMatch(htmlEn, /[А-Яа-яЁё]/, 'EN render should not contain Cyrillic UI text');
+
+    // Overview renders attention strip and error banner gracefully when metrics fail.
+    const overviewHtml = renderToStaticMarkup(React.createElement(App, { initialView: 'overview' }));
+    assert.match(overviewHtml, /data-overview-attention-bar/);
+    assert.match(overviewHtml, /metrics failed/);
 } finally {
     await rm(tempDir, { recursive: true, force: true });
 }

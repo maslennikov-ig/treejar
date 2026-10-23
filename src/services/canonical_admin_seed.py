@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +41,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from src.models.bot_behavior_rule import BotBehaviorRule
 from src.models.knowledge_base import KnowledgeBase
 from src.rag.embeddings import EmbeddingEngine
+from src.schemas.admin import AdminCanonicalSyncPreview, AdminCanonicalSyncPreviewItem
 from src.services.bot_behavior_rules import rule_embedding_text
 
 logger = logging.getLogger(__name__)
@@ -382,15 +383,244 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+@lru_cache(maxsize=1)
+def canonical_kb_by_title() -> dict[str, CanonicalKnowledgeArticle]:
+    return {article.title: article for article in canonical_kb_articles()}
+
+
+CANONICAL_BOT_RULES_BY_KEY: dict[str, CanonicalBotRule] = {
+    rule.key: rule for rule in CANONICAL_BOT_RULES
+}
+
+
+def is_canonical_kb_customized(row: KnowledgeBase) -> bool:
+    if row.source != CANONICAL_KB_SOURCE:
+        return False
+    article = canonical_kb_by_title().get(row.title)
+    if article is None:
+        return False
+    return (
+        row.content != article.content
+        or row.category != article.category
+        or row.language != article.language
+    )
+
+
+def is_canonical_bot_rule_customized(row: BotBehaviorRule) -> bool:
+    key = _canonical_key(row)
+    if key is None:
+        return False
+    rule = CANONICAL_BOT_RULES_BY_KEY.get(key)
+    if rule is None:
+        return False
+    desired: dict[str, Any] = {
+        "title": rule.title,
+        "type": rule.type,
+        "priority": rule.priority,
+        "scope": rule.scope,
+        "stage": rule.stage,
+        "instruction": rule.instruction,
+        "trigger_examples": list(rule.trigger_examples),
+    }
+    return any(getattr(row, name) != value for name, value in desired.items())
+
+
+async def preview_canonical_knowledge_base(
+    db: AsyncSession,
+    *,
+    articles: Sequence[CanonicalKnowledgeArticle] | None = None,
+) -> AdminCanonicalSyncPreview:
+    """Return a non-mutating diff between current DB KB rows and canonical templates."""
+    catalog = tuple(articles) if articles is not None else canonical_kb_articles()
+    titles = [article.title for article in catalog]
+    existing_result = await db.execute(
+        select(KnowledgeBase).where(
+            KnowledgeBase.source == CANONICAL_KB_SOURCE,
+            KnowledgeBase.title.in_(titles),
+        )
+    )
+    existing = {row.title: row for row in existing_result.scalars().all()}
+
+    preview = AdminCanonicalSyncPreview(
+        kind="knowledge",
+        total_templates=len(catalog),
+    )
+    for article in catalog:
+        row = existing.get(article.title)
+        if row is None:
+            preview.will_create += 1
+            preview.items.append(
+                AdminCanonicalSyncPreviewItem(
+                    key=article.title,
+                    title=article.title,
+                    category=article.category,
+                    status="missing",
+                )
+            )
+            continue
+
+        changed_fields: list[str] = []
+        if row.content != article.content:
+            changed_fields.append("content")
+        if row.category != article.category:
+            changed_fields.append("category")
+        if row.language != article.language:
+            changed_fields.append("language")
+
+        if row.deleted_at is not None:
+            preview.deleted_or_archived += 1
+            preview.items.append(
+                AdminCanonicalSyncPreviewItem(
+                    key=article.title,
+                    title=article.title,
+                    category=article.category,
+                    status="deleted",
+                    changed_fields=changed_fields,
+                )
+            )
+        elif changed_fields:
+            preview.customized += 1
+            if row.embedding is None:
+                preview.unindexed += 1
+            preview.items.append(
+                AdminCanonicalSyncPreviewItem(
+                    key=article.title,
+                    title=article.title,
+                    category=article.category,
+                    status="customized",
+                    changed_fields=changed_fields,
+                )
+            )
+        elif row.embedding is None:
+            preview.unindexed += 1
+            preview.items.append(
+                AdminCanonicalSyncPreviewItem(
+                    key=article.title,
+                    title=article.title,
+                    category=article.category,
+                    status="unindexed",
+                )
+            )
+        else:
+            preview.unchanged += 1
+            preview.items.append(
+                AdminCanonicalSyncPreviewItem(
+                    key=article.title,
+                    title=article.title,
+                    category=article.category,
+                    status="unchanged",
+                )
+            )
+    return preview
+
+
+async def preview_canonical_bot_behavior_rules(
+    db: AsyncSession,
+    *,
+    rules: Sequence[CanonicalBotRule] | None = None,
+) -> AdminCanonicalSyncPreview:
+    """Return a non-mutating diff between current DB bot rules and canonical templates."""
+    catalog = tuple(rules) if rules is not None else CANONICAL_BOT_RULES
+    existing_result = await db.execute(select(BotBehaviorRule))
+    existing: dict[str, BotBehaviorRule] = {}
+    for existing_row in existing_result.scalars().all():
+        key = _canonical_key(existing_row)
+        if key is not None:
+            existing.setdefault(key, existing_row)
+
+    preview = AdminCanonicalSyncPreview(
+        kind="bot_rules",
+        total_templates=len(catalog),
+    )
+    for rule in catalog:
+        row = existing.get(rule.key)
+        if row is None:
+            preview.will_create += 1
+            preview.items.append(
+                AdminCanonicalSyncPreviewItem(
+                    key=rule.key,
+                    title=rule.title,
+                    category=rule.type,
+                    status="missing",
+                )
+            )
+            continue
+
+        desired: dict[str, Any] = {
+            "title": rule.title,
+            "type": rule.type,
+            "priority": rule.priority,
+            "scope": rule.scope,
+            "stage": rule.stage,
+            "instruction": rule.instruction,
+            "trigger_examples": list(rule.trigger_examples),
+        }
+        changed_fields = [
+            name for name, value in desired.items() if getattr(row, name) != value
+        ]
+        is_archived = row.status != "active" or row.archived_at is not None
+
+        if is_archived:
+            preview.deleted_or_archived += 1
+            preview.items.append(
+                AdminCanonicalSyncPreviewItem(
+                    key=rule.key,
+                    title=row.title or rule.title,
+                    category=rule.type,
+                    status="deleted",
+                    changed_fields=changed_fields,
+                )
+            )
+        elif changed_fields:
+            preview.customized += 1
+            if row.embedding is None:
+                preview.unindexed += 1
+            preview.items.append(
+                AdminCanonicalSyncPreviewItem(
+                    key=rule.key,
+                    title=row.title or rule.title,
+                    category=rule.type,
+                    status="customized",
+                    changed_fields=changed_fields,
+                )
+            )
+        elif row.embedding is None:
+            preview.unindexed += 1
+            preview.items.append(
+                AdminCanonicalSyncPreviewItem(
+                    key=rule.key,
+                    title=rule.title,
+                    category=rule.type,
+                    status="unindexed",
+                )
+            )
+        else:
+            preview.unchanged += 1
+            preview.items.append(
+                AdminCanonicalSyncPreviewItem(
+                    key=rule.key,
+                    title=rule.title,
+                    category=rule.type,
+                    status="unchanged",
+                )
+            )
+    return preview
+
+
 async def sync_canonical_knowledge_base(
     db: AsyncSession,
     embedding_engine: EmbeddingEngine | None = None,
     *,
     actor: str = CANONICAL_ACTOR,
     articles: Sequence[CanonicalKnowledgeArticle] | None = None,
+    mode: Literal["safe", "full_reset"] = "full_reset",
 ) -> dict[str, int]:
     """Upsert canonical articles by ``(source, title)`` and embed changed rows.
 
+    When ``mode == "safe"``, only missing articles are created and unindexed active
+    rows are embedded; admin edits and soft-deleted rows are preserved.
+    When ``mode == "full_reset"``, all canonical articles are restored to factory
+    defaults.
     The caller owns the transaction (commit / audit).
     """
     del actor  # recorded by the caller's audit row
@@ -407,6 +637,7 @@ async def sync_canonical_knowledge_base(
     counts = CanonicalSyncCounts()
     to_embed: list[KnowledgeBase] = []
     now = _now()
+    active_count = 0
     for article in catalog:
         row = existing.get(article.title)
         if row is None:
@@ -423,6 +654,20 @@ async def sync_canonical_knowledge_base(
             db.add(row)
             to_embed.append(row)
             counts.created += 1
+            active_count += 1
+            continue
+
+        if mode == "safe":
+            if row.deleted_at is not None:
+                counts.unchanged += 1
+                continue
+            active_count += 1
+            if row.embedding is None:
+                to_embed.append(row)
+                counts.updated += 1
+                row.updated_at = now
+            else:
+                counts.unchanged += 1
             continue
 
         content_changed = (
@@ -449,6 +694,7 @@ async def sync_canonical_knowledge_base(
             counts.unchanged += 1
         if restored or needs_embedding:
             row.updated_at = now
+        active_count += 1
 
     if to_embed:
         engine = embedding_engine or EmbeddingEngine()
@@ -456,7 +702,7 @@ async def sync_canonical_knowledge_base(
         for row, embedding in zip(to_embed, embeddings, strict=True):
             row.embedding = embedding
 
-    counts.total_active = len(catalog)
+    counts.total_active = active_count if mode == "safe" else len(catalog)
     return counts.as_dict()
 
 
@@ -482,9 +728,14 @@ async def sync_canonical_bot_behavior_rules(
     *,
     actor: str = CANONICAL_ACTOR,
     rules: Sequence[CanonicalBotRule] | None = None,
+    mode: Literal["safe", "full_reset"] = "full_reset",
 ) -> dict[str, int]:
-    """Upsert canonical rules by ``metadata.canonical_key``; keep them active.
+    """Upsert canonical rules by ``metadata.canonical_key``.
 
+    When ``mode == "safe"``, only missing rules are created and unindexed active
+    rules are embedded; admin edits and archived rules are preserved.
+    When ``mode == "full_reset"``, all canonical rules are restored to factory
+    defaults and marked active.
     The caller owns the transaction (commit / audit).
     """
     catalog = tuple(rules) if rules is not None else CANONICAL_BOT_RULES
@@ -498,6 +749,7 @@ async def sync_canonical_bot_behavior_rules(
     counts = CanonicalSyncCounts()
     to_embed: list[BotBehaviorRule] = []
     now = _now()
+    active_count = 0
     for rule in catalog:
         row = existing.get(rule.key)
         desired: dict[str, Any] = {
@@ -525,6 +777,20 @@ async def sync_canonical_bot_behavior_rules(
             db.add(row)
             to_embed.append(row)
             counts.created += 1
+            active_count += 1
+            continue
+
+        if mode == "safe":
+            if row.status != "active" or row.archived_at is not None:
+                counts.unchanged += 1
+                continue
+            active_count += 1
+            if row.embedding is None:
+                to_embed.append(row)
+                counts.updated += 1
+                row.updated_at = now
+            else:
+                counts.unchanged += 1
             continue
 
         changed = any(getattr(row, name) != value for name, value in desired.items())
@@ -548,6 +814,7 @@ async def sync_canonical_bot_behavior_rules(
             row.metadata_ = _rule_metadata(rule)
             row.updated_by = actor
             row.updated_at = now
+        active_count += 1
 
     if to_embed:
         engine = embedding_engine or EmbeddingEngine()
@@ -557,5 +824,32 @@ async def sync_canonical_bot_behavior_rules(
         for row, embedding in zip(to_embed, embeddings, strict=True):
             row.embedding = embedding
 
-    counts.total_active = len(catalog)
+    counts.total_active = active_count if mode == "safe" else len(catalog)
     return counts.as_dict()
+
+
+async def ensure_canonical_seed(
+    db: AsyncSession,
+    embedding_engine: EmbeddingEngine | None = None,
+) -> dict[str, dict[str, int]]:
+    """Create-only seed of missing canonical KB articles and bot rules."""
+    kb_counts = await sync_canonical_knowledge_base(
+        db,
+        embedding_engine,
+        actor=CANONICAL_ACTOR,
+        mode="safe",
+    )
+    rule_counts = await sync_canonical_bot_behavior_rules(
+        db,
+        embedding_engine,
+        actor=CANONICAL_ACTOR,
+        mode="safe",
+    )
+    if (
+        kb_counts["created"]
+        or kb_counts["updated"]
+        or rule_counts["created"]
+        or rule_counts["updated"]
+    ):
+        await db.commit()
+    return {"knowledge_base": kb_counts, "bot_rules": rule_counts}

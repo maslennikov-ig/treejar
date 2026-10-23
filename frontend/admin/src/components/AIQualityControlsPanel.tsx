@@ -1,50 +1,51 @@
-import { useCallback, useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
     AlertTriangle,
     Bot,
     CheckCircle2,
+    DollarSign,
     Gauge,
     RefreshCw,
     Save,
     ShieldAlert,
     SlidersHorizontal,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import {
     fetchAIQualityControls,
     updateAIQualityControls,
 } from '@/api/operators';
-import EnableManualModeButton, { scopesNeedingManualMode } from '@/components/EnableManualModeButton';
+import EnableManualModeButton from '@/components/EnableManualModeButton';
 import { HelpTooltip } from '@/components/HelpTooltip';
 import { useI18n } from '@/i18n';
-import type { TranslationKey } from '@/i18n';
 import type {
     AIQualityControlsConfig,
     AIQualityControlsResponse,
-    AIQualityControlsUpdate,
     AIQualityMode,
     AIQualityScopeConfig,
-    AIQualityScopeKey,
+    AIQualityScopeKey as AIQualityScope,
+    AIQualityScopeUsage as AIQualityScopeUsageToday,
     AIQualityTranscriptMode,
 } from '@/types/operators';
 
-type MessageTone = 'success' | 'error' | 'info';
-
-const MODE_OPTIONS: { value: AIQualityMode; labelKey: TranslationKey }[] = [
-    { value: 'disabled', labelKey: 'aiqc.mode.disabled' },
-    { value: 'manual', labelKey: 'aiqc.mode.manual' },
-    { value: 'daily_sample', labelKey: 'aiqc.mode.daily_sample' },
-    { value: 'scheduled', labelKey: 'aiqc.mode.scheduled' },
+const AI_QUALITY_SCOPES: AIQualityScope[] = ['bot_qa', 'manager_qa', 'red_flags'];
+const AI_QUALITY_MODES: AIQualityMode[] = ['disabled', 'manual', 'daily_sample', 'scheduled'];
+const AI_QUALITY_TRANSCRIPT_MODES: AIQualityTranscriptMode[] = ['disabled', 'summary', 'full'];
+const AI_QUALITY_MODELS: string[] = [
+    'google/gemini-3.1-flash-lite-preview',
+    'openai/gpt-5.4-mini',
+    'z-ai/glm5-20260211',
 ];
 
-const TRANSCRIPT_OPTIONS: { value: AIQualityTranscriptMode; labelKey: TranslationKey }[] = [
-    { value: 'disabled', labelKey: 'aiqc.transcript.disabled' },
-    { value: 'summary', labelKey: 'aiqc.transcript.summary' },
-    { value: 'full', labelKey: 'aiqc.transcript.full' },
-];
+interface Props {
+    initialControls?: AIQualityControlsResponse | null;
+}
 
-/** Canonical criteria order per scope (backend backfills these defaults). */
-export const DEFAULT_CRITERIA_ORDER: Record<AIQualityScopeKey, string[]> = {
+interface StatusMessage {
+    tone: 'success' | 'error';
+    text: string;
+}
+
+const DEFAULT_CRITERIA_KEYS: Record<AIQualityScope, string[]> = {
     bot_qa: [
         'greeting_and_identity',
         'need_discovery_and_catalog',
@@ -67,134 +68,6 @@ export const DEFAULT_CRITERIA_ORDER: Record<AIQualityScopeKey, string[]> = {
     ],
 };
 
-const SCOPE_META: {
-    key: AIQualityScopeKey;
-    labelKey: TranslationKey;
-    shortLabelKey: TranslationKey;
-    descriptionKey: TranslationKey;
-    icon: LucideIcon;
-    accentClass: string;
-    badgeClass: string;
-}[] = [
-    {
-        key: 'bot_qa',
-        labelKey: 'aiqc.scope.bot_qa',
-        shortLabelKey: 'aiqc.scope.bot_qa',
-        descriptionKey: 'aiqc.scope.bot_qa.description',
-        icon: Bot,
-        accentClass: 'text-[#009668]',
-        badgeClass: 'bg-emerald-500/10 text-[#009668]',
-    },
-    {
-        key: 'manager_qa',
-        labelKey: 'aiqc.scope.manager_qa',
-        shortLabelKey: 'aiqc.scope.manager_qa',
-        descriptionKey: 'aiqc.scope.manager_qa.description',
-        icon: CheckCircle2,
-        accentClass: 'text-[#0058be]',
-        badgeClass: 'bg-blue-500/10 text-[#0058be]',
-    },
-    {
-        key: 'red_flags',
-        labelKey: 'aiqc.scope.red_flags',
-        shortLabelKey: 'aiqc.scope.red_flags.short',
-        descriptionKey: 'aiqc.scope.red_flags.description',
-        icon: ShieldAlert,
-        accentClass: 'text-[#92400e]',
-        badgeClass: 'bg-amber-500/10 text-[#92400e]',
-    },
-];
-
-interface AIQualityControlsPanelProps {
-    initialControls?: AIQualityControlsResponse | null;
-}
-
-function messageClasses(tone: MessageTone): string {
-    switch (tone) {
-        case 'success':
-            return 'border-emerald-500/20 bg-emerald-500/10 text-[#009668]';
-        case 'error':
-            return 'border-red-500/20 bg-red-500/10 text-[#be123c]';
-        default:
-            return 'border-amber-500/20 bg-amber-500/10 text-[#92400e]';
-    }
-}
-
-function formatBudget(cents: number): string {
-    return `$${(cents / 100).toFixed(2)}`;
-}
-
-export function formatCriteriaLabel(key: string): string {
-    return key
-        .replace(/[_-]+/g, ' ')
-        .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function isGlm5Model(model: string): boolean {
-    const normalized = model.toLowerCase();
-    if (normalized.includes('glm-5.2')) {
-        return false;
-    }
-    return normalized.includes('glm-5') || normalized.includes('glm5');
-}
-
-function orderedCriteria(scope: AIQualityScopeKey, criteria: Record<string, boolean>): [string, boolean][] {
-    const known = DEFAULT_CRITERIA_ORDER[scope].filter((key) => key in criteria);
-    const extra = Object.keys(criteria)
-        .filter((key) => !DEFAULT_CRITERIA_ORDER[scope].includes(key))
-        .sort((left, right) => left.localeCompare(right));
-    return [...known, ...extra].map((key) => [key, criteria[key]]);
-}
-
-function automationLabelKey(scopeConfig: AIQualityScopeConfig): TranslationKey {
-    switch (scopeConfig.mode) {
-        case 'disabled':
-            return 'aiqc.automation.disabled';
-        case 'manual':
-            return 'aiqc.automation.manual';
-        case 'daily_sample':
-            return 'aiqc.automation.daily_sample';
-        case 'scheduled':
-            return 'aiqc.automation.scheduled';
-    }
-}
-
-function automationBadgeClass(scopeConfig: AIQualityScopeConfig): string {
-    switch (scopeConfig.mode) {
-        case 'disabled':
-            return 'bg-emerald-500/10 text-[#009668]';
-        case 'manual':
-            return 'bg-blue-500/10 text-[#0058be]';
-        case 'daily_sample':
-            return 'bg-amber-500/10 text-[#92400e]';
-        case 'scheduled':
-            return 'bg-red-500/10 text-[#be123c]';
-    }
-}
-
-function TooltippedLabel({
-    children,
-    tooltip,
-}: {
-    children: ReactNode;
-    tooltip: string;
-}) {
-    return (
-        <span className="inline-flex items-center gap-1.5">
-            {children}
-            <HelpTooltip text={tooltip} />
-        </span>
-    );
-}
-
-function baseInputClass(): string {
-    return 'mt-2 w-full rounded-md border border-[#c6c6cd] bg-white px-3 py-2 text-sm text-[#0b1c30] outline-none transition focus:border-emerald-400/60 disabled:opacity-50';
-}
-
-function scopeFieldId(scope: AIQualityScopeKey, field: string): string {
-    return `ai-quality-${scope}-${field}`;
-}
-
 function cloneConfig(config: AIQualityControlsConfig): AIQualityControlsConfig {
     return {
         bot_qa: {
@@ -215,554 +88,851 @@ function cloneConfig(config: AIQualityControlsConfig): AIQualityControlsConfig {
     };
 }
 
-export default function AIQualityControlsPanel({
-    initialControls = null,
-}: AIQualityControlsPanelProps) {
+function formatCriterionFallback(key: string): string {
+    return key
+        .split('_')
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+}
+
+function criteriaKeysFor(scope: AIQualityScope, criteria: Record<string, boolean>): string[] {
+    const configured = Object.keys(criteria);
+    if (configured.length === 0) {
+        return DEFAULT_CRITERIA_KEYS[scope];
+    }
+    const defaults = DEFAULT_CRITERIA_KEYS[scope].filter((key) => key in criteria);
+    const custom = configured.filter((key) => !DEFAULT_CRITERIA_KEYS[scope].includes(key)).sort();
+    return [...defaults, ...custom];
+}
+
+function formatUsd(cents: number | null | undefined): string {
+    if (cents === null || cents === undefined) {
+        return 'n/a';
+    }
+    return `$${(cents / 100).toFixed(2)}`;
+}
+
+function modeBadgeClasses(mode: AIQualityMode): string {
+    if (mode === 'disabled') {
+        return 'border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+    }
+    if (mode === 'manual') {
+        return 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/60 dark:text-blue-300';
+    }
+    return 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300';
+}
+
+export default function AIQualityControlsPanel({ initialControls = null }: Props) {
     const { t, tx } = useI18n();
     const [controls, setControls] = useState<AIQualityControlsResponse | null>(initialControls);
     const [draft, setDraft] = useState<AIQualityControlsConfig | null>(
         initialControls ? cloneConfig(initialControls.config) : null,
     );
-    const [loading, setLoading] = useState(initialControls === null);
-    const [savingScope, setSavingScope] = useState<AIQualityScopeKey | null>(null);
-    const [message, setMessage] = useState<{ tone: MessageTone; text: string } | null>(null);
+    const [loading, setLoading] = useState<boolean>(initialControls === null);
+    const [saving, setSaving] = useState<boolean>(false);
+    const [error, setError] = useState<string | null>(null);
+    const [status, setStatus] = useState<StatusMessage | null>(null);
 
-    const scopeName = useCallback(
-        (scope: AIQualityScopeKey): string => {
-            const meta = SCOPE_META.find((item) => item.key === scope);
-            return meta ? t(meta.shortLabelKey) : scope;
-        },
-        [t],
-    );
+    const applyResponse = useCallback((next: AIQualityControlsResponse) => {
+        setControls(next);
+        setDraft(cloneConfig(next.config));
+    }, []);
 
     const loadControls = useCallback(async () => {
         setLoading(true);
-        setMessage(null);
+        setError(null);
         try {
-            const response = await fetchAIQualityControls();
-            setControls(response);
-            setDraft(cloneConfig(response.config));
+            const next = await fetchAIQualityControls();
+            applyResponse(next);
         } catch (err) {
-            setMessage({
-                tone: 'error',
-                text: err instanceof Error ? err.message : t('aiqc.loadFailed'),
-            });
+            setError(err instanceof Error ? err.message : t('aiqc.loadFailed'));
         } finally {
             setLoading(false);
         }
-    }, [t]);
+    }, [applyResponse, t]);
 
     useEffect(() => {
-        if (initialControls) {
-            setControls(initialControls);
-            setDraft(cloneConfig(initialControls.config));
-            setLoading(false);
+        if (initialControls !== null) {
             return;
         }
-
         void loadControls();
     }, [initialControls, loadControls]);
 
-    function applyResponse(response: AIQualityControlsResponse): void {
-        setControls(response);
-        setDraft(cloneConfig(response.config));
-    }
+    const updateScope = <K extends keyof AIQualityScopeConfig>(
+        scope: AIQualityScope,
+        field: K,
+        value: AIQualityScopeConfig[K],
+    ) => {
+        setDraft((current) => {
+            if (!current) {
+                return current;
+            }
+            const nextScope: AIQualityScopeConfig = {
+                ...current[scope],
+                [field]: value,
+            };
+            if (field === 'transcript_mode' && value === 'summary') {
+                nextScope.full_transcript_warning_override = false;
+            }
+            if (field === 'model' && value !== 'z-ai/glm5-20260211' && value !== 'z-ai/glm-5') {
+                nextScope.glm5_warning_override = false;
+            }
+            return {
+                ...current,
+                [scope]: nextScope,
+            };
+        });
+    };
 
-    function updateDraftScope(
-        scope: AIQualityScopeKey,
-        updater: (current: AIQualityScopeConfig) => AIQualityScopeConfig,
-    ): void {
+    const updateRetry = (
+        scope: AIQualityScope,
+        field: keyof AIQualityScopeConfig['retry'],
+        rawValue: string,
+    ) => {
+        const parsed = Number.parseInt(rawValue, 10);
+        const value = Number.isNaN(parsed) ? 0 : parsed;
         setDraft((current) => {
             if (!current) {
                 return current;
             }
             return {
                 ...current,
-                [scope]: updater(current[scope]),
+                [scope]: {
+                    ...current[scope],
+                    retry: {
+                        ...current[scope].retry,
+                        [field]: value,
+                    },
+                },
             };
         });
-    }
+    };
 
-    function handleModeChange(scope: AIQualityScopeKey, value: AIQualityMode): void {
-        updateDraftScope(scope, (current) => ({
-            ...current,
-            mode: value,
-        }));
-    }
-
-    function handleTranscriptChange(
-        scope: AIQualityScopeKey,
-        value: AIQualityTranscriptMode,
-    ): void {
-        updateDraftScope(scope, (current) => ({
-            ...current,
-            transcript_mode: value,
-            full_transcript_warning_override:
-                value === 'full' ? current.full_transcript_warning_override : false,
-        }));
-    }
-
-    function handleModelChange(scope: AIQualityScopeKey, value: string): void {
-        updateDraftScope(scope, (current) => ({
-            ...current,
-            model: value,
-            glm5_warning_override: isGlm5Model(value) ? current.glm5_warning_override : false,
-        }));
-    }
-
-    function handleNumberChange(
-        scope: AIQualityScopeKey,
+    const updateNumberField = (
+        scope: AIQualityScope,
         field: 'daily_budget_cents' | 'max_calls_per_run' | 'max_calls_per_day',
-        event: ChangeEvent<HTMLInputElement>,
-    ): void {
-        const value = Number(event.target.value);
-        updateDraftScope(scope, (current) => ({
-            ...current,
-            [field]: Number.isFinite(value) ? value : 0,
-        }));
-    }
+        rawValue: string,
+    ) => {
+        const parsed = Number.parseInt(rawValue, 10);
+        updateScope(scope, field, Number.isNaN(parsed) ? 0 : parsed);
+    };
 
-    function handleRetryChange(
-        scope: AIQualityScopeKey,
-        field: 'max_attempts' | 'backoff_seconds',
-        event: ChangeEvent<HTMLInputElement>,
-    ): void {
-        const value = Number(event.target.value);
-        updateDraftScope(scope, (current) => ({
-            ...current,
-            retry: {
-                ...current.retry,
-                [field]: Number.isFinite(value) ? value : 0,
-            },
-        }));
-    }
+    const updateUsdBudgetField = (scope: AIQualityScope, rawUsd: string) => {
+        const parsed = Number.parseFloat(rawUsd);
+        const cents = Number.isNaN(parsed) ? 0 : Math.max(0, Math.round(parsed * 100));
+        updateScope(scope, 'daily_budget_cents', cents);
+    };
 
-    function handleBooleanChange(
-        scope: AIQualityScopeKey,
-        field: 'cache_telemetry_enabled' | 'alert_on_failure' | 'full_transcript_warning_override' | 'glm5_warning_override',
-        checked: boolean,
-    ): void {
-        updateDraftScope(scope, (current) => ({
-            ...current,
-            [field]: checked,
-        }));
-    }
+    const toggleCriterion = (scope: AIQualityScope, key: string, enabled: boolean) => {
+        setDraft((current) => {
+            if (!current) {
+                return current;
+            }
+            const baseCriteria: Record<string, boolean> = {};
+            for (const criterionKey of criteriaKeysFor(scope, current[scope].criteria)) {
+                baseCriteria[criterionKey] = current[scope].criteria[criterionKey] ?? true;
+            }
+            baseCriteria[key] = enabled;
+            return {
+                ...current,
+                [scope]: {
+                    ...current[scope],
+                    criteria: baseCriteria,
+                },
+            };
+        });
+    };
 
-    function handleCriteriaChange(
-        scope: AIQualityScopeKey,
-        criterion: string,
-        checked: boolean,
-    ): void {
-        updateDraftScope(scope, (current) => ({
-            ...current,
-            criteria: {
-                ...current.criteria,
-                [criterion]: checked,
-            },
-        }));
-    }
-
-    async function handleSaveScope(scope: AIQualityScopeKey): Promise<void> {
+    const handleSave = async () => {
         if (!draft) {
             return;
         }
-
-        setSavingScope(scope);
-        setMessage(null);
+        setSaving(true);
+        setStatus(null);
         try {
-            const payload: AIQualityControlsUpdate = {
-                [scope]: draft[scope],
-            };
-            const response = await updateAIQualityControls(payload);
-            applyResponse(response);
-            setMessage({
+            const saved = await updateAIQualityControls(draft);
+            applyResponse(saved);
+            setStatus({
                 tone: 'success',
-                text: t('aiqc.saved', { scope: scopeName(scope) }),
+                text: t('aiqc.saved'),
             });
         } catch (err) {
-            setMessage({
+            setStatus({
                 tone: 'error',
-                text: err instanceof Error ? err.message : t('aiqc.saveFailed', { scope: scopeName(scope) }),
+                text: err instanceof Error ? err.message : t('aiqc.saveFailed'),
             });
         } finally {
-            setSavingScope(null);
+            setSaving(false);
         }
-    }
+    };
 
-    function usageLine(scope: AIQualityScopeKey): string | null {
-        const usage = controls?.usage_today?.[scope];
-        if (!usage) return null;
+    const warnings = controls?.warnings ?? [];
+    const allDisabled =
+        draft !== null &&
+        AI_QUALITY_SCOPES.every((scope) => draft[scope].mode === 'disabled');
+
+    const scopeLabel = (scope: AIQualityScope): string => {
+        if (scope === 'bot_qa') return t('aiqc.scope.bot_qa.label');
+        if (scope === 'manager_qa') return t('aiqc.scope.manager_qa.label');
+        return t('aiqc.scope.red_flags.label');
+    };
+
+    const scopeShortName = (scope: AIQualityScope): string => {
+        if (scope === 'bot_qa') return t('aiqc.scope.bot_qa');
+        if (scope === 'manager_qa') return t('aiqc.scope.manager_qa');
+        return t('aiqc.scope.red_flags.short');
+    };
+
+    const scopeDescription = (scope: AIQualityScope): string => {
+        if (scope === 'bot_qa') return t('aiqc.scope.bot_qa.desc');
+        if (scope === 'manager_qa') return t('aiqc.scope.manager_qa.desc');
+        return t('aiqc.scope.red_flags.desc');
+    };
+
+    const scopeDetail = (scope: AIQualityScope): string => {
+        if (scope === 'bot_qa') return t('aiqc.scope.bot_qa.detail');
+        if (scope === 'manager_qa') return t('aiqc.scope.manager_qa.detail');
+        return t('aiqc.scope.red_flags.detail');
+    };
+
+    const modeLabel = (mode: AIQualityMode): string => tx(`aiqc.mode.${mode}`, mode);
+    const transcriptLabel = (mode: AIQualityTranscriptMode): string =>
+        tx(`aiqc.transcript.${mode}`, mode);
+
+    const criterionLabel = (scope: AIQualityScope, key: string): string =>
+        tx(
+            `crit.${scope}.${key}`,
+            tx(`crit.common.${key}`, formatCriterionFallback(key)),
+        );
+
+    const criterionHelp = (scope: AIQualityScope, key: string): string =>
+        tx(`crit.${scope}.${key}.help`, '');
+
+    const renderUsageLine = (
+        scope: AIQualityScope,
+        scopeConfig: AIQualityScopeConfig,
+    ): string => {
+        const usage: AIQualityScopeUsageToday | undefined = controls?.usage_today?.[scope];
         const na = t('aiqc.na');
-        return t('aiqc.usageLine', {
-            calls: usage.calls_today === null ? na : String(usage.calls_today),
-            maxCalls: String(usage.max_calls_per_day),
-            spend: usage.spend_cents_today === null ? na : formatBudget(usage.spend_cents_today),
-            budget: formatBudget(usage.daily_budget_cents),
-        });
-    }
+        const calls =
+            usage && usage.calls_today !== null && usage.calls_today !== undefined
+                ? String(usage.calls_today)
+                : na;
+        const maxCalls = String(usage?.max_calls_per_day ?? scopeConfig.max_calls_per_day);
+        const spend =
+            usage && usage.spend_cents_today !== null && usage.spend_cents_today !== undefined
+                ? formatUsd(usage.spend_cents_today)
+                : na;
+        const budget = formatUsd(usage?.daily_budget_cents ?? scopeConfig.daily_budget_cents);
+        return t('aiqc.usageLine', { calls, maxCalls, spend, budget });
+    };
 
-    const effectiveConfig = draft ?? controls?.config ?? null;
-    const allAutomationDisabled = effectiveConfig
-        ? SCOPE_META.every((item) => effectiveConfig[item.key].mode === 'disabled')
-        : false;
-    const savedConfig = controls?.config ?? null;
-    const hasDisabledScopes = scopesNeedingManualMode(savedConfig).length > 0;
+    // Total daily budget and spend across all 3 scopes for Simple Mode Card 1
+    const totalBudgetCents = draft
+        ? draft.bot_qa.daily_budget_cents +
+          draft.manager_qa.daily_budget_cents +
+          draft.red_flags.daily_budget_cents
+        : 0;
+    const totalSpendCents = controls?.usage_today
+        ? (controls.usage_today.bot_qa?.spend_cents_today ?? 0) +
+          (controls.usage_today.manager_qa?.spend_cents_today ?? 0) +
+          (controls.usage_today.red_flags?.spend_cents_today ?? 0)
+        : 0;
+    const budgetPct =
+        totalBudgetCents > 0
+            ? Math.min(100, Math.round((totalSpendCents / totalBudgetCents) * 100))
+            : 0;
 
     return (
-        <section className="rounded-md border border-[#e5eeff] bg-white p-5 xl:col-span-2" data-ai-quality-controls="">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <section className="admin-panel rounded-2xl p-5 shadow-xs">
+            <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 lg:flex-row lg:items-center lg:justify-between dark:border-slate-800">
                 <div>
-                    <div className="flex items-center gap-2 text-[#0b1c30]">
-                        <SlidersHorizontal size={18} className="text-[#009668]" />
-                        <h3 className="text-lg font-semibold">{t('aiqc.title')}</h3>
-                        <HelpTooltip text={t('aiqc.titleHelp')} />
+                    <div className="flex items-center gap-2 text-xs font-semibold tracking-wider text-blue-600 uppercase dark:text-blue-400">
+                        <SlidersHorizontal className="h-4 w-4" />
+                        {t('aiqc.eyebrow')}
                     </div>
-                    <p className="mt-2 max-w-3xl text-sm text-[#45464d]">
+                    <h2 className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-100">
+                        {t('aiqc.title')}
+                    </h2>
+                    <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
                         {t('aiqc.subtitle')}
                     </p>
                 </div>
-                <div className="flex flex-wrap items-start gap-2">
-                    {hasDisabledScopes && (
-                        <EnableManualModeButton
-                            config={savedConfig}
-                            onDone={(response) => {
-                                applyResponse(response);
-                                setMessage({ tone: 'success', text: t('aiqc.manualEnabled') });
-                            }}
-                        />
-                    )}
+
+                <div className="flex flex-wrap items-center gap-2">
+                    <EnableManualModeButton
+                        config={draft}
+                        onDone={applyResponse}
+                    />
                     <button
                         type="button"
                         onClick={() => void loadControls()}
-                        disabled={loading || savingScope !== null}
-                        className="inline-flex items-center justify-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 py-2 text-sm font-medium text-[#3f465c] transition hover:bg-[#f2f4f7] disabled:opacity-50"
+                        disabled={loading || saving}
+                        className="admin-subpanel inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:text-slate-200 dark:hover:bg-slate-800"
                     >
-                        <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                        <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
                         {t('aiqc.reload')}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => void handleSave()}
+                        disabled={!draft || loading || saving}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-[#2170e4] px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                    >
+                        <Save className="h-3.5 w-3.5" />
+                        {saving ? t('aiqc.saving') : t('aiqc.save')}
                     </button>
                 </div>
             </div>
 
-            {loading && (
-                <div className="mt-5 rounded-md border border-[#e5eeff] bg-[#f8f9ff] px-4 py-4 text-sm text-[#45464d]">
-                    {t('aiqc.loading')}
+            {error && (
+                <div className="mt-4 flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-xs text-red-800 dark:border-red-800 dark:bg-red-950/50 dark:text-red-200">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    <span>{error}</span>
                 </div>
             )}
 
-            {effectiveConfig && allAutomationDisabled && (
-                <div className="mt-5 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-4 py-4 text-sm text-[#166534]">
-                    <div className="flex items-start gap-3">
-                        <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-[#009668]" />
-                        <div>
-                            <p className="font-medium text-[#166534]">{t('aiqc.zeroTitle')}</p>
-                            <p className="mt-1 text-[#166534]">
-                                {t('aiqc.zeroBody')}
+            {status && (
+                <div
+                    className={`mt-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-xs ${
+                        status.tone === 'success'
+                            ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200'
+                            : 'border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/50 dark:text-red-200'
+                    }`}
+                >
+                    {status.tone === 'success' ? (
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    ) : (
+                        <AlertTriangle className="h-4 w-4 shrink-0" />
+                    )}
+                    <span>{status.text}</span>
+                </div>
+            )}
+
+            {draft && (
+                <div className="mt-4 space-y-4">
+                    {/* Variant 6A: 3 Simple Summary Cards */}
+                    <div
+                        data-aiqc-simple-cards
+                        className="grid grid-cols-1 gap-3 md:grid-cols-3"
+                    >
+                        <div className="admin-subpanel rounded-xl p-4">
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                                    {t('aiqc.simple.budgetTitle')}
+                                </span>
+                                <span className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 font-mono text-xs font-bold text-blue-700 dark:border-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
+                                    <DollarSign className="h-3 w-3" />
+                                    {formatUsd(totalSpendCents)} / {formatUsd(totalBudgetCents)}
+                                </span>
+                            </div>
+                            <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+                                {t('aiqc.simple.budgetDesc')}
                             </p>
+                            <div className="mt-3">
+                                <div className="mb-1 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                                    <span>{t('aiqc.simple.budgetUsed')}</span>
+                                    <span className="font-mono font-semibold">{budgetPct}%</span>
+                                </div>
+                                <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                                    <div
+                                        className="h-full rounded-full bg-[#2170e4] transition-all"
+                                        style={{ width: `${Math.max(4, budgetPct)}%` }}
+                                    />
+                                </div>
+                                <div className="mt-2.5 flex items-center justify-between gap-2 text-xs">
+                                    <span className="text-slate-600 dark:text-slate-300">
+                                        {t('aiqc.simple.perContourUsd')}
+                                    </span>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        max={50}
+                                        step={0.25}
+                                        value={(draft.bot_qa.daily_budget_cents / 100).toFixed(2)}
+                                        onChange={(event) =>
+                                            updateUsdBudgetField('bot_qa', event.target.value)
+                                        }
+                                        className="admin-input w-24 rounded-lg px-2 py-1 text-right font-mono text-xs"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="admin-subpanel rounded-xl p-4">
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                                    {t('aiqc.simple.botQaTitle')}
+                                </span>
+                                <span
+                                    className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${modeBadgeClasses(
+                                        draft.bot_qa.mode,
+                                    )}`}
+                                >
+                                    {modeLabel(draft.bot_qa.mode)}
+                                </span>
+                            </div>
+                            <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+                                {t('aiqc.simple.botQaDesc')}
+                            </p>
+                            <div className="mt-3 flex items-center gap-2">
+                                <select
+                                    value={draft.bot_qa.mode}
+                                    onChange={(event) =>
+                                        updateScope(
+                                            'bot_qa',
+                                            'mode',
+                                            event.target.value as AIQualityMode,
+                                        )
+                                    }
+                                    className="admin-input w-full rounded-lg px-2.5 py-1.5 text-xs"
+                                >
+                                    {AI_QUALITY_MODES.map((mode) => (
+                                        <option key={mode} value={mode}>
+                                            {modeLabel(mode)}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="admin-subpanel rounded-xl p-4">
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                                    {t('aiqc.simple.managerAndAlertsTitle')}
+                                </span>
+                                <span
+                                    className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${modeBadgeClasses(
+                                        draft.manager_qa.mode,
+                                    )}`}
+                                >
+                                    {modeLabel(draft.manager_qa.mode)}
+                                </span>
+                            </div>
+                            <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+                                {t('aiqc.simple.managerAndAlertsDesc')}
+                            </p>
+                            <div className="mt-3 flex items-center gap-2">
+                                <select
+                                    value={draft.manager_qa.mode}
+                                    onChange={(event) =>
+                                        updateScope(
+                                            'manager_qa',
+                                            'mode',
+                                            event.target.value as AIQualityMode,
+                                        )
+                                    }
+                                    className="admin-input w-full rounded-lg px-2.5 py-1.5 text-xs"
+                                >
+                                    {AI_QUALITY_MODES.map((mode) => (
+                                        <option key={mode} value={mode}>
+                                            {modeLabel(mode)}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
 
-            {controls && controls.warnings.length > 0 && (
-                <div className="mt-5 space-y-2">
-                    {controls.warnings.map((warning) => (
-                        <div
-                            key={`${warning.scope}-${warning.code}`}
-                            className="rounded-md border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-[#92400e]"
-                        >
-                            <AlertTriangle size={16} className="mr-2 inline text-[#92400e]" />
-                            <span className="font-medium">{scopeName(warning.scope)}:</span>{' '}
-                            {tx(`aiqc.warning.${warning.code}`, warning.message)}
+                    <div
+                        className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-xs ${
+                            allDisabled
+                                ? 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
+                                : 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-200'
+                        }`}
+                    >
+                        <div className="flex items-center gap-2 font-medium">
+                            <Bot className="h-4 w-4 shrink-0" />
+                            <span>
+                                {allDisabled ? t('aiqc.zeroDefault') : t('aiqc.activeModes')}
+                            </span>
                         </div>
-                    ))}
-                </div>
-            )}
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                            {t('aiqc.zeroCallsHint')}
+                        </span>
+                    </div>
 
-            {message && (
-                <div className={`mt-5 rounded-md border px-4 py-3 text-sm ${messageClasses(message.tone)}`}>
-                    {message.text}
-                </div>
-            )}
+                    {warnings.length > 0 && (
+                        <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-4 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
+                            <div className="flex items-center gap-2 font-semibold">
+                                <ShieldAlert className="h-4 w-4 shrink-0" />
+                                {t('aiqc.activeWarnings')}
+                            </div>
+                            <ul className="list-disc space-y-1 pl-5">
+                                {warnings.map((warning) => (
+                                    <li key={`${warning.scope}-${warning.code}`}>
+                                        <span className="font-medium">
+                                            {scopeShortName(warning.scope)}:
+                                        </span>{' '}
+                                        {tx(`aiqc.warning.${warning.code}`, warning.message)}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
 
-            {effectiveConfig && (
-                <>
-                    <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-3">
-                        {SCOPE_META.map((meta) => {
-                            const scopeConfig = effectiveConfig[meta.key];
-                            const Icon = meta.icon;
-                            const criteriaEntries = orderedCriteria(meta.key, scopeConfig.criteria);
-                            const showFullTranscriptWarning = scopeConfig.transcript_mode === 'full';
-                            const showGlmWarning = isGlm5Model(scopeConfig.model);
-                            const usage = usageLine(meta.key);
+                    {/* Collapsible Engineer Settings (Variant 6A) */}
+                    <details
+                        data-advanced-engineer-settings
+                        className="admin-subpanel group rounded-2xl p-4"
+                    >
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-bold text-slate-800 select-none dark:text-slate-100">
+                            <span className="inline-flex items-center gap-2">
+                                <SlidersHorizontal className="h-4 w-4 text-[#2170e4]" />
+                                {t('aiqc.engineerSettingsToggle')}
+                            </span>
+                            <span className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                {t('aiqc.engineerSettingsHint')}
+                            </span>
+                        </summary>
 
-                            return (
-                                <div key={meta.key} className="rounded-md border border-[#e5eeff] bg-[#f8f9ff] p-4" data-ai-quality-scope={meta.key}>
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div>
-                                            <div className="flex items-center gap-2 text-[#0b1c30]">
-                                                <Icon size={17} className={meta.accentClass} />
-                                                <h4 className="text-base font-semibold">{t(meta.labelKey)}</h4>
-                                            </div>
-                                            <p className="mt-2 text-sm text-[#45464d]">{t(meta.descriptionKey)}</p>
+                        <div className="mt-4 space-y-4 border-t border-slate-200 pt-4 dark:border-slate-700">
+                            <div
+                                data-ai-quality-contours
+                                className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-4 text-xs text-slate-600 md:grid-cols-3 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                            >
+                                {AI_QUALITY_SCOPES.map((scope) => (
+                                    <div key={scope} className="space-y-1">
+                                        <div className="font-semibold text-slate-900 dark:text-slate-100">
+                                            {scopeLabel(scope)}
                                         </div>
-                                        <span className={`rounded-md px-3 py-2 text-xs font-medium ${automationBadgeClass(scopeConfig)}`}>
-                                            {t(automationLabelKey(scopeConfig))}
-                                        </span>
+                                        <p className="leading-relaxed">{scopeDetail(scope)}</p>
                                     </div>
+                                ))}
+                            </div>
 
-                                    {usage && (
-                                        <p className="mt-3 rounded-md border border-[#e5eeff] bg-white px-3 py-2 text-xs text-[#3f465c]" data-ai-quality-usage={meta.key}>
-                                            {usage}
-                                        </p>
-                                    )}
+                            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                                {AI_QUALITY_SCOPES.map((scope) => {
+                                    const scopeConfig = draft[scope];
+                                    const criteriaKeys = criteriaKeysFor(scope, scopeConfig.criteria);
+                                    return (
+                                        <div
+                                            key={scope}
+                                            className="admin-panel space-y-4 rounded-xl p-4"
+                                        >
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div>
+                                                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                                                        {scopeLabel(scope)}
+                                                    </h3>
+                                                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                        {scopeDescription(scope)}
+                                                    </p>
+                                                </div>
+                                                <span
+                                                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${modeBadgeClasses(
+                                                        scopeConfig.mode,
+                                                    )}`}
+                                                >
+                                                    {modeLabel(scopeConfig.mode)}
+                                                </span>
+                                            </div>
 
-                                    <div className="mt-4 grid grid-cols-1 gap-3">
-                                        <label htmlFor={scopeFieldId(meta.key, 'mode')} className="text-sm font-medium text-[#3f465c]">
-                                            <TooltippedLabel tooltip={t('aiqc.help.mode')}>{t('aiqc.field.mode')}</TooltippedLabel>
-                                            <select
-                                                id={scopeFieldId(meta.key, 'mode')}
-                                                value={scopeConfig.mode}
-                                                onChange={(event) => handleModeChange(meta.key, event.target.value as AIQualityMode)}
-                                                className={baseInputClass()}
+                                            <div
+                                                data-usage-today={scope}
+                                                className="admin-subpanel rounded-lg px-3 py-2 text-xs text-slate-600 dark:text-slate-300"
                                             >
-                                                {MODE_OPTIONS.map((option) => (
-                                                    <option key={option.value} value={option.value}>{t(option.labelKey)}</option>
-                                                ))}
-                                            </select>
-                                        </label>
+                                                {renderUsageLine(scope, scopeConfig)}
+                                            </div>
 
-                                        <label htmlFor={scopeFieldId(meta.key, 'transcript')} className="text-sm font-medium text-[#3f465c]">
-                                            <TooltippedLabel tooltip={t('aiqc.help.transcript')}>{t('aiqc.field.transcript')}</TooltippedLabel>
-                                            <select
-                                                id={scopeFieldId(meta.key, 'transcript')}
-                                                value={scopeConfig.transcript_mode}
-                                                onChange={(event) => handleTranscriptChange(meta.key, event.target.value as AIQualityTranscriptMode)}
-                                                className={baseInputClass()}
-                                            >
-                                                {TRANSCRIPT_OPTIONS.map((option) => (
-                                                    <option key={option.value} value={option.value}>{t(option.labelKey)}</option>
-                                                ))}
-                                            </select>
-                                        </label>
+                                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                <label className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                                                    <span className="flex items-center gap-1">
+                                                        {t('aiqc.field.mode')}
+                                                        <HelpTooltip text={t('aiqc.tooltip.mode')} />
+                                                    </span>
+                                                    <select
+                                                        value={scopeConfig.mode}
+                                                        onChange={(event) =>
+                                                            updateScope(
+                                                                scope,
+                                                                'mode',
+                                                                event.target.value as AIQualityMode,
+                                                            )
+                                                        }
+                                                        className="admin-input w-full rounded-lg px-3 py-2 text-xs"
+                                                    >
+                                                        {AI_QUALITY_MODES.map((mode) => (
+                                                            <option key={mode} value={mode}>
+                                                                {modeLabel(mode)}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </label>
 
-                                        {showFullTranscriptWarning && (
-                                            <label className="rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-3 text-sm text-[#92400e]">
-                                                <span className="flex items-start gap-2">
+                                                <label className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                                                    <span className="flex items-center gap-1">
+                                                        {t('aiqc.field.transcriptMode')}
+                                                        <HelpTooltip text={t('aiqc.tooltip.transcriptMode')} />
+                                                    </span>
+                                                    <select
+                                                        value={scopeConfig.transcript_mode}
+                                                        onChange={(event) =>
+                                                            updateScope(
+                                                                scope,
+                                                                'transcript_mode',
+                                                                event.target.value as AIQualityTranscriptMode,
+                                                            )
+                                                        }
+                                                        className="admin-input w-full rounded-lg px-3 py-2 text-xs"
+                                                    >
+                                                        {AI_QUALITY_TRANSCRIPT_MODES.map((mode) => (
+                                                            <option key={mode} value={mode}>
+                                                                {transcriptLabel(mode)}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </label>
+                                            </div>
+
+                                            <label className="block space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                                                <span className="flex items-center gap-1">
+                                                    {t('aiqc.field.model')}
+                                                    <HelpTooltip text={t('aiqc.tooltip.model')} />
+                                                </span>
+                                                <select
+                                                    value={scopeConfig.model}
+                                                    onChange={(event) =>
+                                                        updateScope(
+                                                            scope,
+                                                            'model',
+                                                            event.target.value,
+                                                        )
+                                                    }
+                                                    className="admin-input w-full rounded-lg px-3 py-2 text-xs"
+                                                >
+                                                    {AI_QUALITY_MODELS.map((model) => (
+                                                        <option key={model} value={model}>
+                                                            {model}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </label>
+
+                                            <div className="grid grid-cols-3 gap-2">
+                                                <label className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                                                    <span className="flex items-center gap-1">
+                                                        <DollarSign className="h-3 w-3" />
+                                                        {t('aiqc.field.dailyBudget')}
+                                                    </span>
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        max={5000}
+                                                        value={scopeConfig.daily_budget_cents}
+                                                        onChange={(event) =>
+                                                            updateNumberField(
+                                                                scope,
+                                                                'daily_budget_cents',
+                                                                event.target.value,
+                                                            )
+                                                        }
+                                                        className="admin-input w-full rounded-lg px-2.5 py-1.5 text-xs"
+                                                    />
+                                                    <span className="block text-[11px] text-slate-500">
+                                                        {formatUsd(scopeConfig.daily_budget_cents)} /{' '}
+                                                        {t('aiqc.perDay')}
+                                                    </span>
+                                                </label>
+
+                                                <label className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                                                    <span className="flex items-center gap-1">
+                                                        <Gauge className="h-3 w-3" />
+                                                        {t('aiqc.field.callsPerRun')}
+                                                    </span>
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        max={25}
+                                                        value={scopeConfig.max_calls_per_run}
+                                                        onChange={(event) =>
+                                                            updateNumberField(
+                                                                scope,
+                                                                'max_calls_per_run',
+                                                                event.target.value,
+                                                            )
+                                                        }
+                                                        className="admin-input w-full rounded-lg px-2.5 py-1.5 text-xs"
+                                                    />
+                                                </label>
+
+                                                <label className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                                                    <span>{t('aiqc.field.callsPerDay')}</span>
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        max={100}
+                                                        value={scopeConfig.max_calls_per_day}
+                                                        onChange={(event) =>
+                                                            updateNumberField(
+                                                                scope,
+                                                                'max_calls_per_day',
+                                                                event.target.value,
+                                                            )
+                                                        }
+                                                        className="admin-input w-full rounded-lg px-2.5 py-1.5 text-xs"
+                                                    />
+                                                </label>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <label className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                                                    <span>{t('aiqc.field.retryAttempts')}</span>
+                                                    <input
+                                                        type="number"
+                                                        min={1}
+                                                        max={3}
+                                                        value={scopeConfig.retry.max_attempts}
+                                                        onChange={(event) =>
+                                                            updateRetry(
+                                                                scope,
+                                                                'max_attempts',
+                                                                event.target.value,
+                                                            )
+                                                        }
+                                                        className="admin-input w-full rounded-lg px-2.5 py-1.5 text-xs"
+                                                    />
+                                                </label>
+
+                                                <label className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                                                    <span>{t('aiqc.field.backoffSeconds')}</span>
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        max={600}
+                                                        value={scopeConfig.retry.backoff_seconds}
+                                                        onChange={(event) =>
+                                                            updateRetry(
+                                                                scope,
+                                                                'backoff_seconds',
+                                                                event.target.value,
+                                                            )
+                                                        }
+                                                        className="admin-input w-full rounded-lg px-2.5 py-1.5 text-xs"
+                                                    />
+                                                </label>
+                                            </div>
+
+                                            <div className="space-y-2 border-t border-slate-200 pt-3 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-300">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="font-medium">
+                                                        {t('aiqc.criteriaToggles')}
+                                                    </span>
+                                                    <HelpTooltip text={tx(`aiqc.criteriaHelp.${scope}`, '')} />
+                                                </div>
+                                                <p className="text-[11px] leading-relaxed text-slate-500">
+                                                    {tx(`aiqc.criteriaHelp.${scope}`, '')}
+                                                </p>
+                                                <div className="grid grid-cols-1 gap-1.5">
+                                                    {criteriaKeys.map((key) => {
+                                                        const enabled = scopeConfig.criteria[key] ?? true;
+                                                        const help = criterionHelp(scope, key);
+                                                        return (
+                                                            <div
+                                                                key={key}
+                                                                className="admin-subpanel flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5"
+                                                            >
+                                                                <label className="flex min-w-0 flex-1 items-center gap-2">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        data-criterion={key}
+                                                                        checked={enabled}
+                                                                        onChange={(event) =>
+                                                                            toggleCriterion(
+                                                                                scope,
+                                                                                key,
+                                                                                event.target.checked,
+                                                                            )
+                                                                        }
+                                                                        className="h-3.5 w-3.5 rounded accent-blue-600"
+                                                                    />
+                                                                    <span className="truncate font-medium text-slate-800 dark:text-slate-200">
+                                                                        {criterionLabel(scope, key)}
+                                                                    </span>
+                                                                </label>
+                                                                {help && <HelpTooltip text={help} />}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-2 border-t border-slate-200 pt-3 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-300">
+                                                <label className="flex items-center justify-between gap-2">
+                                                    <span className="flex items-center gap-1">
+                                                        {t('aiqc.cacheTelemetry')}
+                                                        <HelpTooltip text={t('aiqc.tooltip.cacheTelemetry')} />
+                                                    </span>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={scopeConfig.cache_telemetry_enabled}
+                                                        onChange={(event) =>
+                                                            updateScope(
+                                                                scope,
+                                                                'cache_telemetry_enabled',
+                                                                event.target.checked,
+                                                            )
+                                                        }
+                                                        className="h-4 w-4 rounded accent-blue-600"
+                                                    />
+                                                </label>
+
+                                                <label className="flex items-center justify-between gap-2">
+                                                    <span>{t('aiqc.alertOnFailure')}</span>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={scopeConfig.alert_on_failure}
+                                                        onChange={(event) =>
+                                                            updateScope(
+                                                                scope,
+                                                                'alert_on_failure',
+                                                                event.target.checked,
+                                                            )
+                                                        }
+                                                        className="h-4 w-4 rounded accent-blue-600"
+                                                    />
+                                                </label>
+
+                                                <label className="flex items-center justify-between gap-2 text-amber-700 dark:text-amber-300">
+                                                    <span>{t('aiqc.fullTranscriptOverride')}</span>
                                                     <input
                                                         type="checkbox"
                                                         checked={scopeConfig.full_transcript_warning_override}
-                                                        onChange={(event) => handleBooleanChange(meta.key, 'full_transcript_warning_override', event.target.checked)}
-                                                        className="mt-1"
+                                                        onChange={(event) =>
+                                                            updateScope(
+                                                                scope,
+                                                                'full_transcript_warning_override',
+                                                                event.target.checked,
+                                                            )
+                                                        }
+                                                        className="h-4 w-4 rounded accent-amber-500"
                                                     />
-                                                    <span>
-                                                        <span className="font-medium">{t('aiqc.fullOverrideTitle')}</span>
-                                                        <span className="mt-1 block text-[#92400e]">
-                                                            {t('aiqc.fullOverrideBody')}
-                                                        </span>
-                                                    </span>
-                                                </span>
-                                            </label>
-                                        )}
+                                                </label>
 
-                                        <label htmlFor={scopeFieldId(meta.key, 'model')} className="text-sm font-medium text-[#3f465c]">
-                                            <TooltippedLabel tooltip={t('aiqc.help.model')}>{t('aiqc.field.model')}</TooltippedLabel>
-                                            <input
-                                                id={scopeFieldId(meta.key, 'model')}
-                                                type="text"
-                                                value={scopeConfig.model}
-                                                onChange={(event) => handleModelChange(meta.key, event.target.value)}
-                                                className={baseInputClass()}
-                                            />
-                                        </label>
-
-                                        {showGlmWarning && (
-                                            <label className="rounded-md border border-red-500/20 bg-red-500/10 px-3 py-3 text-sm text-[#be123c]">
-                                                <span className="flex items-start gap-2">
+                                                <label className="flex items-center justify-between gap-2 text-amber-700 dark:text-amber-300">
+                                                    <span>{t('aiqc.glm5Override')}</span>
                                                     <input
                                                         type="checkbox"
                                                         checked={scopeConfig.glm5_warning_override}
-                                                        onChange={(event) => handleBooleanChange(meta.key, 'glm5_warning_override', event.target.checked)}
-                                                        className="mt-1"
+                                                        onChange={(event) =>
+                                                            updateScope(
+                                                                scope,
+                                                                'glm5_warning_override',
+                                                                event.target.checked,
+                                                            )
+                                                        }
+                                                        className="h-4 w-4 rounded accent-amber-500"
                                                     />
-                                                    <span>
-                                                        <span className="font-medium">{t('aiqc.glmOverrideTitle')}</span>
-                                                        <span className="mt-1 block text-[#be123c]">
-                                                            {t('aiqc.glmOverrideBody')}
-                                                        </span>
-                                                    </span>
-                                                </span>
-                                            </label>
-                                        )}
-
-                                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
-                                            <label htmlFor={scopeFieldId(meta.key, 'budget')} className="text-sm font-medium text-[#3f465c]">
-                                                <TooltippedLabel tooltip={t('aiqc.help.budget')}>{t('aiqc.field.budget')}</TooltippedLabel>
-                                                <input
-                                                    id={scopeFieldId(meta.key, 'budget')}
-                                                    type="number"
-                                                    min={0}
-                                                    value={scopeConfig.daily_budget_cents}
-                                                    onChange={(event) => handleNumberChange(meta.key, 'daily_budget_cents', event)}
-                                                    className={baseInputClass()}
-                                                />
-                                                <span className="mt-1 block text-xs text-[#7c839b]">{formatBudget(scopeConfig.daily_budget_cents)}</span>
-                                            </label>
-
-                                            <label htmlFor={scopeFieldId(meta.key, 'per-run')} className="text-sm font-medium text-[#3f465c]">
-                                                <TooltippedLabel tooltip={t('aiqc.help.callCap')}>{t('aiqc.field.perRun')}</TooltippedLabel>
-                                                <input
-                                                    id={scopeFieldId(meta.key, 'per-run')}
-                                                    type="number"
-                                                    min={0}
-                                                    value={scopeConfig.max_calls_per_run}
-                                                    onChange={(event) => handleNumberChange(meta.key, 'max_calls_per_run', event)}
-                                                    className={baseInputClass()}
-                                                />
-                                            </label>
-
-                                            <label htmlFor={scopeFieldId(meta.key, 'per-day')} className="text-sm font-medium text-[#3f465c]">
-                                                <TooltippedLabel tooltip={t('aiqc.help.callCap')}>{t('aiqc.field.perDay')}</TooltippedLabel>
-                                                <input
-                                                    id={scopeFieldId(meta.key, 'per-day')}
-                                                    type="number"
-                                                    min={0}
-                                                    value={scopeConfig.max_calls_per_day}
-                                                    onChange={(event) => handleNumberChange(meta.key, 'max_calls_per_day', event)}
-                                                    className={baseInputClass()}
-                                                />
-                                            </label>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                            <label htmlFor={scopeFieldId(meta.key, 'retry-attempts')} className="text-sm font-medium text-[#3f465c]">
-                                                <TooltippedLabel tooltip={t('aiqc.help.retry')}>{t('aiqc.field.retryAttempts')}</TooltippedLabel>
-                                                <input
-                                                    id={scopeFieldId(meta.key, 'retry-attempts')}
-                                                    type="number"
-                                                    min={1}
-                                                    max={2}
-                                                    value={scopeConfig.retry.max_attempts}
-                                                    onChange={(event) => handleRetryChange(meta.key, 'max_attempts', event)}
-                                                    className={baseInputClass()}
-                                                />
-                                            </label>
-
-                                            <label htmlFor={scopeFieldId(meta.key, 'retry-backoff')} className="text-sm font-medium text-[#3f465c]">
-                                                <TooltippedLabel tooltip={t('aiqc.help.retry')}>{t('aiqc.field.backoff')}</TooltippedLabel>
-                                                <input
-                                                    id={scopeFieldId(meta.key, 'retry-backoff')}
-                                                    type="number"
-                                                    min={0}
-                                                    value={scopeConfig.retry.backoff_seconds}
-                                                    onChange={(event) => handleRetryChange(meta.key, 'backoff_seconds', event)}
-                                                    className={baseInputClass()}
-                                                />
-                                            </label>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 gap-2">
-                                            <label className="flex items-center justify-between gap-3 rounded-md border border-[#e5eeff] bg-white px-3 py-3 text-sm text-[#3f465c]">
-                                                <TooltippedLabel tooltip={t('aiqc.help.cache')}>{t('aiqc.field.cache')}</TooltippedLabel>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={scopeConfig.cache_telemetry_enabled}
-                                                    onChange={(event) => handleBooleanChange(meta.key, 'cache_telemetry_enabled', event.target.checked)}
-                                                />
-                                            </label>
-
-                                            <label className="flex items-center justify-between gap-3 rounded-md border border-[#e5eeff] bg-white px-3 py-3 text-sm text-[#3f465c]">
-                                                <TooltippedLabel tooltip={t('aiqc.help.alert')}>{t('aiqc.field.alert')}</TooltippedLabel>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={scopeConfig.alert_on_failure}
-                                                    onChange={(event) => handleBooleanChange(meta.key, 'alert_on_failure', event.target.checked)}
-                                                />
-                                            </label>
-                                        </div>
-
-                                        <div className="rounded-md border border-[#e5eeff] bg-[#f8f9ff] px-3 py-3">
-                                            <div className="flex items-center justify-between gap-3">
-                                                <p className="flex items-center gap-1.5 text-sm font-medium text-[#0b1c30]">
-                                                    {t('aiqc.criteriaTitle')}
-                                                    <HelpTooltip text={t(`aiqc.criteriaHelp.${meta.key}` as TranslationKey)} />
-                                                </p>
-                                                <span className={`rounded-lg px-2.5 py-1 text-xs font-medium ${meta.badgeClass}`}>
-                                                    {criteriaEntries.filter(([, enabled]) => enabled).length}/{criteriaEntries.length}
-                                                </span>
-                                            </div>
-                                            <div className="mt-3 space-y-2">
-                                                {criteriaEntries.length > 0 ? criteriaEntries.map(([criterion, enabled]) => {
-                                                    const help = tx(`crit.${meta.key}.${criterion}.help`, '');
-                                                    return (
-                                                        <label
-                                                            key={criterion}
-                                                            data-criterion={criterion}
-                                                            className="flex items-center justify-between gap-3 rounded-lg border border-[#e5eeff] bg-white px-3 py-2 text-sm text-[#3f465c]"
-                                                        >
-                                                            <span className="inline-flex items-center gap-1.5">
-                                                                <span>{tx(`crit.${meta.key}.${criterion}`, formatCriteriaLabel(criterion))}</span>
-                                                                {help && <HelpTooltip text={help} />}
-                                                            </span>
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={enabled}
-                                                                onChange={(event) => handleCriteriaChange(meta.key, criterion, event.target.checked)}
-                                                            />
-                                                        </label>
-                                                    );
-                                                }) : (
-                                                    <div className="rounded-lg border border-dashed border-[#c6c6cd] px-3 py-4 text-sm text-[#7c839b]">
-                                                        {t('aiqc.noCriteria')}
-                                                    </div>
-                                                )}
+                                                </label>
                                             </div>
                                         </div>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => void handleSaveScope(meta.key)}
-                                            disabled={savingScope !== null}
-                                            className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5 text-sm font-medium text-[#166534] transition hover:bg-emerald-500/15 disabled:opacity-50"
-                                        >
-                                            {savingScope === meta.key ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
-                                            {t('aiqc.saveScope', { scope: t(meta.shortLabelKey) })}
-                                        </button>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-
-                    <div className="mt-5 rounded-md border border-[#e5eeff] bg-[#f8f9ff] p-4" data-ai-quality-contours="">
-                        <div className="flex items-center gap-2 text-[#0b1c30]">
-                            <Gauge size={17} className="text-[#0058be]" />
-                            <h4 className="text-base font-semibold">{t('aiqc.contoursTitle')}</h4>
-                        </div>
-                        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
-                            <div className="rounded-md border border-[#e5eeff] bg-white px-4 py-3">
-                                <div className="flex items-center gap-2 text-sm font-medium text-[#0b1c30]">
-                                    <Bot size={15} className="text-[#009668]" />
-                                    {t('aiqc.scope.bot_qa')}
-                                </div>
-                                <p className="mt-2 text-sm text-[#45464d]">{t('aiqc.contour.bot_qa')}</p>
-                            </div>
-                            <div className="rounded-md border border-[#e5eeff] bg-white px-4 py-3">
-                                <div className="flex items-center gap-2 text-sm font-medium text-[#0b1c30]">
-                                    <CheckCircle2 size={15} className="text-[#0058be]" />
-                                    {t('aiqc.scope.manager_qa')}
-                                </div>
-                                <p className="mt-2 text-sm text-[#45464d]">{t('aiqc.contour.manager_qa')}</p>
-                            </div>
-                            <div className="rounded-md border border-[#e5eeff] bg-white px-4 py-3">
-                                <div className="flex items-center gap-2 text-sm font-medium text-[#0b1c30]">
-                                    <AlertTriangle size={15} className="text-[#92400e]" />
-                                    {t('aiqc.scope.red_flags')}
-                                </div>
-                                <p className="mt-2 text-sm text-[#45464d]">{t('aiqc.contour.red_flags')}</p>
+                                    );
+                                })}
                             </div>
                         </div>
-                    </div>
-                </>
+                    </details>
+                </div>
             )}
         </section>
     );

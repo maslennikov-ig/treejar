@@ -1,90 +1,127 @@
 import { motion } from 'framer-motion';
 import {
-    CartesianGrid,
-    Line,
-    LineChart,
     ResponsiveContainer,
-    Tooltip,
+    AreaChart,
+    Area,
     XAxis,
     YAxis,
+    CartesianGrid,
+    Tooltip,
+    Legend,
 } from 'recharts';
-import {
-    CHART_AXIS_FONT_SIZE,
-    CHART_AXIS_STROKE,
-    CHART_CARD_CLASS,
-    CHART_EMPTY_CLASS,
-    CHART_GRID_STROKE,
-    CHART_META_CLASS,
-    CHART_TITLE_CLASS,
-    CHART_TOOLTIP_STYLE,
-    CHART_TOOLTIP_WRAPPER_STYLE,
-} from './chartTheme';
-import { HelpTooltip } from '@/components/HelpTooltip';
 import { useI18n } from '@/i18n';
 import type { TimeseriesPoint } from '@/types/metrics';
+import {
+    CHART_AXIS_TICK_STYLE,
+    CHART_CARD_CLASS,
+    CHART_GRID_STROKE,
+    CHART_MUTED_TEXT_CLASS,
+    CHART_TITLE_TEXT_CLASS,
+    CHART_TOOLTIP_CONTENT_STYLE,
+    CHART_TOOLTIP_ITEM_STYLE,
+    CHART_TOOLTIP_LABEL_STYLE,
+    CHART_TOOLTIP_WRAPPER_STYLE,
+} from './chartTheme';
 
-interface ConversationsChartProps {
+interface Props {
     points: TimeseriesPoint[];
-    totalConversations: number;
 }
 
-export default function ConversationsChart({ points, totalConversations }: ConversationsChartProps) {
-    const { t, lang } = useI18n();
-    const locale = lang === 'ru' ? 'ru-RU' : 'en-US';
-    const data = points.map((p) => ({
-        name: new Date(p.date).toLocaleDateString(locale, { month: 'short', day: 'numeric' }),
-        new: p.new,
-        returning: p.returning,
+export default function ConversationsChart({ points }: Props) {
+    const { t } = useI18n();
+    const formatted = points.map((p) => ({
+        ...p,
+        label: p.date.slice(5), // MM-DD
     }));
 
     return (
         <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-            className={CHART_CARD_CLASS}
+            transition={{ duration: 0.6, delay: 0.2 }}
+            className={`${CHART_CARD_CLASS} flex h-full flex-col rounded-2xl p-4`}
         >
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
-                    <div className="flex items-center gap-2">
-                        <h3 className={CHART_TITLE_CLASS}>{t('chart.conversationsTitle')}</h3>
-                        <HelpTooltip text={t('chart.conversationsHelp')} />
-                    </div>
-                    <p className={CHART_META_CLASS}>{t('chart.conversationsMeta', { total: totalConversations })}</p>
+                    <h3 className={`text-base font-semibold ${CHART_TITLE_TEXT_CLASS}`}>
+                        {t('chart.conv.title')}
+                    </h3>
+                    <p className={`text-xs ${CHART_MUTED_TEXT_CLASS}`}>
+                        {t('chart.conv.subtitle')}
+                    </p>
+                </div>
+                <div
+                    data-conv-legend
+                    className="flex items-center gap-3 text-xs font-medium"
+                >
+                    <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                        <span className={CHART_TITLE_TEXT_CLASS}>{t('chart.conv.new')}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-full bg-indigo-500" />
+                        <span className={CHART_TITLE_TEXT_CLASS}>
+                            {t('chart.conv.returning')}
+                        </span>
+                    </span>
                 </div>
             </div>
-            {data.length > 0 ? (
-                <ResponsiveContainer width="100%" height={280}>
-                    <LineChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+
+            <div className="min-h-[210px] flex-1">
+                <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart
+                        data={formatted}
+                        margin={{ top: 5, right: 10, left: -12, bottom: 0 }}
+                    >
+                        <defs>
+                            <linearGradient id="gradNew" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#10b981" stopOpacity={0.35} />
+                                <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                            </linearGradient>
+                            <linearGradient id="gradRet" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#6366f1" stopOpacity={0.35} />
+                                <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+                            </linearGradient>
+                        </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
-                        <XAxis dataKey="name" stroke={CHART_AXIS_STROKE} fontSize={CHART_AXIS_FONT_SIZE} />
-                        <YAxis stroke={CHART_AXIS_STROKE} fontSize={CHART_AXIS_FONT_SIZE} />
-                        <Tooltip wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE} contentStyle={CHART_TOOLTIP_STYLE} />
-                        <Line
+                        <XAxis
+                            dataKey="label"
+                            tick={CHART_AXIS_TICK_STYLE}
+                            axisLine={false}
+                            tickLine={false}
+                        />
+                        <YAxis
+                            tick={CHART_AXIS_TICK_STYLE}
+                            axisLine={false}
+                            tickLine={false}
+                            allowDecimals={false}
+                        />
+                        <Tooltip
+                            wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
+                            contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
+                            labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+                            itemStyle={CHART_TOOLTIP_ITEM_STYLE}
+                        />
+                        <Legend wrapperStyle={{ display: 'none' }} />
+                        <Area
                             type="monotone"
                             dataKey="new"
+                            name={t('chart.conv.new')}
                             stroke="#10b981"
-                            strokeWidth={2.5}
-                            dot={{ r: 4, fill: '#10b981' }}
-                            activeDot={{ r: 6 }}
-                            name={t('chart.new')}
+                            strokeWidth={2}
+                            fill="url(#gradNew)"
                         />
-                        <Line
+                        <Area
                             type="monotone"
                             dataKey="returning"
-                            stroke="#3b82f6"
-                            strokeWidth={2.5}
-                            dot={{ r: 4, fill: '#3b82f6' }}
-                            activeDot={{ r: 6 }}
-                            name={t('chart.returning')}
+                            name={t('chart.conv.returning')}
+                            stroke="#6366f1"
+                            strokeWidth={2}
+                            fill="url(#gradRet)"
                         />
-                    </LineChart>
+                    </AreaChart>
                 </ResponsiveContainer>
-            ) : (
-                <div className={`${CHART_EMPTY_CLASS} h-[280px]`}>
-                    {t('chart.noConversationData')}
-                </div>
-            )}
+            </div>
         </motion.div>
     );
 }

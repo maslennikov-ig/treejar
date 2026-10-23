@@ -40,12 +40,15 @@ const STUBS = new Map([
         export const MessageCircle = Icon;
         export const Package = Icon;
         export const RefreshCw = Icon;
+        export const RotateCcw = Icon;
         export const Save = Icon;
         export const Send = Icon;
         export const Share2 = Icon;
         export const ShieldAlert = Icon;
+        export const ShieldCheck = Icon;
         export const SlidersHorizontal = Icon;
         export const TrendingUp = Icon;
+        export const X = Icon;
     `],
 ]);
 
@@ -59,7 +62,7 @@ const stubPlugin = {
 
 try {
     const appSource = await read('App.tsx');
-    const operatorSource = await read('components', 'OperatorCenter.tsx');
+    const primitivesSource = await read('components', 'ui', 'Primitives.tsx');
     const panelSource = await read('components', 'AIQualityControlsPanel.tsx');
 
     // Header search: controlled input wired to the active view, Enter jumps to conversations.
@@ -67,36 +70,25 @@ try {
     assert.match(appSource, /value=\{globalSearchQuery\}/);
     assert.match(appSource, /onChange=\{\(event\) => setGlobalSearchQuery\(event\.target\.value\)\}/);
     assert.match(appSource, /event\.key === 'Enter' && !searchable/);
-    assert.match(appSource, /setActiveView\('conversations'\)/);
-    for (const view of ['ConversationsView', 'QueuesView', 'KnowledgeBaseView', 'BotRulesView', 'AuditView']) {
-        assert.match(appSource, new RegExp(`<${view} globalSearch=\\{globalSearchQuery\\}`), `${view} should receive the header search query`);
+    assert.match(appSource, /navigate\(\{ view: 'conversations' \}\)/);
+    for (const view of ['ConversationsView', 'QueuesQualityView', 'KnowledgeBaseView', 'BotRulesView', 'AuditSystemView']) {
+        assert.match(appSource, new RegExp(`<${view}[\\s\\S]*?globalSearch=\\{globalSearchQuery\\}`), `${view} should receive the header search query`);
     }
-    assert.match(appSource, /<QualityView refetch=\{refetch\} globalSearch=\{globalSearchQuery\}/);
 
-    // No alert(JSON) and a section banner on all 11 views.
-    assert.doesNotMatch(appSource, /globalThis\.alert\(/);
-    for (const view of ['overview', 'conversations', 'queues', 'knowledge', 'botRules', 'catalog', 'quality', 'reports', 'settings', 'audit', 'support']) {
-        assert.match(appSource, new RegExp(`<ViewBanner\\s+view="${view}"`), `${view} should render a SectionInfoBanner`);
-    }
-    // Native title tooltips are gone (rendered-HTML checks live in the App/panel render tests).
+    // Native title tooltips are gone.
     assert.doesNotMatch(appSource, /\stitle="Обновить"/);
     assert.doesNotMatch(panelSource, /\btitle=\{/);
 
-    // Language toggle and provider.
+    // Language and Theme providers.
     assert.match(appSource, /<LanguageProvider initialLang=\{initialLang\}>/);
+    assert.match(appSource, /<ThemeProvider initialTheme=\{initialTheme\}>/);
     assert.match(appSource, /data-lang-toggle/);
+    assert.match(appSource, /data-theme-toggle/);
     assert.match(appSource, /setLang\(code\)/);
 
-    // Quality quick action in Conversations / Queues / Quality block notices.
-    assert.match(appSource, /function QualityBlockNotice/);
-    assert.match(appSource, /<EnableManualModeButton config=\{block\.config\}/);
-    assert.ok((appSource.match(/<QualityBlockNotice block=/g) ?? []).length >= 3, 'block notice should appear in Conversations, Queues and Quality');
-
-    // Operator Center: canonical sync + manual-mode quick action.
-    assert.match(operatorSource, /<CanonicalSyncButton kind="knowledge"/);
-    assert.match(operatorSource, /<CanonicalSyncButton kind="botRules"/);
-    assert.match(operatorSource, /<EnableManualModeButton/);
-    assert.match(operatorSource, /useI18n/);
+    // Quality quick action in block notices.
+    assert.match(primitivesSource, /export function QualityBlockNotice/);
+    assert.match(primitivesSource, /<EnableManualModeButton/);
 
     const result = await build({
         absWorkingDir: frontendRoot,
@@ -104,7 +96,6 @@ try {
             contents: [
                 "export { buildEnableManualModePayload, scopesNeedingManualMode } from './src/components/EnableManualModeButton';",
                 "export { default as CanonicalSyncButton } from './src/components/CanonicalSyncButton';",
-                "export { default as OperatorCenter } from './src/components/OperatorCenter';",
                 "export { LanguageProvider } from './src/i18n';",
             ].join('\n'),
             resolveDir: frontendRoot,
@@ -124,7 +115,6 @@ try {
         buildEnableManualModePayload,
         scopesNeedingManualMode,
         CanonicalSyncButton,
-        OperatorCenter,
         LanguageProvider,
     } = await import(pathToFileURL(bundlePath).href);
 
@@ -144,16 +134,16 @@ try {
 
     const render = (lang, element) => renderToStaticMarkup(React.createElement(LanguageProvider, { initialLang: lang }, element));
     const syncRu = render('ru', React.createElement(CanonicalSyncButton, { kind: 'knowledge' }));
-    assert.match(syncRu, /Синхронизировать базу Treejar/);
+    assert.match(syncRu, /Восстановить шаблоны БЗ/);
     const rulesEn = render('en', React.createElement(CanonicalSyncButton, { kind: 'botRules' }));
-    assert.match(rulesEn, /Load canonical Treejar rules/);
+    assert.match(rulesEn, /Restore rule templates/);
 
-    // Canonical sync calls the admin endpoint after confirm and reports counts.
+    // Canonical sync calls the admin endpoint with mode and reports counts.
     const calls = [];
     globalThis.fetch = async (url, init) => {
-        calls.push({ url: String(url), method: init?.method });
+        calls.push({ url: String(url), method: init?.method, body: init?.body ? JSON.parse(String(init.body)) : null });
         return new Response(JSON.stringify({
-            ok: true, status: 'synced', created: 2, updated: 1, restored: 1, unchanged: 4, total_active: 8, detail: null,
+            ok: true, status: 'synced', mode: 'safe', created: 2, updated: 0, restored: 0, skipped_customized: 1, unchanged: 5, total_active: 8, detail: null,
         }), { status: 200, headers: { 'content-type': 'application/json' } });
     };
     const crmBuild = await build({
@@ -167,26 +157,23 @@ try {
     });
     const crmPath = path.join(tempDir, 'crm.mjs');
     await writeFile(crmPath, crmBuild.outputFiles[0].text);
-    const { syncCanonicalKnowledgeBase, syncCanonicalBotRules, executeConversationReset } = await import(pathToFileURL(crmPath).href);
-    const kbResult = await syncCanonicalKnowledgeBase();
-    await syncCanonicalBotRules();
+    const {
+        syncCanonicalKnowledgeBase,
+        syncCanonicalBotRules,
+        fetchCanonicalKnowledgeBasePreview,
+        executeConversationReset,
+    } = await import(pathToFileURL(crmPath).href);
+    const kbResult = await syncCanonicalKnowledgeBase('safe');
+    await syncCanonicalBotRules('full_reset');
+    await fetchCanonicalKnowledgeBasePreview();
     await executeConversationReset('abc');
     assert.equal(kbResult.total_active, 8);
-    assert.deepEqual(calls.map((call) => [call.url, call.method]), [
-        ['/api/v1/admin/knowledge-base/sync-canonical', 'POST'],
-        ['/api/v1/admin/bot-rules/sync-canonical', 'POST'],
-        ['/api/v1/admin/crm/conversations/abc/reset/execute', 'POST'],
+    assert.deepEqual(calls.map((call) => [call.url, call.method, call.body]), [
+        ['/api/v1/admin/knowledge-base/sync-canonical', 'POST', { mode: 'safe' }],
+        ['/api/v1/admin/bot-rules/sync-canonical', 'POST', { mode: 'full_reset' }],
+        ['/api/v1/admin/knowledge-base/sync-canonical/preview', undefined, null],
+        ['/api/v1/admin/crm/conversations/abc/reset/execute', 'POST', { confirm: true }],
     ]);
-
-    // Operator Center renders localized in both languages.
-    const operatorRu = render('ru', React.createElement(OperatorCenter, { onMetricsRefresh: () => {} }));
-    assert.match(operatorRu, /Центр оператора/);
-    assert.match(operatorRu, /Базовые данные Treejar/);
-    assert.match(operatorRu, /Загрузить правила Treejar/);
-    const operatorEn = render('en', React.createElement(OperatorCenter, { onMetricsRefresh: () => {} }));
-    assert.match(operatorEn, /Operator Center/);
-    assert.match(operatorEn, /Sync canonical Treejar KB/);
-    assert.doesNotMatch(operatorEn, /[А-Яа-яЁё]/);
 } finally {
     await rm(tempDir, { recursive: true, force: true });
 }

@@ -399,3 +399,77 @@ async def test_sync_canonical_admin_kb_entries_audits_and_commits(
     assert result.created == 2 and result.total_active == 7
     assert audit.await_args.kwargs["action"] == "knowledge_base.sync_canonical"
     db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_safe_sync_preserves_admin_edits_and_deleted_rows() -> None:
+    article = seed.canonical_kb_articles()[0]
+    second = seed.canonical_kb_articles()[1]
+    third = seed.canonical_kb_articles()[2]
+
+    customized = KnowledgeBase(
+        id=uuid.uuid4(),
+        source=seed.CANONICAL_KB_SOURCE,
+        title=article.title,
+        content="Admin custom policy wording",
+        language=article.language,
+        category=article.category,
+        embedding=[0.2] * 4,
+    )
+    deleted = KnowledgeBase(
+        id=uuid.uuid4(),
+        source=seed.CANONICAL_KB_SOURCE,
+        title=second.title,
+        content=second.content,
+        language=second.language,
+        category=second.category,
+        embedding=[0.2] * 4,
+        deleted_at=datetime.now(UTC),
+        deleted_by="admin",
+    )
+    db = _fake_db([customized, deleted])
+    engine = FakeEmbeddingEngine()
+
+    preview = await seed.preview_canonical_knowledge_base(
+        db, articles=[article, second, third]
+    )
+    assert preview.will_create == 1
+    assert preview.customized == 1
+    assert preview.deleted_or_archived == 1
+
+    counts = await seed.sync_canonical_knowledge_base(
+        db,
+        engine,
+        articles=[article, second, third],
+        mode="safe",
+    )
+    assert counts["created"] == 1
+    assert counts["restored"] == 0
+    assert customized.content == "Admin custom policy wording"
+    assert deleted.deleted_at is not None
+
+
+@pytest.mark.asyncio
+async def test_catalog_status_and_system_health_endpoints(
+    admin_client: AsyncClient,
+) -> None:
+    cat_resp = await admin_client.get("/api/v1/admin/catalog/status")
+    assert cat_resp.status_code == 200
+    cat_data = cat_resp.json()
+    assert "sources" in cat_data
+    assert "treejar" in cat_data["sources"]
+    assert "zoho" in cat_data["sources"]
+    assert "zoho_snapshot" in cat_data
+
+    health_resp = await admin_client.get("/api/v1/admin/system/health")
+    assert health_resp.status_code == 200
+    health_data = health_resp.json()
+    assert "contours" in health_data
+    contour_ids = {c["id"] for c in health_data["contours"]}
+    assert {
+        "whatsapp",
+        "telegram",
+        "zoho_inventory",
+        "knowledge_rag",
+        "llm_engine",
+    } <= contour_ids

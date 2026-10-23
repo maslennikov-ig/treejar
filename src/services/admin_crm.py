@@ -43,6 +43,7 @@ from src.schemas.admin import (
     AdminConversationUpdate,
     AdminCustomerListItem,
     AdminEscalationClose,
+    AdminEscalationQueueItem,
     AdminEscalationRead,
     AdminEscalationWrite,
     AdminFeedbackRead,
@@ -624,6 +625,13 @@ async def close_admin_escalation(
     escalation.status = EscalationStatus.RESOLVED.value
     if body.notes is not None:
         escalation.notes = body.notes
+    conversation = await db.get(Conversation, escalation.conversation_id)
+    if conversation is not None and conversation.escalation_status in {
+        "pending",
+        "in_progress",
+        "manual_takeover",
+    }:
+        conversation.escalation_status = EscalationStatus.RESOLVED.value
     await log_admin_action(
         db,
         action="escalation.close",
@@ -636,6 +644,81 @@ async def close_admin_escalation(
     await db.commit()
     await db.refresh(escalation)
     return AdminEscalationRead.model_validate(escalation)
+
+
+async def list_admin_escalations(
+    db: AsyncSession,
+    *,
+    page: int = 1,
+    page_size: int = 20,
+    status: str | None = None,
+    search: str | None = None,
+) -> PaginatedResponse[AdminEscalationQueueItem]:
+    from src.services.dashboard_metrics import categorize_escalation_reason
+
+    filters: list[ColumnElement[bool]] = []
+    if status:
+        if status == "open":
+            filters.append(
+                Escalation.status.in_(["pending", "in_progress", "manual_takeover"])
+            )
+        else:
+            filters.append(Escalation.status == status)
+    if search:
+        like = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                Conversation.phone.ilike(like),
+                Conversation.customer_name.ilike(like),
+                Escalation.reason.ilike(like),
+                Escalation.assigned_to.ilike(like),
+            )
+        )
+
+    count_stmt = (
+        select(func.count())
+        .select_from(Escalation)
+        .join(Conversation, Conversation.id == Escalation.conversation_id)
+    )
+    item_stmt = (
+        select(Escalation, Conversation)
+        .join(Conversation, Conversation.id == Escalation.conversation_id)
+        .order_by(Escalation.updated_at.desc(), Escalation.created_at.desc())
+    )
+    if filters:
+        count_stmt = count_stmt.where(*filters)
+        item_stmt = item_stmt.where(*filters)
+
+    total_result = await db.execute(count_stmt)
+    total = int(total_result.scalar_one())
+    item_result = await db.execute(
+        item_stmt.offset((page - 1) * page_size).limit(page_size)
+    )
+    items: list[AdminEscalationQueueItem] = []
+    for esc, conv in item_result.all():
+        items.append(
+            AdminEscalationQueueItem(
+                id=esc.id,
+                conversation_id=esc.conversation_id,
+                phone=conv.phone,
+                customer_name=conv.customer_name,
+                reason=esc.reason,
+                category=categorize_escalation_reason(esc.reason),
+                assigned_to=esc.assigned_to,
+                status=esc.status,
+                notes=esc.notes,
+                sales_stage=conv.sales_stage,
+                created_at=esc.created_at,
+                updated_at=esc.updated_at,
+            )
+        )
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=_pages(total, page_size),
+    )
 
 
 async def preview_admin_conversation_reset(

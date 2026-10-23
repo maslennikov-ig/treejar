@@ -1,9 +1,9 @@
 # Orchestrator Handoff
 
-## Stage tj-ierv / tj-nm8c (2026-10-23): admin dashboard polish — owner-authorized deploy
-- Branch codex/tj-ierv-admin-dashboard; summary .codex/stages/tj-ierv/summary.md.
-- Canonical KB/rules sync (`/sync-canonical`) auto-seeds on empty initial load and
-  persists state across tabs; Recharts/HelpTooltip z-index fixed (`tj-nm8c`).
+## Stage tj-ierv / tj-nm8c / tj-7ps5 (2026-10-23): admin dashboard UX overhaul — owner-authorized deploy
+- Branch codex/tj-7ps5-admin-ux; summary .codex/stages/tj-ierv/summary.md.
+- Delivered Light/Dark ThemeProvider, Variant 5A Bento overview, Variant 1B nav/queues,
+  Variant 2A/3A canonical KB/rules preview+safe sync, Variant 4A conversations & 6A AIQC.
 
 ## October tester feedback — authorized completion2026-10-14
 

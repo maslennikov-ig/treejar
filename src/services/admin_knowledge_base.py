@@ -4,7 +4,7 @@ import math
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from sqlalchemy import func, not_, or_, select
@@ -17,7 +17,9 @@ from src.models.knowledge_base_candidate import KnowledgeBaseCandidate
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.admin import (
     AdminActionResult,
+    AdminCanonicalSyncPreview,
     AdminCanonicalSyncResult,
+    AdminCanonicalSyncStatus,
     AdminKnowledgeBaseCandidate,
     AdminKnowledgeBaseCandidateCreate,
     AdminKnowledgeBaseCandidateReject,
@@ -35,11 +37,20 @@ from src.services.auto_faq import (
     _nearest_duplicate_similarity,
 )
 from src.services.canonical_admin_seed import (
+    is_canonical_kb_customized,
+    preview_canonical_knowledge_base,
     qa_synthetic_source_clause,
     qa_synthetic_title_clause,
     search_mentions_qa,
     sync_canonical_knowledge_base,
 )
+
+_LAST_KB_SYNC_STATE: dict[str, Any] = {
+    "running": False,
+    "last_mode": None,
+    "last_synced_at": None,
+    "last_result": None,
+}
 
 
 def _pages(total: int, page_size: int) -> int:
@@ -87,6 +98,7 @@ def _kb_read(entry: KnowledgeBase) -> AdminKnowledgeBaseRead:
         category=entry.category,
         has_embedding=entry.embedding is not None,
         is_auto_generated=bool(entry.is_auto_generated),
+        is_canonical_customized=is_canonical_kb_customized(entry),
         original_question=entry.original_question,
         manager_draft=entry.manager_draft,
         created_at=entry.created_at,
@@ -579,29 +591,68 @@ async def reject_admin_kb_candidate(
     return _candidate_read(candidate)
 
 
+async def preview_canonical_admin_kb_entries(
+    db: AsyncSession,
+) -> AdminCanonicalSyncPreview:
+    """Preview diff between current DB KB entries and canonical Treejar templates."""
+    return await preview_canonical_knowledge_base(db)
+
+
+async def get_canonical_admin_kb_sync_status(
+    db: AsyncSession,
+) -> AdminCanonicalSyncStatus:
+    """Return canonical KB sync status and template coverage."""
+    preview = await preview_canonical_knowledge_base(db)
+    active_count = (
+        preview.total_templates - preview.will_create - preview.deleted_or_archived
+    )
+    return AdminCanonicalSyncStatus(
+        kind="knowledge",
+        running=bool(_LAST_KB_SYNC_STATE.get("running", False)),
+        last_mode=_LAST_KB_SYNC_STATE.get("last_mode"),
+        last_synced_at=_LAST_KB_SYNC_STATE.get("last_synced_at"),
+        last_result=_LAST_KB_SYNC_STATE.get("last_result"),
+        total_templates=preview.total_templates,
+        active_canonical_count=max(0, active_count),
+        customized_count=preview.customized,
+        unindexed_count=preview.unindexed,
+    )
+
+
 async def sync_canonical_admin_kb_entries(
     db: AsyncSession,
     *,
     request: object | None,
+    mode: Literal["safe", "full_reset"] = "safe",
 ) -> AdminCanonicalSyncResult:
     """Sync canonical Treejar knowledge-base articles (idempotent) and audit it."""
-    counts = await sync_canonical_knowledge_base(db, actor="admin")
-    await log_admin_action(
-        db,
-        action="knowledge_base.sync_canonical",
-        entity_type="knowledge_base",
-        before=None,
-        after=counts,
-        request=request,
-    )
-    await db.commit()
-    return AdminCanonicalSyncResult(
-        ok=True,
-        status="synced",
-        detail=(
-            f"Canonical knowledge base synced: {counts['created']} created, "
-            f"{counts['updated']} updated, {counts['restored']} restored, "
-            f"{counts['unchanged']} unchanged"
-        ),
-        **counts,
-    )
+    _LAST_KB_SYNC_STATE["running"] = True
+    try:
+        counts = await sync_canonical_knowledge_base(db, actor="admin", mode=mode)
+        await log_admin_action(
+            db,
+            action="knowledge_base.sync_canonical",
+            entity_type="knowledge_base",
+            before=None,
+            after={**counts, "mode": mode},
+            request=request,
+            metadata={"mode": mode},
+        )
+        await db.commit()
+        result = AdminCanonicalSyncResult(
+            ok=True,
+            status="synced",
+            mode=mode,
+            detail=(
+                f"Canonical knowledge base synced ({mode}): {counts['created']} created, "
+                f"{counts['updated']} updated, {counts['restored']} restored, "
+                f"{counts['unchanged']} unchanged"
+            ),
+            **counts,
+        )
+        _LAST_KB_SYNC_STATE["last_mode"] = mode
+        _LAST_KB_SYNC_STATE["last_synced_at"] = _now()
+        _LAST_KB_SYNC_STATE["last_result"] = result.model_dump(mode="json")
+        return result
+    finally:
+        _LAST_KB_SYNC_STATE["running"] = False

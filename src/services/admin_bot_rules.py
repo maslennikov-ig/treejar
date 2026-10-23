@@ -4,7 +4,7 @@ import math
 import uuid
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from sqlalchemy import func, not_, or_, select
@@ -20,7 +20,9 @@ from src.schemas.admin import (
     AdminBotRuleRead,
     AdminBotRuleUpdate,
     AdminBotRuleWrite,
+    AdminCanonicalSyncPreview,
     AdminCanonicalSyncResult,
+    AdminCanonicalSyncStatus,
 )
 from src.schemas.common import PaginatedResponse
 from src.services.admin_audit import log_admin_action
@@ -33,10 +35,20 @@ from src.services.bot_behavior_rules import (
 )
 from src.services.canonical_admin_seed import (
     CANONICAL_BOT_RULES,
+    CANONICAL_RULE_SOURCE_TYPE,
+    is_canonical_bot_rule_customized,
+    preview_canonical_bot_behavior_rules,
     qa_synthetic_title_clause,
     search_mentions_qa,
     sync_canonical_bot_behavior_rules,
 )
+
+_LAST_RULES_SYNC_STATE: dict[str, Any] = {
+    "running": False,
+    "last_mode": None,
+    "last_synced_at": None,
+    "last_result": None,
+}
 
 
 def _pages(total: int, page_size: int) -> int:
@@ -59,6 +71,16 @@ def _optional_str(value: object | None) -> str | None:
 
 
 def _read(rule: BotBehaviorRule) -> AdminBotRuleRead:
+    metadata = rule.metadata_ if isinstance(rule.metadata_, dict) else {}
+    raw_source = metadata.get("source_type")
+    source_type = (
+        "canonical_treejar"
+        if raw_source == CANONICAL_RULE_SOURCE_TYPE
+        else str(raw_source)
+        if isinstance(raw_source, str) and raw_source
+        else "manual"
+    )
+    canonical_key = metadata.get("canonical_key")
     return AdminBotRuleRead(
         id=rule.id,
         title=rule.title,
@@ -72,6 +94,9 @@ def _read(rule: BotBehaviorRule) -> AdminBotRuleRead:
         instruction=rule.instruction,
         trigger_examples=list(rule.trigger_examples or []),
         has_embedding=rule.embedding is not None,
+        source_type=source_type,
+        canonical_key=canonical_key if isinstance(canonical_key, str) else None,
+        is_canonical_customized=is_canonical_bot_rule_customized(rule),
         created_by=rule.created_by,
         updated_by=rule.updated_by,
         created_at=rule.created_at,
@@ -384,30 +409,68 @@ async def test_admin_bot_rule(
     return preview
 
 
+async def preview_canonical_admin_bot_rules(
+    db: AsyncSession,
+) -> AdminCanonicalSyncPreview:
+    """Preview diff between current DB bot rules and canonical Noor templates."""
+    return await preview_canonical_bot_behavior_rules(db)
+
+
+async def get_canonical_admin_bot_rules_sync_status(
+    db: AsyncSession,
+) -> AdminCanonicalSyncStatus:
+    """Return canonical bot rules sync status and template coverage."""
+    preview = await preview_canonical_bot_behavior_rules(db)
+    active_count = (
+        preview.total_templates - preview.will_create - preview.deleted_or_archived
+    )
+    return AdminCanonicalSyncStatus(
+        kind="bot_rules",
+        running=bool(_LAST_RULES_SYNC_STATE.get("running", False)),
+        last_mode=_LAST_RULES_SYNC_STATE.get("last_mode"),
+        last_synced_at=_LAST_RULES_SYNC_STATE.get("last_synced_at"),
+        last_result=_LAST_RULES_SYNC_STATE.get("last_result"),
+        total_templates=preview.total_templates,
+        active_canonical_count=max(0, active_count),
+        customized_count=preview.customized,
+        unindexed_count=preview.unindexed,
+    )
+
+
 async def sync_canonical_admin_bot_rules(
     db: AsyncSession,
     *,
     request: object | None,
+    mode: Literal["safe", "full_reset"] = "safe",
 ) -> AdminCanonicalSyncResult:
     """Load the canonical Noor operating rules (idempotent) and audit it."""
-    counts = await sync_canonical_bot_behavior_rules(db, actor="admin")
-    await log_admin_action(
-        db,
-        action="bot_rule.sync_canonical",
-        entity_type="bot_behavior_rule",
-        before=None,
-        after=counts,
-        request=request,
-        metadata={"canonical_rules": len(CANONICAL_BOT_RULES)},
-    )
-    await db.commit()
-    return AdminCanonicalSyncResult(
-        ok=True,
-        status="synced",
-        detail=(
-            f"Canonical bot rules synced: {counts['created']} created, "
-            f"{counts['updated']} updated, {counts['restored']} restored, "
-            f"{counts['unchanged']} unchanged"
-        ),
-        **counts,
-    )
+    _LAST_RULES_SYNC_STATE["running"] = True
+    try:
+        counts = await sync_canonical_bot_behavior_rules(db, actor="admin", mode=mode)
+        await log_admin_action(
+            db,
+            action="bot_rule.sync_canonical",
+            entity_type="bot_behavior_rule",
+            before=None,
+            after={**counts, "mode": mode},
+            request=request,
+            metadata={"canonical_rules": len(CANONICAL_BOT_RULES), "mode": mode},
+        )
+        await db.commit()
+        result = AdminCanonicalSyncResult(
+            ok=True,
+            status="synced",
+            mode=mode,
+            detail=(
+                f"Canonical bot rules synced ({mode}): {counts['created']} created, "
+                f"{counts['updated']} updated, {counts['restored']} restored, "
+                f"{counts['unchanged']} unchanged"
+            ),
+            **counts,
+        )
+        _LAST_RULES_SYNC_STATE["last_mode"] = mode
+        _LAST_RULES_SYNC_STATE["last_synced_at"] = _now()
+        _LAST_RULES_SYNC_STATE["last_result"] = result.model_dump(mode="json")
+        return result
+    finally:
+        _LAST_RULES_SYNC_STATE["running"] = False

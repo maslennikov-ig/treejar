@@ -33,7 +33,6 @@ const CATEGORY_COLORS: Record<EscalationCategory, string> = {
     other: '#64748b',
 };
 
-// Client-side fallback used only when the backend does not send escalation_by_reason.
 const CATEGORY_PATTERNS: [Exclude<EscalationCategory, 'other'>, RegExp][] = [
     ['urgent_complaint', /urgent|complain|angry|refund|asap|unhappy|срочн|жалоб|претенз/i],
     ['quotation_bulk', /quot|bulk|wholesale|invoice|proforma|discount|price|large order|кп|оптов|скидк|счет|счёт/i],
@@ -60,14 +59,15 @@ export function groupEscalationReasons(rawReasons: Record<string, number>): Reco
 export default function EscalationReasonsChart({
     byReason,
     rawReasons,
+    onSelectReason,
 }: {
     byReason?: Record<string, number>;
     rawReasons: Record<string, number>;
+    onSelectReason?: (category: EscalationCategory) => void;
 }) {
     const { t, formatNumber } = useI18n();
     const [showRaw, setShowRaw] = useState(false);
 
-    // An empty server mapping (older backend) falls back to client-side grouping.
     const serverReasons = byReason && Object.keys(byReason).length > 0 ? byReason : undefined;
     const grouped: Record<EscalationCategory, number> = serverReasons
         ? (Object.fromEntries(
@@ -75,7 +75,6 @@ export default function EscalationReasonsChart({
         ) as Record<EscalationCategory, number>)
         : groupEscalationReasons(rawReasons);
     if (serverReasons) {
-        // Unknown server keys are folded into "other" so totals stay exact.
         for (const [key, value] of Object.entries(serverReasons)) {
             if (!(ESCALATION_CATEGORIES as readonly string[]).includes(key)) grouped.other += Number(value);
         }
@@ -85,8 +84,8 @@ export default function EscalationReasonsChart({
     const maxValue = Math.max(1, ...ESCALATION_CATEGORIES.map((key) => grouped[key]));
 
     return (
-        <div className={CHART_CARD_CLASS} data-chart="escalation-reasons">
-            <div className="mb-4">
+        <div className={`${CHART_CARD_CLASS} flex h-full flex-col justify-between p-4`} data-chart="escalation-reasons">
+            <div className="mb-3">
                 <div className="flex items-center gap-2">
                     <h3 className={CHART_TITLE_CLASS}>{t('esc.title')}</h3>
                     <HelpTooltip text={t('esc.help')} />
@@ -97,14 +96,18 @@ export default function EscalationReasonsChart({
                 </p>
             </div>
             {total === 0 ? (
-                <div className={`${CHART_EMPTY_CLASS} h-[160px]`}>{t('esc.empty')}</div>
+                <div className={`${CHART_EMPTY_CLASS} h-[140px]`}>{t('esc.empty')}</div>
             ) : (
-                <ul className="space-y-3">
+                <ul className="space-y-2.5">
                     {ESCALATION_CATEGORIES.map((key) => {
                         const value = grouped[key];
                         const percent = total > 0 ? (value / total) * 100 : 0;
                         return (
-                            <li key={key} className="text-sm">
+                            <li
+                                key={key}
+                                onClick={() => onSelectReason?.(key)}
+                                className={`text-sm ${onSelectReason ? 'cursor-pointer rounded-md px-1 py-0.5 hover:bg-slate-100/70 dark:hover:bg-slate-800/60' : ''}`}
+                            >
                                 <div className="flex items-center justify-between gap-3">
                                     <span className="flex min-w-0 items-center gap-2 text-[var(--admin-chart-title)]">
                                         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[key] }} />
@@ -126,7 +129,7 @@ export default function EscalationReasonsChart({
                 </ul>
             )}
             {rawList.length > 0 && (
-                <div className="mt-4 border-t border-[var(--admin-chart-grid)] pt-3">
+                <div className="mt-3 border-t border-[var(--admin-chart-grid)] pt-2.5">
                     <button
                         type="button"
                         onClick={() => setShowRaw((current) => !current)}

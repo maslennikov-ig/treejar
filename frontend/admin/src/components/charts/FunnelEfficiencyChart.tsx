@@ -36,7 +36,13 @@ function KpiCell({ label, value, help }: { label: string; value: string; help: s
     );
 }
 
-export default function FunnelEfficiencyChart({ data }: { data: DashboardMetrics }) {
+export default function FunnelEfficiencyChart({
+    data,
+    onSelectStage,
+}: {
+    data: DashboardMetrics;
+    onSelectStage?: (stage: string) => void;
+}) {
     const { t, label, formatNumber } = useI18n();
     const deals = data.noor_sales.count + data.post_escalation_sales.count;
     const steps: FunnelStep[] = [
@@ -59,8 +65,8 @@ export default function FunnelEfficiencyChart({ data }: { data: DashboardMetrics
     const stageTotal = stageEntries.reduce((sum, [, count]) => sum + count, 0);
 
     return (
-        <div className={CHART_CARD_CLASS} data-chart="funnel-efficiency">
-            <div className="mb-4">
+        <div className={`${CHART_CARD_CLASS} flex h-full flex-col justify-between p-4`} data-chart="funnel-efficiency">
+            <div className="mb-3">
                 <div className="flex items-center gap-2">
                     <h3 className={CHART_TITLE_CLASS}>{t('funnel.title')}</h3>
                     <HelpTooltip text={t('funnel.help')} />
@@ -68,7 +74,7 @@ export default function FunnelEfficiencyChart({ data }: { data: DashboardMetrics
                 <p className={CHART_META_CLASS}>{t('funnel.meta')}</p>
             </div>
 
-            <ol className="space-y-3">
+            <ol className="space-y-2.5">
                 {steps.map((step, index) => {
                     const previous = index > 0 ? steps[index - 1].value : null;
                     const stepConversion = previous !== null && previous > 0 ? (step.value / previous) * 100 : null;
@@ -87,7 +93,7 @@ export default function FunnelEfficiencyChart({ data }: { data: DashboardMetrics
                                     )}
                                 </span>
                             </div>
-                            <div className="mt-1 h-3 w-full overflow-hidden rounded bg-[var(--admin-chart-grid)]">
+                            <div className="mt-1 h-2.5 w-full overflow-hidden rounded bg-[var(--admin-chart-grid)]">
                                 <div className="h-full rounded" style={{ width: `${width}%`, backgroundColor: step.color }} />
                             </div>
                         </li>
@@ -95,7 +101,7 @@ export default function FunnelEfficiencyChart({ data }: { data: DashboardMetrics
                 })}
             </ol>
 
-            <div className="mt-5 grid grid-cols-2 gap-2 lg:grid-cols-3">
+            <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-3">
                 <KpiCell
                     label={t('funnel.avgDeal')}
                     value={`${formatNumber(data.average_deal_value, 0)} AED`}
@@ -129,7 +135,7 @@ export default function FunnelEfficiencyChart({ data }: { data: DashboardMetrics
             </div>
 
             {stageEntries.length > 0 && (
-                <div className="mt-5 border-t border-[var(--admin-chart-grid)] pt-3">
+                <div className="mt-4 border-t border-[var(--admin-chart-grid)] pt-3">
                     <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase text-[var(--admin-chart-muted)]">
                         {t('funnel.stages')}
                         <HelpTooltip text={t('funnel.stagesHelp')} />
@@ -138,7 +144,11 @@ export default function FunnelEfficiencyChart({ data }: { data: DashboardMetrics
                         {stageEntries.map(([stage, count]) => {
                             const percent = stageTotal > 0 ? (count / stageTotal) * 100 : 0;
                             return (
-                                <li key={stage} className="grid grid-cols-[110px_1fr_auto] items-center gap-2 text-xs">
+                                <li
+                                    key={stage}
+                                    onClick={() => onSelectStage?.(stage)}
+                                    className={`grid grid-cols-[110px_1fr_auto] items-center gap-2 text-xs ${onSelectStage ? 'cursor-pointer hover:opacity-80' : ''}`}
+                                >
                                     <span className="truncate text-[var(--admin-chart-title)]">{label(stage)}</span>
                                     <span className="h-1.5 overflow-hidden rounded-full bg-[var(--admin-chart-grid)]">
                                         <span className="block h-full rounded-full bg-[#2563eb]" style={{ width: `${percent}%` }} />
