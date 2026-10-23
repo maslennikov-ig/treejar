@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import {
     AlertTriangle,
     Bell,
+    BookOpen,
     CheckCircle2,
     ClipboardList,
     Clock,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react';
 import {
     evaluateManagerReview,
+    fetchAIQualityControls,
     fetchNotificationConfig,
     fetchPendingManagerReviews,
     fetchRecentManagerReviews,
@@ -26,11 +28,16 @@ import {
     syncProducts,
 } from '@/api/operators';
 import AIQualityControlsPanel from '@/components/AIQualityControlsPanel';
+import CanonicalSyncButton from '@/components/CanonicalSyncButton';
+import EnableManualModeButton from '@/components/EnableManualModeButton';
+import { HelpTooltip } from '@/components/HelpTooltip';
 import {
     buildManagerReviewMessage,
     type OperatorActionMessage,
 } from '@/components/operatorCenterMessages';
+import { useI18n } from '@/i18n';
 import type {
+    AIQualityControlsConfig,
     ManagerReviewRead,
     NotificationConfig,
     OperationsReportResponse,
@@ -42,25 +49,6 @@ import type {
 
 interface OperatorCenterProps {
     onMetricsRefresh: () => void | Promise<void>;
-}
-
-function formatDateTime(value: string): string {
-    return new Intl.DateTimeFormat('en-US', {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-    }).format(new Date(value));
-}
-
-function formatDuration(seconds: number | null): string {
-    if (seconds === null) {
-        return '—';
-    }
-
-    if (seconds < 60) {
-        return `${Math.round(seconds)}s`;
-    }
-
-    return `${(seconds / 60).toFixed(1)}m`;
 }
 
 function stripHtml(text: string): string {
@@ -92,12 +80,14 @@ function ratingClasses(rating: string): string {
 }
 
 export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps) {
+    const { t, label, formatDateTime, formatDuration } = useI18n();
     const [notificationConfig, setNotificationConfig] = useState<NotificationConfig | null>(null);
     const [pendingReviews, setPendingReviews] = useState<PendingManagerReview[]>([]);
     const [recentReviews, setRecentReviews] = useState<ManagerReviewRead[]>([]);
     const [recentFeedback, setRecentFeedback] = useState<RecentFeedbackRead[]>([]);
     const [referralPolicy, setReferralPolicy] = useState<ReferralPolicyResponse | null>(null);
     const [report, setReport] = useState<OperationsReportResponse | null>(null);
+    const [qualityConfig, setQualityConfig] = useState<AIQualityControlsConfig | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [syncingSource, setSyncingSource] = useState<ProductSyncSource | null>(null);
@@ -112,6 +102,13 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
     const loadOperatorData = useCallback(async (isCurrent: () => boolean = () => true) => {
         setLoading(true);
         setError(null);
+        fetchAIQualityControls()
+            .then((response) => {
+                if (isCurrent()) setQualityConfig(response.config);
+            })
+            .catch(() => {
+                if (isCurrent()) setQualityConfig(null);
+            });
         try {
             const [
                 configResult,
@@ -140,7 +137,7 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
             setReferralPolicy(referralPolicyResult);
             return null;
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'Failed to load operator controls.';
+            const message = err instanceof Error ? err.message : t('op.loadFailed');
             if (!isCurrent()) {
                 return null;
             }
@@ -151,7 +148,7 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                 setLoading(false);
             }
         }
-    }, []);
+    }, [t]);
 
     useEffect(() => {
         let ignore = false;
@@ -168,12 +165,12 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
             const result = await syncProducts(source);
             setSyncMessage({
                 tone: 'success',
-                text: `${source === 'treejar' ? 'Treejar' : 'Zoho'} sync queued. Errors: ${result.errors}.`,
+                text: t('op.syncQueued', { source: source === 'treejar' ? 'Treejar' : 'Zoho', errors: result.errors }),
             });
         } catch (err) {
             setSyncMessage({
                 tone: 'error',
-                text: err instanceof Error ? err.message : 'Failed to queue product sync.',
+                text: err instanceof Error ? err.message : t('op.syncFailed'),
             });
         } finally {
             setSyncingSource(null);
@@ -188,13 +185,13 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
             setNotificationMessage({
                 tone: result.status === 'sent' ? 'success' : 'info',
                 text: result.status === 'sent'
-                    ? 'Telegram test message sent.'
-                    : result.reason ?? 'Telegram integration is not configured.',
+                    ? t('op.testSent')
+                    : result.reason ?? t('settings.telegramNotConfigured'),
             });
         } catch (err) {
             setNotificationMessage({
                 tone: 'error',
-                text: err instanceof Error ? err.message : 'Failed to send test notification.',
+                text: err instanceof Error ? err.message : t('op.testFailed'),
             });
         } finally {
             setSendingTest(false);
@@ -204,20 +201,25 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
     async function handleEvaluateReview(item: PendingManagerReview): Promise<void> {
         setEvaluatingId(item.escalation_id);
         setReviewMessage(null);
+        const texts = {
+            managerFallback: t('op.managerFallback'),
+            scored: (name: string, score: number, max: number) => t('op.scored', { name, score, max }),
+            refreshFailed: t('op.refreshFailed'),
+        };
         try {
             const detail = await evaluateManagerReview(item.escalation_id);
-            setReviewMessage(buildManagerReviewMessage(item.manager_name, detail, null));
+            setReviewMessage(buildManagerReviewMessage(item.manager_name, detail, null, texts));
             const refreshError = await loadOperatorData();
             if (refreshError) {
                 setReviewMessage(
-                    buildManagerReviewMessage(item.manager_name, detail, refreshError),
+                    buildManagerReviewMessage(item.manager_name, detail, refreshError, texts),
                 );
             }
             void onMetricsRefresh();
         } catch (err) {
             setReviewMessage({
                 tone: 'error',
-                text: err instanceof Error ? err.message : 'Failed to evaluate manager review.',
+                text: err instanceof Error ? err.message : t('op.evaluateFailed'),
             });
         } finally {
             setEvaluatingId(null);
@@ -232,17 +234,19 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
             setReport(reportResult);
             setReportMessage({
                 tone: 'success',
-                text: 'Weekly operations report refreshed.',
+                text: t('op.reportRefreshed'),
             });
         } catch (err) {
             setReportMessage({
                 tone: 'error',
-                text: err instanceof Error ? err.message : 'Failed to generate report.',
+                text: err instanceof Error ? err.message : t('op.reportFailed'),
             });
         } finally {
             setGeneratingReport(false);
         }
     }
+
+    const loadingText = t('common.loading');
 
     return (
         <motion.section
@@ -255,23 +259,22 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                 <div>
                     <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.2em] text-emerald-300">
                         <ClipboardList size={14} />
-                        Operator Center
+                        {t('op.badge')}
                     </div>
-                    <h2 className="mt-3 text-xl font-semibold text-white">Actionable admin surface</h2>
+                    <h2 className="mt-3 text-xl font-semibold text-white">{t('op.title')}</h2>
                     <p className="mt-2 max-w-3xl text-sm text-slate-400">
-                        Shared-session controls for catalog sync, Telegram health, manager evaluation,
-                        and weekly conversion reporting. This is the operator layer from the admin spec,
-                        not raw internal API plumbing.
+                        {t('op.subtitle')}
                     </p>
                 </div>
 
                 <button
+                    type="button"
                     onClick={() => void loadOperatorData()}
                     disabled={loading}
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/[0.08] disabled:opacity-50"
                 >
                     <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                    Refresh
+                    {t('common.refresh')}
                 </button>
             </div>
 
@@ -282,41 +285,73 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                 </div>
             )}
 
+            {qualityConfig && (
+                <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 sm:flex-row sm:items-center sm:justify-between">
+                    <span>{t('op.qualityHint')}</span>
+                    <EnableManualModeButton
+                        config={qualityConfig}
+                        tone="dark"
+                        onDone={(response) => setQualityConfig(response.config)}
+                    />
+                </div>
+            )}
+
             <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
                 <AIQualityControlsPanel />
+
+                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-5">
+                    <div className="flex items-center gap-2 text-white">
+                        <BookOpen size={18} className="text-emerald-300" />
+                        <h3 className="text-lg font-semibold">{t('op.canonicalTitle')}</h3>
+                        <HelpTooltip text={t('op.canonicalHelp')} tone="dark" />
+                    </div>
+                    <p className="mt-2 text-sm text-slate-400">{t('op.canonicalSubtitle')}</p>
+                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl border border-white/[0.06] bg-slate-900/60 px-4 py-3">
+                            <p className="mb-2 text-xs uppercase tracking-[0.2em] text-slate-500">{t('nav.knowledge')}</p>
+                            <CanonicalSyncButton kind="knowledge" tone="dark" />
+                        </div>
+                        <div className="rounded-xl border border-white/[0.06] bg-slate-900/60 px-4 py-3">
+                            <p className="mb-2 text-xs uppercase tracking-[0.2em] text-slate-500">{t('nav.botRules')}</p>
+                            <CanonicalSyncButton kind="botRules" tone="dark" />
+                        </div>
+                    </div>
+                </div>
 
                 <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-5">
                     <div className="flex items-start justify-between gap-3">
                         <div>
                             <div className="flex items-center gap-2 text-white">
                                 <Package size={18} className="text-emerald-300" />
-                                <h3 className="text-lg font-semibold">Catalog Sync</h3>
+                                <h3 className="text-lg font-semibold">{t('op.catalogTitle')}</h3>
                             </div>
                             <p className="mt-2 text-sm text-slate-400">
-                                Treejar remains the catalog source of truth. Zoho sync stays available as a legacy operational path.
+                                {t('op.catalogSubtitle')}
                             </p>
                         </div>
                         <div className="rounded-xl bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300">
-                            Admin session only
+                            {t('op.adminOnly')}
                         </div>
                     </div>
 
                     <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <button
+                            type="button"
                             onClick={() => void handleSync('treejar')}
                             disabled={syncingSource !== null}
                             className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-left text-sm text-emerald-200 transition hover:bg-emerald-500/15 disabled:opacity-50"
                         >
-                            <p className="font-medium">Run Treejar Sync</p>
-                            <p className="mt-1 text-xs text-emerald-200/80">Recommended canonical catalog refresh</p>
+                            <p className="font-medium">{t('op.runTreejarSync')}</p>
+                            <p className="mt-1 text-xs text-emerald-200/80">{t('op.runTreejarSyncNote')}</p>
                         </button>
                         <button
+                            type="button"
                             onClick={() => void handleSync('zoho')}
                             disabled={syncingSource !== null}
                             className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3 text-left text-sm text-slate-200 transition hover:bg-white/[0.05] disabled:opacity-50"
                         >
-                            <p className="font-medium">Run Zoho Sync</p>
-                            <p className="mt-1 text-xs text-slate-400">Legacy stock and operational mirror path</p>
+                            <p className="font-medium">{t('op.runZohoSync')}</p>
+                            <p className="mt-1 text-xs text-slate-400">{t('op.runZohoSyncNote')}</p>
                         </button>
                     </div>
 
@@ -332,35 +367,36 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                         <div>
                             <div className="flex items-center gap-2 text-white">
                                 <Bell size={18} className="text-blue-300" />
-                                <h3 className="text-lg font-semibold">Telegram Notifications</h3>
+                                <h3 className="text-lg font-semibold">{t('op.telegramTitle')}</h3>
                             </div>
                             <p className="mt-2 text-sm text-slate-400">
-                                Quick configuration health and test send without leaving the dashboard.
+                                {t('op.telegramSubtitle')}
                             </p>
                         </div>
                         <div className={`rounded-xl px-3 py-2 text-xs font-medium ${notificationConfig?.telegram_configured ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-200'}`}>
-                            {notificationConfig?.telegram_configured ? 'Configured' : 'Not configured'}
+                            {notificationConfig?.telegram_configured ? t('settings.configured') : t('settings.notConfigured')}
                         </div>
                     </div>
 
                     <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div className="rounded-xl border border-white/[0.06] bg-slate-900/60 px-4 py-3">
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Bot token</p>
-                            <p className="mt-2 text-sm font-medium text-white">{notificationConfig?.telegram_bot_token ?? 'Loading...'}</p>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('settings.botToken')}</p>
+                            <p className="mt-2 text-sm font-medium text-white">{notificationConfig?.telegram_bot_token ?? loadingText}</p>
                         </div>
                         <div className="rounded-xl border border-white/[0.06] bg-slate-900/60 px-4 py-3">
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Chat ID</p>
-                            <p className="mt-2 text-sm font-medium text-white">{notificationConfig?.telegram_chat_id ?? 'Loading...'}</p>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('settings.chatId')}</p>
+                            <p className="mt-2 text-sm font-medium text-white">{notificationConfig?.telegram_chat_id ?? loadingText}</p>
                         </div>
                     </div>
 
                     <button
+                        type="button"
                         onClick={() => void handleSendTestNotification()}
                         disabled={sendingTest}
                         className="mt-4 inline-flex items-center gap-2 rounded-xl border border-blue-500/20 bg-blue-500/10 px-4 py-2.5 text-sm font-medium text-blue-200 transition hover:bg-blue-500/15 disabled:opacity-50"
                     >
                         {sendingTest ? <RefreshCw size={16} className="animate-spin" /> : <Send size={16} />}
-                        Send test message
+                        {t('op.sendTestMessage')}
                     </button>
 
                     {notificationMessage && (
@@ -375,14 +411,14 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                         <div>
                             <div className="flex items-center gap-2 text-white">
                                 <MessageCircle size={18} className="text-emerald-300" />
-                                <h3 className="text-lg font-semibold">Recent Feedback</h3>
+                                <h3 className="text-lg font-semibold">{t('op.feedbackTitle')}</h3>
                             </div>
                             <p className="mt-2 text-sm text-slate-400">
-                                Latest post-delivery responses with delivery and recommendation signals.
+                                {t('op.feedbackSubtitle')}
                             </p>
                         </div>
                         <div className="rounded-xl bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300">
-                            {recentFeedback.length} shown
+                            {t('op.shown', { count: recentFeedback.length })}
                         </div>
                     </div>
 
@@ -395,16 +431,16 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                                         <p className="mt-1 text-xs text-slate-500">{formatDateTime(item.created_at)}</p>
                                     </div>
                                     <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${item.recommend ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-200'}`}>
-                                        {item.recommend ? 'Recommends' : 'Needs follow-up'}
+                                        {item.recommend ? t('op.recommends') : t('op.needsFollowUp')}
                                     </span>
                                 </div>
                                 <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-300">
                                     <div>
-                                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Overall</p>
+                                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('op.overall')}</p>
                                         <p className="mt-1 font-medium text-white">{item.rating_overall}/5</p>
                                     </div>
                                     <div>
-                                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Delivery</p>
+                                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('op.delivery')}</p>
                                         <p className="mt-1 font-medium text-white">{item.rating_delivery}/5</p>
                                     </div>
                                 </div>
@@ -416,7 +452,7 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                             </div>
                         )) : (
                             <div className="rounded-xl border border-dashed border-white/[0.08] px-4 py-8 text-sm text-slate-500">
-                                Recent post-delivery feedback will appear after customers respond.
+                                {t('op.feedbackEmpty')}
                             </div>
                         )}
                     </div>
@@ -427,34 +463,34 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                         <div>
                             <div className="flex items-center gap-2 text-white">
                                 <Share2 size={18} className="text-amber-200" />
-                                <h3 className="text-lg font-semibold">Referral Policy</h3>
+                                <h3 className="text-lg font-semibold">{t('op.referralTitle')}</h3>
                             </div>
                             <p className="mt-2 text-sm text-slate-400">
-                                Launch status for referral code generation and discount application.
+                                {t('op.referralSubtitle')}
                             </p>
                         </div>
                         <div className={`rounded-xl px-3 py-2 text-xs font-medium ${referralPolicy?.allows_launch ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-200'}`}>
-                            {referralPolicy?.allows_launch ? 'Approved' : 'Client decision'}
+                            {referralPolicy?.allows_launch ? t('op.approved') : t('op.clientDecision')}
                         </div>
                     </div>
 
                     <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div className="rounded-xl border border-white/[0.06] bg-slate-900/60 px-4 py-3">
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Status</p>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('common.status')}</p>
                             <p className="mt-2 text-sm font-medium text-white">
-                                {referralPolicy?.config.status.replace(/_/g, ' ') ?? 'Loading...'}
+                                {referralPolicy ? label(referralPolicy.config.status) : loadingText}
                             </p>
                         </div>
                         <div className="rounded-xl border border-white/[0.06] bg-slate-900/60 px-4 py-3">
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Confirmation</p>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('op.confirmation')}</p>
                             <p className="mt-2 text-sm font-medium text-white">
-                                {referralPolicy?.config.confirmation_required ? 'Required' : 'Not required'}
+                                {referralPolicy?.config.confirmation_required ? t('op.required') : t('op.notRequired')}
                             </p>
                         </div>
                     </div>
 
                     <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-                        {referralPolicy?.message ?? 'Referral policy status is loading.'}
+                        {referralPolicy?.message ?? t('op.referralLoading')}
                     </div>
                 </div>
 
@@ -463,19 +499,20 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                         <div>
                             <div className="flex items-center gap-2 text-white">
                                 <FileText size={18} className="text-violet-300" />
-                                <h3 className="text-lg font-semibold">Weekly Operations Report</h3>
+                                <h3 className="text-lg font-semibold">{t('op.reportTitle')}</h3>
                             </div>
                             <p className="mt-2 text-sm text-slate-400">
-                                Refusal, conversion, quality, and manager-performance summary aligned with the stage-2 reporting scope.
+                                {t('op.reportSubtitle')}
                             </p>
                         </div>
                         <button
+                            type="button"
                             onClick={() => void handleGenerateReport()}
                             disabled={generatingReport}
                             className="inline-flex items-center gap-2 rounded-xl border border-violet-500/20 bg-violet-500/10 px-4 py-2.5 text-sm font-medium text-violet-200 transition hover:bg-violet-500/15 disabled:opacity-50"
                         >
-                            {generatingReport ? <RefreshCw size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-                            Refresh 7-day report
+                            <RefreshCw size={16} className={generatingReport ? 'animate-spin' : ''} />
+                            {t('op.refreshReport')}
                         </button>
                     </div>
 
@@ -483,24 +520,24 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                         <>
                             <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                                 <div className="rounded-xl border border-white/[0.06] bg-slate-900/60 px-4 py-4">
-                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Dialogues</p>
+                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('metric.conversations')}</p>
                                     <p className="mt-2 text-2xl font-semibold text-white">{report.data.total_conversations}</p>
-                                    <p className="mt-1 text-xs text-slate-400">{report.data.conversations_per_day} per day</p>
+                                    <p className="mt-1 text-xs text-slate-400">{t('reports.perDay', { count: report.data.conversations_per_day })}</p>
                                 </div>
                                 <div className="rounded-xl border border-white/[0.06] bg-slate-900/60 px-4 py-4">
-                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Conversion</p>
+                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('metric.conversion')}</p>
                                     <p className="mt-2 text-2xl font-semibold text-white">{report.data.conversion_rate}%</p>
-                                    <p className="mt-1 text-xs text-slate-400">{report.data.total_deals} deals</p>
+                                    <p className="mt-1 text-xs text-slate-400">{t('metric.dealsCount', { count: report.data.total_deals })}</p>
                                 </div>
                                 <div className="rounded-xl border border-white/[0.06] bg-slate-900/60 px-4 py-4">
-                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Escalations</p>
+                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('metric.escalations')}</p>
                                     <p className="mt-2 text-2xl font-semibold text-white">{report.data.escalation_count}</p>
-                                    <p className="mt-1 text-xs text-slate-400">{Object.keys(report.data.escalation_reasons).length} tracked reasons</p>
+                                    <p className="mt-1 text-xs text-slate-400">{t('reports.reasonsCount', { count: Object.keys(report.data.escalation_reasons).length })}</p>
                                 </div>
                                 <div className="rounded-xl border border-white/[0.06] bg-slate-900/60 px-4 py-4">
-                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Manager Reviews</p>
+                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('op.managerReviews')}</p>
                                     <p className="mt-2 text-2xl font-semibold text-white">{report.data.manager_reviews_count}</p>
-                                    <p className="mt-1 text-xs text-slate-400">{report.data.manager_deal_conversion_rate}% deal conversion</p>
+                                    <p className="mt-1 text-xs text-slate-400">{t('op.dealConversion', { rate: report.data.manager_deal_conversion_rate })}</p>
                                 </div>
                             </div>
 
@@ -508,13 +545,13 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                                 <div className="rounded-2xl border border-white/[0.06] bg-slate-900/50 p-4">
                                     <div className="flex items-center justify-between gap-3">
                                         <div>
-                                            <p className="text-sm font-medium text-white">Telegram Preview</p>
+                                            <p className="text-sm font-medium text-white">{t('reports.telegramPreview')}</p>
                                             <p className="mt-1 text-xs text-slate-500">
-                                                {formatDateTime(report.data.period_start)} to {formatDateTime(report.data.period_end)}
+                                                {formatDateTime(report.data.period_start)} — {formatDateTime(report.data.period_end)}
                                             </p>
                                         </div>
                                         <div className="rounded-xl bg-white/[0.05] px-3 py-2 text-xs font-medium text-slate-300">
-                                            Average quality {report.data.avg_quality_score}/30
+                                            {t('op.avgQuality', { score: report.data.avg_quality_score })}
                                         </div>
                                     </div>
                                     <pre className="mt-4 whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-black/20 p-4 text-sm leading-6 text-slate-200">
@@ -526,17 +563,17 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                                     <div className="rounded-2xl border border-white/[0.06] bg-slate-900/50 p-4">
                                         <div className="flex items-center gap-2 text-white">
                                             <TrendingUp size={16} className="text-emerald-300" />
-                                            <p className="text-sm font-medium">Top Products Mentioned</p>
+                                            <p className="text-sm font-medium">{t('reports.topProducts')}</p>
                                         </div>
                                         <div className="mt-3 space-y-3">
                                             {report.data.top_products.length > 0 ? report.data.top_products.map((product) => (
                                                 <div key={product.sku} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
                                                     <p className="text-sm font-medium text-white">{product.name}</p>
-                                                    <p className="mt-1 text-xs text-slate-400">{product.sku} · {product.mentions} mentions</p>
+                                                    <p className="mt-1 text-xs text-slate-400">{product.sku} · {t('reports.mentions', { count: product.mentions })}</p>
                                                 </div>
                                             )) : (
                                                 <div className="rounded-xl border border-dashed border-white/[0.08] px-4 py-6 text-sm text-slate-500">
-                                                    No assistant SKU mentions in the selected weekly window.
+                                                    {t('reports.topProductsEmpty')}
                                                 </div>
                                             )}
                                         </div>
@@ -545,15 +582,15 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                                     <div className="rounded-2xl border border-white/[0.06] bg-slate-900/50 p-4">
                                         <div className="flex items-center gap-2 text-white">
                                             <Clock size={16} className="text-amber-200" />
-                                            <p className="text-sm font-medium">Manager Performance Snapshot</p>
+                                            <p className="text-sm font-medium">{t('op.managerSnapshot')}</p>
                                         </div>
                                         <div className="mt-3 grid grid-cols-2 gap-3">
                                             <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
-                                                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Avg score</p>
+                                                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('quality.avgScore')}</p>
                                                 <p className="mt-2 text-xl font-semibold text-white">{report.data.avg_manager_score}/20</p>
                                             </div>
                                             <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
-                                                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Response</p>
+                                                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('quality.colResponse')}</p>
                                                 <p className="mt-2 text-xl font-semibold text-white">{formatDuration(report.data.avg_manager_response_time_seconds)}</p>
                                             </div>
                                         </div>
@@ -565,7 +602,7 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                                                 </div>
                                             )) : (
                                                 <div className="rounded-xl border border-dashed border-white/[0.08] px-4 py-6 text-sm text-slate-500">
-                                                    Manager rankings will appear after resolved escalations are reviewed.
+                                                    {t('reports.topManagersEmpty')}
                                                 </div>
                                             )}
                                         </div>
@@ -587,14 +624,14 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                         <div>
                             <div className="flex items-center gap-2 text-white">
                                 <CheckCircle2 size={18} className="text-amber-200" />
-                                <h3 className="text-lg font-semibold">Manager Review Queue</h3>
+                                <h3 className="text-lg font-semibold">{t('op.reviewQueueTitle')}</h3>
                             </div>
                             <p className="mt-2 text-sm text-slate-400">
-                                Pending resolved escalations waiting for evaluation, plus the latest completed manager reviews.
+                                {t('op.reviewQueueSubtitle')}
                             </p>
                         </div>
                         <div className="rounded-xl bg-amber-500/10 px-3 py-2 text-sm font-medium text-amber-200">
-                            {pendingReviews.length} pending
+                            {t('op.pendingCount', { count: pendingReviews.length })}
                         </div>
                     </div>
 
@@ -604,24 +641,25 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                                 <div key={item.escalation_id} className="rounded-2xl border border-white/[0.06] bg-slate-900/50 p-4">
                                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                                         <div>
-                                            <p className="text-sm font-medium text-white">{item.manager_name ?? 'Unassigned manager'}</p>
+                                            <p className="text-sm font-medium text-white">{item.manager_name ?? t('queues.managerUnassigned')}</p>
                                             <p className="mt-1 text-sm text-slate-300">{item.phone}</p>
                                             <p className="mt-2 text-sm text-slate-400">{item.reason}</p>
-                                            <p className="mt-2 text-xs text-slate-500">Updated {formatDateTime(item.updated_at)}</p>
+                                            <p className="mt-2 text-xs text-slate-500">{t('queues.updated', { date: formatDateTime(item.updated_at) })}</p>
                                         </div>
                                         <button
+                                            type="button"
                                             onClick={() => void handleEvaluateReview(item)}
                                             disabled={evaluatingId !== null}
                                             className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-2.5 text-sm font-medium text-amber-200 transition hover:bg-amber-500/15 disabled:opacity-50"
                                         >
                                             {evaluatingId === item.escalation_id ? <RefreshCw size={16} className="animate-spin" /> : <ClipboardList size={16} />}
-                                            Evaluate
+                                            {t('common.evaluate')}
                                         </button>
                                     </div>
                                 </div>
                             )) : (
                                 <div className="rounded-2xl border border-dashed border-white/[0.08] px-4 py-8 text-sm text-slate-500">
-                                    No resolved escalations are waiting for manual manager evaluation.
+                                    {t('op.reviewQueueEmpty')}
                                 </div>
                             )}
                         </div>
@@ -629,11 +667,11 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                         <div className="rounded-2xl border border-white/[0.06] bg-slate-900/50 p-4">
                             <div className="flex items-center justify-between gap-3">
                                 <div>
-                                    <p className="text-sm font-medium text-white">Recent Reviews</p>
-                                    <p className="mt-1 text-xs text-slate-500">Latest completed manager evaluations</p>
+                                    <p className="text-sm font-medium text-white">{t('quality.recentTitle')}</p>
+                                    <p className="mt-1 text-xs text-slate-500">{t('op.recentReviewsSubtitle')}</p>
                                 </div>
                                 <div className="rounded-xl bg-white/[0.05] px-3 py-2 text-xs font-medium text-slate-300">
-                                    {recentReviews.length} shown
+                                    {t('op.shown', { count: recentReviews.length })}
                                 </div>
                             </div>
 
@@ -642,27 +680,27 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                                     <div key={review.id} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
                                         <div className="flex items-start justify-between gap-3">
                                             <div>
-                                                <p className="text-sm font-medium text-white">{review.manager_name ?? 'Unknown manager'}</p>
+                                                <p className="text-sm font-medium text-white">{review.manager_name ?? t('op.unknownManager')}</p>
                                                 <p className="mt-1 text-xs text-slate-500">{formatDateTime(review.created_at)}</p>
                                             </div>
                                             <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${ratingClasses(review.rating)}`}>
-                                                {review.rating}
+                                                {label(review.rating)}
                                             </span>
                                         </div>
                                         <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-300">
                                             <div>
-                                                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Score</p>
+                                                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('quality.colScore')}</p>
                                                 <p className="mt-1 font-medium text-white">{review.total_score}/{review.max_score}</p>
                                             </div>
                                             <div>
-                                                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Response time</p>
+                                                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('op.responseTime')}</p>
                                                 <p className="mt-1 font-medium text-white">{formatDuration(review.first_response_time_seconds)}</p>
                                             </div>
                                         </div>
                                     </div>
                                 )) : (
                                     <div className="rounded-xl border border-dashed border-white/[0.08] px-4 py-6 text-sm text-slate-500">
-                                        Recent manager reviews will appear here after the first evaluation run.
+                                        {t('op.recentReviewsEmpty')}
                                     </div>
                                 )}
                             </div>

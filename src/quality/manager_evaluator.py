@@ -11,6 +11,7 @@ See: docs/08-manager-evaluation-criteria.md
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
 from datetime import UTC
 from typing import Any
 from uuid import UUID
@@ -35,7 +36,11 @@ from src.models.conversation_summary import ConversationSummary
 from src.models.escalation import Escalation
 from src.models.manager_review import ManagerReview
 from src.models.message import Message
-from src.quality.config import AIQualityTranscriptMode
+from src.quality.config import (
+    MANAGER_QA_CRITERIA_RULES,
+    AIQualityTranscriptMode,
+    disabled_rule_numbers,
+)
 from src.quality.manager_schemas import (
     ManagerCriterionScore,
     ManagerEvaluationResult,
@@ -250,12 +255,31 @@ async def calculate_manager_metrics(
 # ---------------------------------------------------------------------------
 
 
+def manager_total_score(
+    criteria: Sequence[ManagerCriterionScore],
+    disabled_rules: frozenset[int] = frozenset(),
+) -> float:
+    """Sum of scores (max 20); with disabled criteria, rescaled to 20."""
+    if not disabled_rules:
+        return float(sum(c.score for c in criteria))
+    enabled = [c for c in criteria if c.rule_number not in disabled_rules]
+    if not enabled:
+        return 0.0
+    earned = sum(c.score for c in enabled)
+    return round(earned / (2 * len(enabled)) * 20, 1)
+
+
 async def evaluate_manager_conversation(
     escalation_id: UUID,
     db: AsyncSession,
     model_name: str | None = None,
     transcript_mode: AIQualityTranscriptMode | str = AIQualityTranscriptMode.SUMMARY,
     cache_telemetry_enabled: bool = True,
+    *,
+    criteria: Mapping[str, bool] | None = None,
+    max_attempts: int | None = None,
+    alert_on_failure: bool | None = None,
+    retry_backoff_seconds: float = 0.0,
 ) -> tuple[ManagerEvaluationResult, ManagerMetrics]:
     """Evaluate a manager's post-escalation conversation.
 
@@ -275,6 +299,7 @@ async def evaluate_manager_conversation(
     """
     selected_model = model_name_for_path(PATH_QUALITY_MANAGER, model_name)
     mode = AIQualityTranscriptMode(transcript_mode)
+    disabled_rules = disabled_rule_numbers(criteria, MANAGER_QA_CRITERIA_RULES)
 
     # Load escalation with conversation
     esc_stmt = select(Escalation).where(Escalation.id == escalation_id)
@@ -362,11 +387,20 @@ async def evaluate_manager_conversation(
         focus_after=escalation.created_at,
         escalation_context=escalation_context,
     )
-    if context.insufficient_evidence:
+    if context.insufficient_evidence or len(disabled_rules) >= 10:
         return _insufficient_manager_evaluation(), metrics
 
+    disabled_note = (
+        "Criteria disabled by the admin (still score them, they are excluded "
+        "from the total): "
+        + ", ".join(str(rule) for rule in sorted(disabled_rules))
+        + "\n\n"
+        if disabled_rules
+        else ""
+    )
     user_prompt = (
-        f"Evaluate the manager's conversation after the escalation.\n\n{context.prompt}"
+        "Evaluate the manager's conversation after the escalation.\n\n"
+        f"{disabled_note}{context.prompt}"
     )
 
     logger.info(
@@ -390,16 +424,20 @@ async def evaluate_manager_conversation(
             ),
         ),
         cache_telemetry_enabled=cache_telemetry_enabled,
+        max_attempts_override=max_attempts,
+        notify_on_failure_override=alert_on_failure,
+        retry_backoff_seconds=retry_backoff_seconds,
     )
     evaluation = run_result.output
 
     # Defense-in-depth: recompute score/rating deterministically
-    computed_total = float(sum(c.score for c in evaluation.criteria))
+    computed_total = manager_total_score(evaluation.criteria, disabled_rules)
     computed_rating = compute_manager_rating(computed_total)
     if evaluation.total_score != computed_total or evaluation.rating != computed_rating:
         evaluation = evaluation.model_copy(
             update={"total_score": computed_total, "rating": computed_rating}
         )
+    evaluation.with_excluded_rules(disabled_rules)
 
     attach_llm_usage_telemetry(
         evaluation,
@@ -444,7 +482,11 @@ async def save_manager_review(
         for c in evaluation.criteria
     ]
 
-    computed_total = float(sum(c.score for c in evaluation.criteria))
+    excluded_rules: object = getattr(evaluation, "excluded_rules", frozenset())
+    computed_total = manager_total_score(
+        evaluation.criteria,
+        excluded_rules if isinstance(excluded_rules, frozenset) else frozenset(),
+    )
     rating_str = compute_manager_rating(computed_total)
 
     review = ManagerReview(

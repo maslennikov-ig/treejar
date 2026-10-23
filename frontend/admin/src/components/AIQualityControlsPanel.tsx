@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
 import {
     AlertTriangle,
-    Bell,
     Bot,
     CheckCircle2,
-    DollarSign,
     Gauge,
-    HelpCircle,
     RefreshCw,
     Save,
     ShieldAlert,
@@ -17,6 +14,10 @@ import {
     fetchAIQualityControls,
     updateAIQualityControls,
 } from '@/api/operators';
+import EnableManualModeButton, { scopesNeedingManualMode } from '@/components/EnableManualModeButton';
+import { HelpTooltip } from '@/components/HelpTooltip';
+import { useI18n } from '@/i18n';
+import type { TranslationKey } from '@/i18n';
 import type {
     AIQualityControlsConfig,
     AIQualityControlsResponse,
@@ -29,60 +30,75 @@ import type {
 
 type MessageTone = 'success' | 'error' | 'info';
 
-const MODE_OPTIONS: { value: AIQualityMode; label: string }[] = [
-    { value: 'disabled', label: 'Disabled' },
-    { value: 'manual', label: 'Manual' },
-    { value: 'daily_sample', label: 'Daily sample' },
-    { value: 'scheduled', label: 'Scheduled' },
+const MODE_OPTIONS: { value: AIQualityMode; labelKey: TranslationKey }[] = [
+    { value: 'disabled', labelKey: 'aiqc.mode.disabled' },
+    { value: 'manual', labelKey: 'aiqc.mode.manual' },
+    { value: 'daily_sample', labelKey: 'aiqc.mode.daily_sample' },
+    { value: 'scheduled', labelKey: 'aiqc.mode.scheduled' },
 ];
 
-const TRANSCRIPT_OPTIONS: { value: AIQualityTranscriptMode; label: string }[] = [
-    { value: 'disabled', label: 'Disabled' },
-    { value: 'summary', label: 'Summary' },
-    { value: 'full', label: 'Full transcript' },
+const TRANSCRIPT_OPTIONS: { value: AIQualityTranscriptMode; labelKey: TranslationKey }[] = [
+    { value: 'disabled', labelKey: 'aiqc.transcript.disabled' },
+    { value: 'summary', labelKey: 'aiqc.transcript.summary' },
+    { value: 'full', labelKey: 'aiqc.transcript.full' },
 ];
 
-const MODE_HELP = 'Disabled and manual modes create zero scheduled automation. Daily sample and scheduled modes can spend provider budget, bounded by per-run and daily call caps.';
-const TRANSCRIPT_HELP = 'Summary is the cost-safe default. Full transcript can send large conversations to the LLM and requires explicit warning acknowledgement.';
-const MODEL_HELP = 'Non-core QA should use a fast model. GLM-5 is reserved for high-value sales chat and is expensive for background QA.';
-const BUDGET_HELP = 'Daily budget is stored in cents. Setting it to 0 blocks QA LLM calls for that scope.';
-const CALL_CAP_HELP = 'Max calls per run and per day bound how much automation can execute even when a scheduler fires frequently.';
-const RETRY_HELP = 'Retries can repeat provider calls. The backend allows at most 2 attempts with bounded backoff.';
-const CACHE_HELP = 'Cache telemetry records OpenRouter cached/write token fields for observability; it is not a safety limit.';
-const ALERT_HELP = 'Alert on failure lets final QA failures surface to admins instead of becoming silent background cost.';
+/** Canonical criteria order per scope (backend backfills these defaults). */
+export const DEFAULT_CRITERIA_ORDER: Record<AIQualityScopeKey, string[]> = {
+    bot_qa: [
+        'greeting_and_identity',
+        'need_discovery_and_catalog',
+        'commercial_vat_and_quotation',
+        'tone_and_language',
+    ],
+    manager_qa: [
+        'response_speed_sla',
+        'handover_context_usage',
+        'professional_tone',
+        'commercial_terms_accuracy',
+        'closing_and_crm_hygiene',
+    ],
+    red_flags: [
+        'missing_identity',
+        'hard_deflection',
+        'unverified_commitment',
+        'ignored_question',
+        'bad_tone',
+    ],
+};
 
 const SCOPE_META: {
     key: AIQualityScopeKey;
-    label: string;
-    shortLabel: string;
-    description: string;
+    labelKey: TranslationKey;
+    shortLabelKey: TranslationKey;
+    descriptionKey: TranslationKey;
     icon: LucideIcon;
     accentClass: string;
     badgeClass: string;
 }[] = [
     {
         key: 'bot_qa',
-        label: 'Bot QA',
-        shortLabel: 'Bot QA',
-        description: 'Final assistant quality review for customer conversations.',
+        labelKey: 'aiqc.scope.bot_qa',
+        shortLabelKey: 'aiqc.scope.bot_qa',
+        descriptionKey: 'aiqc.scope.bot_qa.description',
         icon: Bot,
         accentClass: 'text-[#009668]',
         badgeClass: 'bg-emerald-500/10 text-[#009668]',
     },
     {
         key: 'manager_qa',
-        label: 'Manager QA',
-        shortLabel: 'Manager QA',
-        description: 'Resolved escalation review and manager coaching scores.',
+        labelKey: 'aiqc.scope.manager_qa',
+        shortLabelKey: 'aiqc.scope.manager_qa',
+        descriptionKey: 'aiqc.scope.manager_qa.description',
         icon: CheckCircle2,
         accentClass: 'text-[#0058be]',
         badgeClass: 'bg-blue-500/10 text-[#0058be]',
     },
     {
         key: 'red_flags',
-        label: 'Red Flags',
-        shortLabel: 'Red flags',
-        description: 'Realtime scan for complaints, risk language, and missed escalation signals.',
+        labelKey: 'aiqc.scope.red_flags',
+        shortLabelKey: 'aiqc.scope.red_flags.short',
+        descriptionKey: 'aiqc.scope.red_flags.description',
         icon: ShieldAlert,
         accentClass: 'text-[#92400e]',
         badgeClass: 'bg-amber-500/10 text-[#92400e]',
@@ -108,7 +124,7 @@ function formatBudget(cents: number): string {
     return `$${(cents / 100).toFixed(2)}`;
 }
 
-function formatCriteriaLabel(key: string): string {
+export function formatCriteriaLabel(key: string): string {
     return key
         .replace(/[_-]+/g, ' ')
         .replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -119,20 +135,24 @@ function isGlm5Model(model: string): boolean {
     return normalized.includes('glm-5') || normalized.includes('glm5');
 }
 
-function scopeName(scope: AIQualityScopeKey): string {
-    return SCOPE_META.find((item) => item.key === scope)?.shortLabel ?? scope;
+function orderedCriteria(scope: AIQualityScopeKey, criteria: Record<string, boolean>): [string, boolean][] {
+    const known = DEFAULT_CRITERIA_ORDER[scope].filter((key) => key in criteria);
+    const extra = Object.keys(criteria)
+        .filter((key) => !DEFAULT_CRITERIA_ORDER[scope].includes(key))
+        .sort((left, right) => left.localeCompare(right));
+    return [...known, ...extra].map((key) => [key, criteria[key]]);
 }
 
-function automationLabel(scopeConfig: AIQualityScopeConfig): string {
+function automationLabelKey(scopeConfig: AIQualityScopeConfig): TranslationKey {
     switch (scopeConfig.mode) {
         case 'disabled':
-            return 'Zero automation';
+            return 'aiqc.automation.disabled';
         case 'manual':
-            return 'Manual only';
+            return 'aiqc.automation.manual';
         case 'daily_sample':
-            return 'Daily sample';
+            return 'aiqc.automation.daily_sample';
         case 'scheduled':
-            return 'Scheduled';
+            return 'aiqc.automation.scheduled';
     }
 }
 
@@ -159,13 +179,7 @@ function TooltippedLabel({
     return (
         <span className="inline-flex items-center gap-1.5">
             {children}
-            <span
-                aria-label={tooltip}
-                title={tooltip}
-                className="inline-flex"
-            >
-                <HelpCircle size={14} className="text-[#7c839b]" />
-            </span>
+            <HelpTooltip text={tooltip} />
         </span>
     );
 }
@@ -201,6 +215,7 @@ function cloneConfig(config: AIQualityControlsConfig): AIQualityControlsConfig {
 export default function AIQualityControlsPanel({
     initialControls = null,
 }: AIQualityControlsPanelProps) {
+    const { t, tx } = useI18n();
     const [controls, setControls] = useState<AIQualityControlsResponse | null>(initialControls);
     const [draft, setDraft] = useState<AIQualityControlsConfig | null>(
         initialControls ? cloneConfig(initialControls.config) : null,
@@ -208,6 +223,14 @@ export default function AIQualityControlsPanel({
     const [loading, setLoading] = useState(initialControls === null);
     const [savingScope, setSavingScope] = useState<AIQualityScopeKey | null>(null);
     const [message, setMessage] = useState<{ tone: MessageTone; text: string } | null>(null);
+
+    const scopeName = useCallback(
+        (scope: AIQualityScopeKey): string => {
+            const meta = SCOPE_META.find((item) => item.key === scope);
+            return meta ? t(meta.shortLabelKey) : scope;
+        },
+        [t],
+    );
 
     const loadControls = useCallback(async () => {
         setLoading(true);
@@ -219,12 +242,12 @@ export default function AIQualityControlsPanel({
         } catch (err) {
             setMessage({
                 tone: 'error',
-                text: err instanceof Error ? err.message : 'Failed to load AI Quality Controls.',
+                text: err instanceof Error ? err.message : t('aiqc.loadFailed'),
             });
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [t]);
 
     useEffect(() => {
         if (initialControls) {
@@ -236,6 +259,11 @@ export default function AIQualityControlsPanel({
 
         void loadControls();
     }, [initialControls, loadControls]);
+
+    function applyResponse(response: AIQualityControlsResponse): void {
+        setControls(response);
+        setDraft(cloneConfig(response.config));
+    }
 
     function updateDraftScope(
         scope: AIQualityScopeKey,
@@ -343,52 +371,78 @@ export default function AIQualityControlsPanel({
                 [scope]: draft[scope],
             };
             const response = await updateAIQualityControls(payload);
-            setControls(response);
-            setDraft(cloneConfig(response.config));
+            applyResponse(response);
             setMessage({
                 tone: 'success',
-                text: `${scopeName(scope)} controls saved.`,
+                text: t('aiqc.saved', { scope: scopeName(scope) }),
             });
         } catch (err) {
             setMessage({
                 tone: 'error',
-                text: err instanceof Error ? err.message : `Failed to save ${scopeName(scope)} controls.`,
+                text: err instanceof Error ? err.message : t('aiqc.saveFailed', { scope: scopeName(scope) }),
             });
         } finally {
             setSavingScope(null);
         }
     }
 
+    function usageLine(scope: AIQualityScopeKey): string | null {
+        const usage = controls?.usage_today?.[scope];
+        if (!usage) return null;
+        const na = t('aiqc.na');
+        return t('aiqc.usageLine', {
+            calls: usage.calls_today === null ? na : String(usage.calls_today),
+            maxCalls: String(usage.max_calls_per_day),
+            spend: usage.spend_cents_today === null ? na : formatBudget(usage.spend_cents_today),
+            budget: formatBudget(usage.daily_budget_cents),
+        });
+    }
+
     const effectiveConfig = draft ?? controls?.config ?? null;
     const allAutomationDisabled = effectiveConfig
         ? SCOPE_META.every((item) => effectiveConfig[item.key].mode === 'disabled')
         : false;
+    const savedConfig = controls?.config ?? null;
+    const hasDisabledScopes = scopesNeedingManualMode(savedConfig).length > 0;
 
     return (
-        <section className="rounded-md border border-[#e5eeff] bg-white p-5 xl:col-span-2">
+        <section className="rounded-md border border-[#e5eeff] bg-white p-5 xl:col-span-2" data-ai-quality-controls="">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                     <div className="flex items-center gap-2 text-[#0b1c30]">
                         <SlidersHorizontal size={18} className="text-[#009668]" />
-                        <h3 className="text-lg font-semibold">AI Quality Controls</h3>
+                        <h3 className="text-lg font-semibold">{t('aiqc.title')}</h3>
+                        <HelpTooltip text={t('aiqc.titleHelp')} />
                     </div>
                     <p className="mt-2 max-w-3xl text-sm text-[#45464d]">
-                        Admin-owned controls for bot QA, manager QA, and red-flag review cost.
+                        {t('aiqc.subtitle')}
                     </p>
                 </div>
-                <button
-                    onClick={() => void loadControls()}
-                    disabled={loading || savingScope !== null}
-                    className="inline-flex items-center justify-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 py-2 text-sm font-medium text-[#3f465c] transition hover:bg-[#f2f4f7] disabled:opacity-50"
-                >
-                    <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                    Reload controls
-                </button>
+                <div className="flex flex-wrap items-start gap-2">
+                    {hasDisabledScopes && (
+                        <EnableManualModeButton
+                            config={savedConfig}
+                            onDone={(response) => {
+                                applyResponse(response);
+                                setMessage({ tone: 'success', text: t('aiqc.manualEnabled') });
+                            }}
+                        />
+                    )}
+                    <button
+                        type="button"
+                        onClick={() => void loadControls()}
+                        disabled={loading || savingScope !== null}
+                        className="inline-flex items-center justify-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 py-2 text-sm font-medium text-[#3f465c] transition hover:bg-[#f2f4f7] disabled:opacity-50"
+                    >
+                        <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                        {t('aiqc.reload')}
+                    </button>
+                </div>
             </div>
 
             {loading && (
                 <div className="mt-5 rounded-md border border-[#e5eeff] bg-[#f8f9ff] px-4 py-4 text-sm text-[#45464d]">
-                    Loading AI Quality Controls...
+                    {t('aiqc.loading')}
                 </div>
             )}
 
@@ -397,9 +451,9 @@ export default function AIQualityControlsPanel({
                     <div className="flex items-start gap-3">
                         <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-[#009668]" />
                         <div>
-                            <p className="font-medium text-[#166534]">Zero automation safe default</p>
+                            <p className="font-medium text-[#166534]">{t('aiqc.zeroTitle')}</p>
                             <p className="mt-1 text-[#166534]">
-                                All scopes are disabled, so scheduled AI quality jobs open 0 LLM calls until an admin saves another mode.
+                                {t('aiqc.zeroBody')}
                             </p>
                         </div>
                     </div>
@@ -414,7 +468,8 @@ export default function AIQualityControlsPanel({
                             className="rounded-md border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-[#92400e]"
                         >
                             <AlertTriangle size={16} className="mr-2 inline text-[#92400e]" />
-                            <span className="font-medium">{scopeName(warning.scope)}:</span> {warning.message}
+                            <span className="font-medium">{scopeName(warning.scope)}:</span>{' '}
+                            {tx(`aiqc.warning.${warning.code}`, warning.message)}
                         </div>
                     ))}
                 </div>
@@ -432,28 +487,35 @@ export default function AIQualityControlsPanel({
                         {SCOPE_META.map((meta) => {
                             const scopeConfig = effectiveConfig[meta.key];
                             const Icon = meta.icon;
-                            const criteriaEntries = Object.entries(scopeConfig.criteria).sort(([left], [right]) => left.localeCompare(right));
+                            const criteriaEntries = orderedCriteria(meta.key, scopeConfig.criteria);
                             const showFullTranscriptWarning = scopeConfig.transcript_mode === 'full';
                             const showGlmWarning = isGlm5Model(scopeConfig.model);
+                            const usage = usageLine(meta.key);
 
                             return (
-                                <div key={meta.key} className="rounded-md border border-[#e5eeff] bg-[#f8f9ff] p-4">
+                                <div key={meta.key} className="rounded-md border border-[#e5eeff] bg-[#f8f9ff] p-4" data-ai-quality-scope={meta.key}>
                                     <div className="flex items-start justify-between gap-3">
                                         <div>
                                             <div className="flex items-center gap-2 text-[#0b1c30]">
                                                 <Icon size={17} className={meta.accentClass} />
-                                                <h4 className="text-base font-semibold">{meta.label}</h4>
+                                                <h4 className="text-base font-semibold">{t(meta.labelKey)}</h4>
                                             </div>
-                                            <p className="mt-2 text-sm text-[#45464d]">{meta.description}</p>
+                                            <p className="mt-2 text-sm text-[#45464d]">{t(meta.descriptionKey)}</p>
                                         </div>
                                         <span className={`rounded-md px-3 py-2 text-xs font-medium ${automationBadgeClass(scopeConfig)}`}>
-                                            {automationLabel(scopeConfig)}
+                                            {t(automationLabelKey(scopeConfig))}
                                         </span>
                                     </div>
 
+                                    {usage && (
+                                        <p className="mt-3 rounded-md border border-[#e5eeff] bg-white px-3 py-2 text-xs text-[#3f465c]" data-ai-quality-usage={meta.key}>
+                                            {usage}
+                                        </p>
+                                    )}
+
                                     <div className="mt-4 grid grid-cols-1 gap-3">
                                         <label htmlFor={scopeFieldId(meta.key, 'mode')} className="text-sm font-medium text-[#3f465c]">
-                                            <TooltippedLabel tooltip={MODE_HELP}>Mode</TooltippedLabel>
+                                            <TooltippedLabel tooltip={t('aiqc.help.mode')}>{t('aiqc.field.mode')}</TooltippedLabel>
                                             <select
                                                 id={scopeFieldId(meta.key, 'mode')}
                                                 value={scopeConfig.mode}
@@ -461,13 +523,13 @@ export default function AIQualityControlsPanel({
                                                 className={baseInputClass()}
                                             >
                                                 {MODE_OPTIONS.map((option) => (
-                                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                                    <option key={option.value} value={option.value}>{t(option.labelKey)}</option>
                                                 ))}
                                             </select>
                                         </label>
 
                                         <label htmlFor={scopeFieldId(meta.key, 'transcript')} className="text-sm font-medium text-[#3f465c]">
-                                            <TooltippedLabel tooltip={TRANSCRIPT_HELP}>Transcript mode</TooltippedLabel>
+                                            <TooltippedLabel tooltip={t('aiqc.help.transcript')}>{t('aiqc.field.transcript')}</TooltippedLabel>
                                             <select
                                                 id={scopeFieldId(meta.key, 'transcript')}
                                                 value={scopeConfig.transcript_mode}
@@ -475,7 +537,7 @@ export default function AIQualityControlsPanel({
                                                 className={baseInputClass()}
                                             >
                                                 {TRANSCRIPT_OPTIONS.map((option) => (
-                                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                                    <option key={option.value} value={option.value}>{t(option.labelKey)}</option>
                                                 ))}
                                             </select>
                                         </label>
@@ -490,9 +552,9 @@ export default function AIQualityControlsPanel({
                                                         className="mt-1"
                                                     />
                                                     <span>
-                                                        <span className="font-medium">Full transcript override warning</span>
+                                                        <span className="font-medium">{t('aiqc.fullOverrideTitle')}</span>
                                                         <span className="mt-1 block text-[#92400e]">
-                                                            Full transcript mode can send large conversations to the LLM and should stay exceptional.
+                                                            {t('aiqc.fullOverrideBody')}
                                                         </span>
                                                     </span>
                                                 </span>
@@ -500,7 +562,7 @@ export default function AIQualityControlsPanel({
                                         )}
 
                                         <label htmlFor={scopeFieldId(meta.key, 'model')} className="text-sm font-medium text-[#3f465c]">
-                                            <TooltippedLabel tooltip={MODEL_HELP}>Model</TooltippedLabel>
+                                            <TooltippedLabel tooltip={t('aiqc.help.model')}>{t('aiqc.field.model')}</TooltippedLabel>
                                             <input
                                                 id={scopeFieldId(meta.key, 'model')}
                                                 type="text"
@@ -520,9 +582,9 @@ export default function AIQualityControlsPanel({
                                                         className="mt-1"
                                                     />
                                                     <span>
-                                                        <span className="font-medium">GLM-5 override warning</span>
+                                                        <span className="font-medium">{t('aiqc.glmOverrideTitle')}</span>
                                                         <span className="mt-1 block text-[#be123c]">
-                                                            GLM-5 is expensive for QA automation and requires explicit admin acknowledgement.
+                                                            {t('aiqc.glmOverrideBody')}
                                                         </span>
                                                     </span>
                                                 </span>
@@ -531,7 +593,7 @@ export default function AIQualityControlsPanel({
 
                                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
                                             <label htmlFor={scopeFieldId(meta.key, 'budget')} className="text-sm font-medium text-[#3f465c]">
-                                                <TooltippedLabel tooltip={BUDGET_HELP}>Daily budget</TooltippedLabel>
+                                                <TooltippedLabel tooltip={t('aiqc.help.budget')}>{t('aiqc.field.budget')}</TooltippedLabel>
                                                 <input
                                                     id={scopeFieldId(meta.key, 'budget')}
                                                     type="number"
@@ -544,7 +606,7 @@ export default function AIQualityControlsPanel({
                                             </label>
 
                                             <label htmlFor={scopeFieldId(meta.key, 'per-run')} className="text-sm font-medium text-[#3f465c]">
-                                                <TooltippedLabel tooltip={CALL_CAP_HELP}>Max/run</TooltippedLabel>
+                                                <TooltippedLabel tooltip={t('aiqc.help.callCap')}>{t('aiqc.field.perRun')}</TooltippedLabel>
                                                 <input
                                                     id={scopeFieldId(meta.key, 'per-run')}
                                                     type="number"
@@ -556,7 +618,7 @@ export default function AIQualityControlsPanel({
                                             </label>
 
                                             <label htmlFor={scopeFieldId(meta.key, 'per-day')} className="text-sm font-medium text-[#3f465c]">
-                                                <TooltippedLabel tooltip={CALL_CAP_HELP}>Max/day</TooltippedLabel>
+                                                <TooltippedLabel tooltip={t('aiqc.help.callCap')}>{t('aiqc.field.perDay')}</TooltippedLabel>
                                                 <input
                                                     id={scopeFieldId(meta.key, 'per-day')}
                                                     type="number"
@@ -570,7 +632,7 @@ export default function AIQualityControlsPanel({
 
                                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                             <label htmlFor={scopeFieldId(meta.key, 'retry-attempts')} className="text-sm font-medium text-[#3f465c]">
-                                                <TooltippedLabel tooltip={RETRY_HELP}>Retry attempts</TooltippedLabel>
+                                                <TooltippedLabel tooltip={t('aiqc.help.retry')}>{t('aiqc.field.retryAttempts')}</TooltippedLabel>
                                                 <input
                                                     id={scopeFieldId(meta.key, 'retry-attempts')}
                                                     type="number"
@@ -583,7 +645,7 @@ export default function AIQualityControlsPanel({
                                             </label>
 
                                             <label htmlFor={scopeFieldId(meta.key, 'retry-backoff')} className="text-sm font-medium text-[#3f465c]">
-                                                <TooltippedLabel tooltip={RETRY_HELP}>Backoff seconds</TooltippedLabel>
+                                                <TooltippedLabel tooltip={t('aiqc.help.retry')}>{t('aiqc.field.backoff')}</TooltippedLabel>
                                                 <input
                                                     id={scopeFieldId(meta.key, 'retry-backoff')}
                                                     type="number"
@@ -597,7 +659,7 @@ export default function AIQualityControlsPanel({
 
                                         <div className="grid grid-cols-1 gap-2">
                                             <label className="flex items-center justify-between gap-3 rounded-md border border-[#e5eeff] bg-white px-3 py-3 text-sm text-[#3f465c]">
-                                                <TooltippedLabel tooltip={CACHE_HELP}>Cache telemetry</TooltippedLabel>
+                                                <TooltippedLabel tooltip={t('aiqc.help.cache')}>{t('aiqc.field.cache')}</TooltippedLabel>
                                                 <input
                                                     type="checkbox"
                                                     checked={scopeConfig.cache_telemetry_enabled}
@@ -606,7 +668,7 @@ export default function AIQualityControlsPanel({
                                             </label>
 
                                             <label className="flex items-center justify-between gap-3 rounded-md border border-[#e5eeff] bg-white px-3 py-3 text-sm text-[#3f465c]">
-                                                <TooltippedLabel tooltip={ALERT_HELP}>Alert on failure</TooltippedLabel>
+                                                <TooltippedLabel tooltip={t('aiqc.help.alert')}>{t('aiqc.field.alert')}</TooltippedLabel>
                                                 <input
                                                     type="checkbox"
                                                     checked={scopeConfig.alert_on_failure}
@@ -617,36 +679,50 @@ export default function AIQualityControlsPanel({
 
                                         <div className="rounded-md border border-[#e5eeff] bg-[#f8f9ff] px-3 py-3">
                                             <div className="flex items-center justify-between gap-3">
-                                                <p className="text-sm font-medium text-[#0b1c30]">Criteria toggles</p>
+                                                <p className="flex items-center gap-1.5 text-sm font-medium text-[#0b1c30]">
+                                                    {t('aiqc.criteriaTitle')}
+                                                    <HelpTooltip text={t(`aiqc.criteriaHelp.${meta.key}` as TranslationKey)} />
+                                                </p>
                                                 <span className={`rounded-lg px-2.5 py-1 text-xs font-medium ${meta.badgeClass}`}>
-                                                    {criteriaEntries.length}
+                                                    {criteriaEntries.filter(([, enabled]) => enabled).length}/{criteriaEntries.length}
                                                 </span>
                                             </div>
                                             <div className="mt-3 space-y-2">
-                                                {criteriaEntries.length > 0 ? criteriaEntries.map(([criterion, enabled]) => (
-                                                    <label key={criterion} className="flex items-center justify-between gap-3 rounded-lg border border-[#e5eeff] bg-white px-3 py-2 text-sm text-[#3f465c]">
-                                                        <span>{formatCriteriaLabel(criterion)}</span>
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={enabled}
-                                                            onChange={(event) => handleCriteriaChange(meta.key, criterion, event.target.checked)}
-                                                        />
-                                                    </label>
-                                                )) : (
+                                                {criteriaEntries.length > 0 ? criteriaEntries.map(([criterion, enabled]) => {
+                                                    const help = tx(`crit.${meta.key}.${criterion}.help`, '');
+                                                    return (
+                                                        <label
+                                                            key={criterion}
+                                                            data-criterion={criterion}
+                                                            className="flex items-center justify-between gap-3 rounded-lg border border-[#e5eeff] bg-white px-3 py-2 text-sm text-[#3f465c]"
+                                                        >
+                                                            <span className="inline-flex items-center gap-1.5">
+                                                                <span>{tx(`crit.${meta.key}.${criterion}`, formatCriteriaLabel(criterion))}</span>
+                                                                {help && <HelpTooltip text={help} />}
+                                                            </span>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={enabled}
+                                                                onChange={(event) => handleCriteriaChange(meta.key, criterion, event.target.checked)}
+                                                            />
+                                                        </label>
+                                                    );
+                                                }) : (
                                                     <div className="rounded-lg border border-dashed border-[#c6c6cd] px-3 py-4 text-sm text-[#7c839b]">
-                                                        No criteria JSON exposed for this scope.
+                                                        {t('aiqc.noCriteria')}
                                                     </div>
                                                 )}
                                             </div>
                                         </div>
 
                                         <button
+                                            type="button"
                                             onClick={() => void handleSaveScope(meta.key)}
                                             disabled={savingScope !== null}
                                             className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5 text-sm font-medium text-[#166534] transition hover:bg-emerald-500/15 disabled:opacity-50"
                                         >
                                             {savingScope === meta.key ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
-                                            Save {meta.shortLabel}
+                                            {t('aiqc.saveScope', { scope: t(meta.shortLabelKey) })}
                                         </button>
                                     </div>
                                 </div>
@@ -654,38 +730,32 @@ export default function AIQualityControlsPanel({
                         })}
                     </div>
 
-                    <div className="mt-5 rounded-md border border-[#e5eeff] bg-[#f8f9ff] p-4">
+                    <div className="mt-5 rounded-md border border-[#e5eeff] bg-[#f8f9ff] p-4" data-ai-quality-contours="">
                         <div className="flex items-center gap-2 text-[#0b1c30]">
                             <Gauge size={17} className="text-[#0058be]" />
-                            <h4 className="text-base font-semibold">Manual trigger surfaces</h4>
+                            <h4 className="text-base font-semibold">{t('aiqc.contoursTitle')}</h4>
                         </div>
                         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
                             <div className="rounded-md border border-[#e5eeff] bg-white px-4 py-3">
                                 <div className="flex items-center gap-2 text-sm font-medium text-[#0b1c30]">
-                                    <DollarSign size={15} className="text-[#009668]" />
-                                    Bot QA
+                                    <Bot size={15} className="text-[#009668]" />
+                                    {t('aiqc.scope.bot_qa')}
                                 </div>
-                                <p className="mt-2 text-sm text-[#45464d]">
-                                    Existing internal endpoint: POST /api/v1/quality/reviews/ with an explicit conversation_id.
-                                </p>
+                                <p className="mt-2 text-sm text-[#45464d]">{t('aiqc.contour.bot_qa')}</p>
                             </div>
                             <div className="rounded-md border border-[#e5eeff] bg-white px-4 py-3">
                                 <div className="flex items-center gap-2 text-sm font-medium text-[#0b1c30]">
-                                    <Bell size={15} className="text-[#0058be]" />
-                                    Manager QA
+                                    <CheckCircle2 size={15} className="text-[#0058be]" />
+                                    {t('aiqc.scope.manager_qa')}
                                 </div>
-                                <p className="mt-2 text-sm text-[#45464d]">
-                                    Use the Manager Review Queue Evaluate actions below; they call the existing admin evaluate endpoint.
-                                </p>
+                                <p className="mt-2 text-sm text-[#45464d]">{t('aiqc.contour.manager_qa')}</p>
                             </div>
                             <div className="rounded-md border border-[#e5eeff] bg-white px-4 py-3">
                                 <div className="flex items-center gap-2 text-sm font-medium text-[#0b1c30]">
                                     <AlertTriangle size={15} className="text-[#92400e]" />
-                                    Red flags
+                                    {t('aiqc.scope.red_flags')}
                                 </div>
-                                <p className="mt-2 text-sm text-[#45464d]">
-                                    No existing admin manual trigger endpoint is exposed, so this dashboard does not add one.
-                                </p>
+                                <p className="mt-2 text-sm text-[#45464d]">{t('aiqc.contour.red_flags')}</p>
                             </div>
                         </div>
                     </div>

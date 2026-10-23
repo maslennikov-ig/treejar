@@ -11,6 +11,7 @@ from src.api.v1.admin import require_admin_session
 from src.core.database import get_db
 from src.schemas.admin import (
     AdminActionResult,
+    AdminCanonicalSyncResult,
     AdminKnowledgeBaseCandidate,
     AdminKnowledgeBaseCandidateCreate,
     AdminKnowledgeBaseCandidateReject,
@@ -32,6 +33,7 @@ from src.services.admin_knowledge_base import (
     reindex_admin_kb_entry,
     reject_admin_kb_candidate,
     soft_delete_admin_kb_entry,
+    sync_canonical_admin_kb_entries,
     update_admin_kb_entry,
 )
 
@@ -206,3 +208,20 @@ async def post_candidate_reject(
         body=body,
         request=request,
     )
+
+
+@router.post("/sync-canonical", response_model=AdminCanonicalSyncResult)
+async def post_sync_canonical(
+    db: DbSession,
+    request: Request,
+) -> AdminCanonicalSyncResult:
+    return await sync_canonical_admin_kb_entries(db=db, request=request)
+
+
+@router.post("/seed-defaults", response_model=AdminCanonicalSyncResult)
+async def post_seed_defaults(
+    db: DbSession,
+    request: Request,
+) -> AdminCanonicalSyncResult:
+    """Spec alias (AC01) of ``/sync-canonical``."""
+    return await sync_canonical_admin_kb_entries(db=db, request=request)

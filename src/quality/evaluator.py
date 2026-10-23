@@ -43,7 +43,13 @@ from src.llm.safety import (
 from src.models.conversation import Conversation
 from src.models.conversation_summary import ConversationSummary
 from src.models.message import Message
-from src.quality.config import AIQualityTranscriptMode
+from src.quality.config import (
+    BOT_QA_CRITERIA_RULES,
+    RED_FLAG_CRITERIA_CODES,
+    AIQualityTranscriptMode,
+    disabled_criteria,
+    disabled_rule_numbers,
+)
 from src.quality.schemas import (
     RULE_NAMES,
     CriterionScore,
@@ -232,6 +238,9 @@ _FOLLOWUP_TOOLS = frozenset({"schedule_follow_up", "schedule_followup"})
 _CATALOG_PLANNING_KEY = "catalog_planning_v1"
 _COMPREHENSIVE_ORDER_FAMILIES = 2
 INSUFFICIENT_EVIDENCE_NEXT_ACTION = "Insufficient data for AI evaluation: transcript content is unavailable in this mode."
+ALL_REDFLAGS_DISABLED_ACTION = (
+    "Red-flag scan skipped: every red-flag criterion is disabled by the admin."
+)
 INSUFFICIENT_REDFLAG_ACTION = "Insufficient data for red-flag evaluation: transcript content is unavailable in this mode."
 
 
@@ -771,8 +780,20 @@ async def evaluate_conversation(
     model_name: str | None = None,
     transcript_mode: AIQualityTranscriptMode | str = AIQualityTranscriptMode.SUMMARY,
     cache_telemetry_enabled: bool = True,
+    *,
+    criteria: Mapping[str, bool] | None = None,
+    max_attempts: int | None = None,
+    alert_on_failure: bool | None = None,
+    retry_backoff_seconds: float = 0.0,
 ) -> EvaluationResult:
-    """Evaluate a conversation for the owner-facing final quality review."""
+    """Evaluate a conversation for the owner-facing final quality review.
+
+    ``criteria`` are the admin's Bot QA toggles: rules of a disabled group are
+    forced NOT APPLICABLE, so they leave the weighted score.
+    """
+    disabled_rules = disabled_rule_numbers(criteria, BOT_QA_CRITERIA_RULES)
+    if len(disabled_rules) >= 15:
+        return _insufficient_evidence_result()
     selected_model = model_name_for_path(PATH_QUALITY_FINAL, model_name)
     mode = AIQualityTranscriptMode(transcript_mode)
     messages = await _load_messages(conversation_id, db)
@@ -789,7 +810,10 @@ async def evaluate_conversation(
         stage,
         conversation,
     )
-    applicability_map = applicability.rule_applicability
+    applicability_map = {
+        rule_number: applicable and rule_number not in disabled_rules
+        for rule_number, applicable in applicability.rule_applicability.items()
+    }
     summary_text = (
         await _load_summary_text(conversation_id, db)
         if mode != AIQualityTranscriptMode.FULL
@@ -807,8 +831,16 @@ async def evaluate_conversation(
     if context.insufficient_evidence:
         return _insufficient_evidence_result()
 
+    disabled_note = (
+        "Rules disabled by the admin (score them as NOT APPLICABLE): "
+        + ", ".join(str(rule) for rule in sorted(disabled_rules))
+        + "\n\n"
+        if disabled_rules
+        else ""
+    )
     user_prompt = (
         f"{_format_applicability_instructions(applicability_map)}\n\n"
+        f"{disabled_note}"
         f"Current sales stage: {stage}\n\n"
         f"Conversation language: {applicability.language}\n\n"
         f"{context.prompt}"
@@ -828,6 +860,9 @@ async def evaluate_conversation(
         model_name=selected_model,
         model=_openrouter_model(selected_model, PATH_QUALITY_FINAL),
         cache_telemetry_enabled=cache_telemetry_enabled,
+        max_attempts_override=max_attempts,
+        notify_on_failure_override=alert_on_failure,
+        retry_backoff_seconds=retry_backoff_seconds,
         deps=FinalJudgeDeps(
             rule_applicability=applicability_map,
             diagnostic_blockers=applicability.blocking_reasons,
@@ -859,8 +894,23 @@ async def evaluate_red_flags(
     model_name: str | None = None,
     transcript_mode: AIQualityTranscriptMode | str = AIQualityTranscriptMode.SUMMARY,
     cache_telemetry_enabled: bool = True,
+    *,
+    criteria: Mapping[str, bool] | None = None,
+    max_attempts: int | None = None,
+    alert_on_failure: bool | None = None,
+    retry_backoff_seconds: float = 0.0,
 ) -> RedFlagEvaluationResult:
-    """Evaluate a conversation for rare realtime red flags."""
+    """Evaluate a conversation for rare realtime red flags.
+
+    ``criteria`` are the admin's red-flag toggles keyed by flag code; a
+    disabled code is neither requested from the model nor reported.
+    """
+    disabled_codes = disabled_criteria(criteria) & frozenset(RED_FLAG_CRITERIA_CODES)
+    if len(disabled_codes) >= len(RED_FLAG_CRITERIA_CODES):
+        return RedFlagEvaluationResult(
+            flags=[],
+            recommended_action=ALL_REDFLAGS_DISABLED_ACTION,
+        )
     selected_model = model_name_for_path(PATH_QUALITY_RED_FLAGS, model_name)
     mode = AIQualityTranscriptMode(transcript_mode)
     messages = await _load_messages(conversation_id, db)
@@ -890,15 +940,34 @@ async def evaluate_red_flags(
         len(messages),
     )
 
+    prompt = context.prompt
+    if disabled_codes:
+        prompt = (
+            "Red-flag codes disabled by the admin (never report them): "
+            + ", ".join(sorted(disabled_codes))
+            + "\n\n"
+            + prompt
+        )
     run_result = await run_agent_with_safety(
         red_flag_agent,
         PATH_QUALITY_RED_FLAGS,
-        context.prompt,
+        prompt,
         model_name=selected_model,
         model=_openrouter_model(selected_model, PATH_QUALITY_RED_FLAGS),
         cache_telemetry_enabled=cache_telemetry_enabled,
+        max_attempts_override=max_attempts,
+        notify_on_failure_override=alert_on_failure,
+        retry_backoff_seconds=retry_backoff_seconds,
     )
     result = cast("RedFlagEvaluationResult", run_result.output)
+    if disabled_codes:
+        result = result.model_copy(
+            update={
+                "flags": [
+                    flag for flag in result.flags if flag.code not in disabled_codes
+                ]
+            }
+        )
     return cast(
         "RedFlagEvaluationResult",
         attach_llm_usage_telemetry(

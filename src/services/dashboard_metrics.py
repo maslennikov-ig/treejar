@@ -8,6 +8,8 @@ Performance: Uses 3 consolidated SQL queries instead of 12+ sequential ones.
 
 from __future__ import annotations
 
+import json
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -55,6 +57,80 @@ def _get_period_start(period: str) -> datetime | None:
             return None
 
 
+# Business categories for free-text escalation reasons, checked in order.
+# Patterns follow the reasons the runtime writes (src/llm/escalation_policy.py,
+# src/llm/escalation_tools.py) plus common manager wording. Word boundaries
+# keep "custom" from matching "customer".
+ESCALATION_REASON_CATEGORIES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "urgent_complaint",
+        re.compile(
+            r"\b(incident|complain\w*|legal|safety|frustrat\w*|angry|urgent\w*|"
+            r"existing[- ]order|payment|refund\w*|damaged)\b"
+        ),
+    ),
+    (
+        "custom_out_of_catalog",
+        re.compile(
+            r"\b(made[- ]to[- ]order|custom|bespoke|out[- ]of[- ]catalog\w*|"
+            r"outside the office furniture catalog|specialist|sourcing)\b"
+        ),
+    ),
+    (
+        "quotation_bulk",
+        re.compile(
+            r"(\b(quotations?|quotes?|wholesale|bulk|projects?|order processing|b2b)\b"
+            r"|20\+)"
+        ),
+    ),
+    (
+        "delivery_terms",
+        re.compile(r"\b(deliver\w*|install\w*|assembl\w*|warranty|discounts?|terms)\b"),
+    ),
+    (
+        "human_request",
+        re.compile(r"\b(human|managers?|call\w*|person|operator|speak\w*)\b"),
+    ),
+)
+ESCALATION_REASON_OTHER = "other"
+
+
+def categorize_escalation_reason(reason: str | None) -> str:
+    """Map one free-text escalation reason to a dashboard business category."""
+    text_value = (reason or "").casefold()
+    for category, pattern in ESCALATION_REASON_CATEGORIES:
+        if pattern.search(text_value):
+            return category
+    return ESCALATION_REASON_OTHER
+
+
+def categorize_escalation_reasons(reasons: dict[Any, Any]) -> dict[str, int]:
+    grouped: dict[str, int] = {}
+    for reason, count in reasons.items():
+        if not isinstance(count, int) or isinstance(count, bool):
+            continue
+        category = categorize_escalation_reason(
+            reason if isinstance(reason, str) else None
+        )
+        grouped[category] = grouped.get(category, 0) + count
+    return grouped
+
+
+def _int_mapping(raw: Any) -> dict[str, int]:
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(key): int(value)
+        for key, value in raw.items()
+        if isinstance(value, int | float) and not isinstance(value, bool)
+    }
+
+
 async def calculate_dashboard_metrics(
     db: AsyncSession, period: str = "all_time"
 ) -> DashboardMetricsResponse:
@@ -93,7 +169,19 @@ async def calculate_dashboard_metrics(
                              AND c.escalation_status != 'none')        AS post_esc_sales_count,
 
             -- Deal value
-            AVG(c.deal_amount) FILTER (WHERE c.deal_amount IS NOT NULL) AS avg_deal_value
+            AVG(c.deal_amount) FILTER (WHERE c.deal_amount IS NOT NULL) AS avg_deal_value,
+
+            -- Current sales stage distribution (tj-ierv.5)
+            (
+                SELECT json_object_agg(stage_rows.stage, stage_rows.stage_count)
+                FROM (
+                    SELECT COALESCE(NULLIF(c.sales_stage, ''), 'unknown') AS stage,
+                           COUNT(*) AS stage_count
+                    FROM conversations c
+                    WHERE 1=1 {period_clause}
+                    GROUP BY 1
+                ) AS stage_rows
+            )                                                     AS sales_stage_distribution
         FROM conversations c
         WHERE 1=1 {period_clause}
     """)
@@ -107,6 +195,9 @@ async def calculate_dashboard_metrics(
     noor_sales_count = conv_row.noor_sales_count or 0
     post_esc_sales_count = conv_row.post_esc_sales_count or 0
     avg_deal_value = float(conv_row.avg_deal_value or 0.0)
+    sales_stage_distribution = _int_mapping(
+        getattr(conv_row, "sales_stage_distribution", None)
+    )
 
     total_deals = noor_sales_count + post_esc_sales_count
     conversion_rate = (
@@ -168,6 +259,7 @@ async def calculate_dashboard_metrics(
         esc_q = esc_q.where(Escalation.created_at >= period_start)
     esc_rows = await db.execute(esc_q)
     escalation_reasons = {row[0]: row[1] for row in esc_rows.all()}
+    escalation_by_reason = categorize_escalation_reasons(escalation_reasons)
 
     # ── QUERY 2: Message-level metrics ──
     cost_q = select(func.sum(Message.cost))
@@ -313,6 +405,8 @@ async def calculate_dashboard_metrics(
         target_vs_nontarget={"target": target_count, "nontarget": nontarget_count},
         escalation_count=escalation_count,
         escalation_reasons=escalation_reasons,
+        escalation_by_reason=escalation_by_reason,
+        sales_stage_distribution=sales_stage_distribution,
         noor_sales=SalesMetrics(count=noor_sales_count),
         post_escalation_sales=SalesMetrics(count=post_esc_sales_count),
         conversion_rate=round(conversion_rate, 2),

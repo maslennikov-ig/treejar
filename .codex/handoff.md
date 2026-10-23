@@ -1,5 +1,10 @@
 # Orchestrator Handoff
 
+## Stage tj-ierv (2026-10-23): admin dashboard polish — local, not deployed
+- Branch codex/tj-ierv-admin-dashboard; summary .codex/stages/tj-ierv/summary.md.
+- Canonical KB/rules sync is button-only (`/sync-canonical`); syncing rules
+  changes live bot prompts; deploy / prod sync need separate owner approval.
+
 ## October tester feedback — authorized completion2026-10-14
 
 - Accepted epic `tj-i2b1`; findings `tj-i2b1.1` (false mismatch caveats), `.2`
@@ -120,15 +125,8 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
  private runtime directory is in snapshot-watch-launch.json. Observer output
  still needs root reading; no automatic chat callback or delta activation.
 
-- Read-only probes2026-10-03:9 InventoryGETs,8HTTP200+1HTTP400.
-  Literal trailingZ rejected; +0000 accepted, including sorted empty delta.
-  Bulk1/2/4/8 returned all requested IDs with numeric stock;8 is a verified
-  lower bound, not the endpoint maximum. No business write/OAuth refresh.
-- Stock-operation coverage, nonempty paged delta semantics/equal timestamps
-  and lifecycle completeness remain unproved. Incremental activation stays off.
-- Current read-only mapping:343 active catalog rows,250 stored IDs,306 matches,
- 2557 snapshot entries. Optional catalog scoping stays off.
-- Retained receipts: docs/research/2026-10-03-zoho-stock/.
+- 2026-10-03 read-only probes, bulk/paging limits and catalog mapping:
+  docs/research/2026-10-03-zoho-stock/ (delta activation stays off).
 
 ## Operating boundary
 
@@ -176,6 +174,8 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 - Zoho quotation live E2E remains unverified; no real messages were sent here.
 - tj-1baw latency remains separate; tj-bgwu fixed in `codex/project-consistency-20261013`.
 - Paid second reader stays off; reader-gap drift tracked in tj-4q79.
+- tj-ierv: KB lacks owner facts for returns window, warranty term, hours,
+  delivery/assembly fees, payment methods; articles defer them to the manager.
 
 ## Next recommended
 

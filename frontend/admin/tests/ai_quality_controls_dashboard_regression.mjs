@@ -119,10 +119,55 @@ const riskyControls = {
 
 const tempDir = await mkdtemp(path.join(frontendRoot, '.tmp-ai-quality-render-'));
 
+const defaultCriteriaControls = {
+    config: {
+        bot_qa: makeScope({
+            mode: 'manual',
+            criteria: {
+                greeting_and_identity: true,
+                need_discovery_and_catalog: true,
+                commercial_vat_and_quotation: false,
+                tone_and_language: true,
+            },
+        }),
+        manager_qa: makeScope({
+            criteria: {
+                response_speed_sla: true,
+                handover_context_usage: true,
+                professional_tone: true,
+                commercial_terms_accuracy: true,
+                closing_and_crm_hygiene: true,
+            },
+        }),
+        red_flags: makeScope({
+            mode: 'scheduled',
+            criteria: {
+                missing_identity: true,
+                hard_deflection: true,
+                unverified_commitment: true,
+                ignored_question: true,
+                bad_tone: true,
+            },
+        }),
+    },
+    warnings: [],
+    usage_today: {
+        bot_qa: { calls_today: 3, max_calls_per_day: 5, spend_cents_today: 42, daily_budget_cents: 100 },
+        manager_qa: { calls_today: null, max_calls_per_day: 5, spend_cents_today: null, daily_budget_cents: 100 },
+    },
+};
+
 try {
     const result = await build({
         absWorkingDir: frontendRoot,
-        entryPoints: ['src/components/AIQualityControlsPanel.tsx'],
+        stdin: {
+            contents: [
+                "export { default } from './src/components/AIQualityControlsPanel';",
+                "export { LanguageProvider } from './src/i18n';",
+            ].join('\n'),
+            resolveDir: frontendRoot,
+            loader: 'tsx',
+        },
         bundle: true,
         format: 'esm',
         platform: 'node',
@@ -136,11 +181,17 @@ try {
     await writeFile(bundlePath, result.outputFiles[0].text);
 
     const moduleUrl = pathToFileURL(bundlePath).href;
-    const { default: AIQualityControlsPanel } = await import(moduleUrl);
+    const { default: AIQualityControlsPanel, LanguageProvider } = await import(moduleUrl);
 
-    const defaultHtml = renderToStaticMarkup(
-        React.createElement(AIQualityControlsPanel, { initialControls: defaultControls }),
+    const render = (controls, lang) => renderToStaticMarkup(
+        React.createElement(
+            LanguageProvider,
+            { initialLang: lang },
+            React.createElement(AIQualityControlsPanel, { initialControls: controls }),
+        ),
     );
+
+    const defaultHtml = render(defaultControls, 'en');
 
     assert.match(defaultHtml, /AI Quality Controls/);
     assert.match(defaultHtml, /Bot QA/);
@@ -150,16 +201,24 @@ try {
     assert.match(defaultHtml, /scheduled AI quality jobs open 0 LLM calls/);
     assert.match(defaultHtml, /Daily budget/);
     assert.match(defaultHtml, /Cache telemetry/);
-    assert.match(defaultHtml, /title="Disabled and manual modes create zero scheduled automation/);
-    assert.match(defaultHtml, /title="Summary is the cost-safe default/);
-    assert.match(defaultHtml, /title="Non-core QA should use a fast model/);
-    assert.match(defaultHtml, /title="Cache telemetry records OpenRouter cached\/write token fields/);
-    assert.match(defaultHtml, /POST \/api\/v1\/quality\/reviews\//);
-    assert.match(defaultHtml, /does not add one/);
+    // Tooltips are instant custom popovers (data-tooltip), not native title attributes.
+    assert.match(defaultHtml, /data-tooltip="Disabled and manual modes create zero scheduled automation/);
+    assert.match(defaultHtml, /data-tooltip="Summary is the cost-safe default/);
+    assert.match(defaultHtml, /data-tooltip="Non-core QA should use a fast model/);
+    assert.match(defaultHtml, /data-tooltip="Cache telemetry records OpenRouter cached\/write token fields/);
+    assert.doesNotMatch(defaultHtml, /\btitle="/);
+    // Developer notes are replaced by business explanations of the three contours.
+    assert.doesNotMatch(defaultHtml, /POST \/api\/v1\/quality\/reviews\//);
+    assert.doesNotMatch(defaultHtml, /Existing internal endpoint/);
+    assert.doesNotMatch(defaultHtml, /does not add one/);
+    assert.match(defaultHtml, /data-ai-quality-contours/);
+    assert.match(defaultHtml, /15-rule checklist/);
+    assert.match(defaultHtml, /up to 20 points/);
+    assert.match(defaultHtml, /Scans conversations in realtime/);
+    // All scopes disabled → 1-click manual mode is offered.
+    assert.match(defaultHtml, /Enable Manual Mode for All/);
 
-    const warningHtml = renderToStaticMarkup(
-        React.createElement(AIQualityControlsPanel, { initialControls: riskyControls }),
-    );
+    const warningHtml = render(riskyControls, 'en');
 
     assert.match(warningHtml, /Red flags:.*Full transcript QA can send large conversations/);
     assert.match(warningHtml, /Red flags:.*GLM-5 is expensive for QA automation/);
@@ -168,6 +227,42 @@ try {
     assert.match(warningHtml, /z-ai\/glm5-20260211/);
     assert.match(warningHtml, /Unsafe Language/);
     assert.match(warningHtml, /Missed Escalation/);
+
+    const criteriaHtml = render(defaultCriteriaControls, 'en');
+    for (const criterion of [
+        'greeting_and_identity',
+        'need_discovery_and_catalog',
+        'commercial_vat_and_quotation',
+        'tone_and_language',
+        'response_speed_sla',
+        'handover_context_usage',
+        'professional_tone',
+        'commercial_terms_accuracy',
+        'closing_and_crm_hygiene',
+        'missing_identity',
+        'hard_deflection',
+        'unverified_commitment',
+        'ignored_question',
+        'bad_tone',
+    ]) {
+        assert.match(criteriaHtml, new RegExp(`data-criterion="${criterion}"`), `criterion ${criterion} should render a checkbox`);
+    }
+    assert.match(criteriaHtml, /Greeting and identity/);
+    assert.match(criteriaHtml, /data-tooltip="Rules 1–3/);
+    assert.match(criteriaHtml, /score is rescaled to 20/);
+    assert.match(criteriaHtml, /Calls today: 3 \/ 5 · spend today: \$0\.42 \/ \$1\.00/);
+    assert.match(criteriaHtml, /Calls today: n\/a \/ 5 · spend today: n\/a \/ \$1\.00/);
+    assert.match(criteriaHtml, /Enable Manual Mode for All/, 'manager_qa is still disabled');
+
+    const ruHtml = render(defaultCriteriaControls, 'ru');
+    assert.match(ruHtml, /Контроль качества AI/);
+    assert.match(ruHtml, /Приветствие и представление/);
+    assert.match(ruHtml, /Включить ручной режим для всех/);
+    assert.match(ruHtml, /Вызовов сегодня: 3 \/ 5/);
+    assert.match(ruHtml, /нет данных/);
+    for (const englishLabel of ['Daily budget', 'Cache telemetry', 'Reload controls', 'Transcript mode', 'Criteria toggles', 'Greeting and identity']) {
+        assert.ok(!ruHtml.includes(englishLabel), `RU panel should not contain English UI label: ${englishLabel}`);
+    }
 } finally {
     await rm(tempDir, { recursive: true, force: true });
 }

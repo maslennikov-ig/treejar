@@ -71,6 +71,10 @@ class DashboardMetricsResponse(BaseModel):
     # 3. Escalation (2)
     escalation_count: int = 0
     escalation_reasons: dict[str, int] = {}
+    # Free-text reasons grouped into business categories (tj-ierv.5).
+    escalation_by_reason: dict[str, int] = Field(default_factory=dict)
+    # Conversations in the period by their current sales stage (tj-ierv.5).
+    sales_stage_distribution: dict[str, int] = Field(default_factory=dict)
 
     # 4. Sales (4)
     noor_sales: SalesMetrics = SalesMetrics()
@@ -446,6 +450,16 @@ class AdminActionResult(BaseModel):
     status: str
     entity_id: uuid.UUID | None = None
     detail: str | None = None
+
+
+class AdminCanonicalSyncResult(AdminActionResult):
+    """Outcome of syncing canonical Treejar KB articles or bot rules."""
+
+    created: int = 0
+    updated: int = 0
+    restored: int = 0
+    unchanged: int = 0
+    total_active: int = 0
 
 
 class AdminKnowledgeBaseRead(UUIDModel):

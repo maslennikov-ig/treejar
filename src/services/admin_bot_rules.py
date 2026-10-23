@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -20,6 +20,7 @@ from src.schemas.admin import (
     AdminBotRuleRead,
     AdminBotRuleUpdate,
     AdminBotRuleWrite,
+    AdminCanonicalSyncResult,
 )
 from src.schemas.common import PaginatedResponse
 from src.services.admin_audit import log_admin_action
@@ -29,6 +30,12 @@ from src.services.bot_behavior_rules import (
     rule_embedding_text,
     rule_to_applied,
     search_behavior_rules,
+)
+from src.services.canonical_admin_seed import (
+    CANONICAL_BOT_RULES,
+    qa_synthetic_title_clause,
+    search_mentions_qa,
+    sync_canonical_bot_behavior_rules,
 )
 
 
@@ -106,8 +113,18 @@ async def list_admin_bot_rules(
     include_archived: bool = False,
 ) -> PaginatedResponse[AdminBotRuleRead]:
     filters: list[ColumnElement[bool]] = []
-    if not include_archived:
-        filters.append(BotBehaviorRule.archived_at.is_(None))
+    normalized_status = status.strip().lower() if status and status.strip() else None
+    if normalized_status == "archived":
+        # Archived rules carry both status="archived" and archived_at; the
+        # include_archived default must not hide exactly what was asked for.
+        filters.append(BotBehaviorRule.status == "archived")
+    else:
+        if not include_archived:
+            filters.append(BotBehaviorRule.archived_at.is_(None))
+        if normalized_status is not None:
+            filters.append(BotBehaviorRule.status == normalized_status)
+    if not search_mentions_qa(search):
+        filters.append(not_(qa_synthetic_title_clause(BotBehaviorRule.title)))
     if search:
         like = f"%{search.strip()}%"
         filters.append(
@@ -116,8 +133,6 @@ async def list_admin_bot_rules(
                 BotBehaviorRule.instruction.ilike(like),
             )
         )
-    if status:
-        filters.append(BotBehaviorRule.status == status)
     if type:
         filters.append(BotBehaviorRule.type == type)
     if stage:
@@ -367,3 +382,32 @@ async def test_admin_bot_rule(
         preview.rule_count = len(preview.applied_rules)
         preview.prompt_block = format_behavior_rules_prompt(preview.applied_rules)
     return preview
+
+
+async def sync_canonical_admin_bot_rules(
+    db: AsyncSession,
+    *,
+    request: object | None,
+) -> AdminCanonicalSyncResult:
+    """Load the canonical Noor operating rules (idempotent) and audit it."""
+    counts = await sync_canonical_bot_behavior_rules(db, actor="admin")
+    await log_admin_action(
+        db,
+        action="bot_rule.sync_canonical",
+        entity_type="bot_behavior_rule",
+        before=None,
+        after=counts,
+        request=request,
+        metadata={"canonical_rules": len(CANONICAL_BOT_RULES)},
+    )
+    await db.commit()
+    return AdminCanonicalSyncResult(
+        ok=True,
+        status="synced",
+        detail=(
+            f"Canonical bot rules synced: {counts['created']} created, "
+            f"{counts['updated']} updated, {counts['restored']} restored, "
+            f"{counts['unchanged']} unchanged"
+        ),
+        **counts,
+    )

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Awaitable, Callable, Mapping
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -102,6 +104,18 @@ async def evaluate_escalation(
     db: AsyncSession = Depends(get_db),
 ) -> ManagerReviewDetail:
     """Manually trigger evaluation for a specific escalation."""
+    return await evaluate_escalation_with_settings(escalation_id, db)
+
+
+async def evaluate_escalation_with_settings(
+    escalation_id: UUID,
+    db: AsyncSession,
+    *,
+    evaluator_kwargs: Mapping[str, Any] | None = None,
+    before_llm_call: Callable[[], Awaitable[None]] | None = None,
+    after_llm_call: Callable[[Any], Awaitable[None]] | None = None,
+) -> ManagerReviewDetail:
+    """Evaluate one escalation with optional admin AI Quality settings."""
     from src.quality.manager_evaluator import (
         escalation_already_reviewed,
         evaluate_manager_conversation,
@@ -114,10 +128,16 @@ async def evaluate_escalation(
             status_code=409, detail="Escalation already has a manager review"
         )
 
+    if before_llm_call is not None:
+        await before_llm_call()
     try:
-        evaluation, metrics = await evaluate_manager_conversation(escalation_id, db)
+        evaluation, metrics = await evaluate_manager_conversation(
+            escalation_id, db, **dict(evaluator_kwargs or {})
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    if after_llm_call is not None:
+        await after_llm_call(evaluation)
 
     # Get manager name from escalation
     from src.models.escalation import Escalation

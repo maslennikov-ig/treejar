@@ -581,7 +581,7 @@ async def test_admin_manager_review_operator_endpoints(
             new_callable=AsyncMock,
         ) as mock_pending,
         patch(
-            "src.api.v1.admin.evaluate_escalation",
+            "src.api.v1.admin.evaluate_escalation_with_settings",
             new_callable=AsyncMock,
         ) as mock_evaluate,
     ):
@@ -617,6 +617,8 @@ async def test_admin_manager_review_operator_endpoints(
     mock_list.assert_awaited_once()
     mock_pending.assert_awaited_once()
     mock_evaluate.assert_awaited_once()
+    evaluator_kwargs = mock_evaluate.await_args.kwargs["evaluator_kwargs"]
+    assert {"model_name", "transcript_mode", "criteria"} <= set(evaluator_kwargs)
 
 
 @pytest.mark.asyncio
@@ -627,7 +629,7 @@ async def test_admin_manager_review_evaluate_respects_disabled_ai_controls(
     escalation_id = uuid.uuid4()
 
     with patch(
-        "src.api.v1.admin.evaluate_escalation",
+        "src.api.v1.admin.evaluate_escalation_with_settings",
         new_callable=AsyncMock,
     ) as mock_evaluate:
         response = await _with_fake_db(

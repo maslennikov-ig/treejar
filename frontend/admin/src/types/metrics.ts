@@ -27,6 +27,10 @@ export interface DashboardMetrics {
     // Escalation (2)
     escalation_count: number;
     escalation_reasons: Record<string, number>;
+    /** Server-side business categories of free-text escalation reasons. */
+    escalation_by_reason?: Record<string, number>;
+    /** Conversation count per `sales_stage`. */
+    sales_stage_distribution?: Record<string, number>;
 
     // Sales (4)
     noor_sales: SalesMetrics;

@@ -182,9 +182,17 @@ export interface AIQualityWarning {
     message: string;
 }
 
+export interface AIQualityScopeUsage {
+    calls_today: number | null;
+    max_calls_per_day: number;
+    spend_cents_today: number | null;
+    daily_budget_cents: number;
+}
+
 export interface AIQualityControlsResponse {
     config: AIQualityControlsConfig;
     warnings: AIQualityWarning[];
+    usage_today?: Partial<Record<AIQualityScopeKey, AIQualityScopeUsage>>;
 }
 
 export interface AIQualityRetryPolicyUpdate {

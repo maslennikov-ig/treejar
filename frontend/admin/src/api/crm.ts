@@ -4,7 +4,10 @@ import type {
     AdminBotRulePreviewResponse,
     AdminBotRuleRead,
     AdminBotRuleWrite,
+    AdminCanonicalSyncResult,
     AdminConversationDetail,
+    AdminResetExecuteResult,
+    AdminResetPreview,
     AdminConversationUpdate,
     AdminCustomerListItem,
     AdminKnowledgeBaseCandidate,
@@ -71,10 +74,17 @@ export function updateAdminConversation(
     });
 }
 
-export function previewConversationReset(conversationId: string): Promise<unknown> {
+export function previewConversationReset(conversationId: string): Promise<AdminResetPreview> {
     return requestJson(`/crm/conversations/${conversationId}/reset/preview`, {
         method: 'POST',
         body: JSON.stringify({}),
+    });
+}
+
+export function executeConversationReset(conversationId: string): Promise<AdminResetExecuteResult> {
+    return requestJson(`/crm/conversations/${conversationId}/reset/execute`, {
+        method: 'POST',
+        body: JSON.stringify({ confirm: true }),
     });
 }
 
@@ -207,5 +217,17 @@ export function reindexBotRule(ruleId: string): Promise<AdminBotRuleRead> {
     return requestJson(`/bot-rules/rules/${ruleId}/reindex`, {
         method: 'POST',
         body: JSON.stringify({}),
+    });
+}
+
+export function syncCanonicalKnowledgeBase(): Promise<AdminCanonicalSyncResult> {
+    return requestJson('/knowledge-base/sync-canonical', {
+        method: 'POST',
+    });
+}
+
+export function syncCanonicalBotRules(): Promise<AdminCanonicalSyncResult> {
+    return requestJson('/bot-rules/sync-canonical', {
+        method: 'POST',
     });
 }

@@ -36,8 +36,10 @@ from src.models.message import Message
 from src.quality.config import (
     AIQualityScope,
     AIQualityTranscriptMode,
+    ai_quality_evaluator_kwargs,
     consume_ai_quality_daily_call_from_ctx,
     get_ai_quality_run_gate_from_ctx,
+    record_ai_quality_spend_from_ctx,
     reserve_ai_quality_daily_sample_from_ctx,
 )
 from src.quality.manager_evaluator import (
@@ -408,6 +410,7 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
                         model_name=gate.model,
                         transcript_mode=gate.transcript_mode,
                         cache_telemetry_enabled=gate.cache_telemetry_enabled,
+                        **ai_quality_evaluator_kwargs(gate),
                     )
                 except Exception as exc:
                     await _record_attempt_error_after_rollback(
@@ -418,6 +421,7 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
                     )
                     raise
 
+                await record_ai_quality_spend_from_ctx(ctx, gate, evaluation)
                 if is_insufficient_manager_evaluation(evaluation):
                     await record_llm_attempt_no_action(
                         db,

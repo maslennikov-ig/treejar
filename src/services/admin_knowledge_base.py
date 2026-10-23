@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, not_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
@@ -17,6 +17,7 @@ from src.models.knowledge_base_candidate import KnowledgeBaseCandidate
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.admin import (
     AdminActionResult,
+    AdminCanonicalSyncResult,
     AdminKnowledgeBaseCandidate,
     AdminKnowledgeBaseCandidateCreate,
     AdminKnowledgeBaseCandidateReject,
@@ -32,6 +33,12 @@ from src.services.auto_faq import (
     _detect_context_specific_reasons,
     _detect_unsafe_reasons,
     _nearest_duplicate_similarity,
+)
+from src.services.canonical_admin_seed import (
+    qa_synthetic_source_clause,
+    qa_synthetic_title_clause,
+    search_mentions_qa,
+    sync_canonical_knowledge_base,
 )
 
 
@@ -156,6 +163,15 @@ async def list_admin_kb_entries(
     filters: list[ColumnElement[bool]] = []
     if not include_deleted:
         filters.append(KnowledgeBase.deleted_at.is_(None))
+    if not search_mentions_qa(search):
+        filters.append(
+            not_(
+                or_(
+                    qa_synthetic_title_clause(KnowledgeBase.title),
+                    qa_synthetic_source_clause(KnowledgeBase.source),
+                )
+            )
+        )
     if search:
         like = f"%{search.strip()}%"
         filters.append(
@@ -561,3 +577,31 @@ async def reject_admin_kb_candidate(
     await db.commit()
     await db.refresh(candidate)
     return _candidate_read(candidate)
+
+
+async def sync_canonical_admin_kb_entries(
+    db: AsyncSession,
+    *,
+    request: object | None,
+) -> AdminCanonicalSyncResult:
+    """Sync canonical Treejar knowledge-base articles (idempotent) and audit it."""
+    counts = await sync_canonical_knowledge_base(db, actor="admin")
+    await log_admin_action(
+        db,
+        action="knowledge_base.sync_canonical",
+        entity_type="knowledge_base",
+        before=None,
+        after=counts,
+        request=request,
+    )
+    await db.commit()
+    return AdminCanonicalSyncResult(
+        ok=True,
+        status="synced",
+        detail=(
+            f"Canonical knowledge base synced: {counts['created']} created, "
+            f"{counts['updated']} updated, {counts['restored']} restored, "
+            f"{counts['unchanged']} unchanged"
+        ),
+        **counts,
+    )

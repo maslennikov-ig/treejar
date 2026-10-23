@@ -39,6 +39,7 @@ PATH_CORE_FOLLOWUP = "core_followup"
 PATH_QUALITY_FINAL = "quality_final"
 PATH_QUALITY_RED_FLAGS = "quality_red_flags"
 PATH_QUALITY_MANAGER = "quality_manager"
+MAX_IN_PROCESS_RETRY_BACKOFF_SECONDS = 30.0
 PATH_CONVERSATION_SUMMARY = "conversation_summary"
 PATH_FACT_EXTRACTION = "fact_extraction"
 PATH_VOICE_TRANSCRIPTION = "voice_transcription"
@@ -930,9 +931,14 @@ async def run_agent_with_safety(
     cache_telemetry_enabled: bool = True,
     max_attempts_override: int | None = None,
     notify_on_failure_override: bool | None = None,
+    retry_backoff_seconds: float = 0.0,
     **kwargs: Any,
 ) -> Any:
-    """Run a PydanticAI agent through the repo LLM safety policy."""
+    """Run a PydanticAI agent through the repo LLM safety policy.
+
+    ``retry_backoff_seconds`` waits between retryable attempts (capped at
+    ``MAX_IN_PROCESS_RETRY_BACKOFF_SECONDS`` so a worker job is not parked).
+    """
     policy = policy_for_path(path)
     run_kwargs = dict(kwargs)
     run_kwargs["model_settings"] = _merge_model_settings(
@@ -1008,6 +1014,12 @@ async def run_agent_with_safety(
                 },
             )
             if can_retry:
+                backoff = min(
+                    max(float(retry_backoff_seconds), 0.0),
+                    MAX_IN_PROCESS_RETRY_BACKOFF_SECONDS,
+                )
+                if backoff > 0:
+                    await asyncio.sleep(backoff)
                 continue
             if notify_on_failure:
                 await _notify_safely(

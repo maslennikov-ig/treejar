@@ -9,6 +9,8 @@ import {
     CHART_TITLE_CLASS,
     CHART_TOOLTIP_STYLE,
 } from './chartTheme';
+import { HelpTooltip } from '@/components/HelpTooltip';
+import { useI18n } from '@/i18n';
 
 interface SalesBarChartProps {
     noorSales: { count: number; amount: number };
@@ -23,10 +25,11 @@ export default function SalesBarChart({
     conversionRate,
     escalationCount,
 }: SalesBarChartProps) {
+    const { t } = useI18n();
     const data = [
-        { name: 'Noor Sales', value: noorSales.count, fill: '#10b981' },
-        { name: 'Post-Escalation', value: postEscalationSales.count, fill: '#3b82f6' },
-        { name: 'Escalations', value: escalationCount, fill: '#f59e0b' },
+        { name: t('chart.noorSales'), value: noorSales.count, fill: '#10b981' },
+        { name: t('chart.postEscalation'), value: postEscalationSales.count, fill: '#3b82f6' },
+        { name: t('chart.escalations'), value: escalationCount, fill: '#f59e0b' },
     ];
 
     return (
@@ -38,8 +41,11 @@ export default function SalesBarChart({
         >
             <div className="mb-4 flex items-center justify-between">
                 <div>
-                    <h3 className={CHART_TITLE_CLASS}>Sales & Escalation</h3>
-                    <p className={CHART_META_CLASS}>Conversion Rate: {conversionRate}%</p>
+                    <div className="flex items-center gap-2">
+                        <h3 className={CHART_TITLE_CLASS}>{t('chart.salesTitle')}</h3>
+                        <HelpTooltip text={t('chart.salesHelp')} />
+                    </div>
+                    <p className={CHART_META_CLASS}>{t('chart.conversionRate', { rate: conversionRate })}</p>
                 </div>
             </div>
             <ResponsiveContainer width="100%" height={280}>
@@ -47,7 +53,7 @@ export default function SalesBarChart({
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
                     <XAxis dataKey="name" stroke={CHART_AXIS_STROKE} fontSize={CHART_AXIS_FONT_SIZE} />
                     <YAxis stroke={CHART_AXIS_STROKE} fontSize={CHART_AXIS_FONT_SIZE} />
-                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={(value) => [value, t('chart.count')]} />
                     <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={50}>
                         {data.map((entry, index) => (
                             <Cell key={index} fill={entry.fill} />

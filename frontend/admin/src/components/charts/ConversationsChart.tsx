@@ -18,6 +18,8 @@ import {
     CHART_TITLE_CLASS,
     CHART_TOOLTIP_STYLE,
 } from './chartTheme';
+import { HelpTooltip } from '@/components/HelpTooltip';
+import { useI18n } from '@/i18n';
 import type { TimeseriesPoint } from '@/types/metrics';
 
 interface ConversationsChartProps {
@@ -25,14 +27,11 @@ interface ConversationsChartProps {
     totalConversations: number;
 }
 
-function formatDate(iso: string): string {
-    const d = new Date(iso);
-    return d.toLocaleDateString('en', { month: 'short', day: 'numeric' });
-}
-
 export default function ConversationsChart({ points, totalConversations }: ConversationsChartProps) {
+    const { t, lang } = useI18n();
+    const locale = lang === 'ru' ? 'ru-RU' : 'en-US';
     const data = points.map((p) => ({
-        name: formatDate(p.date),
+        name: new Date(p.date).toLocaleDateString(locale, { month: 'short', day: 'numeric' }),
         new: p.new,
         returning: p.returning,
     }));
@@ -46,8 +45,11 @@ export default function ConversationsChart({ points, totalConversations }: Conve
         >
             <div className="mb-4 flex items-center justify-between">
                 <div>
-                    <h3 className={CHART_TITLE_CLASS}>Conversations</h3>
-                    <p className={CHART_META_CLASS}>New vs Returning • Total: {totalConversations}</p>
+                    <div className="flex items-center gap-2">
+                        <h3 className={CHART_TITLE_CLASS}>{t('chart.conversationsTitle')}</h3>
+                        <HelpTooltip text={t('chart.conversationsHelp')} />
+                    </div>
+                    <p className={CHART_META_CLASS}>{t('chart.conversationsMeta', { total: totalConversations })}</p>
                 </div>
             </div>
             {data.length > 0 ? (
@@ -64,7 +66,7 @@ export default function ConversationsChart({ points, totalConversations }: Conve
                             strokeWidth={2.5}
                             dot={{ r: 4, fill: '#10b981' }}
                             activeDot={{ r: 6 }}
-                            name="New"
+                            name={t('chart.new')}
                         />
                         <Line
                             type="monotone"
@@ -73,13 +75,13 @@ export default function ConversationsChart({ points, totalConversations }: Conve
                             strokeWidth={2.5}
                             dot={{ r: 4, fill: '#3b82f6' }}
                             activeDot={{ r: 6 }}
-                            name="Returning"
+                            name={t('chart.returning')}
                         />
                     </LineChart>
                 </ResponsiveContainer>
             ) : (
                 <div className={`${CHART_EMPTY_CLASS} h-[280px]`}>
-                    No conversation data for this period
+                    {t('chart.noConversationData')}
                 </div>
             )}
         </motion.div>

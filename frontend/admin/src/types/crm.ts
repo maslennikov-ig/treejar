@@ -261,3 +261,29 @@ export interface AdminBotRulePreviewResponse {
     prompt_block: string;
     rule_count: number;
 }
+
+export interface AdminCanonicalSyncResult {
+    ok: boolean;
+    status: string;
+    created: number;
+    updated: number;
+    restored: number;
+    unchanged: number;
+    total_active: number;
+    detail: string | null;
+}
+
+export interface AdminResetPreview {
+    phone: string;
+    phone_variants: string[];
+    conversation_count: number;
+    latest_conversation_id: string | null;
+    message_count: number;
+    pending_escalation_count: number;
+}
+
+export interface AdminResetExecuteResult {
+    phone: string;
+    archived_count: number;
+    new_conversation_id: string | null;
+}

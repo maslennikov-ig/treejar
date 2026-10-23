@@ -153,10 +153,26 @@ try {
     const { default: App } = await import(moduleUrl);
     const html = renderToStaticMarkup(React.createElement(App));
 
+    // Default language is Russian.
     assert.match(html, /Noor CRM/);
     assert.match(html, /Клиенты и диалоги/);
     assert.match(html, /Телефон, имя, Zoho, SO/);
-    assert.match(html, /Выберите клиента, чтобы открыть полный timeline/);
+    assert.match(html, /Выберите клиента, чтобы открыть полную историю переписки/);
+    assert.match(html, /data-section-banner="conversations"/, 'Conversations view should start with a section banner');
+    assert.match(html, /data-lang-toggle/, 'Header should render the RU | EN toggle');
+    assert.match(html, /<input[^>]*type="search"[^>]*value=""/, 'Header search should be a controlled input');
+    assert.doesNotMatch(html, /\btitle="/, 'Dashboard should not rely on native title tooltips');
+    for (const englishLabel of ['Reset preview', 'Applied bot rules', 'Customers &amp; Conversations', 'Select a customer', 'Search...']) {
+        assert.ok(!html.includes(englishLabel), `RU render should not contain English UI label: ${englishLabel}`);
+    }
+
+    // English render through the language provider.
+    const htmlEn = renderToStaticMarkup(React.createElement(App, { initialLang: 'en' }));
+    assert.match(htmlEn, /Customers &amp; Conversations/);
+    assert.match(htmlEn, /Phone, name, Zoho, SO/);
+    assert.match(htmlEn, /Select a customer to open the full chat history/);
+    assert.match(htmlEn, /Reset preview/);
+    assert.doesNotMatch(htmlEn, /[А-Яа-яЁё]/, 'EN render should not contain Cyrillic UI text');
 } finally {
     await rm(tempDir, { recursive: true, force: true });
 }

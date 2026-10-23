@@ -16,6 +16,7 @@ from src.schemas.admin import (
     AdminBotRuleRead,
     AdminBotRuleUpdate,
     AdminBotRuleWrite,
+    AdminCanonicalSyncResult,
 )
 from src.schemas.common import PaginatedResponse
 from src.services.admin_bot_rules import (
@@ -26,6 +27,7 @@ from src.services.admin_bot_rules import (
     preview_admin_bot_rules,
     reindex_admin_bot_rule,
     reindex_admin_bot_rules,
+    sync_canonical_admin_bot_rules,
     test_admin_bot_rule,
     update_admin_bot_rule,
 )
@@ -132,3 +134,20 @@ async def post_reindex_all(
     request: Request,
 ) -> AdminActionResult:
     return await reindex_admin_bot_rules(db=db, request=request)
+
+
+@router.post("/sync-canonical", response_model=AdminCanonicalSyncResult)
+async def post_sync_canonical(
+    db: DbSession,
+    request: Request,
+) -> AdminCanonicalSyncResult:
+    return await sync_canonical_admin_bot_rules(db=db, request=request)
+
+
+@router.post("/seed-defaults", response_model=AdminCanonicalSyncResult)
+async def post_seed_defaults(
+    db: DbSession,
+    request: Request,
+) -> AdminCanonicalSyncResult:
+    """Spec alias (AC02) of ``/sync-canonical``."""
+    return await sync_canonical_admin_bot_rules(db=db, request=request)

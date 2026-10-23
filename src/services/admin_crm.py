@@ -24,9 +24,13 @@ from src.models.message import Message
 from src.models.outbound_message import OutboundMessageAudit
 from src.models.quality_review import QualityReview
 from src.quality.config import (
+    AIQualityRunGate,
     AIQualityScope,
+    ai_quality_evaluator_kwargs,
     evaluate_ai_quality_run_gate,
     get_ai_quality_controls_config,
+    record_ai_quality_spend_from_ctx,
+    reserve_ai_quality_daily_call,
 )
 from src.quality.evaluator import evaluate_conversation
 from src.quality.service import conversation_already_reviewed, save_review
@@ -94,7 +98,8 @@ def _ai_quality_scope_label(scope: AIQualityScope) -> str:
 async def require_admin_ai_quality_manual_gate(
     db: AsyncSession,
     scope: AIQualityScope,
-) -> None:
+) -> AIQualityRunGate:
+    """Resolve the manual-run gate for ``scope`` or raise 409 when blocked."""
     try:
         config = await get_ai_quality_controls_config(db)
     except Exception as exc:
@@ -109,7 +114,7 @@ async def require_admin_ai_quality_manual_gate(
 
     gate = evaluate_ai_quality_run_gate(config, scope=scope, trigger="manual")
     if gate.allowed:
-        return
+        return gate
 
     raise HTTPException(
         status_code=409,
@@ -119,6 +124,39 @@ async def require_admin_ai_quality_manual_gate(
             "running this action."
         ),
     )
+
+
+async def reserve_admin_ai_quality_manual_call(gate: AIQualityRunGate) -> None:
+    """Take one daily call slot (and check today's budget) before a manual run.
+
+    Manual runs are operator-initiated, so a missing Redis does not block them;
+    the daily call and budget limits are enforced whenever Redis answers.
+    """
+    reason = await reserve_ai_quality_daily_call({}, gate, fail_open_without_redis=True)
+    if reason is None:
+        return
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            f"{_ai_quality_scope_label(gate.scope)} is paused by Admin AI Quality "
+            f"Controls ({reason}). Raise the daily limit in Settings or try again "
+            "tomorrow (UTC)."
+        ),
+    )
+
+
+def admin_ai_quality_evaluator_kwargs(gate: AIQualityRunGate) -> dict[str, Any]:
+    """Configured model, transcript, telemetry, criteria, retry and alerts."""
+    return {
+        "model_name": gate.model,
+        "transcript_mode": gate.transcript_mode,
+        "cache_telemetry_enabled": gate.cache_telemetry_enabled,
+        **ai_quality_evaluator_kwargs(gate),
+    }
+
+
+async def record_admin_ai_quality_spend(gate: AIQualityRunGate, output: Any) -> None:
+    await record_ai_quality_spend_from_ctx({}, gate, output)
 
 
 def _order_metadata(metadata: dict[str, Any]) -> dict[str, Any] | None:
@@ -672,13 +710,18 @@ async def run_admin_bot_quality_review(
     conversation_id: uuid.UUID,
     request: object | None,
 ) -> AdminActionResult:
-    await require_admin_ai_quality_manual_gate(db, AIQualityScope.BOT_QA)
+    gate = await require_admin_ai_quality_manual_gate(db, AIQualityScope.BOT_QA)
     if await conversation_already_reviewed(db, conversation_id):
         raise HTTPException(status_code=409, detail="Conversation already reviewed")
 
+    await reserve_admin_ai_quality_manual_call(gate)
     try:
         result = await asyncio.wait_for(
-            evaluate_conversation(conversation_id, db),
+            evaluate_conversation(
+                conversation_id,
+                db,
+                **admin_ai_quality_evaluator_kwargs(gate),
+            ),
             timeout=60.0,
         )
     except TimeoutError as exc:
@@ -691,6 +734,7 @@ async def run_admin_bot_quality_review(
             detail="LLM evaluation failed after retries",
         ) from exc
 
+    await record_admin_ai_quality_spend(gate, result)
     review = await save_review(db, conversation_id, result)
     await log_admin_action(
         db,
@@ -722,7 +766,7 @@ async def run_admin_manager_quality_review(
         save_manager_review,
     )
 
-    await require_admin_ai_quality_manual_gate(db, AIQualityScope.MANAGER_QA)
+    gate = await require_admin_ai_quality_manual_gate(db, AIQualityScope.MANAGER_QA)
     escalation_result = await db.execute(
         select(Escalation)
         .where(Escalation.conversation_id == conversation_id)
@@ -735,10 +779,16 @@ async def run_admin_manager_quality_review(
     if await escalation_already_reviewed(db, escalation.id):
         raise HTTPException(status_code=409, detail="Escalation already reviewed")
 
+    await reserve_admin_ai_quality_manual_call(gate)
     try:
-        evaluation, metrics = await evaluate_manager_conversation(escalation.id, db)
+        evaluation, metrics = await evaluate_manager_conversation(
+            escalation.id,
+            db,
+            **admin_ai_quality_evaluator_kwargs(gate),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await record_admin_ai_quality_spend(gate, evaluation)
 
     review = await save_manager_review(
         db=db,

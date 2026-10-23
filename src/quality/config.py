@@ -47,6 +47,64 @@ class AIQualityTranscriptMode(StrEnum):
     FULL = "full"
 
 
+# ---------------------------------------------------------------------------
+# Criteria toggles (tj-ierv.2). Each key is a group the evaluators honour:
+# Bot QA groups map to rules of the 15-rule checklist (a disabled group makes
+# its rules N/A, so they leave the weighted score); Manager QA groups map to
+# the 10 manager criteria (disabled groups leave the total, which is rescaled
+# to 20); Red-flag keys are the red-flag codes themselves (a disabled code is
+# never reported).
+# ---------------------------------------------------------------------------
+
+BOT_QA_CRITERIA_RULES: dict[str, tuple[int, ...]] = {
+    "greeting_and_identity": (1, 2, 3),
+    "need_discovery_and_catalog": (5, 8, 9, 10, 13),
+    "commercial_vat_and_quotation": (7, 11, 12, 14, 15),
+    "tone_and_language": (4, 6),
+}
+
+MANAGER_QA_CRITERIA_RULES: dict[str, tuple[int, ...]] = {
+    "response_speed_sla": (1,),
+    "handover_context_usage": (2,),
+    "professional_tone": (3,),
+    "commercial_terms_accuracy": (4, 5, 6, 8),
+    "closing_and_crm_hygiene": (7, 9, 10),
+}
+
+RED_FLAG_CRITERIA_CODES: tuple[str, ...] = (
+    "missing_identity",
+    "hard_deflection",
+    "unverified_commitment",
+    "ignored_question",
+    "bad_tone",
+)
+
+DEFAULT_SCOPE_CRITERIA: dict[AIQualityScope, dict[str, bool]] = {
+    AIQualityScope.BOT_QA: dict.fromkeys(BOT_QA_CRITERIA_RULES, True),
+    AIQualityScope.MANAGER_QA: dict.fromkeys(MANAGER_QA_CRITERIA_RULES, True),
+    AIQualityScope.RED_FLAGS: dict.fromkeys(RED_FLAG_CRITERIA_CODES, True),
+}
+
+# Conservative per-call estimate when the provider reports no cost. The
+# PATH_QUALITY_FINAL ceiling on glm-5.2 is about 1.1 cents (see below).
+ESTIMATED_QA_CALL_COST_CENTS = 2.0
+
+
+def disabled_criteria(criteria: Mapping[str, bool] | None) -> frozenset[str]:
+    """Criteria keys an admin switched off (explicit ``False`` only)."""
+    if not criteria:
+        return frozenset()
+    return frozenset(key for key, enabled in criteria.items() if enabled is False)
+
+
+def disabled_rule_numbers(
+    criteria: Mapping[str, bool] | None,
+    groups: Mapping[str, tuple[int, ...]],
+) -> frozenset[int]:
+    off = disabled_criteria(criteria)
+    return frozenset(rule for key in off for rule in groups.get(key, ()))
+
+
 class AIQualityRetryPolicy(BaseModel):
     """Retry bounds for non-core QA LLM work."""
 
@@ -174,6 +232,19 @@ class AIQualityControlsConfig(BaseModel):
     manager_qa: AIQualityScopeConfig = Field(default_factory=AIQualityScopeConfig)
     red_flags: AIQualityScopeConfig = Field(default_factory=AIQualityScopeConfig)
 
+    @model_validator(mode="after")
+    def backfill_default_criteria(self) -> Self:
+        """Expose every canonical criterion; keep the admin's explicit overrides."""
+        for scope, scope_settings in (
+            (AIQualityScope.BOT_QA, self.bot_qa),
+            (AIQualityScope.MANAGER_QA, self.manager_qa),
+            (AIQualityScope.RED_FLAGS, self.red_flags),
+        ):
+            defaults = DEFAULT_SCOPE_CRITERIA[scope]
+            if any(key not in scope_settings.criteria for key in defaults):
+                scope_settings.criteria = {**defaults, **scope_settings.criteria}
+        return self
+
 
 class AIQualityControlsUpdate(BaseModel):
     """Partial update payload for Admin AI Quality Controls."""
@@ -192,9 +263,19 @@ class AIQualityWarning(BaseModel):
     message: str
 
 
+class AIQualityScopeUsage(BaseModel):
+    """Today's (UTC) QA usage for one scope next to its configured limits."""
+
+    calls_today: int | None = None
+    max_calls_per_day: int = 0
+    spend_cents_today: float | None = None
+    daily_budget_cents: int = 0
+
+
 class AIQualityControlsResponse(BaseModel):
     config: AIQualityControlsConfig
     warnings: list[AIQualityWarning] = Field(default_factory=list)
+    usage_today: dict[str, AIQualityScopeUsage] = Field(default_factory=dict)
 
 
 class AIQualityRunGate(BaseModel):
@@ -208,6 +289,10 @@ class AIQualityRunGate(BaseModel):
     max_calls: int = 0
     max_calls_per_day: int = 0
     cache_telemetry_enabled: bool = True
+    daily_budget_cents: int = 0
+    criteria: dict[str, bool] = Field(default_factory=dict)
+    retry: AIQualityRetryPolicy = Field(default_factory=AIQualityRetryPolicy)
+    alert_on_failure: bool = True
 
 
 def _scope_items(
@@ -273,6 +358,15 @@ def build_ai_quality_response(
     )
 
 
+def _gate_settings(scope_settings: AIQualityScopeConfig) -> dict[str, Any]:
+    return {
+        "daily_budget_cents": scope_settings.daily_budget_cents,
+        "criteria": dict(scope_settings.criteria),
+        "retry": scope_settings.retry.model_copy(),
+        "alert_on_failure": scope_settings.alert_on_failure,
+    }
+
+
 def evaluate_ai_quality_run_gate(
     config: AIQualityControlsConfig,
     *,
@@ -293,6 +387,7 @@ def evaluate_ai_quality_run_gate(
             max_calls=0,
             max_calls_per_day=scope_settings.max_calls_per_day,
             cache_telemetry_enabled=scope_settings.cache_telemetry_enabled,
+            **_gate_settings(scope_settings),
         )
 
     if scope_settings.mode == AIQualityMode.DISABLED:
@@ -319,6 +414,7 @@ def evaluate_ai_quality_run_gate(
         ),
         max_calls_per_day=scope_settings.max_calls_per_day,
         cache_telemetry_enabled=scope_settings.cache_telemetry_enabled,
+        **_gate_settings(scope_settings),
     )
 
 
@@ -343,6 +439,11 @@ def _daily_sample_key(scope: AIQualityScope, day: str) -> str:
 
 def _daily_calls_key(scope: AIQualityScope, day: str) -> str:
     return f"quality:ai_controls:daily_calls:{scope.value}:{day}"
+
+
+def _daily_spend_key(day: str) -> str:
+    # Hash field per scope, in hundredths of a cent so HINCRBY stays integral.
+    return f"quality:ai_controls:daily_spend_centicents:{day}"
 
 
 def parse_ai_quality_controls(raw: Any) -> AIQualityControlsConfig:
@@ -497,15 +598,70 @@ async def consume_ai_quality_daily_call_from_ctx(
     now: datetime | None = None,
 ) -> bool:
     """Consume one UTC-day call slot before non-core QA opens a provider call."""
-    if not gate.allowed or gate.max_calls_per_day <= 0:
-        return False
+    return await reserve_ai_quality_daily_call(ctx, gate, now=now) is None
+
+
+def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, bytes):
+        value = value.decode()
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+async def _read_daily_spend_centicents(
+    redis: Any, scope: AIQualityScope, day: str
+) -> int | None:
+    try:
+        return _int_or_none(await redis.hget(_daily_spend_key(day), scope.value))
+    except Exception:
+        logger.warning(
+            "Failed to read AI Quality daily spend for %s", scope.value, exc_info=True
+        )
+        return None
+
+
+async def reserve_ai_quality_daily_call(
+    ctx: Mapping[str, Any],
+    gate: AIQualityRunGate,
+    *,
+    now: datetime | None = None,
+    fail_open_without_redis: bool = False,
+) -> str | None:
+    """Reserve one call slot; return ``None`` on success or the block reason.
+
+    Enforces ``max_calls_per_day`` and ``daily_budget_cents`` (today's recorded
+    QA spend for the scope) on the same UTC day.
+    """
+    if not gate.allowed:
+        return gate.reason or "blocked"
+    if gate.max_calls_per_day <= 0:
+        return "max_calls_per_day_zero"
 
     redis = _ctx_redis(ctx)
     if redis is None:
         logger.warning("AI Quality daily call quota skipped: missing Redis")
-        return False
+        return None if fail_open_without_redis else "quota_redis_unavailable"
 
     day, ttl_seconds = _utc_day(now)
+    if gate.daily_budget_cents > 0:
+        spent = await _read_daily_spend_centicents(redis, gate.scope, day)
+        if spent is not None and spent >= gate.daily_budget_cents * 100:
+            logger.info(
+                "AI Quality daily budget exhausted for %s: %s >= %s cents",
+                gate.scope.value,
+                spent / 100,
+                gate.daily_budget_cents,
+            )
+            return "daily_budget_exhausted"
+
     key = _daily_calls_key(gate.scope, day)
     try:
         current = await redis.incr(key)
@@ -519,7 +675,7 @@ async def consume_ai_quality_daily_call_from_ctx(
             gate.scope.value,
             exc_info=True,
         )
-        return False
+        return None if fail_open_without_redis else "quota_reservation_failed"
 
     if current > gate.max_calls_per_day:
         try:
@@ -530,5 +686,94 @@ async def consume_ai_quality_daily_call_from_ctx(
                 gate.scope.value,
                 exc_info=True,
             )
-        return False
-    return True
+        return "daily_call_quota_exhausted"
+    return None
+
+
+def ai_quality_call_cost_cents(output: Any) -> float:
+    """Cost of the LLM call behind a QA result; 0 when no call was made."""
+    from src.llm.safety import get_llm_usage_telemetry
+
+    usage = get_llm_usage_telemetry(output)
+    if usage is None:
+        return 0.0
+    if usage.cost is None:
+        return ESTIMATED_QA_CALL_COST_CENTS
+    return max(float(usage.cost), 0.0) * 100
+
+
+async def record_ai_quality_spend_from_ctx(
+    ctx: Mapping[str, Any],
+    gate: AIQualityRunGate,
+    output: Any,
+    *,
+    now: datetime | None = None,
+) -> float:
+    """Add the call's cost to today's scope spend; return the cents recorded."""
+    cents = ai_quality_call_cost_cents(output)
+    if cents <= 0:
+        return 0.0
+    redis = _ctx_redis(ctx)
+    if redis is None:
+        return cents
+    day, ttl_seconds = _utc_day(now)
+    key = _daily_spend_key(day)
+    try:
+        await redis.hincrby(key, gate.scope.value, max(round(cents * 100), 1))
+        await redis.expire(key, ttl_seconds)
+    except Exception:
+        logger.warning(
+            "Failed to record AI Quality daily spend for %s",
+            gate.scope.value,
+            exc_info=True,
+        )
+    return cents
+
+
+async def get_ai_quality_usage_today(
+    config: AIQualityControlsConfig,
+    *,
+    redis: Any = None,
+    now: datetime | None = None,
+) -> dict[str, AIQualityScopeUsage]:
+    """Today's calls and spend per scope; ``None`` figures when Redis is down."""
+    if redis is None:
+        try:
+            redis = get_redis_client()
+        except Exception:
+            redis = None
+    day, _ttl = _utc_day(now)
+    usage: dict[str, AIQualityScopeUsage] = {}
+    for scope, scope_settings in _scope_items(config):
+        calls: int | None = None
+        spend: float | None = None
+        if redis is not None:
+            try:
+                calls = _int_or_none(await redis.get(_daily_calls_key(scope, day))) or 0
+                spent = _int_or_none(
+                    await redis.hget(_daily_spend_key(day), scope.value)
+                )
+                spend = (spent or 0) / 100
+            except Exception:
+                logger.warning(
+                    "Failed to read AI Quality usage for %s", scope.value, exc_info=True
+                )
+                calls = None
+                spend = None
+        usage[scope.value] = AIQualityScopeUsage(
+            calls_today=calls,
+            max_calls_per_day=scope_settings.max_calls_per_day,
+            spend_cents_today=spend,
+            daily_budget_cents=scope_settings.daily_budget_cents,
+        )
+    return usage
+
+
+def ai_quality_evaluator_kwargs(gate: AIQualityRunGate) -> dict[str, Any]:
+    """Admin criteria / retry / alert settings in evaluator keyword form."""
+    return {
+        "criteria": dict(gate.criteria),
+        "max_attempts": gate.retry.max_attempts,
+        "alert_on_failure": gate.alert_on_failure,
+        "retry_backoff_seconds": float(gate.retry.backoff_seconds),
+    }

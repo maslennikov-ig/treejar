@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 # The owner-facing short name for each of the ten criteria, mirroring RULE_NAMES
 # in src/quality/schemas.py. These are the criteria of MANAGER_EVALUATION_PROMPT
@@ -48,6 +48,18 @@ class ManagerEvaluationResult(BaseModel):
     summary: str
     total_score: float
     rating: Literal["excellent", "good", "satisfactory", "poor"]
+
+    # Criteria the admin disabled (tj-ierv.2). Private, so it never enters the
+    # JSON schema the judge model sees; it travels with model_copy().
+    _excluded_rules: frozenset[int] = PrivateAttr(default_factory=frozenset)
+
+    @property
+    def excluded_rules(self) -> frozenset[int]:
+        return self._excluded_rules
+
+    def with_excluded_rules(self, rules: frozenset[int]) -> ManagerEvaluationResult:
+        self._excluded_rules = frozenset(rules)
+        return self
 
 
 def compute_manager_rating(score: float) -> str:

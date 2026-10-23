@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from redis.asyncio import Redis
@@ -11,7 +11,10 @@ from starlette.requests import Request
 
 from src.api.deps import get_redis
 from src.api.v1 import notifications as notifications_api
-from src.api.v1.manager_reviews import evaluate_escalation, list_manager_reviews
+from src.api.v1.manager_reviews import (
+    evaluate_escalation_with_settings,
+    list_manager_reviews,
+)
 from src.api.v1.reports import (
     ReportRequest,
     ReportResponse,
@@ -30,6 +33,7 @@ from src.quality.config import (
     AIQualityScope,
     build_ai_quality_response,
     get_ai_quality_controls_config,
+    get_ai_quality_usage_today,
     merge_ai_quality_controls_update,
     save_ai_quality_controls_config,
 )
@@ -53,7 +57,12 @@ from src.schemas import (
     TimeseriesResponse,
 )
 from src.schemas.admin import RecentFeedbackRead
-from src.services.admin_crm import require_admin_ai_quality_manual_gate
+from src.services.admin_crm import (
+    admin_ai_quality_evaluator_kwargs,
+    record_admin_ai_quality_spend,
+    require_admin_ai_quality_manual_gate,
+    reserve_admin_ai_quality_manual_call,
+)
 from src.services.client_self_test import format_client_self_test_summary
 from src.services.followup import (
     PaymentReminderControlsConfig,
@@ -350,8 +359,21 @@ async def evaluate_admin_manager_review(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ManagerReviewDetail:
     """Run a manager review from the dashboard operator surface."""
-    await require_admin_ai_quality_manual_gate(db, AIQualityScope.MANAGER_QA)
-    return await evaluate_escalation(escalation_id=escalation_id, db=db)
+    gate = await require_admin_ai_quality_manual_gate(db, AIQualityScope.MANAGER_QA)
+
+    async def reserve_call() -> None:
+        await reserve_admin_ai_quality_manual_call(gate)
+
+    async def record_spend(evaluation: Any) -> None:
+        await record_admin_ai_quality_spend(gate, evaluation)
+
+    return await evaluate_escalation_with_settings(
+        escalation_id,
+        db,
+        evaluator_kwargs=admin_ai_quality_evaluator_kwargs(gate),
+        before_llm_call=reserve_call,
+        after_llm_call=record_spend,
+    )
 
 
 @router.post("/reports/generate", response_model=ReportResponse)
@@ -366,8 +388,11 @@ async def generate_admin_report(
 async def get_admin_ai_quality_controls(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> AIQualityControlsResponse:
-    """Read SystemConfig-backed AI Quality Controls."""
-    return build_ai_quality_response(await get_ai_quality_controls_config(db))
+    """Read SystemConfig-backed AI Quality Controls plus today's usage."""
+    config = await get_ai_quality_controls_config(db)
+    response = build_ai_quality_response(config)
+    response.usage_today = await get_ai_quality_usage_today(config)
+    return response
 
 
 @router.put("/ai-quality-controls", response_model=AIQualityControlsResponse)

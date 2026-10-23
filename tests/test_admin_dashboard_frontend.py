@@ -114,6 +114,30 @@ def test_client_self_test_public_route_mode() -> None:
     assert result.returncode == 0, result.stderr or result.stdout
 
 
+def test_admin_help_tooltip_is_instant_and_accessible() -> None:
+    result = _run_frontend_regression("help_tooltip_regression.mjs")
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_admin_i18n_dictionaries_match_and_cover_ui() -> None:
+    result = _run_frontend_regression("i18n_dictionary_regression.mjs")
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_admin_dashboard_charts_render_without_clipping() -> None:
+    result = _run_frontend_regression("dashboard_charts_regression.mjs")
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_admin_dashboard_polish_search_banners_and_quick_actions() -> None:
+    result = _run_frontend_regression("dashboard_polish_regression.mjs")
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
 def test_operator_center_regression_script_uses_portable_frontend_root() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     script_path = (
