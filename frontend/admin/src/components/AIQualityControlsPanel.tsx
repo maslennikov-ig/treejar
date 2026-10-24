@@ -560,14 +560,26 @@ export default function AIQualityControlsPanel({ initialControls = null }: Props
                                 {t('aiqc.activeWarnings')}
                             </div>
                             <ul className="list-disc space-y-1 pl-5">
-                                {warnings.map((warning) => (
-                                    <li key={`${warning.scope}-${warning.code}`}>
-                                        <span className="font-medium">
-                                            {scopeShortName(warning.scope)}:
-                                        </span>{' '}
-                                        {tx(`aiqc.warning.${warning.code}`, warning.message)}
-                                    </li>
-                                ))}
+                                {warnings.map((warning) => {
+                                    const rawCode = String(warning.code);
+                                    const normalizedCode =
+                                        rawCode === 'full_transcript_cost'
+                                            ? 'full_transcript'
+                                            : rawCode === 'glm5_model_risk'
+                                              ? 'glm5_qa'
+                                              : rawCode;
+                                    return (
+                                        <li key={`${warning.scope}-${warning.code}`}>
+                                            <span className="font-medium">
+                                                {scopeShortName(warning.scope)}:
+                                            </span>{' '}
+                                            {tx(
+                                                `aiqc.warning.${normalizedCode}`,
+                                                warning.message,
+                                            )}
+                                        </li>
+                                    );
+                                })}
                             </ul>
                         </div>
                     )}

@@ -332,7 +332,7 @@ export default function BotRulesView({
 
             {/* Variant 2A: 2-Column Master-Detail Layout (35% List + 65% Wide Editor) */}
             <section
-                className="grid h-[calc(100vh-112px)] grid-cols-1 lg:grid-cols-[minmax(320px,35%)_1fr] overflow-hidden"
+                className="grid h-[calc(100vh-120px)] grid-cols-1 lg:grid-cols-[minmax(320px,35%)_1fr] overflow-hidden"
                 data-bot-rules-master-detail=""
             >
                 {/* Left Column: Search, Status Filter & Rule List (35%) */}

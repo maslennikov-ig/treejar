@@ -158,7 +158,7 @@ export default function CanonicalSyncButton({
                                         {t('canonicalSync.diffNew')}
                                     </div>
                                     <div className="mt-0.5 text-lg font-bold text-blue-600 dark:text-blue-400">
-                                        {preview.will_create}
+                                        {Number(preview.will_create ?? 0)}
                                     </div>
                                 </div>
                                 <div className="admin-subpanel rounded-lg p-2.5 text-center">
@@ -166,7 +166,8 @@ export default function CanonicalSyncButton({
                                         {t('canonicalSync.diffCustomized')}
                                     </div>
                                     <div className="mt-0.5 text-lg font-bold text-amber-600 dark:text-amber-400">
-                                        {preview.customized + preview.deleted_or_archived}
+                                        {Number(preview.customized ?? 0) +
+                                            Number(preview.deleted_or_archived ?? 0)}
                                     </div>
                                 </div>
                                 <div className="admin-subpanel rounded-lg p-2.5 text-center">
@@ -174,7 +175,7 @@ export default function CanonicalSyncButton({
                                         {t('canonicalSync.diffUnchanged')}
                                     </div>
                                     <div className="mt-0.5 text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                                        {preview.unchanged}
+                                        {Number(preview.unchanged ?? 0)}
                                     </div>
                                 </div>
                             </div>

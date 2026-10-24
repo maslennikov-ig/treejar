@@ -38,26 +38,36 @@ interface AuditSystemViewProps {
 }
 
 export function localizeAuditAction(action: string, t: TranslateFn): string {
+    const normalized = action.replace(/^admin\./, '');
     const map: Record<string, string> = {
-        'admin.conversation.patch': t('audit.action.conversationPatch'),
-        'admin.conversation.reset_preview': t('audit.action.conversationResetPreview'),
-        'admin.conversation.reset_execute': t('audit.action.conversationResetExecute'),
-        'admin.escalation.close': t('audit.action.escalationClose'),
-        'admin.knowledge_base.create': t('audit.action.kbCreate'),
-        'admin.knowledge_base.update': t('audit.action.kbUpdate'),
-        'admin.knowledge_base.delete': t('audit.action.kbDelete'),
-        'admin.knowledge_base.reindex': t('audit.action.kbReindex'),
-        'admin.knowledge_base.sync_canonical': t('audit.action.kbSyncCanonical'),
-        'admin.knowledge_base.candidate_approve': t('audit.action.kbCandidateApprove'),
-        'admin.knowledge_base.candidate_reject': t('audit.action.kbCandidateReject'),
-        'admin.bot_rule.create': t('audit.action.botRuleCreate'),
-        'admin.bot_rule.update': t('audit.action.botRuleUpdate'),
-        'admin.bot_rule.archive': t('audit.action.botRuleArchive'),
-        'admin.bot_rule.reindex': t('audit.action.botRuleReindex'),
-        'admin.bot_rule.sync_canonical': t('audit.action.botRuleSyncCanonical'),
-        'admin.quality.bot_review': t('audit.action.qualityBotReview'),
+        'conversation.patch': t('audit.action.conversationPatch'),
+        'conversation.update': t('audit.action.conversationPatch'),
+        'conversation.reset_preview': t('audit.action.conversationResetPreview'),
+        'conversation.reset_execute': t('audit.action.conversationResetExecute'),
+        'conversation.reset': t('audit.action.conversationResetExecute'),
+        'escalation.create': t('audit.action.escalationClose'),
+        'escalation.close': t('audit.action.escalationClose'),
+        'knowledge_base.create': t('audit.action.kbCreate'),
+        'knowledge_base.update': t('audit.action.kbUpdate'),
+        'knowledge_base.delete': t('audit.action.kbDelete'),
+        'knowledge_base.soft_delete': t('audit.action.kbDelete'),
+        'knowledge_base.reindex': t('audit.action.kbReindex'),
+        'knowledge_base.reindex_entry': t('audit.action.kbReindex'),
+        'knowledge_base.reindex_all': t('audit.action.kbReindex'),
+        'knowledge_base.sync_canonical': t('audit.action.kbSyncCanonical'),
+        'knowledge_base.candidate_create': t('audit.action.kbCreate'),
+        'knowledge_base.candidate_approve': t('audit.action.kbCandidateApprove'),
+        'knowledge_base.candidate_reject': t('audit.action.kbCandidateReject'),
+        'bot_rule.create': t('audit.action.botRuleCreate'),
+        'bot_rule.update': t('audit.action.botRuleUpdate'),
+        'bot_rule.archive': t('audit.action.botRuleArchive'),
+        'bot_rule.reindex': t('audit.action.botRuleReindex'),
+        'bot_rule.reindex_all': t('audit.action.botRuleReindex'),
+        'bot_rule.sync_canonical': t('audit.action.botRuleSyncCanonical'),
+        'quality.bot_review': t('audit.action.qualityBotReview'),
+        'quality.manager_review': t('audit.action.qualityBotReview'),
     };
-    return map[action] ?? action;
+    return map[normalized] ?? map[action] ?? action;
 }
 
 function asRecord(val: unknown): Record<string, unknown> | null {

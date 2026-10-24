@@ -48,6 +48,13 @@ const SEARCHABLE_VIEWS: AdminViewId[] = [
     'auditSystem',
 ];
 
+/** Views that render their own dedicated search input inside the left column (AC05). */
+const VIEWS_WITH_LOCAL_SEARCH: AdminViewId[] = [
+    'conversations',
+    'knowledge',
+    'botRules',
+];
+
 export default function App({
     initialLang,
     initialTheme,
@@ -102,7 +109,7 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
     const { route, navigate } = useAdminRouter(initialView ?? 'conversations');
     const activeView = route.view;
 
-    const [period, setPeriod] = useState<Period>('all_time');
+    const [period, setPeriod] = useState<Period>('week');
     const [globalSearchQuery, setGlobalSearchQuery] = useState('');
     const { data, timeseries, loading, error, refetch } = useMetrics(period);
 
@@ -139,6 +146,7 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
               : t('nav.conversations');
 
     const searchable = SEARCHABLE_VIEWS.includes(activeView);
+    const showHeaderSearch = !VIEWS_WITH_LOCAL_SEARCH.includes(activeView);
 
     function handleSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
         if (event.key === 'Enter' && !searchable && globalSearchQuery.trim()) {
@@ -175,26 +183,28 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
                                     : activeLabel}
                             </h2>
 
-                            <div className="relative flex items-center gap-1.5">
-                                <Search
-                                    size={15}
-                                    className="pointer-events-none absolute left-3 top-2.5 text-[var(--text-muted)]"
-                                />
-                                <input
-                                    type="search"
-                                    value={globalSearchQuery}
-                                    onChange={(event) => setGlobalSearchQuery(event.target.value)}
-                                    onKeyDown={handleSearchKeyDown}
-                                    aria-label={t('header.searchLabel')}
-                                    placeholder={
-                                        searchable
-                                            ? t('header.searchPlaceholder')
-                                            : t('header.searchPlaceholderJump')
-                                    }
-                                    className="admin-input h-8 w-[260px] rounded-lg pl-8 pr-3 text-xs outline-none"
-                                />
-                                <HelpTooltip text={t('header.searchHelp')} />
-                            </div>
+                            {showHeaderSearch && (
+                                <div className="relative flex items-center gap-1.5">
+                                    <Search
+                                        size={15}
+                                        className="pointer-events-none absolute left-3 top-2.5 text-[var(--text-muted)]"
+                                    />
+                                    <input
+                                        type="search"
+                                        value={globalSearchQuery}
+                                        onChange={(event) => setGlobalSearchQuery(event.target.value)}
+                                        onKeyDown={handleSearchKeyDown}
+                                        aria-label={t('header.searchLabel')}
+                                        placeholder={
+                                            searchable
+                                                ? t('header.searchPlaceholder')
+                                                : t('header.searchPlaceholderJump')
+                                        }
+                                        className="admin-input h-8 w-[260px] rounded-lg pl-8 pr-3 text-xs outline-none"
+                                    />
+                                    <HelpTooltip text={t('header.searchHelp')} />
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex items-center gap-2">

@@ -79,7 +79,7 @@ export default function OverviewView({
         data && data.total_conversations > 0
             ? (data.escalation_count / data.total_conversations) * 100
             : 0;
-    const zohoState = catalogStatus?.zoho_snapshot.status ?? 'missing';
+    const zohoState = catalogStatus?.zoho_snapshot?.status ?? 'missing';
 
     return (
         <div className="space-y-3" data-overview-bento>
