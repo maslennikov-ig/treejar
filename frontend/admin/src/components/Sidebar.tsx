@@ -5,6 +5,7 @@ import {
     Bot,
     ClipboardCheck,
     FileText,
+    HelpCircle,
     History,
     Inbox,
     MessageCircle,
@@ -27,6 +28,7 @@ export type AdminViewId =
     | 'reports'
     | 'settings'
     | 'auditSystem'
+    | 'guide'
     | 'acceptance';
 
 export interface NavBadgeCounts {
@@ -195,7 +197,20 @@ export default function Sidebar({
                 ))}
             </nav>
 
-            <div className="space-y-1.5 border-t border-slate-200 p-2.5 dark:border-slate-800">
+            <div className="space-y-1 border-t border-slate-200 p-2.5 dark:border-slate-800">
+                <button
+                    type="button"
+                    data-nav-item="guide"
+                    onClick={() => onSelectView('guide')}
+                    className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold transition-colors ${
+                        activeView === 'guide'
+                            ? 'bg-[#2170e4] text-white shadow-xs'
+                            : 'bg-blue-50/70 text-[#2170e4] hover:bg-blue-100/80 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/70'
+                    }`}
+                >
+                    <HelpCircle className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{t('nav.guide')}</span>
+                </button>
                 <button
                     type="button"
                     data-nav-item="acceptance"

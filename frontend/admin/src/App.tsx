@@ -2,14 +2,17 @@ import { useEffect, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import {
     AlertTriangle,
+    BookOpen,
     Moon,
     RefreshCw,
     Search,
     Settings,
+    Sparkles,
     Sun,
 } from 'lucide-react';
 import AcceptanceDemo from '@/components/AcceptanceDemo';
 import { HelpTooltip } from '@/components/HelpTooltip';
+import { useOnboardingTour } from '@/components/OnboardingTour';
 import Sidebar, { NAV_GROUPS } from '@/components/Sidebar';
 import type { AdminViewId, NavBadgeCounts } from '@/components/Sidebar';
 import { SegmentedControl, cx } from '@/components/ui/Primitives';
@@ -26,6 +29,7 @@ import AuditSystemView from '@/views/AuditSystemView';
 import BotRulesView from '@/views/BotRulesView';
 import CatalogView from '@/views/CatalogView';
 import ConversationsView from '@/views/ConversationsView';
+import GuideView from '@/views/GuideView';
 import KnowledgeBaseView from '@/views/KnowledgeBaseView';
 import OverviewView from '@/views/OverviewView';
 import QueuesQualityView from '@/views/QueuesQualityView';
@@ -46,6 +50,7 @@ const SEARCHABLE_VIEWS: AdminViewId[] = [
     'knowledge',
     'botRules',
     'auditSystem',
+    'guide',
 ];
 
 /** Views that render their own dedicated search input inside the left column (AC05). */
@@ -107,6 +112,7 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
     const { t, lang, setLang } = useI18n();
     const { theme, toggleTheme } = useTheme();
     const { route, navigate } = useAdminRouter(initialView ?? 'conversations');
+    const { startTour } = useOnboardingTour({ navigate });
     const activeView = route.view;
 
     const [period, setPeriod] = useState<Period>('week');
@@ -141,9 +147,11 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
     const activeLabel =
         activeView === 'acceptance'
             ? t('nav.acceptance')
-            : activeNavItem
-              ? t(activeNavItem.labelKey)
-              : t('nav.conversations');
+            : activeView === 'guide'
+              ? t('nav.guide')
+              : activeNavItem
+                ? t(activeNavItem.labelKey)
+                : t('nav.conversations');
 
     const searchable = SEARCHABLE_VIEWS.includes(activeView);
     const showHeaderSearch = !VIEWS_WITH_LOCAL_SEARCH.includes(activeView);
@@ -218,6 +226,33 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
                                     onChange={setPeriod}
                                 />
                             )}
+
+                            <button
+                                type="button"
+                                onClick={() => startTour('full')}
+                                data-tour-trigger=""
+                                aria-label={t('header.startTour')}
+                                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--accent-soft)] px-2.5 text-xs font-semibold text-[var(--accent-primary)] transition hover:opacity-90"
+                            >
+                                <Sparkles size={14} />
+                                <span className="hidden lg:inline">{t('header.startTour')}</span>
+                                <span className="lg:hidden">{t('header.startTourShort')}</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => navigate({ view: 'guide' })}
+                                data-header-guide-btn=""
+                                aria-label={t('header.openGuide')}
+                                className={cx(
+                                    'admin-subpanel inline-flex h-8 w-8 items-center justify-center rounded-lg transition',
+                                    activeView === 'guide'
+                                        ? 'border-[var(--accent-primary)] text-[var(--accent-primary)]'
+                                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
+                                )}
+                            >
+                                <BookOpen size={15} />
+                            </button>
 
                             <div
                                 role="group"
@@ -352,6 +387,17 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
                                 activeTab={route.tab}
                                 onTabChange={(tab) => navigate({ tab })}
                                 onNavigateEntity={(view, id) => navigate({ view, id })}
+                            />
+                        )}
+
+                        {activeView === 'guide' && (
+                            <GuideView
+                                globalSearch={globalSearchQuery}
+                                activeTab={route.tab}
+                                onTabChange={(tab) => navigate({ tab })}
+                                onNavigate={navigate}
+                                onStartTour={startTour}
+                                onClearSearch={() => setGlobalSearchQuery('')}
                             />
                         )}
 

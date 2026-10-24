@@ -138,6 +138,12 @@ def test_admin_dashboard_polish_search_banners_and_quick_actions() -> None:
     assert result.returncode == 0, result.stderr or result.stdout
 
 
+def test_admin_onboarding_tour_and_guide_view() -> None:
+    result = _run_frontend_regression("onboarding_guide_regression.mjs")
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
 def test_operator_center_regression_script_uses_portable_frontend_root() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     script_path = (

@@ -1,16 +1,17 @@
 # Orchestrator Handoff
 
+## Stage tj-lk87 (2026-10-25): admin dashboard interactive onboarding, Help & Guide view, and client manual — owner-authorized deploy
+- Branch `codex/tj-lk87-admin-onboarding` (worktree `.worktrees/tj-lk87-admin-onboarding`, off `main` `d93cfeb`); summary `.codex/stages/tj-lk87/summary.md`.
+- Delivered `driver.js@1.10.2` interactive onboarding tour (`OnboardingTour.tsx`, 10-step full tour + 3 role mini-tours, first-visit auto-launch + `?tour=` + header button), bilingual `RU | EN` `GuideView.tsx` (`?view=guide`, 4 searchable tabs + deep links), `onboarding_guide_regression.mjs` (14/14 frontend tests, 16/16 pytest), and published standalone client manual `docs/reports/2026-10-24-treejar-admin-dashboard-guide.html` to `https://aidevteam.ru/a/GaZJfnrjnN5VKtU2wLJdu1nFlqJq3xYO`.
+- Owner authorized push, merge to `main`, and production deploy to `https://noor.starec.ai` (2026-10-25).
+
 ## Stage tj-ierv / tj-nm8c / tj-7ps5 (2026-10-23): admin dashboard UX overhaul — owner-authorized deploy
 - Branch codex/tj-7ps5-admin-ux; summary .codex/stages/tj-ierv/summary.md.
 - Delivered Light/Dark ThemeProvider, Variant 5A Bento overview, Variant 1B nav/queues,
   Variant 2A/3A canonical KB/rules preview+safe sync, Variant 4A conversations & 6A AIQC.
 
 ## October tester feedback — authorized completion2026-10-14
-
-- Accepted epic `tj-i2b1`; findings `tj-i2b1.1` (false mismatch caveats), `.2`
-  (missing updated summary), `.3` (literal refusal persistence), `.4`
-  (missing photos for structured catalog titles).
-- Delivered sourcea72da15 onmain; approved source4b032c7 plus CI fix6d4663f.
+- Accepted epic `tj-i2b1`; findings `.1` (false mismatch caveats), `.2` (missing updated summary), `.3` (literal refusal persistence), `.4` (missing photos for structured catalog titles). Delivered sourcea72da15 onmain; approved source4b032c7 plus CI fix6d4663f.
 - Livea72da15/CI4712passed27skips:10:37fresh request saved2LUMA/6000/declined;
   separate10:43update saved3LUMA/12people, retained6000 and declined quote.
   Owner confirms photos in first reply and updated summary in second;
@@ -34,11 +35,7 @@
   quantity consistency, repo/Docker hygiene and `tj-bgwu`; engine11360lines.
   Independent root4555/20and96CI/metadata checks passed. Canonical CI38526089347
   passed4584/27,Ruff/Mypy194,semantic gate/deploy; tj-7ize accepted/closed.
-- Authority/preflight/rollback and delivery: `docs/reports/2026-10-14-tester-epic-completion-delivery.md`.
-- Cleanup/ownership receipt: `docs/reports/2026-10-13-tester-feedback-closeout.md`.
-  Dirty primary preserved; deployed.env/protectedfingerprint byte-identical.
-  Test0665/guard/restore retained; equivalent CI/catalog worker checkouts removed.
-- docs-reviewed:updated;graph-reviewed:no-change-needed - existing paths.
+- Authority/preflight/rollback & closeout: `docs/reports/2026-10-14-tester-epic-completion-delivery.md`, `docs/reports/2026-10-13-tester-feedback-closeout.md`. Dirty primary preserved; deployed.env/protectedfingerprint byte-identical; Test0665/guard/restore retained; equivalent CI/catalog worker checkouts removed. docs-reviewed:updated;graph-reviewed:no-change-needed.
 
 ## Wazzup webhook protection — deployed 2026-10-13
 

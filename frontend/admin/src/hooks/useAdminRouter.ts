@@ -22,6 +22,7 @@ const VALID_VIEWS: ReadonlySet<AdminViewId> = new Set([
     'reports',
     'settings',
     'auditSystem',
+    'guide',
     'acceptance',
 ]);
 
@@ -40,6 +41,9 @@ function normalizeView(rawView: string | null): { view: AdminViewId; defaultTab?
     }
     if (rawView === 'support') {
         return { view: 'auditSystem', defaultTab: 'system' };
+    }
+    if (rawView === 'help' || rawView === 'docs') {
+        return { view: 'guide' };
     }
     if (VALID_VIEWS.has(rawView as AdminViewId)) {
         return { view: rawView as AdminViewId };
