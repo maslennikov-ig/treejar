@@ -182,10 +182,34 @@ async def test_admin_and_dashboard_reject_internal_api_key_without_session(
             "/api/v1/admin/metrics/", headers={"X-API-Key": "internal-key"}
         )
 
-    assert dashboard.status_code == 401
-    assert dashboard.json()["detail"] == "Admin authentication required"
+    assert dashboard.status_code == 302
+    assert dashboard.headers["location"] == "/admin/login"
     assert admin_api.status_code == 401
     assert admin_api.json()["detail"] == "Admin authentication required"
+
+
+@pytest.mark.asyncio
+async def test_admin_login_next_rejects_external_or_loop_redirects() -> None:
+    from src.api.admin.auth import sanitize_admin_next_path
+
+    for unsafe in (
+        "https://evil.example/phish",
+        "http://evil.example/phish",
+        "//evil.example/phish",
+        "/\\evil.example/phish",
+        "/dashboard/\r\nSet-Cookie: bad=1",
+        "/client-self-test/",
+        "/admin/login",
+        "/admin/logout",
+        "/dashboard/telegram-login?token=abc",
+    ):
+        assert sanitize_admin_next_path(unsafe) == "/dashboard/"
+
+    assert (
+        sanitize_admin_next_path("/dashboard/?view=guide") == "/dashboard/?view=guide"
+    )
+    assert sanitize_admin_next_path("/dashboard?tour=1") == "/dashboard/?tour=1"
+    assert sanitize_admin_next_path("/admin") == "/admin/"
 
 
 @pytest.mark.asyncio

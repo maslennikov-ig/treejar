@@ -144,6 +144,12 @@ def test_admin_onboarding_tour_and_guide_view() -> None:
     assert result.returncode == 0, result.stderr or result.stdout
 
 
+def test_admin_session_guard_redirects_expired_sessions() -> None:
+    result = _run_frontend_regression("session_guard_regression.mjs")
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
 def test_operator_center_regression_script_uses_portable_frontend_root() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     script_path = (

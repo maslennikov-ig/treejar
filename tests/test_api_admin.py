@@ -148,7 +148,8 @@ async def test_admin_login_page_shows_telegram_admin_entrypoint(
 async def test_admin_login_grants_dashboard_and_api_access(client: AsyncClient) -> None:
     """Real SQLAdmin login should authorize /dashboard and /api/v1/admin routes."""
     dashboard_response = await client.get("/dashboard/")
-    assert dashboard_response.status_code == 401
+    assert dashboard_response.status_code == 302
+    assert dashboard_response.headers["location"] == "/admin/login"
 
     api_response = await client.get("/api/v1/admin/dashboard/metrics/")
     assert api_response.status_code == 401
@@ -450,9 +451,57 @@ async def test_admin_models_list(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_admin_dashboard_spa_route(client: AsyncClient) -> None:
-    """Dashboard SPA route should require an authenticated admin session."""
+    """Unauthenticated dashboard navigations redirect cleanly to /admin/login."""
     response = await client.get("/dashboard/")
-    assert response.status_code == 401
+    assert response.status_code == 302
+    assert response.headers["location"] == "/admin/login"
+
+    no_slash = await client.get("/dashboard")
+    assert no_slash.status_code == 302
+    assert no_slash.headers["location"] == "/admin/login"
+
+    admin_no_slash = await client.get("/admin")
+    assert admin_no_slash.status_code == 302
+    assert admin_no_slash.headers["location"] == "/admin/"
+
+    followed = await client.get("/dashboard/", follow_redirects=True)
+    assert followed.status_code == 200
+    assert followed.headers["content-type"].startswith("text/html")
+    assert "Войти через Telegram" in followed.text
+    assert "Admin authentication required" not in followed.text
+
+
+@pytest.mark.asyncio
+async def test_admin_login_preserves_dashboard_deep_link_next(
+    client: AsyncClient,
+) -> None:
+    """Deep-linked dashboard URLs return to the requested view/tour after login."""
+    initial = await client.get("/dashboard/?tour=1")
+    assert initial.status_code == 302
+    assert initial.headers["location"] == "/admin/login?next=%2Fdashboard%2F%3Ftour%3D1"
+
+    login_page = await client.get(initial.headers["location"])
+    assert login_page.status_code == 200
+    assert 'name="next" value="/dashboard/?tour=1"' in login_page.text
+
+    login_resp = await client.post(
+        "/admin/login",
+        data={
+            "username": settings.admin_username,
+            "password": settings.admin_password,
+            "next": "/dashboard/?tour=1",
+        },
+    )
+    assert login_resp.status_code == 302
+    assert login_resp.headers["location"] == "/dashboard/?tour=1"
+
+    already_logged_in = await client.get("/admin/login")
+    assert already_logged_in.status_code == 302
+    assert already_logged_in.headers["location"] == "/dashboard/"
+
+    dashboard_no_slash = await client.get("/dashboard?view=guide")
+    assert dashboard_no_slash.status_code == 302
+    assert dashboard_no_slash.headers["location"] == "/dashboard/?view=guide"
 
 
 @pytest.mark.asyncio

@@ -97,7 +97,7 @@ async def check_admin_auth_guards(client: httpx.AsyncClient, api_key: str) -> No
         "GET",
         "/dashboard/",
         "Dashboard auth guard",
-        expect_status=401,
+        expect_status=302,
         headers={},
     )
     await check_endpoint(

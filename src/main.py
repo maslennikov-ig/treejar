@@ -8,9 +8,14 @@ from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import FastAPI, HTTPException, Request
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import Response
 
+from src.api.admin.auth import (
+    build_admin_login_redirect,
+    has_admin_session,
+    pop_admin_login_next,
+)
 from src.api.admin.dashboard_redirect_admin import DashboardRedirectAdmin
-from src.api.v1.admin import require_admin_session
 from src.core.config import settings
 from src.core.database import async_session_factory, engine
 from src.core.redis import redis_client
@@ -105,14 +110,29 @@ def create_app() -> FastAPI:
         name="admin-assets",
     )
 
+    @app.api_route("/admin", methods=["GET", "HEAD"], include_in_schema=False)
+    async def redirect_admin_root(request: Request) -> RedirectResponse:
+        target = f"/admin/?{request.url.query}" if request.url.query else "/admin/"
+        return RedirectResponse(url=target, status_code=302)
+
     @app.get("/dashboard/telegram-login", include_in_schema=False)
     async def consume_dashboard_telegram_login(
         request: Request,
-        token: str,
+        token: str = "",
     ) -> RedirectResponse:
         identity = await consume_telegram_admin_login_token(redis_client, token)
         if identity is None:
-            raise HTTPException(status_code=401, detail="Invalid or expired login link")
+            if has_admin_session(request):
+                return RedirectResponse(
+                    url=pop_admin_login_next(request),
+                    status_code=303,
+                )
+            return build_admin_login_redirect(
+                request,
+                reason="expired_link",
+                status_code=303,
+                preserve_current_target=False,
+            )
 
         async with async_session_factory() as db:
             await log_admin_action(
@@ -131,15 +151,32 @@ def create_app() -> FastAPI:
             await db.commit()
 
         request.session.update({"token": "admin_session"})
-        return RedirectResponse(url="/dashboard/", status_code=303)
+        return RedirectResponse(url=pop_admin_login_next(request), status_code=303)
 
-    @app.get("/dashboard/{full_path:path}", include_in_schema=False)
-    async def serve_admin_spa(request: Request, full_path: str) -> FileResponse:
-        await require_admin_session(request)
-        dist_dir = "frontend/admin/dist"
-        file_path = os.path.join(dist_dir, full_path)
-        if full_path and os.path.isfile(file_path):
-            return FileResponse(file_path)
+    @app.api_route("/dashboard", methods=["GET", "HEAD"], include_in_schema=False)
+    async def redirect_dashboard_root(request: Request) -> RedirectResponse:
+        if not has_admin_session(request):
+            return build_admin_login_redirect(request)
+        target = (
+            f"/dashboard/?{request.url.query}" if request.url.query else "/dashboard/"
+        )
+        return RedirectResponse(url=target, status_code=302)
+
+    @app.api_route(
+        "/dashboard/{full_path:path}",
+        methods=["GET", "HEAD"],
+        include_in_schema=False,
+    )
+    async def serve_admin_spa(request: Request, full_path: str) -> Response:
+        if not has_admin_session(request):
+            return build_admin_login_redirect(request)
+        dist_dir = os.path.realpath("frontend/admin/dist")
+        if full_path:
+            candidate = os.path.realpath(os.path.join(dist_dir, full_path))
+            if candidate.startswith(f"{dist_dir}{os.sep}") and os.path.isfile(
+                candidate
+            ):
+                return FileResponse(candidate)
         return FileResponse(os.path.join(dist_dir, "index.html"))
 
     @app.get("/client-self-test", include_in_schema=False)

@@ -2,15 +2,32 @@
 {% block body %}
 <div class="d-flex align-items-center justify-content-center min-vh-100 bg-light">
   <div class="container-tight py-4" style="max-width: 480px;">
-    <div class="card card-md shadow-sm">
-      <div class="card-body">
-        <h1 class="h2 text-center mb-2">Noor CRM</h1>
+    <div class="card card-md shadow-sm border-0">
+      <div class="card-body p-4 p-sm-5">
+        <div class="d-flex align-items-center justify-content-center gap-2 mb-3">
+          <span
+            class="d-inline-flex align-items-center justify-content-center rounded-2 fw-bold text-white"
+            style="width: 36px; height: 36px; background: #2170e4; font-size: 16px;"
+          >N</span>
+          <div class="text-start">
+            <h1 class="h2 mb-0 lh-1">Noor CRM</h1>
+            <div class="text-muted small">Treejar AI Operations</div>
+          </div>
+        </div>
+
         <p class="text-muted text-center mb-4">
-          Основной вход в админку работает через Telegram.
+          Основной вход в админку работает через Telegram. После авторизации откроется выбранный раздел кабинета.
         </p>
+
+        {% if notice %}
+        <div class="alert alert-warning mb-3" role="alert">
+          {{ notice }}
+        </div>
+        {% endif %}
 
         <a
           class="btn btn-primary w-100 mb-3"
+          style="background-color: #2170e4; border-color: #2170e4;"
           href="{{ telegram_admin_bot_url }}"
           target="_blank"
           rel="noopener noreferrer"
@@ -28,6 +45,7 @@
         <div class="hr-text">Технический fallback</div>
 
         <form action="{{ url_for('admin:login') }}" method="POST" autocomplete="off">
+          <input type="hidden" name="next" value="{{ next_url or '/dashboard/' }}">
           <div class="mb-3">
             <label class="form-label">Username</label>
             {% if error %}

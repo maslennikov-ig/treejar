@@ -408,6 +408,63 @@ async def test_dashboard_telegram_login_rejects_invalid_token(client: object) ->
             follow_redirects=False,
         )
 
-    assert response.status_code == 401
-    dashboard = await client.get("/dashboard/")
-    assert dashboard.status_code == 401
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin/login?reason=expired_link"
+
+    login_page = await client.get(response.headers["location"])
+    assert login_page.status_code == 200
+    assert "Одноразовая ссылка для входа устарела" in login_page.text
+
+    dashboard = await client.get("/dashboard/", follow_redirects=False)
+    assert dashboard.status_code == 302
+    assert dashboard.headers["location"] == "/admin/login"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_telegram_login_preserves_deep_link_and_handles_repeat_click(
+    client: object,
+) -> None:
+    from src.services.telegram_admin_login import TelegramAdminLoginIdentity
+
+    unauthenticated = await client.get(
+        "/dashboard/?view=guide",
+        follow_redirects=False,
+    )
+    assert unauthenticated.status_code == 302
+    assert (
+        unauthenticated.headers["location"]
+        == "/admin/login?next=%2Fdashboard%2F%3Fview%3Dguide"
+    )
+
+    db = AsyncMock()
+    log_admin_action = AsyncMock()
+    consume_token = AsyncMock(
+        side_effect=[
+            TelegramAdminLoginIdentity(
+                chat_id="-100123456789",
+                user_id=777,
+                username="owner",
+                first_name="Noor",
+            ),
+            None,
+        ]
+    )
+
+    with (
+        patch("src.main.consume_telegram_admin_login_token", consume_token),
+        patch("src.main.async_session_factory", MagicMock(return_value=_DbContext(db))),
+        patch("src.main.log_admin_action", log_admin_action),
+    ):
+        first = await client.get(
+            "/dashboard/telegram-login?token=raw-login-token",
+            follow_redirects=False,
+        )
+        second = await client.get(
+            "/dashboard/telegram-login?token=raw-login-token",
+            follow_redirects=False,
+        )
+
+    assert first.status_code == 303
+    assert first.headers["location"] == "/dashboard/?view=guide"
+    assert second.status_code == 303
+    assert second.headers["location"] == "/dashboard/"

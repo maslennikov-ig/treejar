@@ -1,3 +1,4 @@
+import { redirectOnAdminUnauthorized } from '@/api/sessionGuard';
 import type {
     AIQualityControlsResponse,
     AIQualityControlsUpdate,
@@ -45,6 +46,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     });
 
     if (!response.ok) {
+        redirectOnAdminUnauthorized(response);
         throw await responseError(response);
     }
 
@@ -61,6 +63,7 @@ async function requestAbsoluteJson<T>(url: string, init?: RequestInit): Promise<
     });
 
     if (!response.ok) {
+        redirectOnAdminUnauthorized(response);
         throw await responseError(response);
     }
 

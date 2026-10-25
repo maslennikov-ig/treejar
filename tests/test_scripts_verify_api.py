@@ -148,7 +148,7 @@ async def test_check_admin_auth_guards_expects_dashboard_and_admin_api_denial(
             "method": "GET",
             "path": "/dashboard/",
             "name": "Dashboard auth guard",
-            "expect_status": 401,
+            "expect_status": 302,
             "headers": {},
         },
         {

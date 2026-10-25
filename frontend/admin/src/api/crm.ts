@@ -1,3 +1,4 @@
+import { redirectOnAdminUnauthorized } from '@/api/sessionGuard';
 import type {
     AdminActionAuditRead,
     AdminBotRulePreviewRequest,
@@ -53,6 +54,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     });
 
     if (!response.ok) {
+        redirectOnAdminUnauthorized(response);
         throw await responseError(response);
     }
 

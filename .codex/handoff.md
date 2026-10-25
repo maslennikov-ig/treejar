@@ -1,9 +1,11 @@
 # Orchestrator Handoff
 
+## Stage tj-j3zg (2026-10-25): redirect unauthenticated `/dashboard` navigation to `/admin/login` — owner-authorized deploy
+- Branch `codex/tj-j3zg-dashboard-auth` (worktree `.worktrees/tj-j3zg-dashboard-auth`, off `main` `8ae7ce8`); summary `.codex/stages/tj-j3zg/summary.md`.
+- Replaced raw JSON `401` on `/dashboard/{full_path:path}` with `302` redirect to `/admin/login` (preserving sanitized deep-link `next` across password and Telegram login), normalized `/dashboard` & `/admin` slashless roots, handled expired/repeat `/dashboard/telegram-login` links cleanly, and added SPA `sessionGuard.ts` (`15/15` frontend tests, pytest + mypy + ruff green).
+
 ## Stage tj-lk87 (2026-10-25): admin dashboard interactive onboarding, Help & Guide view, and client manual — owner-authorized deploy
-- Branch `codex/tj-lk87-admin-onboarding` (worktree `.worktrees/tj-lk87-admin-onboarding`, off `main` `d93cfeb`); summary `.codex/stages/tj-lk87/summary.md`.
-- Delivered `driver.js@1.10.2` interactive onboarding tour (`OnboardingTour.tsx`, 10-step full tour + 3 role mini-tours, first-visit auto-launch + `?tour=` + header button), bilingual `RU | EN` `GuideView.tsx` (`?view=guide`, 4 searchable tabs + deep links), `onboarding_guide_regression.mjs` (14/14 frontend tests, 16/16 pytest), and published standalone client manual `docs/reports/2026-10-24-treejar-admin-dashboard-guide.html` to `https://aidevteam.ru/a/GaZJfnrjnN5VKtU2wLJdu1nFlqJq3xYO`.
-- Owner authorized push, merge to `main`, and production deploy to `https://noor.starec.ai` (2026-10-25).
+- Branch `codex/tj-lk87-admin-onboarding` (merged `main` `8ae7ce8`); summary `.codex/stages/tj-lk87/summary.md`. Delivered `driver.js@1.10.2` onboarding tour, bilingual `GuideView.tsx` (`?view=guide`), and client manual `https://aidevteam.ru/a/GaZJfnrjnN5VKtU2wLJdu1nFlqJq3xYO`; deployed live to `https://noor.starec.ai`.
 
 ## Stage tj-ierv / tj-nm8c / tj-7ps5 (2026-10-23): admin dashboard UX overhaul — owner-authorized deploy
 - Branch codex/tj-7ps5-admin-ux; summary .codex/stages/tj-ierv/summary.md.
