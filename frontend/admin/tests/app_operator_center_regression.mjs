@@ -12,7 +12,8 @@ const frontendRoot = path.resolve(scriptDir, '..');
 
 const STUBS = new Map([
     ['@/hooks/useMetrics', `
-        export function useMetrics() {
+        export function useMetrics(period) {
+            globalThis.__lastMetricPeriod = period;
             return {
                 data: null,
                 timeseries: null,
@@ -158,43 +159,90 @@ try {
     await writeFile(bundlePath, result.outputFiles[0].text);
 
     const moduleUrl = pathToFileURL(bundlePath).href;
-    const { default: App } = await import(moduleUrl);
-    const html = renderToStaticMarkup(React.createElement(App, { initialView: 'conversations' }));
+    const {
+        default: App,
+        PERIOD_STORAGE_KEY,
+        readStoredPeriod,
+        writeStoredPeriod,
+    } = await import(moduleUrl);
 
-    // Default language is Russian.
-    assert.match(html, /Noor AI/);
-    assert.match(html, /Клиенты и диалоги/);
-    assert.match(html, /Очереди и качество/);
-    assert.match(html, /Каталог и остатки/);
-    assert.match(html, /Аудит и статус системы/);
-    assert.match(html, /Телефон, имя, Zoho, SO/);
-    assert.match(html, /Выберите клиента в списке слева, чтобы открыть переписку/);
-    assert.match(html, /data-section-banner="conversations"/, 'Conversations view should start with a section banner');
-    assert.match(html, /data-lang-toggle/, 'Header should render the RU | EN toggle');
-    assert.match(html, /data-theme-toggle/, 'Header should render the Light/Dark theme toggle');
-    assert.doesNotMatch(html, /data-sidebar-theme-toggle/, 'Sidebar must not duplicate the theme toggle');
-    assert.doesNotMatch(html, /data-header-guide-btn/, 'Header must not duplicate the Guide button');
-    assert.match(html, /data-admin-account-btn/, 'Header should render interactive admin account menu button');
-    assert.match(html, /<input[^>]*type="search"[^>]*value=""/, 'Header search should be a controlled input');
-    assert.doesNotMatch(html, /\btitle="/, 'Dashboard should not rely on native title tooltips');
-    for (const englishLabel of ['Reset preview', 'Applied bot rules', 'Customers &amp; Conversations', 'Select a customer', 'Search...']) {
-        assert.ok(!html.includes(englishLabel), `RU render should not contain English UI label: ${englishLabel}`);
+    const storageMap = new Map();
+    const originalStorage = globalThis.localStorage;
+    globalThis.localStorage = {
+        getItem: (key) => (storageMap.has(key) ? storageMap.get(key) : null),
+        setItem: (key, value) => {
+            storageMap.set(key, String(value));
+        },
+        removeItem: (key) => {
+            storageMap.delete(key);
+        },
+        clear: () => {
+            storageMap.clear();
+        },
+    };
+
+    try {
+        const html = renderToStaticMarkup(React.createElement(App, { initialView: 'conversations' }));
+
+        // Default language is Russian.
+        assert.match(html, /Noor AI/);
+        assert.match(html, /Клиенты и диалоги/);
+        assert.match(html, /Очереди и качество/);
+        assert.match(html, /Каталог и остатки/);
+        assert.match(html, /Аудит и статус системы/);
+        assert.match(html, /Телефон, имя, Zoho, SO/);
+        assert.match(html, /Выберите клиента в списке слева, чтобы открыть переписку/);
+        assert.match(html, /data-section-banner="conversations"/, 'Conversations view should start with a section banner');
+        assert.match(html, /data-lang-toggle/, 'Header should render the RU | EN toggle');
+        assert.match(html, /data-theme-toggle/, 'Header should render the Light/Dark theme toggle');
+        assert.doesNotMatch(html, /data-sidebar-theme-toggle/, 'Sidebar must not duplicate the theme toggle');
+        assert.doesNotMatch(html, /data-header-guide-btn/, 'Header must not duplicate the Guide button');
+        assert.match(html, /data-admin-account-btn/, 'Header should render interactive admin account menu button');
+        assert.match(html, /<input[^>]*type="search"[^>]*value=""/, 'Header search should be a controlled input');
+        assert.doesNotMatch(html, /\btitle="/, 'Dashboard should not rely on native title tooltips');
+        for (const englishLabel of ['Reset preview', 'Applied bot rules', 'Customers &amp; Conversations', 'Select a customer', 'Search...']) {
+            assert.ok(!html.includes(englishLabel), `RU render should not contain English UI label: ${englishLabel}`);
+        }
+
+        // English render through the language provider.
+        const htmlEn = renderToStaticMarkup(React.createElement(App, { initialLang: 'en', initialView: 'conversations' }));
+        assert.match(htmlEn, /Customers &amp; Conversations/);
+        assert.match(htmlEn, /Queues &amp; Quality/);
+        assert.match(htmlEn, /Catalog &amp; Inventory/);
+        assert.match(htmlEn, /Audit &amp; System Health/);
+        assert.match(htmlEn, /Phone, name, Zoho, SO/);
+        assert.match(htmlEn, /Select a customer on the left to inspect the full chat history/);
+        assert.doesNotMatch(htmlEn, /[А-Яа-яЁё]/, 'EN render should not contain Cyrillic UI text');
+
+        // Overview defaults to "month" on first visit (empty localStorage) and renders attention strip/error gracefully.
+        storageMap.clear();
+        assert.equal(readStoredPeriod(), 'month');
+        const overviewHtml = renderToStaticMarkup(React.createElement(App, { initialView: 'overview' }));
+        assert.equal(globalThis.__lastMetricPeriod, 'month');
+        assert.match(overviewHtml, /data-overview-attention-bar/);
+        assert.match(overviewHtml, /metrics failed/);
+        assert.match(overviewHtml, /<button[^>]*aria-pressed="true"[^>]*>Месяц<\/button>/, 'Overview should select Month by default');
+        assert.match(overviewHtml, /<button[^>]*aria-pressed="false"[^>]*>Неделя<\/button>/, 'Week should not be selected by default');
+
+        // Persisting a period updates localStorage and restores on subsequent mount.
+        writeStoredPeriod('all_time');
+        assert.equal(storageMap.get(PERIOD_STORAGE_KEY), 'all_time');
+        assert.equal(readStoredPeriod(), 'all_time');
+        const overviewStoredHtml = renderToStaticMarkup(React.createElement(App, { initialView: 'overview' }));
+        assert.equal(globalThis.__lastMetricPeriod, 'all_time');
+        assert.match(overviewStoredHtml, /<button[^>]*aria-pressed="true"[^>]*>Все<\/button>/, 'Overview should restore last stored period');
+        assert.match(overviewStoredHtml, /<button[^>]*aria-pressed="false"[^>]*>Месяц<\/button>/);
+
+        // Invalid stored value safely falls back to month.
+        storageMap.set(PERIOD_STORAGE_KEY, 'invalid_period');
+        assert.equal(readStoredPeriod(), 'month');
+        const overviewInvalidHtml = renderToStaticMarkup(React.createElement(App, { initialView: 'overview' }));
+        assert.equal(globalThis.__lastMetricPeriod, 'month');
+        assert.match(overviewInvalidHtml, /<button[^>]*aria-pressed="true"[^>]*>Месяц<\/button>/);
+    } finally {
+        delete globalThis.__lastMetricPeriod;
+        globalThis.localStorage = originalStorage;
     }
-
-    // English render through the language provider.
-    const htmlEn = renderToStaticMarkup(React.createElement(App, { initialLang: 'en', initialView: 'conversations' }));
-    assert.match(htmlEn, /Customers &amp; Conversations/);
-    assert.match(htmlEn, /Queues &amp; Quality/);
-    assert.match(htmlEn, /Catalog &amp; Inventory/);
-    assert.match(htmlEn, /Audit &amp; System Health/);
-    assert.match(htmlEn, /Phone, name, Zoho, SO/);
-    assert.match(htmlEn, /Select a customer on the left to inspect the full chat history/);
-    assert.doesNotMatch(htmlEn, /[А-Яа-яЁё]/, 'EN render should not contain Cyrillic UI text');
-
-    // Overview renders attention strip and error banner gracefully when metrics fail.
-    const overviewHtml = renderToStaticMarkup(React.createElement(App, { initialView: 'overview' }));
-    assert.match(overviewHtml, /data-overview-attention-bar/);
-    assert.match(overviewHtml, /metrics failed/);
 } finally {
     await rm(tempDir, { recursive: true, force: true });
 }

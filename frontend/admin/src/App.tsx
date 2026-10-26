@@ -43,12 +43,43 @@ import QueuesQualityView from '@/views/QueuesQualityView';
 import ReportsView from '@/views/ReportsView';
 import SettingsView from '@/views/SettingsView';
 
+export const PERIOD_STORAGE_KEY = 'treejar_admin_period';
+
 const PERIODS: { labelKey: TranslationKey; value: Period }[] = [
     { labelKey: 'period.day', value: 'day' },
     { labelKey: 'period.week', value: 'week' },
     { labelKey: 'period.month', value: 'month' },
     { labelKey: 'period.all', value: 'all_time' },
 ];
+
+export function isValidPeriod(value: unknown): value is Period {
+    return (
+        value === 'day' ||
+        value === 'week' ||
+        value === 'month' ||
+        value === 'all_time'
+    );
+}
+
+export function readStoredPeriod(fallback: Period = 'month'): Period {
+    try {
+        const stored = globalThis.localStorage?.getItem(PERIOD_STORAGE_KEY);
+        if (isValidPeriod(stored)) {
+            return stored;
+        }
+    } catch {
+        // Ignore storage errors in SSR/test or restricted browser contexts.
+    }
+    return fallback;
+}
+
+export function writeStoredPeriod(next: Period): void {
+    try {
+        globalThis.localStorage?.setItem(PERIOD_STORAGE_KEY, next);
+    } catch {
+        // Ignore storage errors in restricted browser contexts.
+    }
+}
 
 /** Views whose list is filtered by the header search box. */
 const SEARCHABLE_VIEWS: AdminViewId[] = [
@@ -71,10 +102,12 @@ export default function App({
     initialLang,
     initialTheme,
     initialView,
+    initialPeriod,
 }: {
     initialLang?: Lang;
     initialTheme?: AdminTheme;
     initialView?: AdminViewId;
+    initialPeriod?: Period;
 } = {}) {
     const routeMode = getAppRouteMode();
 
@@ -90,7 +123,10 @@ export default function App({
         <ThemeProvider initialTheme={initialTheme}>
             <LanguageProvider initialLang={initialLang}>
                 <ToastProvider>
-                    <DashboardApp initialView={initialView} />
+                    <DashboardApp
+                        initialView={initialView}
+                        initialPeriod={initialPeriod}
+                    />
                 </ToastProvider>
             </LanguageProvider>
         </ThemeProvider>
@@ -115,14 +151,26 @@ function PublicAcceptanceApp() {
     );
 }
 
-function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
+function DashboardApp({
+    initialView,
+    initialPeriod,
+}: {
+    initialView?: AdminViewId;
+    initialPeriod?: Period;
+}) {
     const { t, lang, setLang } = useI18n();
     const { theme, toggleTheme } = useTheme();
     const { route, navigate } = useAdminRouter(initialView ?? 'conversations');
     const { startTour } = useOnboardingTour({ navigate });
     const activeView = route.view;
 
-    const [period, setPeriod] = useState<Period>('week');
+    const [period, setPeriodState] = useState<Period>(() =>
+        initialPeriod ?? readStoredPeriod('month'),
+    );
+    const handlePeriodChange = (next: Period) => {
+        setPeriodState(next);
+        writeStoredPeriod(next);
+    };
     const [globalSearchQuery, setGlobalSearchQuery] = useState('');
     const [refreshSignal, setRefreshSignal] = useState(0);
     const [sessionInfo, setSessionInfo] = useState<AdminSessionInfo | null>(null);
@@ -306,7 +354,7 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
                                         value: item.value,
                                     }))}
                                     value={period}
-                                    onChange={setPeriod}
+                                    onChange={handlePeriodChange}
                                 />
                             )}
 
@@ -484,7 +532,7 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
                             <div className="p-4">
                                 <OverviewView
                                     period={period}
-                                    onPeriodChange={setPeriod}
+                                    onPeriodChange={handlePeriodChange}
                                     data={data}
                                     timeseries={timeseries}
                                     loading={loading}
@@ -572,7 +620,7 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
                         )}
 
                         {activeView === 'acceptance' && (
-                            <div className="p-5">
+                            <div className="p-5" data-acceptance-view="">
                                 <AcceptanceDemo />
                             </div>
                         )}

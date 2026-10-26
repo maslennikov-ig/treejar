@@ -235,13 +235,14 @@ try {
     assert.match(htmlRu, /data-start-tour="teach_bot"/);
     assert.match(htmlRu, /data-start-tour="quality_settings"/);
     assert.match(htmlRu, /Справка и инструкции/);
+    assert.match(htmlRu, /Запустить полный обзор кабинета \(14 шагов\)/);
     assert.doesNotMatch(htmlRu, /\btitle="/);
 
     const htmlEn = renderToStaticMarkup(
         React.createElement(App, { initialView: 'guide', initialLang: 'en' }),
     );
     assert.match(htmlEn, /Help &amp; Guide/);
-    assert.match(htmlEn, /Start full dashboard tour/);
+    assert.match(htmlEn, /Start full dashboard tour \(14 steps\)/);
     assert.doesNotMatch(htmlEn, /[А-Яа-яЁё]/, 'English Guide render must not leak Cyrillic text');
     assert.doesNotMatch(htmlEn, /\btitle="/);
 
@@ -290,6 +291,29 @@ try {
         assertValidLocalizedText(card.title, `MINI_TOUR_CARDS[${card.id}].title`);
         assertValidLocalizedText(card.summary, `MINI_TOUR_CARDS[${card.id}].summary`);
     }
+
+    assert.equal(guideData.TOUR_TRACKS.full.length, 14, 'Full tour should walk through all 14 steps');
+    const fullTourViews = new Set(
+        guideData.TOUR_TRACKS.full.map((step) => step.route?.view).filter(Boolean),
+    );
+    for (const expectedView of [
+        'overview',
+        'conversations',
+        'queuesQuality',
+        'knowledge',
+        'botRules',
+        'catalog',
+        'reports',
+        'settings',
+        'auditSystem',
+        'acceptance',
+        'guide',
+    ]) {
+        assert.ok(fullTourViews.has(expectedView), `Full tour must visit ${expectedView}`);
+    }
+    assert.equal(guideData.GUIDE_PLAYBOOKS.length, 9);
+    assert.equal(guideData.GUIDE_GLOSSARY.length, 5);
+    assert.equal(guideData.GUIDE_FAQ.length, 8);
 
     for (const [trackId, steps] of Object.entries(guideData.TOUR_TRACKS)) {
         assert.ok(Array.isArray(steps) && steps.length >= 4, `TOUR_TRACKS.${trackId} must have steps`);

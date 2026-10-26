@@ -30,6 +30,7 @@ import {
     GUIDE_PLAYBOOKS,
     GUIDE_SECTIONS,
     MINI_TOUR_CARDS,
+    TOUR_TRACKS,
     pickText,
 } from '@/data/adminGuideData';
 import type { TourTrackId } from '@/data/adminGuideData';
@@ -215,7 +216,11 @@ export default function GuideView({
                                 className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent-primary)] px-4 py-2.5 text-xs font-semibold text-white shadow-xs transition hover:opacity-95"
                             >
                                 <Sparkles size={15} />
-                                <span>{t('guide.hero.startFullTour')}</span>
+                                <span>
+                                    {t('guide.hero.startFullTour', {
+                                        count: TOUR_TRACKS.full.length,
+                                    })}
+                                </span>
                             </button>
 
                             <a

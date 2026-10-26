@@ -94,12 +94,12 @@ export const TOUR_TRACKS: Record<TourTrackId, NoorTourStepSpec[]> = {
             side: 'right',
             align: 'start',
             title: {
-                ru: 'Левое меню: 9 разделов в 3 логических блоках',
-                en: 'Left sidebar: 9 sections in 3 clear groups',
+                ru: 'Левое меню: 9 разделов + Справка и Приёмка',
+                en: 'Left sidebar: 9 sections + Guide & Self-Test',
             },
             description: {
-                ru: '1) Операционная работа (Обзор, Клиенты и диалоги, Очереди и качество) — для ежедневного контроля. 2) Знания и каталог (База знаний, Правила бота, Каталог и остатки) — чем руководствуется Noor в ответах. 3) Система (Отчеты, Настройки, Аудит и статус). Жёлтые счётчики сразу показывают, где ждут задачи.',
-                en: '1) Operations (Overview, Customers & Conversations, Queues & Quality) for daily oversight. 2) Knowledge & Catalog (Knowledge Base, Bot Rules, Catalog & Inventory) for what Noor knows and sells. 3) System (Reports, Settings, Audit & Health). Amber badges highlight items awaiting attention.',
+                ru: '1) Операционная работа (Обзор, Клиенты и диалоги, Очереди и качество) — для ежедневного контроля. 2) Знания и каталог (База знаний, Правила бота, Каталог и остатки) — чем руководствуется Noor в ответах. 3) Система (Отчеты, Настройки, Аудит и статус), а в самом низу — Справка и стенд Приёмки. Жёлтые счётчики сразу показывают, где ждут задачи.',
+                en: '1) Operations (Overview, Customers & Conversations, Queues & Quality) for daily oversight. 2) Knowledge & Catalog (Knowledge Base, Bot Rules, Catalog & Inventory) for what Noor knows and sells. 3) System (Reports, Settings, Audit & Health), plus Help & Guide and Self-Test at the bottom. Amber badges highlight items awaiting attention.',
             },
         },
         {
@@ -108,12 +108,12 @@ export const TOUR_TRACKS: Record<TourTrackId, NoorTourStepSpec[]> = {
             side: 'bottom',
             align: 'end',
             title: {
-                ru: 'Верхняя панель: язык RU/EN, тема, поиск и тур',
-                en: 'Top bar: RU/EN switch, theme, search & tour',
+                ru: 'Верхняя панель: умный поиск, период, RU/EN и тема',
+                en: 'Top bar: smart search, period, RU/EN & theme',
             },
             description: {
-                ru: 'Справа можно мгновенно переключить весь интерфейс между русским и английским языком (RU | EN), выбрать светлую или тёмную тему, обновить данные или в любой момент заново запустить этот интерактивный тур.',
-                en: 'Switch the entire interface between Russian and English (RU | EN), toggle Light or Dark theme, refresh live metrics or relaunch this guided tour at any time.',
+                ru: 'Слева — умный поиск: в списках он фильтрует текущий раздел, а на экранах без списка нажатие Enter сразу переносит в «Клиенты и диалоги» с этим запросом (Esc очищает). Справа — переключатель периода в «Обзоре» (по умолчанию «Месяц», далее запоминает ваш выбор), язык RU | EN, светлая/тёмная тема, обновление и повторный запуск тура.',
+                en: 'On the left, smart search filters the active list — or press Enter on summary screens to jump straight to Customers & Conversations with that query (Esc clears). On the right: the Overview period switch (defaults to Month and remembers your last choice), RU | EN toggle, Light/Dark theme, refresh and tour launcher.',
             },
         },
         {
@@ -127,8 +127,8 @@ export const TOUR_TRACKS: Record<TourTrackId, NoorTourStepSpec[]> = {
                 en: 'Overview: your 3-minute morning check',
             },
             description: {
-                ru: 'Верхняя полоса «Требует внимания» показывает открытые эскалации на менеджеров, сделки без оценки качества и свежесть остатков Zoho Inventory (клик по любой плашке сразу ведёт в нужный список). Ниже — карточки KPI, воронка конверсии и структура причин передач человеку.',
-                en: 'The top Needs Attention strip surfaces open manager escalations, unreviewed deals and Zoho Inventory stock freshness (click any pill to jump straight to that queue). Below are KPI cards, the conversion funnel and escalation reason breakdown.',
+                ru: 'По умолчанию включён период «Месяц» (чтобы графики сразу показывали картину даже после тихих недель), а любое переключение на День / Неделю / Все автоматически запоминается в браузере. Полоса «Требует внимания» ведёт в 1 клик к открытым эскалациям, сделкам без оценки и статусу остатков Zoho.',
+                en: 'Defaults to Month on first visit so charts carry full context right away, and remembers whichever period (Day / Week / Month / All) you pick next. The Needs Attention strip jumps in 1 click to open escalations, unreviewed deals and Zoho stock freshness.',
             },
         },
         {
@@ -138,12 +138,12 @@ export const TOUR_TRACKS: Record<TourTrackId, NoorTourStepSpec[]> = {
             side: 'top',
             align: 'center',
             title: {
-                ru: 'Клиенты и диалоги: переписка и карточка CRM',
-                en: 'Customers & Conversations: chat & CRM drawer',
+                ru: 'Клиенты и диалоги: чаты, расшифровка голоса и CRM',
+                en: 'Customers & Conversations: chats, voice transcripts & CRM',
             },
             description: {
-                ru: 'Слева список клиентов с быстрыми вкладками («Все», «Ожидают оператора», «На разбор»). В центре — полная история WhatsApp с индикатором, кто сейчас ведёт чат (Noor или оператор). Справа по кнопке «CRM и детали» выезжает карточка сделки, применённые правила и оценка качества, а в меню «⋯» спрятан защищённый сброс тестового диалога.',
-                en: 'Customer list on the left with quick filter tabs (All, Waiting for operator, Needs review). Full WhatsApp timeline in the center with a clear badge showing whether Noor or a human leads the chat. Click CRM & details for deal fields, applied rules and Bot QA, or use the "⋯" menu for safe test-chat reset.',
+                ru: 'Слева — вкладки («Все», «Ожидают оператора», «На разбор» — закрытые эскалации на проверку) и кнопка расширенных фильтров по 4 параметрам. В ленте WhatsApp видна текстовая расшифровка голосовых сообщений клиентов и кнопка «Оценить диалог» (Bot QA). Справа в «CRM и детали» можно править и сохранять поля сделки, смотреть Zoho Contact/Deal ID, а в меню «⋯» — безопасно сбрасывать тестовый номер (RESET).',
+                en: 'Left column offers quick tabs (All, Waiting for operator, Needs review for resolved handoffs) plus a 4-field filter panel. The WhatsApp timeline renders text transcripts of customer voice notes and a direct Evaluate chat (Bot QA) button. Open CRM & details to edit and save deal fields or inspect Zoho Contact/Deal IDs, and use "⋯" for safe test-chat reset (RESET).',
             },
         },
         {
@@ -153,12 +153,12 @@ export const TOUR_TRACKS: Record<TourTrackId, NoorTourStepSpec[]> = {
             side: 'bottom',
             align: 'start',
             title: {
-                ru: 'Очереди и качество: контроль передач и продавцов',
-                en: 'Queues & Quality: escalations, sales & AI rubric',
+                ru: 'Очереди и качество: эскалации, РОП и разбор оценок',
+                en: 'Queues & Quality: escalations, sales & score details',
             },
             description: {
-                ru: 'Три вкладки в одном окне: 1) «Эскалации» — чаты, переданные живому менеджеру (можно открыть переписку или закрыть решённую заявку); 2) «Сделки РОПа» — запуск оценки работы менеджера (0–20 баллов); 3) «Оценки ИИ и рубрика» — результаты проверок и эталонный чек-лист Noor на 15 критериев (30 баллов).',
-                en: 'Three unified tabs: 1) Escalations — chats handed over to a human manager (open chat or resolve); 2) Sales Lead Deals — run Manager QA reviews (0–20 pts); 3) AI Scores & Rubric — recent evaluations and the 15-criterion Noor quality checklist (30 pts).',
+                ru: 'Три вкладки: 1) «Эскалации» с фильтром Открытые / Закрытые / Все и переходом в чат; 2) «Сделки РОПа» — оценка работы менеджеров (0–20 баллов); 3) «Оценки ИИ и рубрика» — эталон из 15 критериев (30 баллов) и таблица проверок, где клик по любой строке открывает детальную карточку со скоростью ответа и суммой сделки в AED.',
+                en: 'Three unified tabs: 1) Escalations with Open / Resolved / All filter and 1-click chat jump; 2) Sales Lead Deals for Manager QA (0–20 pts); 3) AI Scores & Rubric with the 15-criterion checklist (30 pts) and clickable review rows showing manager response time and AED deal value.',
             },
         },
         {
@@ -168,12 +168,12 @@ export const TOUR_TRACKS: Record<TourTrackId, NoorTourStepSpec[]> = {
             side: 'top',
             align: 'center',
             title: {
-                ru: 'База знаний: факты компании и ответы из Telegram',
-                en: 'Knowledge Base: company facts & Telegram Auto-FAQ',
+                ru: 'База знаний: предпросмотр безопасности и Auto-FAQ',
+                en: 'Knowledge Base: safety preview & Telegram Auto-FAQ',
             },
             description: {
-                ru: 'Здесь хранятся точные условия доставки, сборки, оплаты, НДС 5%, шоурума и оптовых заказов. Нажмите «Сохранить и проиндексировать» — и уже со следующего сообщения Noor использует новый факт в WhatsApp. Кнопка «Кандидаты Auto-FAQ» вверху открывает ответы менеджеров из Telegram, ожидающие вашего одобрения.',
-                en: 'Stores verified facts on delivery, installation, payment, 5% VAT, showroom and B2B orders. Click Save and index and Noor uses the updated fact on the very next WhatsApp turn. The Auto-FAQ Candidates button opens manager answers captured from Telegram for 1-click approval.',
+                ru: 'Хранит проверенные факты о доставке, сборке, оплате, 5% VAT, шоуруме и опте с метками источника («Шаблон Treejar», «Изменён вручную», «Auto-FAQ»). Перед публикацией кнопка «Предпросмотр» проверяет текст на смысловые дубликаты и рискованные обещания, а «Сохранить и проиндексировать» мгновенно включает статью в работу.',
+                en: 'Stores verified facts on delivery, assembly, payment, 5% VAT, showroom and B2B terms with clear origin badges (Treejar template, Customized, Auto-FAQ). Click Preview before saving to check semantic duplicates and safety warnings, then Save and index to publish immediately.',
             },
         },
         {
@@ -207,6 +207,66 @@ export const TOUR_TRACKS: Record<TourTrackId, NoorTourStepSpec[]> = {
             },
         },
         {
+            id: 'reports',
+            route: { view: 'reports' },
+            selector: '[data-reports-view]',
+            side: 'top',
+            align: 'start',
+            title: {
+                ru: 'Отчеты: еженедельный управленческий дайджест',
+                en: 'Reports: 7-day executive operations digest',
+            },
+            description: {
+                ru: 'Формирует стандартизированную операционную сводку за последние 7 дней (независимо от фильтра периода в «Обзоре»): конверсия воронки, самые запрашиваемые модели мебели, причины эскалаций, рейтинг менеджеров и точный предпросмотр отчёта для Telegram.',
+                en: 'Generates a standardized 7-day operational summary on demand (independent of the Overview period switch): funnel conversion, top requested furniture SKUs, escalation reasons, manager leaderboard and a full Telegram digest preview.',
+            },
+        },
+        {
+            id: 'settings',
+            route: { view: 'settings' },
+            selector: '[data-settings-view]',
+            side: 'top',
+            align: 'center',
+            title: {
+                ru: 'Настройки: ИИ-контроль качества, бюджеты и Telegram',
+                en: 'Settings: AI quality modes, USD caps & Telegram',
+            },
+            description: {
+                ru: 'По умолчанию контуры Bot QA, Manager QA и «Красные флаги» выключены, чтобы не тратить бюджет без вашего решения. Здесь они включаются в 1 клик (Вручную, По расписанию или Ежедневная выборка), задаются лимиты в USD, расширенные параметры модели/транскрипта и проверяется тестовая доставка в Telegram.',
+                en: 'Bot QA, Manager QA and Red Flags start disabled by default to protect spend. Enable Manual, Scheduled or Daily Sample mode in 1 click, set daily USD caps, tune advanced evaluator/transcript options and send a live test alert to Telegram.',
+            },
+        },
+        {
+            id: 'auditSystem',
+            route: { view: 'auditSystem', tab: 'audit' },
+            selector: '[data-audit-system-view]',
+            side: 'top',
+            align: 'center',
+            title: {
+                ru: 'Аудит и статус системы: прозрачность и здоровье',
+                en: 'Audit & System Health: accountability & live status',
+            },
+            description: {
+                ru: 'Вкладка «Журнал действий» хранит неизменяемую историю всех правок в кабинете с точным сравнением «было → стало» и переходом к объекту. Вкладка «Статус системы» в реальном времени проверяет PostgreSQL, кэш Redis, индексы каталога и свежесть снимка Zoho.',
+                en: 'Action Log keeps an immutable history of every admin change with field-level before/after diffs and 1-click entity jump. System Health monitors live PostgreSQL, Redis, catalog embeddings and Zoho snapshot status.',
+            },
+        },
+        {
+            id: 'acceptance',
+            route: { view: 'acceptance' },
+            selector: '[data-acceptance-view]',
+            side: 'top',
+            align: 'center',
+            title: {
+                ru: 'Приёмка (Acceptance): пошаговая самопроверка сценариев',
+                en: 'Self-Test (Acceptance): guided end-to-end verification',
+            },
+            description: {
+                ru: 'Встроенный чек-лист для проверки живых сценариев WhatsApp + Telegram на тестовом номере: подбор каталога, точный SKU и остаток, черновик КП с кнопками менеджера в Telegram («Подтвердить заказ» / «Отклонить» / «Ответить клиенту») и команда /reset.',
+                en: 'Interactive checklist for verifying end-to-end WhatsApp + Telegram scenarios on a test phone: catalog lookup, exact SKU stock, draft quotation approval buttons in Telegram (Approve / Reject / Reply to buyer) and /reset.',
+            },
+        },
+        {
             id: 'guideFinish',
             route: { view: 'guide', tab: 'playbooks' },
             selector: '[data-guide-view]',
@@ -217,8 +277,8 @@ export const TOUR_TRACKS: Record<TourTrackId, NoorTourStepSpec[]> = {
                 en: 'Help & Guide — always one click away!',
             },
             description: {
-                ru: 'Экскурсия завершена! В этом разделе внизу левого меню всегда доступны пошаговые шпаргалки для каждой задачи, карта всех экранов, расшифровка статусов воронки и быстрые мини-туры по ролям.',
-                en: 'Tour complete! This Help & Guide section in the bottom-left menu keeps step-by-step playbooks, a complete section directory, funnel status definitions and focused role mini-tours ready whenever your team needs them.',
+                ru: 'Экскурсия завершена! В этом разделе внизу левого меню всегда доступны 9 пошаговых регламентов (включая работу менеджера в Telegram и самопроверку), карта всех экранов, словарь статусов и быстрые мини-туры по ролям.',
+                en: 'Tour complete! This Help & Guide section in the bottom-left menu keeps 9 step-by-step playbooks (including Telegram manager actions and self-testing), a full section map, status glossary and role mini-tours ready anytime.',
             },
         },
     ],
@@ -451,10 +511,14 @@ export const GUIDE_PLAYBOOKS: GuidePlaybookItem[] = [
                 ru: 'В правом верхнем углу выберите язык интерфейса (RU | EN) и тему оформления (луна/солнце — светлая или тёмная). Выбор сохраняется в вашем браузере автоматически.',
                 en: 'In the top-right header, pick your interface language (RU | EN) and theme (Light or Dark). Your preference is saved in the browser automatically.',
             },
+            {
+                ru: 'Используйте поиск в верхней шапке: в разделах со списком он фильтрует записи на месте, а на сводных экранах («Обзор», «Каталог», «Отчеты», «Настройки») нажатие Enter сразу переносит в «Клиенты и диалоги» с этим запросом (Esc очищает строку).',
+                en: 'Use the top header search: on list screens it filters records in place, while pressing Enter on summary screens (Overview, Catalog, Reports, Settings) jumps straight to Customers & Conversations with that query (Esc clears).',
+            },
         ],
         tip: {
-            ru: 'Одна сессия входа действует сразу для обоих интерфейсов: рабочего кабинета /dashboard/ и инженерных таблиц /admin/.',
-            en: 'One login session authenticates both /dashboard/ and the engineering database tables at /admin/.',
+            ru: 'Одна сессия входа действует сразу для обоих интерфейсов (/dashboard/ и /admin/), а отметка о прохождении тура хранится индивидуально в браузере каждого сотрудника.',
+            en: 'One login session authenticates both /dashboard/ and /admin/, while onboarding tour progress is saved per browser so every team member gets the tour on their own device.',
         },
         route: { view: 'overview' },
         tourTrack: 'full',
@@ -473,12 +537,12 @@ export const GUIDE_PLAYBOOKS: GuidePlaybookItem[] = [
         },
         steps: [
             {
-                ru: 'Откройте «Обзор» и выберите период в верхней шапке: «День», «Неделя», «Месяц» или «Все».',
-                en: 'Open Overview and select Day, Week, Month or All in the top header period switch.',
+                ru: 'Откройте «Обзор»: при первом входе по умолчанию выбран период «Месяц» (чтобы графики всегда были информативны), а любое переключение на «День», «Неделю» или «Все» автоматически запоминается в вашем браузере.',
+                en: 'Open Overview: first visit defaults to Month so charts immediately carry context, and switching to Day, Week or All is remembered automatically in your browser.',
             },
             {
-                ru: 'Проверьте верхнюю полосу «Требует внимания»: если счётчик «Открытые эскалации» больше нуля — кликните по нему, чтобы проверить, ответили ли менеджеры клиентам.',
-                en: 'Inspect the Needs Attention strip: if Open escalations is above zero, click the pill to verify managers followed up with waiting buyers.',
+                ru: 'Проверьте верхнюю полосу «Требует внимания»: если счётчик «Открытые эскалации» или «Сделки на оценку РОПа» больше нуля — кликните по плашке для прямого перехода к списку.',
+                en: 'Inspect the Needs Attention strip: if Open escalations or Deals awaiting review is above zero, click the pill to jump directly to that queue.',
             },
             {
                 ru: 'Посмотрите блоки «Воронка и эффективность» и «Причины эскалаций»: они показывают средний чек в AED, долю целевых лидов и то, почему бот передавал диалоги (опт, кастом, запрос звонка).',
@@ -486,8 +550,8 @@ export const GUIDE_PLAYBOOKS: GuidePlaybookItem[] = [
             },
         ],
         tip: {
-            ru: 'Клик по сегменту графика или карточке языка в «Обзоре» сразу открывает отфильтрованный список соответствующих диалогов.',
-            en: 'Clicking chart segments in Overview drills straight into the matching filtered list in Customers & Conversations.',
+            ru: 'Клик по сегменту графика или карточке языка в «Обзоре» открывает отфильтрованные диалоги, а раздел «Отчеты» всегда строит отдельную фиксированную сводку за 7 дней (аналог еженедельного Telegram-дайджеста).',
+            en: 'Clicking chart segments in Overview drills into matching chats, while Reports always builds a dedicated 7-day digest matching the weekly Telegram executive summary.',
         },
         route: { view: 'overview' },
         tourTrack: 'daily_ops',
@@ -497,25 +561,25 @@ export const GUIDE_PLAYBOOKS: GuidePlaybookItem[] = [
         role: { ru: 'РОП / Оператор', en: 'Sales Lead / Operator' },
         duration: { ru: '2 мин', en: '2 min' },
         title: {
-            ru: '3. Разбор переписки клиента, карточка CRM и закрытие эскалации',
-            en: '3. Reviewing a customer chat, CRM card & closing an escalation',
+            ru: '3. Разбор переписки, расшифровка голоса, правка CRM и закрытие эскалации',
+            en: '3. Reviewing chats, voice transcripts, CRM fields & closing escalations',
         },
         goal: {
-            ru: 'Проверить, что именно ответил Noor, какие товары и КП предложил, и вернуть диалог в штатный статус после работы менеджера.',
-            en: 'Verify what Noor answered, which SKUs/quotes were sent, and close open escalations once resolved.',
+            ru: 'Проверить ответы Noor (включая расшифровку голосовых), обновить поля сделки CRM и вернуть диалог в штатный статус после работы менеджера.',
+            en: 'Verify Noor replies (including voice note transcripts), update CRM deal fields and close open escalations once resolved.',
         },
         steps: [
             {
-                ru: 'Перейдите в «Клиенты и диалоги». Используйте строку поиска (по телефону, имени, номеру КП или заказа SO) либо вкладку «Ожидают оператора».',
-                en: 'Open Customers & Conversations. Search by phone, customer name, quote ID or SO number, or select the Waiting for operator tab.',
+                ru: 'Перейдите в «Клиенты и диалоги». Используйте поиск (телефон, имя, номер КП или заказа SO), быстрые вкладки («Все», «Ожидают оператора», «На разбор» — закрытые эскалации для проверки) или кнопку расширенных фильтров по 4 полям (статус, этап, язык EN/AR, эскалация).',
+                en: 'Open Customers & Conversations. Search by phone/name/quote/SO, use quick tabs (All, Waiting for operator, Needs review for resolved handoffs) or open the 4-field advanced filter panel (status, stage, language, escalation).',
             },
             {
-                ru: 'В шапке чата обратите внимание на цветной статус: «Ведёт Noor» (бот активно отвечает), «Ожидает оператора» (передан человеку) или «Диалог закрыт».',
-                en: 'Check the status badge in the chat header: Handled by Noor (bot active), Waiting for operator (human handoff) or Conversation closed.',
+                ru: 'Изучите ленту WhatsApp и статус в шапке («Ведёт Noor», «Ожидает оператора», «Диалог закрыт»). Если покупатель присылал голосовые сообщения, их текстовая расшифровка отображается прямо внутри пузыря сообщения; кнопкой «Оценить диалог» можно сразу запустить Bot QA.',
+                en: 'Inspect the WhatsApp timeline and header badge. Customer voice notes include inline text transcripts right inside the message bubble, and Evaluate chat triggers an immediate Bot QA check.',
             },
             {
-                ru: 'Нажмите «CRM и детали» справа вверху чата — откроется боковая панель с этапом воронки, статусом сделки, оценкой Bot QA и списком правил бота, сработавших в последнем ответе.',
-                en: 'Click CRM & details in the top-right of the chat to inspect sales stage, deal status, Bot QA score and the exact bot rules applied on the last turn.',
+                ru: 'Нажмите «CRM и детали» справа вверху чата — здесь видны Zoho Contact ID / Zoho Deal ID, применённые правила и оценка Bot QA, а также можно вручную отредактировать и нажать «Сохранить карточку» (имя клиента, статус чата, этап воронки, статус эскалации и статус сделки pending / won / delivered).',
+                en: 'Click CRM & details in the top-right to view Zoho Contact/Deal IDs, applied rules and Bot QA score, or edit and save customer name, chat status, sales stage, escalation state and deal status (pending / won / delivered).',
             },
             {
                 ru: 'Когда живой менеджер завершил консультацию в WhatsApp/Zoho, нажмите «Закрыть эскалацию» в шапке диалога (или в разделе «Очереди и качество»).',
@@ -533,25 +597,25 @@ export const GUIDE_PLAYBOOKS: GuidePlaybookItem[] = [
         role: { ru: 'Контент / Руководитель', en: 'Content / Owner' },
         duration: { ru: '2 мин', en: '2 min' },
         title: {
-            ru: '4. Добавление фактов компании в Базу знаний (доставка, оплата, шоурум)',
-            en: '4. Updating company facts in the Knowledge Base',
+            ru: '4. Добавление фактов в Базу знаний и проверка через «Предпросмотр»',
+            en: '4. Updating Knowledge Base facts & running Safety Preview',
         },
         goal: {
-            ru: 'Оперативно обновить условия доставки, сборки, гарантии или оплаты так, чтобы бот сразу отвечал по новым правилам.',
-            en: 'Update delivery, assembly, warranty or payment terms so Noor answers with the new facts immediately.',
+            ru: 'Оперативно обновить условия доставки, сборки, гарантии или оплаты без дубликатов и опасных формулировок.',
+            en: 'Update delivery, assembly, warranty or payment policies cleanly without semantic duplicates or unsafe promises.',
         },
         steps: [
             {
-                ru: 'Откройте «База знаний». Слева выберите существующую статью для правки или нажмите кнопку «+ Новая» над списком.',
-                en: 'Open Knowledge Base. Select an existing article on the left to edit, or click + New above the list.',
+                ru: 'Откройте «База знаний». Слева выберите существующую статью (обратите внимание на метки «Шаблон Treejar», «Изменён вручную», «Auto-FAQ») или нажмите «+ Новая».',
+                en: 'Open Knowledge Base. Select an existing article on the left (note origin badges: Treejar template, Customized, Auto-FAQ) or click + New.',
             },
             {
-                ru: 'Укажите понятный заголовок, категорию (например, «Доставка и сборка» или «Оплата и VAT 5%»), язык (EN или AR) и точный текст правила без двусмысленностей.',
-                en: 'Fill in a clear title, category (such as Delivery & assembly or Payment & 5% VAT), language (EN or AR) and crisp factual text.',
+                ru: 'Укажите заголовок, категорию («Доставка и сборка», «Оплата и VAT 5%», «Шоурум», «B2B и опт»), язык (EN или AR) и нажмите «Предпросмотр» — система до сохранения проверит готовность индекса, близость к существующим статьям (дубликаты) и стоп-факторы безопасности.',
+                en: 'Fill in title, category, language (EN or AR) and click Preview first — the system checks embedding readiness, semantic duplicate similarity and safety warnings before anything goes live.',
             },
             {
-                ru: 'Нажмите «Сохранить и проиндексировать». Система сразу создаст поисковый вектор (зелёная отметка индекса), и со следующего сообщения покупателя Noor будет использовать обновлённый факт.',
-                en: 'Click Save and index. The server generates the vector embedding immediately (green index badge) and Noor uses it starting from the next customer turn.',
+                ru: 'Нажмите «Сохранить и проиндексировать» (или «Скрыть / удалить» для неактуальной записи). Со следующего сообщения покупателя Noor использует обновлённый факт.',
+                en: 'Click Save and index (or Hide / delete to retire an outdated entry). Noor applies the updated fact starting from the very next customer message.',
             },
         ],
         tip: {
@@ -635,21 +699,21 @@ export const GUIDE_PLAYBOOKS: GuidePlaybookItem[] = [
             en: '7. Configuring AI Quality Controls & checking system health',
         },
         goal: {
-            ru: 'Включить ручную или автоматическую оценку диалогов с понятным дневным бюджетом и проверить здоровье интеграций.',
-            en: 'Enable manual or scheduled quality reviews within a strict USD daily budget and verify live integrations.',
+            ru: 'Включить ручную или автоматическую оценку диалогов с понятным дневным бюджетом и разобрать детальные карточки оценок.',
+            en: 'Enable manual, scheduled or daily-sample quality reviews within a USD budget and inspect detailed evaluation drawers.',
         },
         steps: [
             {
-                ru: 'Перейдите в «Настройки». Если контуры выключены, нажмите кнопку «Включить ручной режим для всех» — это сразу разблокирует кнопки «Оценить» в карточках диалогов и сделок.',
-                en: 'Open Settings. If quality contours are disabled, click Enable manual mode for all to unlock the Evaluate buttons across chats and manager deals.',
+                ru: 'Перейдите в «Настройки». Если контуры выключены, нажмите «Включить ручной режим для всех» — это сразу разблокирует кнопки «Оценить» в чатах и «Сделках РОПа».',
+                en: 'Open Settings. If quality contours are disabled, click Enable manual mode for all to unlock Evaluate buttons across chats and manager deals.',
             },
             {
-                ru: 'При необходимости переключите нужный контур в режим «Авто по расписанию», задайте дневной бюджет в USD и отметьте чекбоксы критериев в блоке «Расширенные настройки инженера».',
-                en: 'Optionally switch any contour to Scheduled mode, set a daily USD cap and toggle individual rubric criteria inside Advanced engineer settings.',
+                ru: 'Выберите подходящий режим («Вручную», «Авто по расписанию» или «Ежедневная выборка»), задайте дневной бюджет в USD, а в блоке «Расширенные настройки инженера» при необходимости уточните модель оценки, объём транскрипта (выкл / сводка / полный), лимиты вызовов и чекбоксы критериев.',
+                en: 'Select Manual, Scheduled or Daily sample mode, set a daily USD cap, and optionally tune evaluator model, transcript mode (disabled / summary / full), call limits and rubric criteria inside Advanced engineer settings.',
             },
             {
-                ru: 'Загляните в «Аудит и статус системы»: вкладка «Статус системы» покажет состояние БД, Redis и Zoho, а «Журнал действий» — полную историю того, кто и когда менял настройки.',
-                en: 'Visit Audit & System Health: System Health shows live DB, Redis and Zoho status, while Action Log keeps a full history of every configuration change.',
+                ru: 'Во вкладке «Очереди и качество → Оценки ИИ и рубрика» кликните по любой строке таблицы, чтобы открыть подробный разбор со временем реакции менеджера и суммой сделки в AED; в разделе «Аудит и статус системы» проверьте БД, Redis, Zoho и журнал изменений «было → стало».',
+                en: 'In Queues & Quality → AI Scores & Rubric, click any review row to inspect first-response speed and AED deal value; in Audit & System Health, verify DB, Redis, Zoho and before/after config diffs.',
             },
         ],
         tip: {
@@ -658,6 +722,70 @@ export const GUIDE_PLAYBOOKS: GuidePlaybookItem[] = [
         },
         route: { view: 'settings' },
         tourTrack: 'quality_settings',
+    },
+    {
+        id: 'telegram-manager-workflow',
+        role: { ru: 'Менеджеры / РОП', en: 'Sales Managers / Lead' },
+        duration: { ru: '2 мин', en: '2 min' },
+        title: {
+            ru: '8. Работа менеджера в Telegram: подтверждение КП, ответы клиенту и команды',
+            en: '8. Manager workflow in Telegram: approving quotes, replying & commands',
+        },
+        goal: {
+            ru: 'Понимать, какие кнопки приходят в рабочий Telegram при оформлении КП и эскалациях и как они отражаются в кабинете.',
+            en: 'Use Telegram operator buttons for draft quotations and escalations and see how actions sync back to the dashboard.',
+        },
+        steps: [
+            {
+                ru: 'Когда клиент запрашивает точное КП (Quotation / Proforma), Noor не отправляет PDF вслепую, а создаёт черновик в Zoho и присылает карточку проверки в Telegram с кнопками «Подтвердить заказ» (отправляет PDF покупателю в WhatsApp), «Отклонить» (блокирует отправку) и «Ответить клиенту».',
+                en: 'When a buyer requests a formal Quotation / Proforma, Noor creates a Zoho draft and posts a review card in Telegram with Approve order (sends the PDF on WhatsApp), Reject (blocks sending) and Reply to customer buttons.',
+            },
+            {
+                ru: 'При передаче сложного вопроса менеджеру в Telegram доступны две кнопки ответа: «Ответить клиенту» (разовый ответ конкретному покупателю) и «📚 FAQ + клиент» (отправляет ответ покупателю и одновременно ставит очищенный вариант в очередь «Кандидаты Auto-FAQ» в Базе знаний).',
+                en: 'On escalated questions Telegram offers two reply actions: Reply to customer (one-off answer to that buyer) and "FAQ + customer" (replies to the buyer and queues a sanitized draft under Auto-FAQ Candidates in Knowledge Base).',
+            },
+            {
+                ru: 'В личном чате с ботом @Treejar_Trading_bot команда /admin выдаёт одноразовую ссылку входа в /dashboard/, а команда /reset сбрасывает контекст выделенного тестового диалога при проверках.',
+                en: 'In a direct chat with @Treejar_Trading_bot, /admin issues a one-time login link to /dashboard/, while /reset clears the dedicated test conversation state during QA runs.',
+            },
+        ],
+        tip: {
+            ru: 'Каждое подтверждение/отклонение КП и каждый ответ менеджера фиксируются в истории чата «Клиенты и диалоги» и в «Журнале действий» аудита.',
+            en: 'Every quote approval/rejection and manager reply is recorded in the Customers & Conversations timeline and the Audit Action Log.',
+        },
+        route: { view: 'queuesQuality', tab: 'escalations' },
+    },
+    {
+        id: 'run-acceptance-self-test',
+        role: { ru: 'Руководитель / Тестировщик', en: 'Owner / QA Reviewer' },
+        duration: { ru: '5 мин', en: '5 min' },
+        title: {
+            ru: '9. Пошаговая приёмка и самопроверка сценариев (раздел «Приёмка» и /test)',
+            en: '9. Guided end-to-end scenario verification (Self-Test & /test)',
+        },
+        goal: {
+            ru: 'Проверить работу цепочки WhatsApp → Noor → Zoho → Telegram по готовым контрольным сценариям и сохранить отчёт тестера.',
+            en: 'Walk through structured WhatsApp → Noor → Zoho → Telegram test cases and submit structured acceptance notes.',
+        },
+        steps: [
+            {
+                ru: 'Откройте пункт «Приёмка» в самом низу левого меню (или прямую страницу /test). В каждой карточке уже заготовлена точная фраза покупателя, ожидаемый ответ бота и ожидаемое поведение в Telegram.',
+                en: 'Open Self-Test (Acceptance) at the bottom of the left sidebar (or visit /test directly). Each scenario card provides the exact buyer prompt, expected Noor reply and expected Telegram behavior.',
+            },
+            {
+                ru: 'Пройдите сценарии по порядку: подбор мебели из каталога, проверка точного артикула и остатка Zoho, неполный запрос счёта без ложной эскалации, выпуск чернового КП с подтверждением/отклонением в Telegram, ответ менеджера и сброс /reset.',
+                en: 'Run the scenarios in order: catalog discovery, exact SKU price & Zoho stock, incomplete proforma without premature escalation, draft quotation approve/reject in Telegram, manager reply and /reset.',
+            },
+            {
+                ru: 'Отметьте статус каждого шага (пройдено / ошибка / пропущено), добавьте комментарий и нажмите кнопку отправки результатов — прогресс черновика также сохраняется локально в браузере.',
+                en: 'Mark each scenario status (pass / fail / skip), add notes and submit the report — draft progress is also auto-saved locally in your browser.',
+            },
+        ],
+        tip: {
+            ru: 'Перед повторным прогоном сценария с того же тестового телефона используйте команду /reset в Telegram или безопасный сброс (RESET) через меню «⋯» в шапке диалога.',
+            en: 'Before re-running a scenario from the same test phone, run /reset in Telegram or use Reset customer data (RESET) from the "⋯" menu in the chat header.',
+        },
+        route: { view: 'acceptance' },
     },
 ];
 
@@ -682,8 +810,8 @@ export const GUIDE_SECTIONS: GuideSectionCard[] = [
             en: 'Executive dashboard: urgent attention strip, 4 KPI cards with period deltas, conversation volume trends, language & target split, sales funnel and escalation reasons.',
         },
         keyActions: {
-            ru: 'Смена периода (День / Неделя / Месяц / Все), быстрый переход к открытым эскалациям и неоценённым сделкам, клик по графикам для фильтрации диалогов.',
-            en: 'Switch period (Day / Week / Month / All), jump straight to open escalations or pending reviews, and click chart segments to filter conversations.',
+            ru: 'Период по умолчанию — «Месяц» с автоматическим запоминанием последнего выбора (День / Неделя / Месяц / Все), переход к эскалациям и сделкам, фильтрация чатов кликом по графику.',
+            en: 'Defaults to Month and remembers your last selected period (Day / Week / Month / All), 1-click jump to escalations/reviews, and chart-click chat filtering.',
         },
         botImpact: {
             ru: 'Только чтение и аналитика — никакие клики здесь не меняют поведение бота.',
@@ -696,12 +824,12 @@ export const GUIDE_SECTIONS: GuideSectionCard[] = [
         group: { ru: 'Блок 1 · Операционная работа', en: 'Group 1 · Operations' },
         title: { ru: 'Клиенты и диалоги', en: 'Customers & Conversations' },
         purpose: {
-            ru: 'Двухколоночное рабочее место для чтения всех переписок WhatsApp, сгруппированных по клиентам, с выезжающей карточкой CRM и применённых правил.',
-            en: 'Two-column workspace for inspecting full WhatsApp histories grouped by customer phone, paired with a slide-over CRM & diagnostics drawer.',
+            ru: 'Двухколоночное рабочее место для чтения переписок WhatsApp (включая расшифровку голосовых сообщений), расширенной фильтрации и работы с выезжающей карточкой CRM.',
+            en: 'Two-column workspace for inspecting full WhatsApp histories (including voice message transcripts), multi-field filtering and editing the slide-over CRM drawer.',
         },
         keyActions: {
-            ru: 'Поиск по телефону/имени/SO, вкладки «Ожидают оператора» и «На разбор», закрытие эскалации, правка этапа/статуса сделки, запуск Bot QA и защищённый сброс тестового клиента (RESET).',
-            en: 'Search by phone/name/SO, filter Waiting for operator, close escalations, update stage/deal status, run Bot QA and reset test conversations (typing RESET).',
+            ru: 'Поиск по телефону/имени/SO, вкладки «Ожидают оператора» и «На разбор», 4 расширенных фильтра, редактирование и сохранение полей сделки + Zoho Contact/Deal ID, запуск Bot QA, закрытие эскалации и сброс теста (RESET).',
+            en: 'Search by phone/name/SO, Waiting for operator & Needs review tabs, 4-field filter panel, edit & save CRM deal fields + Zoho IDs, run Bot QA, close escalations and reset test chats (RESET).',
         },
         botImpact: {
             ru: 'Закрытие эскалации или смена статуса возвращают диалог в штатный режим; сброс удаляет тестовую историю выбранного номера.',
@@ -714,12 +842,12 @@ export const GUIDE_SECTIONS: GuideSectionCard[] = [
         group: { ru: 'Блок 1 · Операционная работа', en: 'Group 1 · Operations' },
         title: { ru: 'Очереди и качество', en: 'Queues & Quality' },
         purpose: {
-            ru: 'Единый центр оперативного контроля из 3 вкладок: «Эскалации» (чаты, переданные людям), «Сделки РОПа» (очередь на оценку работы менеджеров) и «Оценки ИИ и рубрика».',
-            en: 'Unified 3-tab control center: Escalations (human handoffs), Sales Lead Deals (pending Manager QA) and AI Scores & 15-point Rubric.',
+            ru: 'Единый центр оперативного контроля из 3 вкладок: «Эскалации» (фильтр Открытые / Закрытые / Все), «Сделки РОПа» (оценка менеджеров) и «Оценки ИИ и рубрика».',
+            en: 'Unified 3-tab control center: Escalations (Open / Resolved / All filter), Sales Lead Deals (pending Manager QA) and AI Scores & 15-point Rubric.',
         },
         keyActions: {
-            ru: 'Переход из эскалации прямо в чат клиента, закрытие обработанных заявок, запуск оценки менеджера (0–20 баллов) и просмотр эталонной рубрики бота (0–30 баллов).',
-            en: 'Jump from an escalation to the chat, resolve handled items, trigger 20-point Manager QA reviews and inspect the 30-point Bot QA rubric.',
+            ru: 'Переход из эскалации в чат, закрытие заявок, оценка менеджера (0–20), эталонная рубрика бота (0–30) и клик по строке оценки для просмотра скорости ответа и суммы сделки в AED.',
+            en: 'Jump from an escalation to the chat, resolve items, run 20-pt Manager QA, view the 30-pt Bot QA rubric and click any review row for response time & AED deal details.',
         },
         botImpact: {
             ru: 'Помогает находить слабые места в консультациях и переводить типовые вопросы в Базу знаний или Правила бота.',
@@ -736,8 +864,8 @@ export const GUIDE_SECTIONS: GuideSectionCard[] = [
             en: 'Repository of verified Treejar company facts: UAE delivery & installation, 5% VAT & quotation policy, showroom details, warranty and B2B terms.',
         },
         keyActions: {
-            ru: 'Создание и редактирование статей, переиндексация поиска, одобрение кандидатов Auto-FAQ из Telegram и безопасное восстановление базовых шаблонов.',
-            en: 'Create/edit articles, reindex embeddings, approve Telegram Auto-FAQ candidates and safely restore canonical Treejar templates.',
+            ru: 'Создание/правка статей, «Предпросмотр» дубликатов и безопасности до сохранения, метки источника, скрытие устаревших статей, одобрение Auto-FAQ из Telegram и восстановление шаблонов.',
+            en: 'Create/edit articles, run duplicate & safety Preview before saving, inspect origin badges, hide outdated items, approve Telegram Auto-FAQ and restore canonical templates.',
         },
         botImpact: {
             ru: 'Прямое и мгновенное: на каждом сообщении клиента Noor ищет по смыслу активные статьи с индексом и отвечает строго по ним.',
@@ -786,11 +914,11 @@ export const GUIDE_SECTIONS: GuideSectionCard[] = [
         group: { ru: 'Блок 3 · Система и отчёты', en: 'Group 3 · System & Reports' },
         title: { ru: 'Отчеты', en: 'Reports' },
         purpose: {
-            ru: 'Генератор сводного операционного отчёта за последние 7 дней с предпросмотром текста для Telegram, топ-товарами по спросу и рейтингом менеджеров.',
-            en: '7-day operations report generator with Telegram digest preview, most-requested products and manager leaderboard.',
+            ru: 'Генератор стандартизированного операционного отчёта за последние 7 дней (отдельно от переключателя периода в «Обзоре») с предпросмотром текста для Telegram, топ-товарами и рейтингом менеджеров.',
+            en: 'Standardized 7-day operations report generator (independent of the Overview period switch) with Telegram digest preview, top products and manager leaderboard.',
         },
         keyActions: {
-            ru: 'Кнопка «Сформировать отчет» пересчитывает свежую сводку за 7 суток без ожидания расписания.',
+            ru: 'Кнопка «Сформировать отчет» пересчитывает свежую сводку за 7 суток без ожидания еженедельного расписания.',
             en: 'Click Generate report to build an up-to-the-minute 7-day summary on demand.',
         },
         botImpact: {
@@ -804,12 +932,12 @@ export const GUIDE_SECTIONS: GuideSectionCard[] = [
         group: { ru: 'Блок 3 · Система и отчёты', en: 'Group 3 · System & Reports' },
         title: { ru: 'Настройки', en: 'Settings' },
         purpose: {
-            ru: 'Управление тремя контурами ИИ-контроля качества (Bot QA, Manager QA, Красные флаги), дневными бюджетами в USD и проверка связи с Telegram.',
-            en: 'Configuration for the 3 AI quality contours (Bot QA, Manager QA, Red Flags), daily USD budgets and Telegram connectivity.',
+            ru: 'Управление тремя контурами ИИ-контроля качества (Bot QA, Manager QA, Красные флаги), бюджетами в USD, инженерными параметрами оценки и связью с Telegram.',
+            en: 'Configuration for the 3 AI quality contours (Bot QA, Manager QA, Red Flags), daily USD caps, advanced evaluator parameters and Telegram connectivity.',
         },
         keyActions: {
-            ru: 'Включение ручного режима в 1 клик, настройка расписания, лимитов и чекбоксов критериев оценки, отправка тестового уведомления в Telegram.',
-            en: '1-click Manual Mode activation, schedule/budget configuration, individual rubric criteria toggles and test Telegram notification.',
+            ru: 'Режимы Выкл / Вручную / По расписанию / Ежедневная выборка, выбор модели и полноты транскрипта, лимиты вызовов, чекбоксы критериев и тестовое сообщение в Telegram.',
+            en: 'Disabled / Manual / Scheduled / Daily sample modes, evaluator model & transcript depth, call limits, rubric criteria toggles and test Telegram notification.',
         },
         botImpact: {
             ru: 'Управляет работой ИИ-аудитора качества и тестовой проверкой уведомлений операторов.',
@@ -840,12 +968,12 @@ export const GUIDE_SECTIONS: GuideSectionCard[] = [
         group: { ru: 'Дополнительно · Проверка и БД', en: 'Additional · Self-Test & DB' },
         title: { ru: 'Самопроверка (Acceptance)', en: 'Self-Test (Acceptance)' },
         purpose: {
-            ru: 'Встроенный интерактивный стенд для приёмочного прогона типовых сценариев WhatsApp и Telegram по шагам.',
-            en: 'Built-in interactive workbench for running structured WhatsApp and Telegram acceptance test scenarios.',
+            ru: 'Встроенный интерактивный стенд (также доступен по прямой ссылке /test) для приёмочного прогона сценариев WhatsApp + Telegram по шагам.',
+            en: 'Built-in interactive workbench (also accessible directly at /test) for running structured WhatsApp + Telegram acceptance scenarios.',
         },
         keyActions: {
-            ru: 'Выбор готового сценария проверки, отслеживание прохождения шагов и фиксация комментариев тестера.',
-            en: 'Pick a guided test scenario, track step completion and record tester notes.',
+            ru: 'Прогон готовых сценариев (каталог, SKU, КП с кнопками Подтвердить/Отклонить в Telegram, ответ менеджера, /reset), отметки Pass/Fail и отправка отчёта тестера.',
+            en: 'Run guided scenarios (catalog, SKU stock, Telegram quote Approve/Reject, manager reply, /reset), mark Pass/Fail and submit tester notes.',
         },
         botImpact: {
             ru: 'Используется во время приёмки новых функций на выделенном тестовом номере.',
@@ -1051,6 +1179,49 @@ export const GUIDE_GLOSSARY: GlossaryGroup[] = [
             },
         ],
     },
+    {
+        id: 'kb-and-crm-badges',
+        title: {
+            ru: '5. Метки статей Базы знаний и статусы сделок CRM',
+            en: '5. Knowledge Base Origin Badges & CRM Deal Statuses',
+        },
+        subtitle: {
+            ru: 'Помогают отличать базовые шаблоны от ручных правок и отслеживать состояние сделки в карточке клиента.',
+            en: 'Distinguish factory templates from custom edits and track deal lifecycle inside the CRM drawer.',
+        },
+        items: [
+            {
+                badge: {
+                    ru: 'Шаблон Treejar / Изменён вручную',
+                    en: 'Treejar template / Customized',
+                },
+                tone: 'blue',
+                meaning: {
+                    ru: '«Шаблон Treejar» — эталонная заводская статья или правило. Если вы отредактировали её текст, метка меняется на «Изменён вручную» — «Безопасный режим» синхронизации бережно сохранит вашу правку.',
+                    en: 'Treejar template marks canonical factory items. Editing one switches its badge to Customized so Safe Mode template sync never overwrites your wording.',
+                },
+            },
+            {
+                badge: { ru: 'Auto-FAQ / Вручную', en: 'Auto-FAQ / Manual entry' },
+                tone: 'green',
+                meaning: {
+                    ru: '«Auto-FAQ» — статья, выросшая из реального ответа менеджера в Telegram (кнопка «📚 FAQ + клиент») после одобрения в кабинете; «Вручную» — созданная напрямую через кнопку «+ Новая».',
+                    en: 'Auto-FAQ marks entries promoted from a Telegram manager answer ("FAQ + customer"); Manual entry marks articles created directly via + New in the dashboard.',
+                },
+            },
+            {
+                badge: {
+                    ru: 'Сделка: pending → won → delivered',
+                    en: 'Deal: pending → won → delivered',
+                },
+                tone: 'amber',
+                meaning: {
+                    ru: 'Статус коммерческой сделки в правой панели «CRM и детали» (рядом с Zoho Contact ID и Zoho Deal ID): в работе (pending), выиграна/оплачена (won) или доставлена покупателю (delivered).',
+                    en: 'Deal lifecycle state editable in the right-hand CRM & details drawer (alongside Zoho Contact ID and Zoho Deal ID): in progress (pending), closed-won (won) or fulfilled (delivered).',
+                },
+            },
+        ],
+    },
 ];
 
 export interface GuideFaqItem {
@@ -1126,6 +1297,28 @@ export const GUIDE_FAQ: GuideFaqItem[] = [
             en: 'Treejar Catalog API is your website storefront source for product names, descriptions, photos, canonical URLs, catalog prices and search embeddings. Zoho Inventory is the source of truth for real-time warehouse stock (also refreshed automatically every 5 minutes) and formal PDF Quotations.',
         },
     },
+    {
+        id: 'faq-period-and-reports',
+        question: {
+            ru: 'Почему в «Обзоре» по умолчанию открыт период «Месяц», а в разделе «Отчеты» строится сводка за 7 дней?',
+            en: 'Why does Overview default to Month while the Reports section builds a 7-day summary?',
+        },
+        answer: {
+            ru: 'В «Обзоре» при первом входе включён «Месяц», чтобы графики и карточки KPI сразу показывали наглядную динамику даже после спокойных недель, а любое переключение (День / Неделя / Месяц / Все) автоматически запоминается в вашем браузере для следующих визитов. Раздел «Отчеты» решает другую задачу: он формирует стандартизированный 7-дневный операционный дайджест — точно такой же, какой уходит руководителю в еженедельном Telegram-отчёте.',
+            en: 'Overview defaults to Month on first visit so KPI cards and trend charts always carry meaningful context, and remembers whichever period (Day / Week / Month / All) you pick next in your browser. Reports serves a distinct purpose: generating the standardized 7-day operational digest that mirrors the weekly Telegram executive report.',
+        },
+    },
+    {
+        id: 'faq-shared-login-tour',
+        question: {
+            ru: 'Если один сотрудник уже вошёл через свой Telegram и прошёл обучение, запустится ли тур у другого коллеги?',
+            en: 'If one admin already signed in via Telegram and finished the tour, will another teammate still get the walkthrough?',
+        },
+        answer: {
+            ru: 'Да, обязательно запустится. Отметка о прохождении тура сохраняется локально в браузере конкретного устройства, а не на сервере. Когда другой сотрудник войдёт со своего компьютера или телефона, система автоматически проведёт для него полную экскурсию. Кроме того, прямая ссылка /dashboard/?tour=1 и кнопка «Интерактивный тур» в шапке запускают обучение повторно в любой момент.',
+            en: 'Yes. Tour completion is stored locally in each user’s own browser rather than in the server database. When a teammate signs in on their own workstation or phone, the full interactive tour starts automatically — and /dashboard/?tour=1 or the header Tour button replays it anytime.',
+        },
+    },
 ];
 
 export interface PipelineStepItem {
@@ -1139,8 +1332,8 @@ export const GUIDE_PIPELINE_STEPS: PipelineStepItem[] = [
         step: '01',
         title: { ru: 'Клиент пишет в WhatsApp', en: 'Buyer writes on WhatsApp' },
         detail: {
-            ru: 'Сообщение поступает через Wazzup (текст, голос, фото, EN или AR) и попадает в очередь обработки Noor.',
-            en: 'Inbound message arrives via Wazzup (text, voice, EN or AR) into Noor’s processing pipeline.',
+            ru: 'Сообщение поступает через Wazzup (текст, голосовые с авторасшифровкой, фото, EN или AR) и попадает в конвейер Noor.',
+            en: 'Inbound message arrives via Wazzup (text, auto-transcribed voice notes, EN or AR) into Noor’s pipeline.',
         },
     },
     {

@@ -473,6 +473,7 @@ export function SegmentedControl<T extends string>({
                 <button
                     key={item.value}
                     type="button"
+                    aria-pressed={item.value === value}
                     onClick={() => onChange(item.value)}
                     className={cx(
                         'rounded-md px-2.5 py-1 text-xs font-semibold transition',
