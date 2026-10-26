@@ -4,6 +4,16 @@ export interface NotificationConfig {
     telegram_chat_id: string;
 }
 
+export interface AdminSessionInfo {
+    authenticated: boolean;
+    auth_method: 'telegram' | 'password' | 'session';
+    display_name: string | null;
+    username: string | null;
+    actor: string;
+    logout_url: string;
+    sqladmin_url: string;
+}
+
 export interface NotificationTestResponse {
     status: string;
     reason?: string | null;

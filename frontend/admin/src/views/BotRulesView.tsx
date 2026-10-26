@@ -106,12 +106,14 @@ interface BotRulesViewProps {
     globalSearch?: string;
     selectedId?: string;
     onSelectId?: (id: string) => void;
+    refreshSignal?: number;
 }
 
 export default function BotRulesView({
     globalSearch = '',
     selectedId: externalSelectedId,
     onSelectId,
+    refreshSignal = 0,
 }: BotRulesViewProps) {
     const { t, label } = useI18n();
     const { pushToast } = useToast();
@@ -171,6 +173,11 @@ export default function BotRulesView({
     useEffect(() => {
         load().catch((err: unknown) => setError(errorMessage(err, t)));
     }, [load, t]);
+
+    useEffect(() => {
+        if (!refreshSignal) return;
+        load().catch((err: unknown) => setError(errorMessage(err, t)));
+    }, [refreshSignal, load, t]);
 
     function applySelection(target: AdminBotRuleRead | 'new') {
         if (target === 'new') {

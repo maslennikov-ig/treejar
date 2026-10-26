@@ -78,6 +78,7 @@ const STUBS = new Map([
         export const Bot = Icon;
         export const Boxes = Icon;
         export const CheckCircle2 = Icon;
+        export const ChevronDown = Icon;
         export const ChevronLeft = Icon;
         export const ChevronRight = Icon;
         export const ClipboardCheck = Icon;
@@ -95,6 +96,7 @@ const STUBS = new Map([
         export const Inbox = Icon;
         export const Info = Icon;
         export const LifeBuoy = Icon;
+        export const LogOut = Icon;
         export const MessageCircle = Icon;
         export const Moon = Icon;
         export const MoreHorizontal = Icon;
@@ -169,7 +171,10 @@ try {
     assert.match(html, /Выберите клиента в списке слева, чтобы открыть переписку/);
     assert.match(html, /data-section-banner="conversations"/, 'Conversations view should start with a section banner');
     assert.match(html, /data-lang-toggle/, 'Header should render the RU | EN toggle');
-    assert.match(html, /data-theme-toggle/, 'Header/Sidebar should render the Light/Dark theme toggle');
+    assert.match(html, /data-theme-toggle/, 'Header should render the Light/Dark theme toggle');
+    assert.doesNotMatch(html, /data-sidebar-theme-toggle/, 'Sidebar must not duplicate the theme toggle');
+    assert.doesNotMatch(html, /data-header-guide-btn/, 'Header must not duplicate the Guide button');
+    assert.match(html, /data-admin-account-btn/, 'Header should render interactive admin account menu button');
     assert.match(html, /<input[^>]*type="search"[^>]*value=""/, 'Header search should be a controlled input');
     assert.doesNotMatch(html, /\btitle="/, 'Dashboard should not rely on native title tooltips');
     for (const englishLabel of ['Reset preview', 'Applied bot rules', 'Customers &amp; Conversations', 'Select a customer', 'Search...']) {

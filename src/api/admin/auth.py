@@ -148,7 +148,15 @@ class AdminAuth(AuthenticationBackend):
         is_valid_pass = secrets.compare_digest(password, settings.admin_password)
 
         if is_valid_user and is_valid_pass:
-            request.session.update({"token": "admin_session"})
+            request.session.update(
+                {
+                    "token": "admin_session",
+                    "auth_method": "password",
+                    "admin_display_name": username,
+                    "admin_username": username,
+                    "admin_actor": username or "admin",
+                }
+            )
             return True
         return False
 

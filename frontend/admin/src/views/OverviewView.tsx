@@ -35,6 +35,7 @@ export interface OverviewViewProps {
     error: string | null;
     onNavigate: (next: Partial<AdminRouteState> & { view: AdminRouteState['view'] }) => void;
     onRefresh: () => void;
+    refreshSignal?: number;
 }
 
 function computeSeriesDeltaPct(points: TimeseriesResponse['points']): number | null {
@@ -60,6 +61,7 @@ export default function OverviewView({
     error,
     onNavigate,
     onRefresh,
+    refreshSignal = 0,
 }: OverviewViewProps) {
     const { t, formatNumber } = useI18n();
     const [pendingReviewsCount, setPendingReviewsCount] = useState<number>(0);
@@ -72,7 +74,7 @@ export default function OverviewView({
         fetchCatalogStatus()
             .then((status) => setCatalogStatus(status))
             .catch(() => setCatalogStatus(null));
-    }, [period]);
+    }, [period, refreshSignal]);
 
     const volumeDelta = computeSeriesDeltaPct(timeseries?.points ?? []);
     const escalationRate =
@@ -212,7 +214,7 @@ export default function OverviewView({
                             tooltip={t('metric.conversionRate.help')}
                             icon={<TrendingUp className="h-4 w-4 text-emerald-500" />}
                             onClick={() =>
-                                onNavigate({ view: 'conversations', status: 'completed' })
+                                onNavigate({ view: 'conversations', filter: 'deals' })
                             }
                         />
                         <KpiCard

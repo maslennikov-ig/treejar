@@ -1,15 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import {
     AlertTriangle,
-    BookOpen,
+    ArrowRight,
+    ChevronDown,
+    Database,
+    History,
+    LogOut,
     Moon,
     RefreshCw,
     Search,
     Settings,
     Sparkles,
     Sun,
+    X,
 } from 'lucide-react';
+import { fetchAdminSession } from '@/api/operators';
 import AcceptanceDemo from '@/components/AcceptanceDemo';
 import { HelpTooltip } from '@/components/HelpTooltip';
 import { useOnboardingTour } from '@/components/OnboardingTour';
@@ -25,6 +31,7 @@ import { getAppRouteMode } from '@/routes';
 import { ThemeProvider, useTheme } from '@/theme';
 import type { AdminTheme } from '@/theme';
 import type { Period } from '@/types/metrics';
+import type { AdminSessionInfo } from '@/types/operators';
 import AuditSystemView from '@/views/AuditSystemView';
 import BotRulesView from '@/views/BotRulesView';
 import CatalogView from '@/views/CatalogView';
@@ -117,6 +124,10 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
 
     const [period, setPeriod] = useState<Period>('week');
     const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+    const [refreshSignal, setRefreshSignal] = useState(0);
+    const [sessionInfo, setSessionInfo] = useState<AdminSessionInfo | null>(null);
+    const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+    const accountMenuRef = useRef<HTMLDivElement | null>(null);
     const { data, timeseries, loading, error, refetch } = useMetrics(period);
 
     const [queueCounts, setQueueCounts] = useState<{
@@ -124,6 +135,39 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
         pendingReviews: number;
     }>({ escalations: 0, pendingReviews: 0 });
     const [kbCandidatesCount, setKbCandidatesCount] = useState<number>(0);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        fetchAdminSession()
+            .then((info) => setSessionInfo(info))
+            .catch(() => {
+                // Keep fallback session label when offline or unmounted.
+            });
+    }, []);
+
+    useEffect(() => {
+        if (!accountMenuOpen || typeof document === 'undefined') return;
+        const handleOutsideClick = (event: MouseEvent) => {
+            if (
+                accountMenuRef.current &&
+                event.target instanceof Node &&
+                !accountMenuRef.current.contains(event.target)
+            ) {
+                setAccountMenuOpen(false);
+            }
+        };
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setAccountMenuOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleOutsideClick);
+        document.addEventListener('keydown', handleEscape);
+        return () => {
+            document.removeEventListener('mousedown', handleOutsideClick);
+            document.removeEventListener('keydown', handleEscape);
+        };
+    }, [accountMenuOpen]);
 
     useEffect(() => {
         if (data?.escalation_count !== undefined && queueCounts.escalations === 0) {
@@ -154,7 +198,21 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
                 : t('nav.conversations');
 
     const searchable = SEARCHABLE_VIEWS.includes(activeView);
-    const showHeaderSearch = !VIEWS_WITH_LOCAL_SEARCH.includes(activeView);
+    const showHeaderSearch =
+        !VIEWS_WITH_LOCAL_SEARCH.includes(activeView) && activeView !== 'acceptance';
+    const showHeaderRefresh = activeView !== 'guide' && activeView !== 'acceptance';
+    const sessionDisplayName = sessionInfo?.display_name || t('header.admin');
+    const authMethodLabel =
+        sessionInfo?.auth_method === 'telegram'
+            ? t('header.authMethod.telegram')
+            : sessionInfo?.auth_method === 'password'
+              ? t('header.authMethod.password')
+              : t('header.authMethod.session');
+
+    function handleGlobalRefresh() {
+        void refetch();
+        setRefreshSignal((prev) => prev + 1);
+    }
 
     function handleSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
         if (event.key === 'Enter' && !searchable && globalSearchQuery.trim()) {
@@ -193,23 +251,48 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
 
                             {showHeaderSearch && (
                                 <div className="relative flex items-center gap-1.5">
-                                    <Search
-                                        size={15}
-                                        className="pointer-events-none absolute left-3 top-2.5 text-[var(--text-muted)]"
-                                    />
-                                    <input
-                                        type="search"
-                                        value={globalSearchQuery}
-                                        onChange={(event) => setGlobalSearchQuery(event.target.value)}
-                                        onKeyDown={handleSearchKeyDown}
-                                        aria-label={t('header.searchLabel')}
-                                        placeholder={
-                                            searchable
-                                                ? t('header.searchPlaceholder')
-                                                : t('header.searchPlaceholderJump')
-                                        }
-                                        className="admin-input h-8 w-[260px] rounded-lg pl-8 pr-3 text-xs outline-none"
-                                    />
+                                    <div className="relative flex items-center">
+                                        <Search
+                                            size={15}
+                                            className="pointer-events-none absolute left-3 top-2 text-[var(--text-muted)]"
+                                        />
+                                        <input
+                                            type="search"
+                                            value={globalSearchQuery}
+                                            onChange={(event) => setGlobalSearchQuery(event.target.value)}
+                                            onKeyDown={handleSearchKeyDown}
+                                            aria-label={t('header.searchLabel')}
+                                            placeholder={
+                                                searchable
+                                                    ? t('header.searchPlaceholder')
+                                                    : t('header.searchPlaceholderJump')
+                                            }
+                                            className="admin-input h-8 w-[260px] rounded-lg pl-8 pr-7 text-xs outline-none"
+                                        />
+                                        {globalSearchQuery && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setGlobalSearchQuery('')}
+                                                aria-label={t('header.searchClear')}
+                                                data-header-search-clear=""
+                                                className="absolute right-2 inline-flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                                            >
+                                                <X size={13} />
+                                            </button>
+                                        )}
+                                    </div>
+                                    {!searchable && globalSearchQuery.trim() && (
+                                        <button
+                                            type="button"
+                                            onClick={() => navigate({ view: 'conversations' })}
+                                            aria-label={t('header.searchJumpBtn')}
+                                            data-header-search-submit=""
+                                            className="inline-flex h-8 items-center gap-1 rounded-lg bg-[var(--accent-primary)] px-2.5 text-xs font-semibold text-white transition hover:opacity-90"
+                                        >
+                                            <span>{t('header.searchJumpBtn')}</span>
+                                            <ArrowRight size={13} />
+                                        </button>
+                                    )}
                                     <HelpTooltip text={t('header.searchHelp')} />
                                 </div>
                             )}
@@ -232,26 +315,11 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
                                 onClick={() => startTour('full')}
                                 data-tour-trigger=""
                                 aria-label={t('header.startTour')}
-                                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--accent-soft)] px-2.5 text-xs font-semibold text-[var(--accent-primary)] transition hover:opacity-90"
+                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--accent-primary)]/25 bg-[var(--accent-soft)] px-2.5 text-xs font-semibold text-[var(--accent-primary)] transition hover:opacity-90"
                             >
                                 <Sparkles size={14} />
                                 <span className="hidden lg:inline">{t('header.startTour')}</span>
                                 <span className="lg:hidden">{t('header.startTourShort')}</span>
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={() => navigate({ view: 'guide' })}
-                                data-header-guide-btn=""
-                                aria-label={t('header.openGuide')}
-                                className={cx(
-                                    'admin-subpanel inline-flex h-8 w-8 items-center justify-center rounded-lg transition',
-                                    activeView === 'guide'
-                                        ? 'border-[var(--accent-primary)] text-[var(--accent-primary)]'
-                                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
-                                )}
-                            >
-                                <BookOpen size={15} />
                             </button>
 
                             <div
@@ -292,20 +360,114 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
                                 {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
                             </button>
 
-                            <button
-                                type="button"
-                                onClick={() => void refetch()}
-                                className="admin-subpanel inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                                aria-label={t('common.refresh')}
-                            >
-                                <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-                            </button>
+                            {showHeaderRefresh && (
+                                <button
+                                    type="button"
+                                    onClick={handleGlobalRefresh}
+                                    data-header-refresh-btn=""
+                                    className="admin-subpanel inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                                    aria-label={t('common.refresh')}
+                                >
+                                    <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+                                </button>
+                            )}
 
-                            <div className="ml-1 hidden h-8 items-center gap-2 border-l border-[var(--border-subtle)] pl-3 text-xs font-medium text-[var(--text-secondary)] sm:flex">
-                                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[var(--accent-primary)]">
-                                    <Settings size={14} />
-                                </div>
-                                <span>{t('header.admin')}</span>
+                            <div
+                                ref={accountMenuRef}
+                                className="relative ml-1 border-l border-[var(--border-subtle)] pl-2.5"
+                            >
+                                <button
+                                    type="button"
+                                    onClick={() => setAccountMenuOpen((open) => !open)}
+                                    aria-haspopup="menu"
+                                    aria-expanded={accountMenuOpen}
+                                    aria-label={t('header.accountMenuLabel')}
+                                    data-admin-account-btn=""
+                                    className="admin-subpanel inline-flex h-8 items-center gap-2 rounded-lg px-2 text-xs font-medium text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]"
+                                >
+                                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[var(--accent-primary)]">
+                                        <Settings size={13} />
+                                    </span>
+                                    <span className="hidden max-w-[140px] truncate sm:inline">
+                                        {sessionDisplayName}
+                                    </span>
+                                    <ChevronDown size={13} className="text-[var(--text-muted)]" />
+                                </button>
+
+                                {accountMenuOpen && (
+                                    <div
+                                        role="menu"
+                                        data-admin-account-menu=""
+                                        className="admin-panel absolute right-0 top-10 z-50 w-72 rounded-xl p-2 shadow-xl"
+                                    >
+                                        <div className="border-b border-[var(--border-subtle)] px-2.5 py-2">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="truncate text-xs font-bold text-[var(--text-primary)]">
+                                                    {sessionDisplayName}
+                                                </span>
+                                                <span className="shrink-0 rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-primary)]">
+                                                    {authMethodLabel}
+                                                </span>
+                                            </div>
+                                            {sessionInfo?.username && (
+                                                <p className="mt-0.5 font-mono text-[11px] text-[var(--text-muted)]">
+                                                    @{sessionInfo.username}
+                                                </p>
+                                            )}
+                                            <p className="mt-1 text-[11px] leading-snug text-[var(--text-secondary)]">
+                                                {t('header.sessionSharedNote')}
+                                            </p>
+                                        </div>
+
+                                        <div className="mt-1 space-y-0.5">
+                                            <button
+                                                type="button"
+                                                role="menuitem"
+                                                onClick={() => {
+                                                    setAccountMenuOpen(false);
+                                                    navigate({ view: 'settings' });
+                                                }}
+                                                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                                            >
+                                                <Settings size={14} />
+                                                <span>{t('header.menuSettings')}</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                role="menuitem"
+                                                onClick={() => {
+                                                    setAccountMenuOpen(false);
+                                                    navigate({ view: 'auditSystem', tab: 'audit' });
+                                                }}
+                                                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                                            >
+                                                <History size={14} />
+                                                <span>{t('header.menuAudit')}</span>
+                                            </button>
+                                            <a
+                                                role="menuitem"
+                                                href={sessionInfo?.sqladmin_url || '/admin/'}
+                                                onClick={() => setAccountMenuOpen(false)}
+                                                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                                            >
+                                                <Database size={14} />
+                                                <span>{t('header.menuSqlAdmin')}</span>
+                                            </a>
+                                        </div>
+
+                                        <div className="mt-1 border-t border-[var(--border-subtle)] pt-1">
+                                            <a
+                                                role="menuitem"
+                                                href={sessionInfo?.logout_url || '/admin/logout'}
+                                                data-admin-logout-link=""
+                                                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-rose-600 transition hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/50"
+                                            >
+                                                <LogOut size={14} />
+                                                <span>{t('header.menuLogout')}</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </header>
@@ -328,7 +490,8 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
                                     loading={loading}
                                     error={error}
                                     onNavigate={navigate}
-                                    onRefresh={() => void refetch()}
+                                    onRefresh={handleGlobalRefresh}
+                                    refreshSignal={refreshSignal}
                                 />
                             </div>
                         )}
@@ -337,11 +500,14 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
                             <ConversationsView
                                 globalSearch={globalSearchQuery}
                                 initialId={route.id}
+                                initialFilter={route.filter}
                                 initialLanguage={route.language}
                                 initialStatus={route.status}
                                 initialStage={route.stage}
                                 initialEscalation={route.escalation}
+                                refreshSignal={refreshSignal}
                                 onSelectConversationId={(id) => navigate({ id }, true)}
+                                onClearRouteFilter={() => navigate({ filter: undefined }, true)}
                             />
                         )}
 
@@ -355,6 +521,7 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
                                 }
                                 onCountsChange={setQueueCounts}
                                 refetchMetrics={() => void refetch()}
+                                refreshSignal={refreshSignal}
                             />
                         )}
 
@@ -364,6 +531,7 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
                                 selectedId={route.id}
                                 onSelectId={(id) => navigate({ id: id || undefined }, true)}
                                 onCandidatesCountChange={setKbCandidatesCount}
+                                refreshSignal={refreshSignal}
                             />
                         )}
 
@@ -372,14 +540,15 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
                                 globalSearch={globalSearchQuery}
                                 selectedId={route.id}
                                 onSelectId={(id) => navigate({ id: id || undefined }, true)}
+                                refreshSignal={refreshSignal}
                             />
                         )}
 
-                        {activeView === 'catalog' && <CatalogView />}
+                        {activeView === 'catalog' && <CatalogView refreshSignal={refreshSignal} />}
 
-                        {activeView === 'reports' && <ReportsView />}
+                        {activeView === 'reports' && <ReportsView refreshSignal={refreshSignal} />}
 
-                        {activeView === 'settings' && <SettingsView />}
+                        {activeView === 'settings' && <SettingsView refreshSignal={refreshSignal} />}
 
                         {activeView === 'auditSystem' && (
                             <AuditSystemView
@@ -387,6 +556,7 @@ function DashboardApp({ initialView }: { initialView?: AdminViewId }) {
                                 activeTab={route.tab}
                                 onTabChange={(tab) => navigate({ tab })}
                                 onNavigateEntity={(view, id) => navigate({ view, id })}
+                                refreshSignal={refreshSignal}
                             />
                         )}
 

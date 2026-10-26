@@ -38,6 +38,7 @@ const AI_QUALITY_MODELS: string[] = [
 
 interface Props {
     initialControls?: AIQualityControlsResponse | null;
+    refreshSignal?: number;
 }
 
 interface StatusMessage {
@@ -123,7 +124,10 @@ function modeBadgeClasses(mode: AIQualityMode): string {
     return 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300';
 }
 
-export default function AIQualityControlsPanel({ initialControls = null }: Props) {
+export default function AIQualityControlsPanel({
+    initialControls = null,
+    refreshSignal = 0,
+}: Props) {
     const { t, tx } = useI18n();
     const [controls, setControls] = useState<AIQualityControlsResponse | null>(initialControls);
     const [draft, setDraft] = useState<AIQualityControlsConfig | null>(
@@ -158,6 +162,13 @@ export default function AIQualityControlsPanel({ initialControls = null }: Props
         }
         void loadControls();
     }, [initialControls, loadControls]);
+
+    useEffect(() => {
+        if (!refreshSignal || initialControls !== null) {
+            return;
+        }
+        void loadControls();
+    }, [refreshSignal, initialControls, loadControls]);
 
     const updateScope = <K extends keyof AIQualityScopeConfig>(
         scope: AIQualityScope,
@@ -218,10 +229,19 @@ export default function AIQualityControlsPanel({ initialControls = null }: Props
         updateScope(scope, field, Number.isNaN(parsed) ? 0 : parsed);
     };
 
-    const updateUsdBudgetField = (scope: AIQualityScope, rawUsd: string) => {
+    const updateAllUsdBudgets = (rawUsd: string) => {
         const parsed = Number.parseFloat(rawUsd);
         const cents = Number.isNaN(parsed) ? 0 : Math.max(0, Math.round(parsed * 100));
-        updateScope(scope, 'daily_budget_cents', cents);
+        setDraft((current) => {
+            if (!current) {
+                return current;
+            }
+            return {
+                bot_qa: { ...current.bot_qa, daily_budget_cents: cents },
+                manager_qa: { ...current.manager_qa, daily_budget_cents: cents },
+                red_flags: { ...current.red_flags, daily_budget_cents: cents },
+            };
+        });
     };
 
     const toggleCriterion = (scope: AIQualityScope, key: string, enabled: boolean) => {
@@ -255,12 +275,15 @@ export default function AIQualityControlsPanel({ initialControls = null }: Props
             applyResponse(saved);
             setStatus({
                 tone: 'success',
-                text: t('aiqc.saved'),
+                text: t('aiqc.saved', { scope: t('aiqc.allScopes') }),
             });
         } catch (err) {
             setStatus({
                 tone: 'error',
-                text: err instanceof Error ? err.message : t('aiqc.saveFailed'),
+                text:
+                    err instanceof Error
+                        ? err.message
+                        : t('aiqc.saveFailed', { scope: t('aiqc.allScopes') }),
             });
         } finally {
             setSaving(false);
@@ -450,9 +473,10 @@ export default function AIQualityControlsPanel({ initialControls = null }: Props
                                         min={0}
                                         max={50}
                                         step={0.25}
+                                        data-aiqc-per-contour-usd=""
                                         value={(draft.bot_qa.daily_budget_cents / 100).toFixed(2)}
                                         onChange={(event) =>
-                                            updateUsdBudgetField('bot_qa', event.target.value)
+                                            updateAllUsdBudgets(event.target.value)
                                         }
                                         className="admin-input w-24 rounded-lg px-2 py-1 text-right font-mono text-xs"
                                     />
@@ -513,24 +537,53 @@ export default function AIQualityControlsPanel({ initialControls = null }: Props
                             <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
                                 {t('aiqc.simple.managerAndAlertsDesc')}
                             </p>
-                            <div className="mt-3 flex items-center gap-2">
-                                <select
-                                    value={draft.manager_qa.mode}
-                                    onChange={(event) =>
-                                        updateScope(
-                                            'manager_qa',
-                                            'mode',
-                                            event.target.value as AIQualityMode,
-                                        )
-                                    }
-                                    className="admin-input w-full rounded-lg px-2.5 py-1.5 text-xs"
-                                >
-                                    {AI_QUALITY_MODES.map((mode) => (
-                                        <option key={mode} value={mode}>
-                                            {modeLabel(mode)}
-                                        </option>
-                                    ))}
-                                </select>
+                            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                <label className="space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
+                                    <span className="block truncate font-medium">
+                                        {t('aiqc.simple.managerSelectLabel')}
+                                    </span>
+                                    <select
+                                        data-simple-mode-select="manager_qa"
+                                        value={draft.manager_qa.mode}
+                                        onChange={(event) =>
+                                            updateScope(
+                                                'manager_qa',
+                                                'mode',
+                                                event.target.value as AIQualityMode,
+                                            )
+                                        }
+                                        className="admin-input w-full rounded-lg px-2.5 py-1.5 text-xs"
+                                    >
+                                        {AI_QUALITY_MODES.map((mode) => (
+                                            <option key={mode} value={mode}>
+                                                {modeLabel(mode)}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <label className="space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
+                                    <span className="block truncate font-medium">
+                                        {t('aiqc.simple.redFlagsSelectLabel')}
+                                    </span>
+                                    <select
+                                        data-simple-mode-select="red_flags"
+                                        value={draft.red_flags.mode}
+                                        onChange={(event) =>
+                                            updateScope(
+                                                'red_flags',
+                                                'mode',
+                                                event.target.value as AIQualityMode,
+                                            )
+                                        }
+                                        className="admin-input w-full rounded-lg px-2.5 py-1.5 text-xs"
+                                    >
+                                        {AI_QUALITY_MODES.map((mode) => (
+                                            <option key={mode} value={mode}>
+                                                {modeLabel(mode)}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
                             </div>
                         </div>
                     </div>

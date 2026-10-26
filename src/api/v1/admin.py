@@ -77,6 +77,7 @@ from src.schemas import (
 from src.schemas.admin import (
     AdminCatalogStatusResponse,
     AdminCatalogSyncSourceStatus,
+    AdminSessionInfoResponse,
     AdminSystemHealthContour,
     AdminSystemHealthResponse,
     AdminZohoSnapshotStatus,
@@ -122,6 +123,27 @@ async def require_admin_session(request: Request) -> None:
 router = APIRouter(dependencies=[Depends(require_admin_session)])
 
 PeriodType = Literal["day", "week", "month", "all_time"]
+
+
+@router.get("/session", response_model=AdminSessionInfoResponse)
+async def get_admin_session_info(request: Request) -> AdminSessionInfoResponse:
+    """Return active admin session metadata for the header account menu."""
+    raw_method = request.session.get("auth_method")
+    auth_method: Literal["telegram", "password", "session"] = (
+        raw_method if raw_method in ("telegram", "password") else "session"
+    )
+    display_name = request.session.get("admin_display_name")
+    username = request.session.get("admin_username")
+    actor = request.session.get("admin_actor")
+    return AdminSessionInfoResponse(
+        authenticated=True,
+        auth_method=auth_method,
+        display_name=str(display_name) if display_name else None,
+        username=str(username) if username else None,
+        actor=str(actor) if actor else "admin",
+        logout_url="/admin/logout",
+        sqladmin_url="/admin/",
+    )
 
 
 @router.get("/prompts/", response_model=list[PromptRead])

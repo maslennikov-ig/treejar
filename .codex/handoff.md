@@ -1,10 +1,10 @@
 # Orchestrator Handoff
 
-## Stage tj-4kba (2026-10-26): allow `/admin` Telegram login during `test_channel_restore_mode` — owner-authorized deploy
-- Branch `codex/tj-4kba-telegram-admin-login` (off `main` `fcc11ef`); summary `.codex/stages/tj-4kba/summary.md`. Routed `/admin` and `/start admin` before early exit in `test_channel_restore_mode` (`src/api/telegram_webhook.py`) while keeping customer manager-reply egress gated.
+## Stage tj-myx7 (2026-10-26): Admin Dashboard dead/duplicate controls & filter/audit wiring — verified, awaiting delivery authorization
+- Branch `codex/tj-myx7-admin-controls` (off `main` `28cf572`); summary `.codex/stages/tj-myx7/summary.md`. Removed duplicate header guide & sidebar theme toggles, replaced dead gear/«Администратор» pill with session-backed account popover (`GET /api/v1/admin/session`), wired header refresh/search across views, and fixed Overview/Conversations/Audit/AIQC filter & jump wiring.
 
-## Stage tj-j3zg / tj-lk87 / tj-ierv (2026-10-23..25): admin dashboard UX, onboarding, and login redirect — deployed
-- Summaries: `.codex/stages/tj-j3zg/summary.md`, `.codex/stages/tj-lk87/summary.md`, `.codex/stages/tj-ierv/summary.md` (live on `main` `fcc11ef` / `https://noor.starec.ai`; client manual `https://aidevteam.ru/a/GaZJfnrjnN5VKtU2wLJdu1nFlqJq3xYO`).
+## Stages tj-4kba / tj-j3zg / tj-lk87 / tj-ierv (2026-10-23..26): admin login & dashboard UX — deployed
+- Summaries: `.codex/stages/tj-4kba/summary.md`, `.codex/stages/tj-j3zg/summary.md`, `.codex/stages/tj-lk87/summary.md`, `.codex/stages/tj-ierv/summary.md` (live on `main` / `https://noor.starec.ai`; client manual `https://aidevteam.ru/a/GaZJfnrjnN5VKtU2wLJdu1nFlqJq3xYO`).
 
 ## October tester feedback — authorized completion2026-10-14
 - Accepted epic `tj-i2b1`; findings `.1` (false mismatch caveats), `.2` (missing updated summary), `.3` (literal refusal persistence), `.4` (missing photos for structured catalog titles). Delivered sourcea72da15 onmain; approved source4b032c7 plus CI fix6d4663f.

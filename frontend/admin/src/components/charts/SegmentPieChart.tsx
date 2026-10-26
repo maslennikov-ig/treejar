@@ -20,7 +20,7 @@ import {
 interface Props {
     byLanguage: Record<string, number>;
     targetVsNontarget: Record<string, number>;
-    onSelectFilter?: (filter: { language?: string; status?: string }) => void;
+    onSelectFilter?: (filter: { language?: string; status?: string; filter?: string }) => void;
 }
 
 const LANGUAGE_COLORS = ['#6366f1', '#22d3ee', '#f59e0b', '#ec4899'];
@@ -219,7 +219,7 @@ export default function SegmentPieChart({
                         onSelectFilter
                             ? (code) =>
                                   onSelectFilter({
-                                      status: code === 'target' ? 'active' : 'closed',
+                                      filter: code === 'target' ? 'target' : 'nontarget',
                                   })
                             : undefined
                     }

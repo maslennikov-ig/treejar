@@ -309,3 +309,121 @@ async def test_admin_crm_audit_endpoint_returns_paginated_rows(
 
     assert response.status_code == 200
     assert response.json()["items"][0]["action"] == "conversation.update"
+
+
+@pytest.mark.asyncio
+async def test_admin_crm_customers_forwards_drilldown_filters(
+    admin_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.api.v1 import admin_crm
+
+    captured: dict[str, Any] = {}
+
+    async def fake_list_customers(**kwargs: Any) -> PaginatedResponse:
+        captured.update(kwargs)
+        return PaginatedResponse(items=[], total=0, page=1, page_size=20, pages=0)
+
+    monkeypatch.setattr(admin_crm, "list_admin_customers", fake_list_customers)
+
+    response = await admin_client.get(
+        "/api/v1/admin/crm/customers?has_deal=true&target_only=false&stage=unknown"
+    )
+
+    assert response.status_code == 200
+    assert captured["has_deal"] is True
+    assert captured["target_only"] is False
+    assert captured["stage"] == "unknown"
+
+
+def test_conversation_filters_support_deal_target_and_unknown_stage() -> None:
+    from sqlalchemy.dialects import postgresql
+
+    from src.services.admin_crm import _conversation_filters
+
+    clauses = _conversation_filters(
+        search=None,
+        status=None,
+        stage="unknown",
+        language=None,
+        escalation=None,
+        has_deal=True,
+        target_only=True,
+    )
+    compiled = [
+        str(
+            clause.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        )
+        for clause in clauses
+    ]
+    joined = " | ".join(compiled)
+    assert "sales_stage IS NULL" in joined
+    assert "zoho_deal_id IS NOT NULL" in joined
+    assert "'active', 'completed'" in joined
+
+
+@pytest.mark.asyncio
+async def test_admin_crm_audit_forwards_actor_and_expands_bot_rule_alias(
+    admin_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sqlalchemy.dialects import postgresql
+
+    from src.api.v1 import admin_crm as admin_crm_api
+    from src.services import admin_crm as admin_crm_service
+
+    captured_api: dict[str, Any] = {}
+
+    async def fake_audit(**kwargs: Any) -> PaginatedResponse:
+        captured_api.update(kwargs)
+        return PaginatedResponse(items=[], total=0, page=1, page_size=20, pages=0)
+
+    monkeypatch.setattr(admin_crm_api, "list_admin_audit", fake_audit)
+
+    resp = await admin_client.get(
+        "/api/v1/admin/crm/audit?entity_type=bot_behavior_rule&actor=telegram:777"
+    )
+    assert resp.status_code == 200
+    assert captured_api["entity_type"] == "bot_behavior_rule"
+    assert captured_api["actor"] == "telegram:777"
+
+    executed_sql: list[str] = []
+
+    class FakeResult:
+        def scalar_one(self) -> int:
+            return 0
+
+        def scalars(self) -> FakeResult:
+            return self
+
+        def all(self) -> list[object]:
+            return []
+
+    class FakeAuditDB:
+        async def execute(self, stmt: object) -> FakeResult:
+            executed_sql.append(
+                str(
+                    stmt.compile(  # type: ignore[attr-defined]
+                        dialect=postgresql.dialect(),
+                        compile_kwargs={"literal_binds": True},
+                    )
+                )
+            )
+            return FakeResult()
+
+    result = await admin_crm_service.list_admin_audit(
+        db=FakeAuditDB(),  # type: ignore[arg-type]
+        action=None,
+        entity_type="bot_behavior_rule",
+        actor="telegram:777",
+        page=1,
+        page_size=20,
+    )
+    assert result.total == 0
+    assert any(
+        "'bot_behavior_rule', 'bot_rule'" in sql and "telegram:777" in sql
+        for sql in executed_sql
+    )

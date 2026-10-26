@@ -7,6 +7,7 @@ import {
     Search,
     SlidersHorizontal,
     Sparkles,
+    X,
 } from 'lucide-react';
 import {
     closeConversationEscalation,
@@ -40,11 +41,14 @@ import type {
 export interface ConversationsViewProps {
     globalSearch?: string;
     initialId?: string;
+    initialFilter?: string;
     initialLanguage?: string;
     initialStatus?: string;
     initialStage?: string;
     initialEscalation?: string;
+    refreshSignal?: number;
     onSelectConversationId?: (id: string | undefined) => void;
+    onClearRouteFilter?: () => void;
 }
 
 type QuickTab = 'all' | 'waiting' | 'review';
@@ -69,11 +73,14 @@ function leadStatusBadge(detail: {
 export default function ConversationsView({
     globalSearch = '',
     initialId,
+    initialFilter = '',
     initialLanguage = '',
     initialStatus = '',
     initialStage = '',
     initialEscalation = '',
+    refreshSignal = 0,
     onSelectConversationId,
+    onClearRouteFilter,
 }: ConversationsViewProps) {
     const { t, label, formatNumber, formatDateTime, formatCurrency } = useI18n();
     const { showToast } = useToast();
@@ -87,6 +94,7 @@ export default function ConversationsView({
     const [searchInput, setSearchInput] = useState(globalSearch);
     const [debouncedSearch, setDebouncedSearch] = useState(globalSearch);
     const [quickTab, setQuickTab] = useState<QuickTab>('all');
+    const [routeFilter, setRouteFilter] = useState(initialFilter);
     const [showFilters, setShowFilters] = useState(
         Boolean(initialLanguage || initialStatus || initialStage || initialEscalation),
     );
@@ -136,7 +144,8 @@ export default function ConversationsView({
         if (initialStatus !== undefined) setStatus(initialStatus);
         if (initialStage !== undefined) setStage(initialStage);
         if (initialEscalation !== undefined) setEscalation(initialEscalation);
-    }, [initialLanguage, initialStatus, initialStage, initialEscalation]);
+        setRouteFilter(initialFilter || '');
+    }, [initialFilter, initialLanguage, initialStatus, initialStage, initialEscalation]);
 
     const selectCustomerConversation = useCallback((id: string | null) => {
         selectedIdRef.current = id;
@@ -165,6 +174,13 @@ export default function ConversationsView({
             if (stage) params.set('stage', stage);
             if (language) params.set('language', language);
             if (effectiveEscalation) params.set('escalation', effectiveEscalation);
+            if (routeFilter === 'deals') {
+                params.set('has_deal', 'true');
+            } else if (routeFilter === 'target') {
+                params.set('target_only', 'true');
+            } else if (routeFilter === 'nontarget') {
+                params.set('target_only', 'false');
+            }
 
             const response = await fetchAdminCustomers(params);
             setCustomers(response.items);
@@ -178,7 +194,18 @@ export default function ConversationsView({
         } finally {
             setLoadingList(false);
         }
-    }, [page, debouncedSearch, quickTab, status, stage, language, escalation, selectCustomerConversation, t]);
+    }, [
+        page,
+        debouncedSearch,
+        quickTab,
+        status,
+        stage,
+        language,
+        escalation,
+        routeFilter,
+        selectCustomerConversation,
+        t,
+    ]);
 
     const loadDetail = useCallback(
         async (conversationId: string) => {
@@ -212,6 +239,14 @@ export default function ConversationsView({
             void loadDetail(selectedId);
         }
     }, [selectedId, loadDetail]);
+
+    useEffect(() => {
+        if (!refreshSignal) return;
+        void loadCustomers();
+        if (selectedIdRef.current) {
+            void loadDetail(selectedIdRef.current);
+        }
+    }, [refreshSignal, loadCustomers, loadDetail]);
 
     const handleSaveCrm = async () => {
         if (!detail) return;
@@ -395,6 +430,32 @@ export default function ConversationsView({
                             />
                         </div>
 
+                        {(routeFilter === 'deals' ||
+                            routeFilter === 'target' ||
+                            routeFilter === 'nontarget') && (
+                            <div
+                                data-conv-route-filter={routeFilter}
+                                className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1.5 text-xs text-blue-800 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-200"
+                            >
+                                <span className="truncate font-medium">
+                                    {t(`conv.filter.activeChip.${routeFilter}` as TranslationKey)}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setRouteFilter('');
+                                        setPage(1);
+                                        onClearRouteFilter?.();
+                                    }}
+                                    aria-label={t('conv.filter.clearAll')}
+                                    className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold hover:bg-blue-100 dark:hover:bg-blue-900/60"
+                                >
+                                    <X className="h-3 w-3" />
+                                    <span>{t('conv.filter.clearAll')}</span>
+                                </button>
+                            </div>
+                        )}
+
                         {showFilters && (
                             <div className="grid grid-cols-2 gap-1.5 pt-1">
                                 <select
@@ -408,7 +469,7 @@ export default function ConversationsView({
                                     <option value="">{t('conv.filter.allStatuses')}</option>
                                     <option value="active">{t('conv.filter.status.active')}</option>
                                     <option value="paused">{t('conv.filter.status.paused')}</option>
-                                    <option value="completed">{t('conv.filter.status.completed')}</option>
+                                    <option value="escalated">{t('conv.filter.status.escalated')}</option>
                                     <option value="closed">{t('conv.filter.status.closed')}</option>
                                 </select>
                                 <select
@@ -424,8 +485,11 @@ export default function ConversationsView({
                                     <option value="qualifying">{label('qualifying')}</option>
                                     <option value="needs_analysis">{label('needs_analysis')}</option>
                                     <option value="solution">{label('solution')}</option>
+                                    <option value="company_details">{label('company_details')}</option>
                                     <option value="quoting">{label('quoting')}</option>
                                     <option value="closing">{label('closing')}</option>
+                                    <option value="feedback">{label('feedback')}</option>
+                                    <option value="unknown">{label('unknown')}</option>
                                 </select>
                                 <select
                                     value={language}
@@ -740,9 +804,14 @@ export default function ConversationsView({
                                         <option value="paused">
                                             {t('conv.filter.status.paused')}
                                         </option>
-                                        <option value="completed">
-                                            {t('conv.filter.status.completed')}
+                                        <option value="escalated">
+                                            {t('conv.filter.status.escalated')}
                                         </option>
+                                        {editStatus === 'completed' && (
+                                            <option value="completed">
+                                                {t('conv.filter.status.completed')}
+                                            </option>
+                                        )}
                                         <option value="closed">
                                             {t('conv.filter.status.closed')}
                                         </option>
@@ -760,6 +829,9 @@ export default function ConversationsView({
                                             {label('needs_analysis')}
                                         </option>
                                         <option value="solution">{label('solution')}</option>
+                                        <option value="company_details">
+                                            {label('company_details')}
+                                        </option>
                                         <option value="quoting">{label('quoting')}</option>
                                         <option value="closing">{label('closing')}</option>
                                         <option value="feedback">{label('feedback')}</option>

@@ -1042,6 +1042,30 @@ const ru = {
     'guide.runMiniTour': 'Показать на экране',
     'guide.stepsCount': 'Шагов: {count}',
     'guide.impactLabel': 'Как влияет на живого бота:',
+
+    // Header account menu, wired filters & dead-control cleanup (tj-myx7)
+    'header.accountMenuLabel': 'Профиль и сессия администратора',
+    'header.sessionSharedNote': 'Единая защищённая админ-сессия (все действия пишутся в аудит)',
+    'header.authMethod.telegram': 'Вход через Telegram',
+    'header.authMethod.password': 'Вход по паролю',
+    'header.authMethod.session': 'Активная админ-сессия',
+    'header.menuSettings': 'Настройки системы',
+    'header.menuAudit': 'Журнал действий и статус',
+    'header.menuSqlAdmin': 'Инженерная консоль /admin/',
+    'header.menuLogout': 'Выйти из кабинета',
+    'header.searchClear': 'Очистить поиск',
+    'header.searchJumpBtn': 'Найти',
+    'conv.filter.status.escalated': 'На эскалации',
+    'conv.filter.activeChip.deals': 'Фильтр: только со сделкой Zoho',
+    'conv.filter.activeChip.target': 'Фильтр: целевые диалоги',
+    'conv.filter.activeChip.nontarget': 'Фильтр: нецелевые / закрытые',
+    'conv.filter.clearAll': 'Сбросить фильтр',
+    'audit.entity.kbCandidate': 'Кандидаты Auto-FAQ',
+    'audit.entity.adminSession': 'Входы в админку',
+    'audit.action.telegramLogin': 'Вход администратора через Telegram',
+    'aiqc.allScopes': 'всех контуров',
+    'aiqc.simple.managerSelectLabel': 'Оценка РОПа',
+    'aiqc.simple.redFlagsSelectLabel': 'Красные флаги',
 };
 
 export type TranslationKey = keyof typeof ru;
@@ -2077,6 +2101,30 @@ const en: Record<TranslationKey, string> = {
     'guide.runMiniTour': 'Show on screen',
     'guide.stepsCount': '{count} steps',
     'guide.impactLabel': 'Live bot impact:',
+
+    // Header account menu, wired filters & dead-control cleanup (tj-myx7)
+    'header.accountMenuLabel': 'Admin profile & session',
+    'header.sessionSharedNote': 'Shared protected admin session (all actions are audited)',
+    'header.authMethod.telegram': 'Signed in via Telegram',
+    'header.authMethod.password': 'Signed in with password',
+    'header.authMethod.session': 'Active admin session',
+    'header.menuSettings': 'System settings',
+    'header.menuAudit': 'Audit & system health',
+    'header.menuSqlAdmin': 'Database console /admin/',
+    'header.menuLogout': 'Sign out',
+    'header.searchClear': 'Clear search',
+    'header.searchJumpBtn': 'Find',
+    'conv.filter.status.escalated': 'Escalated',
+    'conv.filter.activeChip.deals': 'Filter: Zoho deals only',
+    'conv.filter.activeChip.target': 'Filter: target conversations',
+    'conv.filter.activeChip.nontarget': 'Filter: non-target / closed',
+    'conv.filter.clearAll': 'Clear filter',
+    'audit.entity.kbCandidate': 'Auto-FAQ candidates',
+    'audit.entity.adminSession': 'Admin sessions',
+    'audit.action.telegramLogin': 'Admin login via Telegram',
+    'aiqc.allScopes': 'AI quality',
+    'aiqc.simple.managerSelectLabel': 'Manager QA',
+    'aiqc.simple.redFlagsSelectLabel': 'Red Flags',
 };
 
 export const DICTIONARIES: Record<Lang, Record<TranslationKey, string>> = { ru, en };

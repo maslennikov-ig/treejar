@@ -150,7 +150,20 @@ def create_app() -> FastAPI:
             )
             await db.commit()
 
-        request.session.update({"token": "admin_session"})
+        display_name = (
+            identity.first_name
+            or (f"@{identity.username}" if identity.username else None)
+            or f"Telegram #{identity.user_id}"
+        )
+        request.session.update(
+            {
+                "token": "admin_session",
+                "auth_method": "telegram",
+                "admin_display_name": display_name,
+                "admin_username": identity.username,
+                "admin_actor": f"telegram:{identity.user_id}",
+            }
+        )
         return RedirectResponse(url=pop_admin_login_next(request), status_code=303)
 
     @app.api_route("/dashboard", methods=["GET", "HEAD"], include_in_schema=False)

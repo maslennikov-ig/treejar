@@ -641,3 +641,13 @@ class AdminSystemHealthResponse(BaseModel):
     open_escalations_count: int = 0
     pending_manager_reviews_count: int = 0
     checked_at: datetime
+
+
+class AdminSessionInfoResponse(BaseModel):
+    authenticated: bool = True
+    auth_method: Literal["telegram", "password", "session"] = "session"
+    display_name: str | None = None
+    username: str | None = None
+    actor: str = "admin"
+    logout_url: str = "/admin/logout"
+    sqladmin_url: str = "/admin/"

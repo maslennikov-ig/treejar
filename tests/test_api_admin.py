@@ -925,3 +925,36 @@ async def test_admin_payment_reminder_controls_rejects_enabled_text_without_copy
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_admin_session_endpoint_reports_auth_identity(
+    client: AsyncClient,
+    admin_client: AsyncClient,
+) -> None:
+    """GET /api/v1/admin/session requires auth and reflects login metadata."""
+    from types import SimpleNamespace
+
+    from src.api.v1.admin import get_admin_session_info
+
+    unauth = await client.get("/api/v1/admin/session")
+    assert unauth.status_code == 401
+
+    fallback = await get_admin_session_info(
+        SimpleNamespace(session={"token": "authenticated"})  # type: ignore[arg-type]
+    )
+    assert fallback.authenticated is True
+    assert fallback.auth_method == "session"
+    assert fallback.logout_url == "/admin/logout"
+    assert fallback.sqladmin_url == "/admin/"
+
+    pw_session = await admin_client.get("/api/v1/admin/session")
+    assert pw_session.status_code == 200
+    pw_data = pw_session.json()
+    assert pw_data["authenticated"] is True
+    assert pw_data["auth_method"] == "password"
+    assert pw_data["display_name"] == settings.admin_username
+    assert pw_data["username"] == settings.admin_username
+    assert pw_data["actor"] == settings.admin_username
+    assert pw_data["logout_url"] == "/admin/logout"
+    assert pw_data["sqladmin_url"] == "/admin/"

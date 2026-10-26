@@ -212,6 +212,9 @@ try {
     assert.doesNotMatch(defaultHtml, /Existing internal endpoint/);
     assert.doesNotMatch(defaultHtml, /does not add one/);
     assert.match(defaultHtml, /data-ai-quality-contours/);
+    assert.match(defaultHtml, /data-simple-mode-select="manager_qa"/);
+    assert.match(defaultHtml, /data-simple-mode-select="red_flags"/);
+    assert.match(defaultHtml, /data-aiqc-per-contour-usd=""/);
     assert.match(defaultHtml, /15-rule checklist/);
     assert.match(defaultHtml, /up to 20 points/);
     assert.match(defaultHtml, /Scans conversations in realtime/);

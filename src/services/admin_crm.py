@@ -212,6 +212,8 @@ def _conversation_filters(
     language: str | None = None,
     escalation: str | None = None,
     deal_status: str | None = None,
+    has_deal: bool | None = None,
+    target_only: bool | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
     segment: str | None = None,
@@ -220,13 +222,26 @@ def _conversation_filters(
     if status:
         filters.append(Conversation.status == status)
     if stage:
-        filters.append(Conversation.sales_stage == stage)
+        if stage == "unknown":
+            filters.append(
+                or_(Conversation.sales_stage.is_(None), Conversation.sales_stage == "")
+            )
+        else:
+            filters.append(Conversation.sales_stage == stage)
     if language:
         filters.append(Conversation.language == language)
     if escalation:
         filters.append(Conversation.escalation_status == escalation)
     if deal_status:
         filters.append(Conversation.deal_status == deal_status)
+    if has_deal is True:
+        filters.append(Conversation.zoho_deal_id.is_not(None))
+    elif has_deal is False:
+        filters.append(Conversation.zoho_deal_id.is_(None))
+    if target_only is True:
+        filters.append(Conversation.status.in_(("active", "completed")))
+    elif target_only is False:
+        filters.append(Conversation.status.not_in(("active", "completed")))
     start = _date_start(date_from)
     if start is not None:
         filters.append(Conversation.created_at >= start)
@@ -315,6 +330,8 @@ async def list_admin_customers(
     language: str | None = None,
     escalation: str | None = None,
     deal_status: str | None = None,
+    has_deal: bool | None = None,
+    target_only: bool | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
     segment: str | None = None,
@@ -326,6 +343,8 @@ async def list_admin_customers(
         language=language,
         escalation=escalation,
         deal_status=deal_status,
+        has_deal=has_deal,
+        target_only=target_only,
         date_from=date_from,
         date_to=date_to,
         segment=segment,
@@ -399,6 +418,8 @@ async def list_admin_conversations(
     language: str | None = None,
     escalation: str | None = None,
     deal_status: str | None = None,
+    has_deal: bool | None = None,
+    target_only: bool | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
     segment: str | None = None,
@@ -410,6 +431,8 @@ async def list_admin_conversations(
         language=language,
         escalation=escalation,
         deal_status=deal_status,
+        has_deal=has_deal,
+        target_only=target_only,
         date_from=date_from,
         date_to=date_to,
         segment=segment,
@@ -905,6 +928,7 @@ async def list_admin_audit(
     page: int = 1,
     page_size: int = 20,
     action: str | None = None,
+    actor: str | None = None,
     entity_type: str | None = None,
     entity_id: str | None = None,
     date_from: date | None = None,
@@ -913,8 +937,15 @@ async def list_admin_audit(
     filters: list[ColumnElement[bool]] = []
     if action:
         filters.append(AdminActionAudit.action == action)
+    if actor and actor.strip():
+        filters.append(AdminActionAudit.actor.ilike(f"%{actor.strip()}%"))
     if entity_type:
-        filters.append(AdminActionAudit.entity_type == entity_type)
+        if entity_type in ("bot_rule", "bot_behavior_rule"):
+            filters.append(
+                AdminActionAudit.entity_type.in_(("bot_behavior_rule", "bot_rule"))
+            )
+        else:
+            filters.append(AdminActionAudit.entity_type == entity_type)
     if entity_id:
         filters.append(AdminActionAudit.entity_id == entity_id)
     start = _date_start(date_from)

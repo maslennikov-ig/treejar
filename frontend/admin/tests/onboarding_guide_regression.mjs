@@ -94,6 +94,7 @@ const STUBS = new Map([
         export const Bot = Icon;
         export const Boxes = Icon;
         export const CheckCircle2 = Icon;
+        export const ChevronDown = Icon;
         export const ChevronLeft = Icon;
         export const ChevronRight = Icon;
         export const ClipboardCheck = Icon;
@@ -111,6 +112,7 @@ const STUBS = new Map([
         export const Inbox = Icon;
         export const Info = Icon;
         export const LifeBuoy = Icon;
+        export const LogOut = Icon;
         export const MessageCircle = Icon;
         export const Moon = Icon;
         export const MoreHorizontal = Icon;
@@ -224,7 +226,9 @@ try {
     assert.match(htmlRu, /data-guide-view=""/);
     assert.match(htmlRu, /data-guide-launchpad=""/);
     assert.match(htmlRu, /data-tour-trigger=""/);
-    assert.match(htmlRu, /data-header-guide-btn=""/);
+    assert.doesNotMatch(htmlRu, /data-header-guide-btn/);
+    assert.doesNotMatch(htmlRu, /data-header-refresh-btn/);
+    assert.match(htmlRu, /data-admin-account-btn=""/);
     assert.match(htmlRu, /data-nav-item="guide"/);
     assert.match(htmlRu, /data-start-tour="full"/);
     assert.match(htmlRu, /data-start-tour="daily_ops"/);

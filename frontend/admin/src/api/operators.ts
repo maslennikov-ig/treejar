@@ -1,5 +1,6 @@
 import { redirectOnAdminUnauthorized } from '@/api/sessionGuard';
 import type {
+    AdminSessionInfo,
     AIQualityControlsResponse,
     AIQualityControlsUpdate,
     ClientSelfTestSubmitRequest,
@@ -78,6 +79,10 @@ function getClientSelfTestApiBase(): string {
 
 export function fetchNotificationConfig(): Promise<NotificationConfig> {
     return requestJson('/notifications/config');
+}
+
+export function fetchAdminSession(): Promise<AdminSessionInfo> {
+    return requestJson('/session');
 }
 
 export function sendTestNotification(): Promise<NotificationTestResponse> {

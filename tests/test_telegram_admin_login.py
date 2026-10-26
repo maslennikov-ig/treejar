@@ -397,6 +397,15 @@ async def test_dashboard_telegram_login_sets_admin_session_and_writes_audit(
     dashboard = await client.get("/dashboard/")
     assert dashboard.status_code == 200
 
+    session_info = await client.get("/api/v1/admin/session")
+    assert session_info.status_code == 200
+    session_payload = session_info.json()
+    assert session_payload["authenticated"] is True
+    assert session_payload["auth_method"] == "telegram"
+    assert session_payload["display_name"] == "Noor"
+    assert session_payload["username"] == "owner"
+    assert session_payload["actor"] == "telegram:777"
+
 
 @pytest.mark.asyncio
 async def test_dashboard_telegram_login_rejects_invalid_token(client: object) -> None:

@@ -18,7 +18,7 @@ import type { ActionMessage } from '@/components/ui/Primitives';
 import { useI18n } from '@/i18n';
 import type { OperationsReportResponse } from '@/types/operators';
 
-export default function ReportsView() {
+export default function ReportsView({ refreshSignal = 0 }: { refreshSignal?: number }) {
     const { t, formatDateTime } = useI18n();
     const [report, setReport] = useState<OperationsReportResponse | null>(null);
     const [loading, setLoading] = useState(false);
@@ -40,6 +40,11 @@ export default function ReportsView() {
     useEffect(() => {
         void loadReport();
     }, [loadReport]);
+
+    useEffect(() => {
+        if (!refreshSignal) return;
+        void loadReport();
+    }, [refreshSignal, loadReport]);
 
     return (
         <>

@@ -28,7 +28,7 @@ interface Props {
     postEscalationSales: SalesMetrics;
     escalationCount: number;
     conversionRate: number;
-    onSelectBar?: (filter: { escalation?: string; deal_status?: string }) => void;
+    onSelectBar?: (filter: { escalation?: string; deal_status?: string; filter?: string }) => void;
 }
 
 const COLORS = ['#10b981', '#6366f1', '#f59e0b'];
@@ -136,9 +136,9 @@ export default function SalesBarChart({
                             onClick={(entry: { code?: string }) => {
                                 if (!onSelectBar) return;
                                 if (entry?.code === 'noor_sales') {
-                                    onSelectBar({ escalation: 'none' });
+                                    onSelectBar({ escalation: 'none', filter: 'deals' });
                                 } else if (entry?.code === 'post_escalation') {
-                                    onSelectBar({ escalation: 'resolved' });
+                                    onSelectBar({ escalation: 'resolved', filter: 'deals' });
                                 } else if (entry?.code === 'escalations') {
                                     onSelectBar({ escalation: 'pending' });
                                 }

@@ -143,3 +143,24 @@ for (const typeName of [
 ]) {
     assert.match(typeSource, new RegExp(`interface ${typeName}`));
 }
+
+// 10. Header Account Menu, De-duplication & Drilldown/Audit Wiring (tj-myx7)
+assert.match(appSource, /data-admin-account-btn/, 'Header should render interactive admin account button');
+assert.match(appSource, /data-admin-account-menu/, 'Header should render admin account popover menu');
+assert.match(appSource, /\/admin\/logout/, 'Header account menu should expose logout action');
+assert.doesNotMatch(appSource, /data-header-guide-btn/, 'Header must not duplicate the Guide button');
+assert.doesNotMatch(sidebarSource, /data-sidebar-theme-toggle/, 'Sidebar must not duplicate the theme toggle');
+assert.match(overviewSource, /filter:\s*'deals'/, 'Overview conversion card should drill down with filter: deals');
+assert.doesNotMatch(overviewSource, /status:\s*'completed'/, 'Overview must not drill down to phantom completed status');
+assert.match(conversationsSource, /params\.set\('has_deal'/, 'ConversationsView should wire has_deal filter');
+assert.match(conversationsSource, /params\.set\('target_only'/, 'ConversationsView should wire target_only filter');
+assert.match(conversationsSource, /value="company_details"/, 'ConversationsView should include company_details stage');
+assert.match(conversationsSource, /value="escalated"/, 'ConversationsView should include real escalated status');
+assert.match(conversationsSource, /data-conv-route-filter/, 'ConversationsView should show dismissible route filter chip');
+const statusFilterSelectMatch = conversationsSource.match(/<select\s+value=\{status\}[\s\S]*?<\/select>/);
+assert.ok(statusFilterSelectMatch, 'ConversationsView should render status filter select');
+assert.doesNotMatch(statusFilterSelectMatch[0], /value="completed"/, 'ConversationsView status filter must not offer phantom completed status option');
+assert.match(auditSystemSource, /value="bot_behavior_rule"/, 'AuditSystemView should filter by canonical bot_behavior_rule entity');
+assert.match(auditSystemSource, /value="knowledge_base_candidate"/, 'AuditSystemView should filter by knowledge_base_candidate entity');
+assert.match(auditSystemSource, /value="admin_session"/, 'AuditSystemView should filter by admin_session entity');
+assert.doesNotMatch(auditSystemSource, /value="quality"/, 'AuditSystemView must not offer unused quality entity filter');

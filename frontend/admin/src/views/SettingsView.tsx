@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Bell, RefreshCw, Send, Settings } from 'lucide-react';
+import { Bell, Database, LogOut, RefreshCw, Send, Settings } from 'lucide-react';
 import { fetchNotificationConfig, sendTestNotification } from '@/api/operators';
 import AIQualityControlsPanel from '@/components/AIQualityControlsPanel';
 import { HelpTooltip } from '@/components/HelpTooltip';
@@ -18,7 +18,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useI18n } from '@/i18n';
 import type { NotificationConfig } from '@/types/operators';
 
-export default function SettingsView() {
+export default function SettingsView({ refreshSignal = 0 }: { refreshSignal?: number }) {
     const { t } = useI18n();
     const { pushToast } = useToast();
     const [config, setConfig] = useState<NotificationConfig | null>(null);
@@ -42,6 +42,11 @@ export default function SettingsView() {
     useEffect(() => {
         void loadConfig();
     }, [loadConfig]);
+
+    useEffect(() => {
+        if (!refreshSignal) return;
+        void loadConfig();
+    }, [refreshSignal, loadConfig]);
 
     async function handleConfirmSendTest() {
         setConfirmTestOpen(false);
@@ -74,7 +79,7 @@ export default function SettingsView() {
                 {message && <ActionMessageBox message={message} />}
 
                 {/* Variant 6A: AI Quality Controls (Simple Mode 3 Cards + Collapsible Engineer Settings) */}
-                <AIQualityControlsPanel />
+                <AIQualityControlsPanel refreshSignal={refreshSignal} />
 
                 {/* Telegram & Runtime Session Settings */}
                 <Panel
@@ -128,13 +133,31 @@ export default function SettingsView() {
                             </button>
                         </div>
 
-                        <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
-                            <p className="text-sm font-semibold text-[var(--text-primary)]">
-                                {t('settings.sessionTitle')}
-                            </p>
-                            <p className="mt-2 text-xs leading-6 text-[var(--text-secondary)]">
-                                {t('settings.sessionBody')}
-                            </p>
+                        <div className="flex flex-col justify-between rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
+                            <div>
+                                <p className="text-sm font-semibold text-[var(--text-primary)]">
+                                    {t('settings.sessionTitle')}
+                                </p>
+                                <p className="mt-2 text-xs leading-6 text-[var(--text-secondary)]">
+                                    {t('settings.sessionBody')}
+                                </p>
+                            </div>
+                            <div className="mt-4 flex flex-wrap items-center gap-2">
+                                <a
+                                    href="/admin/"
+                                    className="admin-subpanel inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]"
+                                >
+                                    <Database size={13} />
+                                    <span>{t('header.menuSqlAdmin')}</span>
+                                </a>
+                                <a
+                                    href="/admin/logout"
+                                    className="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300"
+                                >
+                                    <LogOut size={13} />
+                                    <span>{t('header.menuLogout')}</span>
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </Panel>

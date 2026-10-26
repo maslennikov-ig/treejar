@@ -25,7 +25,7 @@ import { useI18n } from '@/i18n';
 import type { AdminCatalogStatusResponse } from '@/types/crm';
 import type { ProductSyncResponse, ProductSyncSource } from '@/types/operators';
 
-export default function CatalogView() {
+export default function CatalogView({ refreshSignal = 0 }: { refreshSignal?: number }) {
     const { t, formatDateTime, formatDuration } = useI18n();
     const { pushToast } = useToast();
 
@@ -51,6 +51,11 @@ export default function CatalogView() {
     useEffect(() => {
         void loadStatus();
     }, [loadStatus]);
+
+    useEffect(() => {
+        if (!refreshSignal) return;
+        void loadStatus();
+    }, [refreshSignal, loadStatus]);
 
     async function handleConfirmSync() {
         if (!confirmSource) return;

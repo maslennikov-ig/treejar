@@ -98,6 +98,7 @@ interface KnowledgeBaseViewProps {
     selectedId?: string;
     onSelectId?: (id: string) => void;
     onCandidatesCountChange?: (count: number) => void;
+    refreshSignal?: number;
 }
 
 export default function KnowledgeBaseView({
@@ -105,6 +106,7 @@ export default function KnowledgeBaseView({
     selectedId: externalSelectedId,
     onSelectId,
     onCandidatesCountChange,
+    refreshSignal = 0,
 }: KnowledgeBaseViewProps) {
     const { t, lang, label } = useI18n();
     const { pushToast } = useToast();
@@ -174,6 +176,11 @@ export default function KnowledgeBaseView({
     useEffect(() => {
         load().catch((err: unknown) => setError(errorMessage(err, t)));
     }, [load, t]);
+
+    useEffect(() => {
+        if (!refreshSignal) return;
+        load().catch((err: unknown) => setError(errorMessage(err, t)));
+    }, [refreshSignal, load, t]);
 
     function applySelection(target: AdminKnowledgeBaseRead | 'new') {
         if (target === 'new') {

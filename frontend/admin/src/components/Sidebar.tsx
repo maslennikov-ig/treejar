@@ -9,14 +9,11 @@ import {
     History,
     Inbox,
     MessageCircle,
-    Moon,
     Package,
     Settings,
-    Sun,
 } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
-import { useTheme } from '@/theme';
 
 export type AdminViewId =
     | 'overview'
@@ -105,7 +102,6 @@ export default function Sidebar({
     botEnabled = true,
 }: SidebarProps) {
     const { t } = useI18n();
-    const { theme, toggleTheme } = useTheme();
 
     return (
         <aside
@@ -126,23 +122,6 @@ export default function Sidebar({
                         </div>
                     </div>
                 </div>
-                <button
-                    type="button"
-                    onClick={toggleTheme}
-                    data-sidebar-theme-toggle
-                    aria-label={
-                        theme === 'light'
-                            ? t('theme.switchToDark')
-                            : t('theme.switchToLight')
-                    }
-                    className="admin-subpanel flex h-7 w-7 items-center justify-center rounded-lg text-slate-600 transition-colors hover:text-[#2170e4] dark:text-slate-300"
-                >
-                    {theme === 'light' ? (
-                        <Moon className="h-3.5 w-3.5" />
-                    ) : (
-                        <Sun className="h-3.5 w-3.5" />
-                    )}
-                </button>
             </div>
 
             <nav

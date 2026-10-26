@@ -141,25 +141,29 @@ const STATUS_OPTIONS: Array<{
         status: 'passed',
         label: 'Прошёл',
         Icon: CheckCircle2,
-        activeClassName: 'border-emerald-400/70 bg-emerald-500/15 text-emerald-200',
+        activeClassName:
+            'border-emerald-500/70 bg-emerald-500/15 text-emerald-800 dark:border-emerald-400/70 dark:text-emerald-200',
     },
     {
         status: 'failed',
         label: 'Неверно',
         Icon: XCircle,
-        activeClassName: 'border-rose-400/70 bg-rose-500/15 text-rose-200',
+        activeClassName:
+            'border-rose-500/70 bg-rose-500/15 text-rose-800 dark:border-rose-400/70 dark:text-rose-200',
     },
     {
         status: 'skipped',
         label: 'Пропустить',
         Icon: MinusCircle,
-        activeClassName: 'border-amber-400/70 bg-amber-500/15 text-amber-200',
+        activeClassName:
+            'border-amber-500/70 bg-amber-500/15 text-amber-800 dark:border-amber-400/70 dark:text-amber-200',
     },
     {
         status: 'not_tested',
         label: 'Не проверял',
         Icon: CircleDashed,
-        activeClassName: 'border-slate-500/70 bg-slate-700/40 text-slate-200',
+        activeClassName:
+            'border-slate-400 bg-slate-200/70 text-slate-800 dark:border-slate-500/70 dark:bg-slate-700/40 dark:text-slate-200',
     },
 ];
 
@@ -272,15 +276,15 @@ export default function AcceptanceDemo() {
 
     return (
         <section className="space-y-5">
-            <div className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-5 py-4">
+            <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-5 py-4">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex items-start gap-3">
-                        <div className="mt-1 rounded-lg bg-emerald-500/15 p-2 text-emerald-300">
+                        <div className="mt-1 rounded-lg bg-emerald-500/15 p-2 text-emerald-700 dark:text-emerald-300">
                             <ClipboardCheck size={22} />
                         </div>
                         <div>
-                            <h2 className="text-xl font-semibold text-white">Acceptance Demo</h2>
-                            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
+                            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Acceptance Demo</h2>
+                            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-700 dark:text-slate-300">
                                 Controlled self-test для заказчика: каждый сценарий показывает, что написать клиентом,
                                 что должно произойти в WhatsApp, Telegram и на backend.
                             </p>
@@ -288,21 +292,21 @@ export default function AcceptanceDemo() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-                        <div className="rounded-lg border border-emerald-400/20 bg-slate-950/30 px-3 py-2">
+                        <div className="rounded-lg border border-emerald-500/25 bg-white/80 px-3 py-2 dark:border-emerald-400/20 dark:bg-slate-950/30">
                             <p className="text-slate-500">Прошло</p>
-                            <p className="text-lg font-semibold text-emerald-300">{counts.passed}</p>
+                            <p className="text-lg font-semibold text-emerald-700 dark:text-emerald-300">{counts.passed}</p>
                         </div>
-                        <div className="rounded-lg border border-rose-400/20 bg-slate-950/30 px-3 py-2">
+                        <div className="rounded-lg border border-rose-500/25 bg-white/80 px-3 py-2 dark:border-rose-400/20 dark:bg-slate-950/30">
                             <p className="text-slate-500">Неверно</p>
-                            <p className="text-lg font-semibold text-rose-300">{counts.failed}</p>
+                            <p className="text-lg font-semibold text-rose-700 dark:text-rose-300">{counts.failed}</p>
                         </div>
-                        <div className="rounded-lg border border-amber-400/20 bg-slate-950/30 px-3 py-2">
+                        <div className="rounded-lg border border-amber-500/25 bg-white/80 px-3 py-2 dark:border-amber-400/20 dark:bg-slate-950/30">
                             <p className="text-slate-500">Пропущено</p>
-                            <p className="text-lg font-semibold text-amber-300">{counts.skipped}</p>
+                            <p className="text-lg font-semibold text-amber-700 dark:text-amber-300">{counts.skipped}</p>
                         </div>
-                        <div className="rounded-lg border border-white/[0.08] bg-slate-950/30 px-3 py-2">
+                        <div className="rounded-lg border border-slate-200 bg-white/80 px-3 py-2 dark:border-white/[0.08] dark:bg-slate-950/30">
                             <p className="text-slate-500">Прогресс</p>
-                            <p className="text-lg font-semibold text-slate-100">
+                            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">
                                 {completedCount}/{items.length}
                             </p>
                         </div>
@@ -312,19 +316,19 @@ export default function AcceptanceDemo() {
 
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
                 <label className="block">
-                    <span className="text-sm font-medium text-slate-300">Имя тестировщика</span>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Имя тестировщика</span>
                     <input
                         value={testerName}
                         onChange={(event) => setTesterName(event.target.value)}
                         maxLength={80}
-                        className="mt-2 w-full rounded-lg border border-white/[0.08] bg-slate-900/80 px-3 py-2 text-sm text-white outline-none transition focus:border-emerald-400/60"
+                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-emerald-500 dark:border-white/[0.08] dark:bg-slate-900/80 dark:text-white dark:focus:border-emerald-400/60"
                         placeholder="Например: TreeJar owner"
                     />
                 </label>
 
-                <div className="rounded-lg border border-white/[0.08] bg-slate-900/70 px-4 py-3 text-sm text-slate-300">
+                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 dark:border-white/[0.08] dark:bg-slate-900/70 dark:text-slate-300">
                     <div className="flex items-start gap-2">
-                        <AlertTriangle size={16} className="mt-0.5 text-amber-300" />
+                        <AlertTriangle size={16} className="mt-0.5 text-amber-600 dark:text-amber-300" />
                         <p>Используйте тестовый чат и не запускайте реальные рискованные условия без согласования.</p>
                     </div>
                 </div>
@@ -338,15 +342,15 @@ export default function AcceptanceDemo() {
                     return (
                         <article
                             key={scenario.id}
-                            className="rounded-lg border border-white/[0.08] bg-slate-900/70 p-5 backdrop-blur-xl"
+                            className="rounded-lg border border-slate-200 bg-white p-5 shadow-2xs dark:border-white/[0.08] dark:bg-slate-900/70 dark:backdrop-blur-xl"
                         >
                             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                 <div>
-                                    <div className="text-xs font-semibold uppercase text-emerald-300">
+                                    <div className="text-xs font-semibold uppercase text-emerald-700 dark:text-emerald-300">
                                         Сценарий {index + 1}
                                     </div>
-                                    <h3 className="mt-1 text-lg font-semibold text-white">{scenario.title}</h3>
-                                    <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">{scenario.intent}</p>
+                                    <h3 className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">{scenario.title}</h3>
+                                    <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700 dark:text-slate-300">{scenario.intent}</p>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[430px]">
@@ -364,7 +368,7 @@ export default function AcceptanceDemo() {
                                                 className={`flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${
                                                     active
                                                         ? activeClassName
-                                                        : 'border-white/[0.08] bg-slate-950/30 text-slate-400 hover:border-white/[0.18] hover:text-slate-100'
+                                                        : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-white/[0.08] dark:bg-slate-950/30 dark:text-slate-400 dark:hover:border-white/[0.18] dark:hover:text-slate-100'
                                                 }`}
                                             >
                                                 <Icon size={16} />
@@ -378,31 +382,31 @@ export default function AcceptanceDemo() {
                             <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
                                 <div className="space-y-3 text-sm">
                                     <div>
-                                        <p className="font-medium text-slate-200">Что написать клиентом</p>
-                                        <p className="mt-1 rounded-lg bg-slate-950/40 px-3 py-2 font-mono text-slate-300">
+                                        <p className="font-medium text-slate-800 dark:text-slate-200">Что написать клиентом</p>
+                                        <p className="mt-1 rounded-lg bg-slate-100 px-3 py-2 font-mono text-slate-800 dark:bg-slate-950/40 dark:text-slate-300">
                                             {scenario.customerPrompt}
                                         </p>
                                     </div>
                                     <div>
-                                        <p className="font-medium text-slate-200">Ожидаемый WhatsApp/bot результат</p>
-                                        <p className="mt-1 leading-6 text-slate-400">{scenario.expectedBot}</p>
+                                        <p className="font-medium text-slate-800 dark:text-slate-200">Ожидаемый WhatsApp/bot результат</p>
+                                        <p className="mt-1 leading-6 text-slate-600 dark:text-slate-400">{scenario.expectedBot}</p>
                                     </div>
                                 </div>
 
                                 <div className="space-y-3 text-sm">
                                     <div>
-                                        <p className="font-medium text-slate-200">Ожидаемый Telegram/admin результат</p>
-                                        <p className="mt-1 leading-6 text-slate-400">{scenario.expectedManager}</p>
+                                        <p className="font-medium text-slate-800 dark:text-slate-200">Ожидаемый Telegram/admin результат</p>
+                                        <p className="mt-1 leading-6 text-slate-600 dark:text-slate-400">{scenario.expectedManager}</p>
                                     </div>
                                     <div>
-                                        <p className="font-medium text-slate-200">Что происходит на backend</p>
-                                        <p className="mt-1 leading-6 text-slate-400">{scenario.backend}</p>
+                                        <p className="font-medium text-slate-800 dark:text-slate-200">Что происходит на backend</p>
+                                        <p className="mt-1 leading-6 text-slate-600 dark:text-slate-400">{scenario.backend}</p>
                                     </div>
                                 </div>
                             </div>
 
                             <label className="mt-4 block">
-                                <span className="text-sm font-medium text-slate-300">Заметка по сценарию</span>
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Заметка по сценарию</span>
                                 <textarea
                                     value={item?.note ?? ''}
                                     onChange={(event) => {
@@ -412,7 +416,7 @@ export default function AcceptanceDemo() {
                                     }}
                                     maxLength={800}
                                     rows={2}
-                                    className="mt-2 w-full resize-y rounded-lg border border-white/[0.08] bg-slate-950/30 px-3 py-2 text-sm text-white outline-none transition focus:border-emerald-400/60"
+                                    className="mt-2 w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-emerald-500 dark:border-white/[0.08] dark:bg-slate-950/30 dark:text-white dark:focus:border-emerald-400/60"
                                     placeholder="Что получилось неверно, номер диалога, что нажимали в Telegram..."
                                 />
                             </label>
@@ -421,15 +425,15 @@ export default function AcceptanceDemo() {
                 })}
             </div>
 
-            <div className="rounded-lg border border-white/[0.08] bg-slate-900/80 p-5">
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-2xs dark:border-white/[0.08] dark:bg-slate-900/80">
                 <label className="block">
-                    <span className="text-sm font-medium text-slate-300">Итоговый комментарий</span>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Итоговый комментарий</span>
                     <textarea
                         value={overallComment}
                         onChange={(event) => setOverallComment(event.target.value)}
                         maxLength={1000}
                         rows={3}
-                        className="mt-2 w-full resize-y rounded-lg border border-white/[0.08] bg-slate-950/30 px-3 py-2 text-sm text-white outline-none transition focus:border-emerald-400/60"
+                        className="mt-2 w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-emerald-500 dark:border-white/[0.08] dark:bg-slate-950/30 dark:text-white dark:focus:border-emerald-400/60"
                         placeholder="Общее впечатление, что проверить повторно, что можно принимать..."
                     />
                 </label>
@@ -453,8 +457,8 @@ export default function AcceptanceDemo() {
                     <div
                         className={`mt-4 rounded-lg border px-4 py-3 text-sm ${
                             submitState === 'error'
-                                ? 'border-rose-400/30 bg-rose-500/10 text-rose-200'
-                                : 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'
+                                ? 'border-rose-400/40 bg-rose-500/10 text-rose-800 dark:border-rose-400/30 dark:text-rose-200'
+                                : 'border-emerald-400/40 bg-emerald-500/10 text-emerald-800 dark:border-emerald-400/30 dark:text-emerald-200'
                         }`}
                     >
                         {submitMessage}

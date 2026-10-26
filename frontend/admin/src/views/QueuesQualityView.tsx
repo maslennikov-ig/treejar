@@ -51,6 +51,7 @@ interface QueuesQualityViewProps {
     onOpenConversation?: (conversationId: string) => void;
     onCountsChange?: (counts: { escalations: number; pendingReviews: number }) => void;
     refetchMetrics?: () => void;
+    refreshSignal?: number;
 }
 
 const BOT_QA_RUBRIC_ITEMS: Array<{ code: string; maxPoints: number; ru: string; en: string }> = [
@@ -78,6 +79,7 @@ export default function QueuesQualityView({
     onOpenConversation,
     onCountsChange,
     refetchMetrics,
+    refreshSignal = 0,
 }: QueuesQualityViewProps) {
     const { t, lang, label, formatDateTime, formatDuration } = useI18n();
     const { pushToast } = useToast();
@@ -148,6 +150,12 @@ export default function QueuesQualityView({
     useEffect(() => {
         void loadAll();
     }, [loadAll]);
+
+    useEffect(() => {
+        if (!refreshSignal) return;
+        void loadAll();
+        managerQa.refresh();
+    }, [refreshSignal, loadAll, managerQa]);
 
     async function handleConfirmCloseEscalation() {
         if (!closingEscalation) return;

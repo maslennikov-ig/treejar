@@ -35,6 +35,7 @@ interface AuditSystemViewProps {
     activeTab?: string;
     onTabChange?: (tab: AuditSystemTab) => void;
     onNavigateEntity?: (view: AdminViewId, id?: string) => void;
+    refreshSignal?: number;
 }
 
 export function localizeAuditAction(action: string, t: TranslateFn): string {
@@ -66,6 +67,7 @@ export function localizeAuditAction(action: string, t: TranslateFn): string {
         'bot_rule.sync_canonical': t('audit.action.botRuleSyncCanonical'),
         'quality.bot_review': t('audit.action.qualityBotReview'),
         'quality.manager_review': t('audit.action.qualityBotReview'),
+        'admin_login.telegram': t('audit.action.telegramLogin'),
     };
     return map[normalized] ?? map[action] ?? action;
 }
@@ -100,6 +102,7 @@ export default function AuditSystemView({
     activeTab: externalTab,
     onTabChange,
     onNavigateEntity,
+    refreshSignal = 0,
 }: AuditSystemViewProps) {
     const { t, formatDate } = useI18n();
 
@@ -174,6 +177,12 @@ export default function AuditSystemView({
         void loadHealth();
     }, [loadHealth]);
 
+    useEffect(() => {
+        if (!refreshSignal) return;
+        void loadAudit();
+        void loadHealth();
+    }, [refreshSignal, loadAudit, loadHealth]);
+
     const visibleRows = useMemo(
         () =>
             rows.filter((row) =>
@@ -195,13 +204,27 @@ export default function AuditSystemView({
         [selected],
     );
 
+    function canJumpToEntity(row: AdminActionAuditRead): boolean {
+        if (!onNavigateEntity) return false;
+        if (row.entity_type === 'conversation') return Boolean(row.entity_id);
+        return [
+            'knowledge_base',
+            'knowledge_base_candidate',
+            'bot_rule',
+            'bot_behavior_rule',
+            'escalation',
+        ].includes(row.entity_type);
+    }
+
     function handleEntityJump(row: AdminActionAuditRead) {
         if (!onNavigateEntity) return;
         if (row.entity_type === 'conversation' && row.entity_id) {
             onNavigateEntity('conversations', row.entity_id);
         } else if (row.entity_type === 'knowledge_base') {
             onNavigateEntity('knowledge', row.entity_id ?? undefined);
-        } else if (row.entity_type === 'bot_rule') {
+        } else if (row.entity_type === 'knowledge_base_candidate') {
+            onNavigateEntity('knowledge');
+        } else if (row.entity_type === 'bot_rule' || row.entity_type === 'bot_behavior_rule') {
             onNavigateEntity('botRules', row.entity_id ?? undefined);
         } else if (row.entity_type === 'escalation') {
             onNavigateEntity('queuesQuality');
@@ -316,8 +339,9 @@ export default function AuditSystemView({
                                         <option value="conversation">{t('audit.entity.conversation')}</option>
                                         <option value="escalation">{t('audit.entity.escalation')}</option>
                                         <option value="knowledge_base">{t('audit.entity.knowledgeBase')}</option>
-                                        <option value="bot_rule">{t('audit.entity.botRule')}</option>
-                                        <option value="quality">{t('audit.entity.quality')}</option>
+                                        <option value="knowledge_base_candidate">{t('audit.entity.kbCandidate')}</option>
+                                        <option value="bot_behavior_rule">{t('audit.entity.botRule')}</option>
+                                        <option value="admin_session">{t('audit.entity.adminSession')}</option>
                                     </select>
                                 </div>
                             }
@@ -413,11 +437,7 @@ export default function AuditSystemView({
                             subtitle={t('audit.detailsSubtitle')}
                             icon={ShieldCheck}
                             action={
-                                selected &&
-                                onNavigateEntity &&
-                                ['conversation', 'knowledge_base', 'bot_rule', 'escalation'].includes(
-                                    selected.entity_type,
-                                ) ? (
+                                selected && canJumpToEntity(selected) ? (
                                     <button
                                         type="button"
                                         onClick={() => handleEntityJump(selected)}
