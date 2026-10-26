@@ -1,16 +1,10 @@
 # Orchestrator Handoff
 
-## Stage tj-j3zg (2026-10-25): redirect unauthenticated `/dashboard` navigation to `/admin/login` — owner-authorized deploy
-- Branch `codex/tj-j3zg-dashboard-auth` (worktree `.worktrees/tj-j3zg-dashboard-auth`, off `main` `8ae7ce8`); summary `.codex/stages/tj-j3zg/summary.md`.
-- Replaced raw JSON `401` on `/dashboard/{full_path:path}` with `302` redirect to `/admin/login` (preserving sanitized deep-link `next` across password and Telegram login), normalized `/dashboard` & `/admin` slashless roots, handled expired/repeat `/dashboard/telegram-login` links cleanly, and added SPA `sessionGuard.ts` (`15/15` frontend tests, pytest + mypy + ruff green).
+## Stage tj-4kba (2026-10-26): allow `/admin` Telegram login during `test_channel_restore_mode` — owner-authorized deploy
+- Branch `codex/tj-4kba-telegram-admin-login` (off `main` `fcc11ef`); summary `.codex/stages/tj-4kba/summary.md`. Routed `/admin` and `/start admin` before early exit in `test_channel_restore_mode` (`src/api/telegram_webhook.py`) while keeping customer manager-reply egress gated.
 
-## Stage tj-lk87 (2026-10-25): admin dashboard interactive onboarding, Help & Guide view, and client manual — owner-authorized deploy
-- Branch `codex/tj-lk87-admin-onboarding` (merged `main` `8ae7ce8`); summary `.codex/stages/tj-lk87/summary.md`. Delivered `driver.js@1.10.2` onboarding tour, bilingual `GuideView.tsx` (`?view=guide`), and client manual `https://aidevteam.ru/a/GaZJfnrjnN5VKtU2wLJdu1nFlqJq3xYO`; deployed live to `https://noor.starec.ai`.
-
-## Stage tj-ierv / tj-nm8c / tj-7ps5 (2026-10-23): admin dashboard UX overhaul — owner-authorized deploy
-- Branch codex/tj-7ps5-admin-ux; summary .codex/stages/tj-ierv/summary.md.
-- Delivered Light/Dark ThemeProvider, Variant 5A Bento overview, Variant 1B nav/queues,
-  Variant 2A/3A canonical KB/rules preview+safe sync, Variant 4A conversations & 6A AIQC.
+## Stage tj-j3zg / tj-lk87 / tj-ierv (2026-10-23..25): admin dashboard UX, onboarding, and login redirect — deployed
+- Summaries: `.codex/stages/tj-j3zg/summary.md`, `.codex/stages/tj-lk87/summary.md`, `.codex/stages/tj-ierv/summary.md` (live on `main` `fcc11ef` / `https://noor.starec.ai`; client manual `https://aidevteam.ru/a/GaZJfnrjnN5VKtU2wLJdu1nFlqJq3xYO`).
 
 ## October tester feedback — authorized completion2026-10-14
 - Accepted epic `tj-i2b1`; findings `.1` (false mismatch caveats), `.2` (missing updated summary), `.3` (literal refusal persistence), `.4` (missing photos for structured catalog titles). Delivered sourcea72da15 onmain; approved source4b032c7 plus CI fix6d4663f.

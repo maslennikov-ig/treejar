@@ -98,7 +98,92 @@ def test_restore_mode_routes_reset_command_without_manager_reply() -> None:
             headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
         )
     assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
     reset.assert_awaited_once_with(message)
+    manager.assert_not_awaited()
+
+
+@pytest.mark.parametrize("command_text", ["/admin", "/start admin"])
+def test_restore_mode_routes_admin_login_command_and_issues_crm_link(
+    command_text: str,
+) -> None:
+    telegram_client = MagicMock()
+    telegram_client.send_message_with_inline_keyboard = AsyncMock()
+    telegram_client.send_message = AsyncMock()
+    telegram_client.aclose = AsyncMock()
+    redis_mock = MagicMock()
+    redis_mock.setex = AsyncMock()
+
+    message = {
+        "text": command_text,
+        "chat": {"id": 166848328, "type": "private"},
+        "from": {"id": 166848328, "username": "maslennikovig", "first_name": "Igor"},
+    }
+    with (
+        patch("src.api.telegram_webhook.settings.test_channel_restore_mode", True),
+        patch(
+            "src.services.telegram_admin_login.settings.telegram_admin_user_ids",
+            "166848328",
+        ),
+        patch(
+            "src.services.telegram_admin_login.settings.domain",
+            "https://noor.starec.ai",
+        ),
+        patch(
+            "src.api.telegram_webhook.expected_telegram_webhook_secret",
+            return_value="test-secret",
+        ),
+        patch(
+            "src.api.telegram_webhook._get_telegram_client",
+            return_value=telegram_client,
+        ),
+        patch("src.api.telegram_webhook.redis_client", redis_mock),
+        patch(
+            "src.api.telegram_webhook._handle_manager_reply", new_callable=AsyncMock
+        ) as manager,
+    ):
+        response = client.post(
+            "/api/v1/webhook/telegram",
+            json={"message": message},
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    telegram_client.send_message_with_inline_keyboard.assert_awaited_once()
+    args, kwargs = telegram_client.send_message_with_inline_keyboard.await_args
+    assert kwargs["chat_id"] == "166848328"
+    button = args[1][0][0]
+    assert button["text"] == "Open Noor CRM"
+    assert button["url"].startswith(
+        "https://noor.starec.ai/dashboard/telegram-login?token="
+    )
+    manager.assert_not_awaited()
+
+
+def test_restore_mode_ignores_ordinary_text_messages() -> None:
+    message = {
+        "text": "Hello customer reply",
+        "chat": {"id": 166848328, "type": "private"},
+    }
+    with (
+        patch("src.api.telegram_webhook.settings.test_channel_restore_mode", True),
+        patch(
+            "src.api.telegram_webhook.expected_telegram_webhook_secret",
+            return_value="test-secret",
+        ),
+        patch(
+            "src.api.telegram_webhook._handle_manager_reply", new_callable=AsyncMock
+        ) as manager,
+    ):
+        response = client.post(
+            "/api/v1/webhook/telegram",
+            json={"message": message},
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ignored"}
     manager.assert_not_awaited()
 
 

@@ -170,8 +170,9 @@ async def telegram_webhook(
     data: dict[str, Any] = await request.json()
 
     if settings.test_channel_restore_mode:
-        # Authenticate first; only reset administration is available in restore mode.
-        # Acknowledge other updates so Telegram does not retry them indefinitely.
+        # Authenticate first; only admin login and reset administration are
+        # available in restore mode. Acknowledge other updates so Telegram does
+        # not retry them indefinitely.
         callback = data.get("callback_query")
         if isinstance(callback, dict):
             action = str(callback.get("data") or "").split(":", 1)[0]
@@ -183,10 +184,11 @@ async def telegram_webhook(
                 await _handle_callback_query(callback)
                 return {"status": "ok"}
         message = data.get("message")
-        if isinstance(message, dict) and await _handle_reset_command_if_present(
-            message
-        ):
-            return {"status": "ok"}
+        if isinstance(message, dict) and message.get("text"):
+            if await _handle_admin_login_command_if_present(message):
+                return {"status": "ok"}
+            if await _handle_reset_command_if_present(message):
+                return {"status": "ok"}
         return {"status": "ignored"}
 
     # Handle callback_query (button press from escalation alert)
@@ -356,6 +358,12 @@ async def _handle_admin_login_command_if_present(message: dict[str, Any]) -> boo
             first_name=from_user.get("first_name"),
         )
         if not result.authorized or not result.url:
+            logger.info(
+                "Telegram CRM login denied: user_id=%s username=%s reason=%s",
+                requester_id,
+                from_user.get("username") or "",
+                result.reason or "unknown",
+            )
             await client.send_message(
                 "CRM access is not configured for Telegram user id "
                 f"<code>{escape(str(requester_id))}</code>.",
