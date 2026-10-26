@@ -231,7 +231,16 @@ def _conversation_filters(
     if language:
         filters.append(Conversation.language == language)
     if escalation:
-        filters.append(Conversation.escalation_status == escalation)
+        if escalation == "any":
+            filters.append(Conversation.escalation_status != "none")
+        elif escalation == "open":
+            filters.append(
+                Conversation.escalation_status.in_(
+                    ("pending", "in_progress", "manual_takeover")
+                )
+            )
+        else:
+            filters.append(Conversation.escalation_status == escalation)
     if deal_status:
         filters.append(Conversation.deal_status == deal_status)
     if has_deal is True:

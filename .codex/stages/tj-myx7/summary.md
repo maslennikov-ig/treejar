@@ -1,7 +1,7 @@
 # Stage tj-myx7 — Admin Dashboard dead/duplicate controls and filter/audit wiring sweep
 
 - Branch `codex/tj-myx7-admin-controls`, worktree `.worktrees/tj-myx7-admin-controls`,
-  base `main` `28cf572` (ready for owner-authorized delivery).
+  base `main` `28cf572` (owner-authorized combined delivery with `tj-p82s`).
 - Pinned RAG files (`src/models/product.py`, `src/rag/embeddings.py`,
   `src/rag/pipeline.py`, `src/schemas/product.py`) unchanged vs `main`.
 

@@ -55,6 +55,26 @@ def _request_path(request: object | None) -> str | None:
     return str(path)
 
 
+def _resolve_actor(request: object | None, explicit_actor: str | None) -> str:
+    if explicit_actor:
+        return explicit_actor
+    if request is not None:
+        scope = getattr(request, "scope", None)
+        session = scope.get("session") if isinstance(scope, Mapping) else None
+        if not isinstance(session, Mapping):
+            try:
+                candidate = getattr(request, "session", None)
+                if isinstance(candidate, Mapping):
+                    session = candidate
+            except Exception:
+                session = None
+        if isinstance(session, Mapping):
+            session_actor = session.get("admin_actor")
+            if isinstance(session_actor, str) and session_actor.strip():
+                return session_actor.strip()
+    return "admin"
+
+
 async def log_admin_action(
     db: AsyncSession,
     *,
@@ -64,13 +84,13 @@ async def log_admin_action(
     before: Any = None,
     after: Any = None,
     request: object | None = None,
-    actor: str = "admin",
+    actor: str | None = None,
     metadata: Any = None,
 ) -> AdminActionAudit:
     """Create an audit row and flush it into the caller's transaction."""
 
     row = AdminActionAudit(
-        actor=actor,
+        actor=_resolve_actor(request, actor),
         action=action,
         entity_type=entity_type,
         entity_id=str(entity_id) if entity_id is not None else None,

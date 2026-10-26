@@ -145,6 +145,18 @@ export default function ConversationsView({
         if (initialStage !== undefined) setStage(initialStage);
         if (initialEscalation !== undefined) setEscalation(initialEscalation);
         setRouteFilter(initialFilter || '');
+        if (initialLanguage || initialStatus || initialStage || initialEscalation) {
+            setShowFilters(true);
+        }
+        if (
+            initialFilter ||
+            initialLanguage ||
+            initialStatus ||
+            initialStage ||
+            initialEscalation
+        ) {
+            setQuickTab('all');
+        }
     }, [initialFilter, initialLanguage, initialStatus, initialStage, initialEscalation]);
 
     const selectCustomerConversation = useCallback((id: string | null) => {
@@ -166,7 +178,7 @@ export default function ConversationsView({
             if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
             const effectiveEscalation =
                 quickTab === 'waiting'
-                    ? 'pending'
+                    ? 'open'
                     : quickTab === 'review'
                       ? 'resolved'
                       : escalation;
@@ -512,6 +524,8 @@ export default function ConversationsView({
                                     className="admin-input rounded-lg px-2 py-1.5 text-xs"
                                 >
                                     <option value="">{t('conv.filter.allEscalations')}</option>
+                                    <option value="any">{t('conv.filter.escalation.any')}</option>
+                                    <option value="open">{t('conv.filter.escalation.open')}</option>
                                     <option value="none">{label('none')}</option>
                                     <option value="pending">{label('pending')}</option>
                                     <option value="in_progress">{label('in_progress')}</option>

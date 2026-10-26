@@ -108,12 +108,12 @@ export const TOUR_TRACKS: Record<TourTrackId, NoorTourStepSpec[]> = {
             side: 'bottom',
             align: 'end',
             title: {
-                ru: 'Верхняя панель: умный поиск, период, RU/EN и тема',
-                en: 'Top bar: smart search, period, RU/EN & theme',
+                ru: 'Верхняя панель: поиск, период, RU/EN, тема и профиль',
+                en: 'Top bar: search, period, RU/EN, theme & profile',
             },
             description: {
-                ru: 'Слева — умный поиск: в списках он фильтрует текущий раздел, а на экранах без списка нажатие Enter сразу переносит в «Клиенты и диалоги» с этим запросом (Esc очищает). Справа — переключатель периода в «Обзоре» (по умолчанию «Месяц», далее запоминает ваш выбор), язык RU | EN, светлая/тёмная тема, обновление и повторный запуск тура.',
-                en: 'On the left, smart search filters the active list — or press Enter on summary screens to jump straight to Customers & Conversations with that query (Esc clears). On the right: the Overview period switch (defaults to Month and remembers your last choice), RU | EN toggle, Light/Dark theme, refresh and tour launcher.',
+                ru: 'Слева — умный поиск: в списках он фильтрует текущий раздел, а на сводных экранах кнопка «Найти» или Enter сразу переносит в «Клиенты и диалоги» с этим запросом («×» или Esc очищает). Справа — период «Обзора» (по умолчанию «Месяц», далее запоминает ваш выбор), запуск тура, язык RU | EN, тема, обновление и меню профиля администратора (активная сессия, переход в /admin/ и выход).',
+                en: 'On the left, smart search filters the active list — or click Find / press Enter on summary screens to jump straight to Customers & Conversations with that query ("×" or Esc clears). On the right: Overview period switch (defaults to Month and remembers your choice), tour launcher, RU | EN, theme, refresh and the admin profile menu (session identity, /admin/ console and Sign out).',
             },
         },
         {
@@ -508,17 +508,17 @@ export const GUIDE_PLAYBOOKS: GuidePlaybookItem[] = [
                 en: 'If Telegram is unavailable on your workstation, use the password fallback form on the login screen with admin credentials.',
             },
             {
-                ru: 'В правом верхнем углу выберите язык интерфейса (RU | EN) и тему оформления (луна/солнце — светлая или тёмная). Выбор сохраняется в вашем браузере автоматически.',
-                en: 'In the top-right header, pick your interface language (RU | EN) and theme (Light or Dark). Your preference is saved in the browser automatically.',
+                ru: 'В правом верхнем углу выберите язык интерфейса (RU | EN) и тему оформления (луна/солнце — светлая или тёмная). Рядом расположена кнопка вашего профиля с информацией о способе входа, быстрым переходом в консоль /admin/ и кнопкой «Выйти из кабинета».',
+                en: 'In the top-right header, pick your interface language (RU | EN) and theme (Light or Dark). Next to them is your admin profile menu showing sign-in identity, a shortcut to /admin/ and the Sign out button.',
             },
             {
-                ru: 'Используйте поиск в верхней шапке: в разделах со списком он фильтрует записи на месте, а на сводных экранах («Обзор», «Каталог», «Отчеты», «Настройки») нажатие Enter сразу переносит в «Клиенты и диалоги» с этим запросом (Esc очищает строку).',
-                en: 'Use the top header search: on list screens it filters records in place, while pressing Enter on summary screens (Overview, Catalog, Reports, Settings) jumps straight to Customers & Conversations with that query (Esc clears).',
+                ru: 'Используйте поиск в верхней шапке: в разделах со списком он фильтрует записи на месте, а на сводных экранах («Обзор», «Каталог», «Отчеты», «Настройки») кнопка «Найти» или нажатие Enter сразу переносит в «Клиенты и диалоги» с этим запросом («×» или Esc очищает строку).',
+                en: 'Use the top header search: on list screens it filters records in place, while clicking Find or pressing Enter on summary screens (Overview, Catalog, Reports, Settings) jumps straight to Customers & Conversations with that query ("×" or Esc clears).',
             },
         ],
         tip: {
-            ru: 'Одна сессия входа действует сразу для обоих интерфейсов (/dashboard/ и /admin/), а отметка о прохождении тура хранится индивидуально в браузере каждого сотрудника.',
-            en: 'One login session authenticates both /dashboard/ and /admin/, while onboarding tour progress is saved per browser so every team member gets the tour on their own device.',
+            ru: 'Одна сессия входа действует сразу для /dashboard/ и /admin/, все правки пишутся в аудит с вашим идентификатором (например, telegram:ID), а отметка о прохождении тура хранится индивидуально в браузере каждого сотрудника.',
+            en: 'One login session authenticates both /dashboard/ and /admin/, every action is audited under your identity (e.g. telegram:ID), and tour progress is stored per browser so each teammate gets the tour on their own device.',
         },
         route: { view: 'overview' },
         tourTrack: 'full',

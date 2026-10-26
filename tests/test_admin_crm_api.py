@@ -364,6 +364,42 @@ def test_conversation_filters_support_deal_target_and_unknown_stage() -> None:
     assert "zoho_deal_id IS NOT NULL" in joined
     assert "'active', 'completed'" in joined
 
+    any_esc_clauses = _conversation_filters(
+        search=None,
+        status=None,
+        stage=None,
+        language=None,
+        escalation="any",
+    )
+    any_esc_sql = " | ".join(
+        str(
+            clause.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        )
+        for clause in any_esc_clauses
+    )
+    assert "escalation_status != 'none'" in any_esc_sql
+
+    open_esc_clauses = _conversation_filters(
+        search=None,
+        status=None,
+        stage=None,
+        language=None,
+        escalation="open",
+    )
+    open_esc_sql = " | ".join(
+        str(
+            clause.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        )
+        for clause in open_esc_clauses
+    )
+    assert "'pending', 'in_progress', 'manual_takeover'" in open_esc_sql
+
 
 @pytest.mark.asyncio
 async def test_admin_crm_audit_forwards_actor_and_expands_bot_rule_alias(

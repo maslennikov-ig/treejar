@@ -311,7 +311,7 @@ export default function OverviewView({
                                     onSelectReason={() =>
                                         onNavigate({
                                             view: 'conversations',
-                                            escalation: 'pending',
+                                            escalation: 'any',
                                         })
                                     }
                                 />

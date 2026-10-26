@@ -958,3 +958,11 @@ async def test_admin_session_endpoint_reports_auth_identity(
     assert pw_data["actor"] == settings.admin_username
     assert pw_data["logout_url"] == "/admin/logout"
     assert pw_data["sqladmin_url"] == "/admin/"
+
+    logout_resp = await admin_client.get("/admin/logout")
+    assert logout_resp.status_code in (302, 303)
+    after_logout = await admin_client.get("/api/v1/admin/session")
+    assert after_logout.status_code == 401
+    dash_after_logout = await admin_client.get("/dashboard/")
+    assert dash_after_logout.status_code in (302, 303)
+    assert "/admin/login" in dash_after_logout.headers["location"]

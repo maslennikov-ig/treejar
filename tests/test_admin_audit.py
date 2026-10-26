@@ -105,3 +105,32 @@ def test_admin_action_audit_read_maps_metadata_alias() -> None:
 
     assert payload.metadata == {"reason": "manual edit"}
     assert payload.model_dump()["metadata"] == {"reason": "manual edit"}
+
+
+@pytest.mark.asyncio
+async def test_log_admin_action_infers_session_actor_when_omitted() -> None:
+    from src.services.admin_audit import log_admin_action
+
+    class FakeSessionRequest:
+        scope = {"session": {"admin_actor": "telegram:2084399"}}
+        url = type("Url", (), {"path": "/api/v1/admin/knowledge-base"})()
+
+    class FakeDB:
+        def __init__(self) -> None:
+            self.added: list[object] = []
+
+        def add(self, obj: object) -> None:
+            self.added.append(obj)
+
+        async def flush(self) -> None:
+            return None
+
+    db = FakeDB()
+    row = await log_admin_action(
+        db,  # type: ignore[arg-type]
+        action="knowledge_base.create",
+        entity_type="knowledge_base",
+        entity_id="kb-42",
+        request=FakeSessionRequest(),
+    )
+    assert row.actor == "telegram:2084399"

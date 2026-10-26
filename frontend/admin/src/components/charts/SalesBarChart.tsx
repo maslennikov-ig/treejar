@@ -138,9 +138,9 @@ export default function SalesBarChart({
                                 if (entry?.code === 'noor_sales') {
                                     onSelectBar({ escalation: 'none', filter: 'deals' });
                                 } else if (entry?.code === 'post_escalation') {
-                                    onSelectBar({ escalation: 'resolved', filter: 'deals' });
+                                    onSelectBar({ escalation: 'any', filter: 'deals' });
                                 } else if (entry?.code === 'escalations') {
-                                    onSelectBar({ escalation: 'pending' });
+                                    onSelectBar({ escalation: 'any' });
                                 }
                             }}
                         >
