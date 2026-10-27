@@ -110,9 +110,11 @@ export default function Sidebar({
         >
             <div className="flex items-center justify-between gap-2.5 border-b border-slate-200 px-4 py-3.5 dark:border-slate-800">
                 <div className="flex items-center gap-2.5">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2170e4] text-sm font-black text-white shadow-xs">
-                        N
-                    </div>
+                    <img
+                        src="/dashboard/favicon.svg"
+                        alt="Treejar Noor"
+                        className="h-8 w-8 shrink-0 rounded-lg shadow-xs"
+                    />
                     <div>
                         <div className="text-sm font-bold tracking-tight text-slate-900 dark:text-slate-100">
                             Noor CRM

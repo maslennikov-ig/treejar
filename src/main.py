@@ -3,10 +3,14 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import Response
 
@@ -25,6 +29,17 @@ from src.services.admin_audit import log_admin_action
 from src.services.telegram_admin_login import consume_telegram_admin_login_token
 
 logger = logging.getLogger(__name__)
+
+BRAND_STATIC_DIR = Path(__file__).resolve().parent / "static" / "brand"
+BRAND_ASSET_MEDIA_TYPES: dict[str, str] = {
+    "favicon.ico": "image/x-icon",
+    "favicon.svg": "image/svg+xml",
+    "favicon-32x32.png": "image/png",
+    "apple-touch-icon.png": "image/png",
+    "icon-192.png": "image/png",
+    "icon-512.png": "image/png",
+    "site.webmanifest": "application/manifest+json",
+}
 
 
 @asynccontextmanager
@@ -52,12 +67,30 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
-        docs_url="/docs" if settings.app_docs_enabled else None,
-        redoc_url="/redoc" if settings.app_docs_enabled else None,
+        docs_url=None,
+        redoc_url=None,
         openapi_url="/openapi.json" if settings.app_docs_enabled else None,
         lifespan=lifespan,
     )
     app.add_middleware(SessionMiddleware, secret_key=settings.app_secret_key)
+
+    if settings.app_docs_enabled:
+
+        @app.get("/docs", include_in_schema=False)
+        async def custom_swagger_ui_html() -> HTMLResponse:
+            return get_swagger_ui_html(
+                openapi_url="/openapi.json",
+                title=f"{settings.app_name} - Swagger UI",
+                swagger_favicon_url="/favicon.svg",
+            )
+
+        @app.get("/redoc", include_in_schema=False)
+        async def custom_redoc_html() -> HTMLResponse:
+            return get_redoc_html(
+                openapi_url="/openapi.json",
+                title=f"{settings.app_name} - ReDoc",
+                redoc_favicon_url="/favicon.svg",
+            )
 
     # Register routes
     from src.api.v1.router import api_v1_router
@@ -84,6 +117,8 @@ def create_app() -> FastAPI:
         app,
         engine,
         title="Treejar Admin",
+        logo_url="/favicon.svg",
+        favicon_url="/favicon.svg",
         authentication_backend=authentication_backend,
     )
 
@@ -91,11 +126,32 @@ def create_app() -> FastAPI:
 
     setup_admin_views(admin)
 
+    # --- Brand Favicon & App Icon Routes ---
+    def _register_brand_asset_route(
+        route_path: str,
+        asset_name: str,
+        media_type: str,
+    ) -> None:
+        asset_path = BRAND_STATIC_DIR / asset_name
+
+        @app.api_route(route_path, methods=["GET", "HEAD"], include_in_schema=False)
+        async def serve_brand_asset() -> FileResponse:
+            return FileResponse(
+                asset_path,
+                media_type=media_type,
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+
+    for _asset_name, _media_type in BRAND_ASSET_MEDIA_TYPES.items():
+        _register_brand_asset_route(f"/{_asset_name}", _asset_name, _media_type)
+        _register_brand_asset_route(
+            f"/dashboard/{_asset_name}",
+            _asset_name,
+            _media_type,
+        )
+
     # --- Landing Page SPA Integration ---
     import os
-
-    from fastapi.responses import FileResponse, RedirectResponse
-    from fastapi.staticfiles import StaticFiles
 
     # --- Admin Dashboard SPA Integration ---
     os.makedirs("frontend/admin/dist/assets", exist_ok=True)

@@ -137,9 +137,16 @@ function PublicAcceptanceApp() {
     return (
         <div className="min-h-screen bg-[var(--bg-app)] px-4 py-6 text-[var(--text-primary)] sm:px-6 lg:px-8">
             <header className="mx-auto mb-8 max-w-7xl">
-                <h1 className="text-2xl font-bold text-[var(--text-primary)]">
-                    <span className="text-[var(--accent-primary)]">TreeJar</span> Acceptance Demo
-                </h1>
+                <div className="flex items-center gap-3">
+                    <img
+                        src="/dashboard/favicon.svg"
+                        alt="Treejar"
+                        className="h-9 w-9 shrink-0 rounded-lg"
+                    />
+                    <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+                        <span className="text-[var(--accent-primary)]">TreeJar</span> Acceptance Demo
+                    </h1>
+                </div>
                 <p className="mt-1 text-sm text-[var(--text-secondary)]">
                     Прямая self-test страница для клиентской проверки WhatsApp, Telegram и backend-сценариев.
                 </p>

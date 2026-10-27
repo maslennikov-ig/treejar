@@ -1,14 +1,25 @@
 {% extends "sqladmin/base.html" %}
+{% block head %}
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta name="theme-color" content="#14171A">
+{% endblock %}
 {% block body %}
 <div class="d-flex align-items-center justify-content-center min-vh-100 bg-light">
   <div class="container-tight py-4" style="max-width: 480px;">
     <div class="card card-md shadow-sm border-0">
       <div class="card-body p-4 p-sm-5">
         <div class="d-flex align-items-center justify-content-center gap-2 mb-3">
-          <span
-            class="d-inline-flex align-items-center justify-content-center rounded-2 fw-bold text-white"
-            style="width: 36px; height: 36px; background: #2170e4; font-size: 16px;"
-          >N</span>
+          <img
+            src="/favicon.svg"
+            alt="Treejar Noor"
+            width="36"
+            height="36"
+            class="rounded-2 flex-shrink-0"
+          >
           <div class="text-start">
             <h1 class="h2 mb-0 lh-1">Noor CRM</h1>
             <div class="text-muted small">Treejar AI Operations</div>
