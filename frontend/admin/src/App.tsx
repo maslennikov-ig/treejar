@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { fetchAdminSession } from '@/api/operators';
 import AcceptanceDemo from '@/components/AcceptanceDemo';
+import BrandMark from '@/components/BrandMark';
 import { HelpTooltip } from '@/components/HelpTooltip';
 import { useOnboardingTour } from '@/components/OnboardingTour';
 import Sidebar, { NAV_GROUPS } from '@/components/Sidebar';
@@ -138,9 +139,9 @@ function PublicAcceptanceApp() {
         <div className="min-h-screen bg-[var(--bg-app)] px-4 py-6 text-[var(--text-primary)] sm:px-6 lg:px-8">
             <header className="mx-auto mb-8 max-w-7xl">
                 <div className="flex items-center gap-3">
-                    <img
-                        src="/dashboard/favicon.svg"
-                        alt="Treejar"
+                    <BrandMark
+                        size={36}
+                        label="Treejar"
                         className="h-9 w-9 shrink-0 rounded-lg"
                     />
                     <h1 className="text-2xl font-bold text-[var(--text-primary)]">

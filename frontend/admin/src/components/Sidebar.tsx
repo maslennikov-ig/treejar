@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
+import BrandMark from '@/components/BrandMark';
 
 export type AdminViewId =
     | 'overview'
@@ -110,9 +111,9 @@ export default function Sidebar({
         >
             <div className="flex items-center justify-between gap-2.5 border-b border-slate-200 px-4 py-3.5 dark:border-slate-800">
                 <div className="flex items-center gap-2.5">
-                    <img
-                        src="/dashboard/favicon.svg"
-                        alt="Treejar Noor"
+                    <BrandMark
+                        size={32}
+                        label="Treejar Noor"
                         className="h-8 w-8 shrink-0 rounded-lg shadow-xs"
                     />
                     <div>

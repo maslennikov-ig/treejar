@@ -86,9 +86,9 @@ async def test_sqladmin_login_and_views_include_brand_favicon(
 ) -> None:
     login_page = await client.get("/admin/login")
     assert login_page.status_code == 200
-    assert 'href="/favicon.svg"' in login_page.text
-    assert 'href="/apple-touch-icon.png"' in login_page.text
-    assert 'src="/favicon.svg"' in login_page.text
+    assert 'href="/favicon.svg?v=2"' in login_page.text
+    assert 'href="/apple-touch-icon.png?v=2"' in login_page.text
+    assert 'aria-label="Treejar Noor"' in login_page.text
 
     await client.post(
         "/admin/login",
@@ -99,8 +99,8 @@ async def test_sqladmin_login_and_views_include_brand_favicon(
     )
     admin_root = await client.get("/admin/")
     assert admin_root.status_code == 200
-    assert 'href="/favicon.svg"' in admin_root.text
-    assert 'src="/favicon.svg"' in admin_root.text
+    assert 'href="/favicon.svg?v=2"' in admin_root.text
+    assert 'src="/favicon.svg?v=2"' in admin_root.text
 
 
 def test_openapi_docs_use_local_brand_favicon_when_enabled(
@@ -112,33 +112,38 @@ def test_openapi_docs_use_local_brand_favicon_when_enabled(
     for docs_path in ("/docs", "/redoc"):
         resp = test_client.get(docs_path)
         assert resp.status_code == 200
-        assert "/favicon.svg" in resp.text
+        assert "/favicon.svg?v=2" in resp.text
         assert "fastapi.tiangolo.com" not in resp.text
 
 
 def test_frontend_and_standalone_html_surfaces_declare_favicon() -> None:
     for html_rel in ("frontend/landing/index.html", "frontend/admin/index.html"):
         html_text = (REPO_ROOT / html_rel).read_text(encoding="utf-8")
-        assert 'rel="icon" href="/favicon.ico"' in html_text
-        assert 'rel="icon" type="image/svg+xml" href="/favicon.svg"' in html_text
+        assert 'rel="icon" href="/favicon.ico?v=2"' in html_text
+        assert 'rel="icon" type="image/svg+xml" href="/favicon.svg?v=2"' in html_text
         assert (
-            'rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png"'
+            'rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=2"'
             in html_text
         )
         assert (
-            'rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"'
+            'rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2"'
             in html_text
         )
         assert 'rel="manifest" href="/site.webmanifest"' in html_text
 
+    brand_mark_tsx = (
+        REPO_ROOT / "frontend" / "admin" / "src" / "components" / "BrandMark.tsx"
+    ).read_text(encoding="utf-8")
     admin_app_tsx = (REPO_ROOT / "frontend" / "admin" / "src" / "App.tsx").read_text(
         encoding="utf-8"
     )
     sidebar_tsx = (
         REPO_ROOT / "frontend" / "admin" / "src" / "components" / "Sidebar.tsx"
     ).read_text(encoding="utf-8")
-    assert 'src="/dashboard/favicon.svg"' in admin_app_tsx
-    assert 'src="/dashboard/favicon.svg"' in sidebar_tsx
+    assert "data-brand-mark" in brand_mark_tsx
+    assert "<BrandMark" in admin_app_tsx
+    assert "<BrandMark" in sidebar_tsx
+    assert 'src="/dashboard/favicon.svg"' not in sidebar_tsx
 
     standalone_html_files = sorted(
         list((REPO_ROOT / "docs" / "client").glob("*.html"))

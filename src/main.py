@@ -81,7 +81,7 @@ def create_app() -> FastAPI:
             return get_swagger_ui_html(
                 openapi_url="/openapi.json",
                 title=f"{settings.app_name} - Swagger UI",
-                swagger_favicon_url="/favicon.svg",
+                swagger_favicon_url="/favicon.svg?v=2",
             )
 
         @app.get("/redoc", include_in_schema=False)
@@ -89,7 +89,7 @@ def create_app() -> FastAPI:
             return get_redoc_html(
                 openapi_url="/openapi.json",
                 title=f"{settings.app_name} - ReDoc",
-                redoc_favicon_url="/favicon.svg",
+                redoc_favicon_url="/favicon.svg?v=2",
             )
 
     # Register routes
@@ -117,8 +117,8 @@ def create_app() -> FastAPI:
         app,
         engine,
         title="Treejar Admin",
-        logo_url="/favicon.svg",
-        favicon_url="/favicon.svg",
+        logo_url="/favicon.svg?v=2",
+        favicon_url="/favicon.svg?v=2",
         authentication_backend=authentication_backend,
     )
 
