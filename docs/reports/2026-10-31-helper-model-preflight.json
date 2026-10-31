@@ -1,0 +1,88 @@
+{
+  "backup": "/opt/noor/.hotfix-backups/tj-199k-helpers-20261031T190556Z",
+  "health": {
+    "status": "ok",
+    "version": "0.4.0",
+    "release_sha": "6df11eb29cb88bcb63c8aadb52398bcb507f2580",
+    "dependencies": {
+      "redis": {
+        "name": "redis",
+        "status": "ok",
+        "latency_ms": 0.52,
+        "message": null
+      },
+      "database": {
+        "name": "database",
+        "status": "ok",
+        "latency_ms": 1.68,
+        "message": null
+      }
+    }
+  },
+  "settings": {
+    "openrouter_model_main": "openai/gpt-6-luna",
+    "openrouter_model_fast": "deepseek/deepseek-v4-flash",
+    "voice_transcription_model": "openai/gpt-4o-mini-transcribe",
+    "embedding_model": "BAAI/bge-m3",
+    "embedding_dimension": 1024,
+    "test_channel_restore_mode": true,
+    "wazzup_channel_id": "b49b1b9d-757f-4104-b56d-8f43d62cc515",
+    "wazzup_outbound_allowed_channel_id": "b49b1b9d-757f-4104-b56d-8f43d62cc515",
+    "wazzup_webhook_guard_enabled": false,
+    "customer_facts_mode": "disabled"
+  },
+  "effective_main": "openai/gpt-6.1-sol",
+  "qa": {
+    "bot_qa": {
+      "mode": "disabled",
+      "model": "deepseek/deepseek-v4-flash"
+    },
+    "manager_qa": {
+      "mode": "disabled",
+      "model": "deepseek/deepseek-v4-flash"
+    },
+    "red_flags": {
+      "mode": "disabled",
+      "model": "deepseek/deepseek-v4-flash"
+    }
+  },
+  "protected_settings_digest": "08137eddba611b5af5e233afee1d6056446f0693e0bfbb95d38cd06405d972a8",
+  "configs_digest": "8f5c378643d121f8a8bd45bcdc8a766f9ff7779df11f6237135235a0ebb8e158",
+  "containers": {
+    "/noor-app-1": {
+      "id": "e145503dc2f85db10e01271c2894aad0c61a9822a9376fa4b4a095bf25b01ea6",
+      "image": "sha256:07514d9e6304e10728642a00ebddeb1cdb317e15753a7cea22b0cb94ec7a1da2",
+      "started": "2026-10-31T18:30:04.682395333Z",
+      "restart_count": 0,
+      "oom": false
+    },
+    "/noor-worker-1": {
+      "id": "dddd42280483b6154a233bb39d89125d8fc6ccbe122248b8d51d23b7b979a349",
+      "image": "sha256:d3c3391344b42dd0315d3bfb06154d3e5cf6cfc6efc33710a400a7df3ae8854c",
+      "started": "2026-10-31T18:30:04.680930152Z",
+      "restart_count": 0,
+      "oom": false
+    },
+    "/noor-db-1": {
+      "id": "43ccb64efb9deb16c908f00bcdaa8ae6eb08ccee856cd9267b0742ec254585cb",
+      "image": "sha256:7d400e340efb42f4d8c9c12c6427adb253f726881a9985d2a471bf0eed824dff",
+      "started": "2026-10-29T13:33:49.137952178Z",
+      "restart_count": 0,
+      "oom": false
+    },
+    "/noor-redis-1": {
+      "id": "1b9c9a5c99d0141a4d60131440a3f5c8d1f966cfcc56fb796f8c2ddc2dbfc757",
+      "image": "sha256:7aec734b2bb298a1d769fd8729f13b8514a41bf90fcdd1f38ec52267fbaa8ee6",
+      "started": "2026-10-29T13:33:49.172109398Z",
+      "restart_count": 0,
+      "oom": false
+    },
+    "/noor-nginx-1": {
+      "id": "0cdbce63c5db68deb3690b566ea701e547e7a7ac781b8156276a046c5b1f9694",
+      "image": "sha256:e7257f1ef28ba17cf7c248cb8ccf6f0c6e0228ab9c315c152f9c203cd34cf6d1",
+      "started": "2026-10-29T13:33:49.244964398Z",
+      "restart_count": 0,
+      "oom": false
+    }
+  }
+}

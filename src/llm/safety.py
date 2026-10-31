@@ -47,6 +47,16 @@ PATH_RESPONSE_ADAPTER = "response_adapter"
 PATH_RESPONSE_REPAIR_JUDGE = "response_repair_judge"
 PATH_AUTO_FAQ_TRANSLATE = "auto_faq_translate"
 PATH_AUTO_FAQ_CANDIDATE = "auto_faq_candidate"
+DEFAULT_QUALITY_MODEL = "openai/gpt-6.1-terra"
+_QUALITY_PATHS = frozenset(
+    {
+        PATH_QUALITY_FINAL,
+        PATH_QUALITY_RED_FLAGS,
+        PATH_QUALITY_MANAGER,
+        PATH_RESPONSE_REPAIR_JUDGE,
+    }
+)
+_BOUNDED_OPENAI_HELPER_MODELS = frozenset({"openai/gpt-6-luna", "openai/gpt-6.1-terra"})
 OPENROUTER_PROVIDER_NAME = "openrouter"
 LLM_USAGE_TELEMETRY_ATTR = "__treejar_llm_usage_telemetry__"
 _OPENROUTER_CACHE_CONTROL_SUPPORTED_MODEL_PREFIXES = ("anthropic/",)
@@ -370,9 +380,9 @@ _POLICIES: dict[str, LLMPathPolicy] = {
         # 720-1494 completion tokens: about 300 were the JSON the schema wants
         # and the rest was reasoning that vendor billed for and never returned.
         # 800 could not hold it at all. Every failure was the output schema
-        # rejecting a truncated answer, never the provider. The path now runs
-        # DeepSeek Flash, which spends about 270, but the ceiling stays where a
-        # reasoning model would still fit: it is only spent when it is used, and
+        # rejecting a truncated answer, never the provider. DeepSeek Flash previously spent about 270 tokens. The owner now
+        # selects Terra; the ceiling stays where a reasoning model would still
+        # fit: it is only spent when it is used, and
         # starving this call is the one failure mode we have already paid for.
         max_tokens=2000,
         # Halved on 2026-08-11 when the repair path gained a second attempt.
@@ -476,11 +486,13 @@ def model_name_for_path(path: str, override: str | None = None) -> str:
     """Return the default OpenRouter model for an LLM path.
 
     The main model remains the default only for core client-facing paths. Non-core
-    background and helper paths default to the fast model unless an explicit
-    caller/admin override is supplied.
+    checks default to Terra; other background and helper paths use the fast
+    model. Explicit caller/admin overrides remain authoritative.
     """
     if override:
         return override
+    if path in _QUALITY_PATHS:
+        return DEFAULT_QUALITY_MODEL
     policy = policy_for_path(path)
     if policy.scope == "core":
         return settings.openrouter_model_main
@@ -497,10 +509,14 @@ def openrouter_supports_prompt_cache_control(model_name: str) -> bool:
     return normalized.startswith(_OPENROUTER_CACHE_CONTROL_SUPPORTED_MODEL_PREFIXES)
 
 
-def _openrouter_core_reasoning_effort(
+def _openrouter_reasoning_effort(
     policy: LLMPathPolicy,
     model_name: str | None,
-) -> Literal["low", "medium"] | None:
+) -> Literal["none", "low", "medium"] | None:
+    # Bounded JSON helpers need their output budget for the answer. Keep the
+    # established core chat/follow-up reasoning policy separate.
+    if _bounded_openai_helper(policy, model_name):
+        return "none"
     if (
         policy.scope == "core"
         and model_name is not None
@@ -523,19 +539,29 @@ def _openrouter_core_reasoning_effort(
     return None
 
 
+def _bounded_openai_helper(policy: LLMPathPolicy, model_name: str | None) -> bool:
+    return (
+        policy.scope == "non_core"
+        and model_name is not None
+        and model_name.strip().lower() in _BOUNDED_OPENAI_HELPER_MODELS
+    )
+
+
 def _openrouter_extra_body(
     *,
     model_name: str | None,
     cache_telemetry_enabled: bool,
     reasoning_enabled: bool | None = None,
-    reasoning_effort: Literal["low", "medium"] | None = None,
+    reasoning_effort: Literal["none", "low", "medium"] | None = None,
 ) -> dict[str, Any]:
     extra_body: dict[str, Any] = {}
     if cache_telemetry_enabled:
         extra_body["usage"] = {"include": True}
         if model_name and openrouter_supports_prompt_cache_control(model_name):
             extra_body["cache_control"] = {"type": "ephemeral"}
-    if reasoning_enabled is False or (
+    if reasoning_effort == "none":
+        extra_body["reasoning"] = {"effort": "none"}
+    elif reasoning_enabled is False or (
         model_name
         and model_name.strip().lower() in _OPENROUTER_REASONING_DISABLED_MODEL_IDS
     ):
@@ -581,11 +607,15 @@ def model_settings_for_path(
     if policy.temperature is not None:
         settings_payload["temperature"] = policy.temperature
     if provider == OPENROUTER_PROVIDER_NAME and model_name is not None:
+        # These OpenRouter endpoints do not advertise temperature. Do not
+        # depend on gateway filtering to silently discard the judge's value.
+        if _bounded_openai_helper(policy, model_name):
+            settings_payload.pop("temperature", None)
         extra_body = _openrouter_extra_body(
             model_name=model_name,
             cache_telemetry_enabled=cache_telemetry_enabled,
             reasoning_enabled=policy.reasoning_enabled,
-            reasoning_effort=_openrouter_core_reasoning_effort(policy, model_name),
+            reasoning_effort=_openrouter_reasoning_effort(policy, model_name),
         )
         if extra_body:
             settings_payload["extra_body"] = extra_body
@@ -638,10 +668,13 @@ def _merge_model_settings(
         merged["temperature"] = policy.temperature
 
     if provider == OPENROUTER_PROVIDER_NAME:
+        if _bounded_openai_helper(policy, model_name):
+            merged.pop("temperature", None)
         generated_extra_body = _openrouter_extra_body(
             model_name=model_name,
             cache_telemetry_enabled=cache_telemetry_enabled,
-            reasoning_effort=_openrouter_core_reasoning_effort(policy, model_name),
+            reasoning_enabled=policy.reasoning_enabled,
+            reasoning_effort=_openrouter_reasoning_effort(policy, model_name),
         )
         extra_body = _merge_extra_body(
             merged.get("extra_body"),

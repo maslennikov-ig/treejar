@@ -457,7 +457,7 @@ async def test_unflagged_turn_records_once_without_calling_the_judge() -> None:
 def test_repair_judge_uses_one_bounded_second_vendor_call() -> None:
     policy = policy_for_path(PATH_RESPONSE_REPAIR_JUDGE)
 
-    assert REPAIR_JUDGE_MODEL == "deepseek/deepseek-v4-flash"
+    assert REPAIR_JUDGE_MODEL == "openai/gpt-6.1-terra"
     assert policy.scope == "non_core"
     assert policy.request_limit == 1
     assert policy.max_attempts == 1
@@ -1009,7 +1009,7 @@ def test_the_repair_judge_can_afford_the_answer_it_asks_for() -> None:
     )["extra_body"]
 
     assert policy.reasoning_enabled is False
-    assert body["reasoning"] == {"enabled": False}
+    assert body["reasoning"] == {"effort": "none"}
     assert policy.max_tokens >= 2000
     assert policy.output_tokens_limit is not None
     assert policy.output_tokens_limit >= 2000

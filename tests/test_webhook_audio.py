@@ -72,7 +72,7 @@ class TestVoxtralConfig:
         defaults = Settings(_env_file=None)
 
         assert defaults.openrouter_model_main == "openai/gpt-6-luna"
-        assert defaults.openrouter_model_fast == "deepseek/deepseek-v4-flash"
+        assert defaults.openrouter_model_fast == "openai/gpt-6-luna"
 
 
 class TestMessageModelAudioFields:

@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     # OpenRouter (LLM)
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model_fast: str = "deepseek/deepseek-v4-flash"
+    openrouter_model_fast: str = "openai/gpt-6-luna"
     # Repository fallback for the customer-facing model. A present
     # `system_configs.openrouter_model_main` value overrides it for DB-backed
     # turns; a missing or failed lookup uses this value. It does not claim what

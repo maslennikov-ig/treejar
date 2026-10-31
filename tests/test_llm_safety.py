@@ -42,7 +42,7 @@ def test_llm_path_policy_sets_expected_provider_max_tokens(
     assert model_settings_for_path(path)["max_tokens"] == expected_max_tokens
 
 
-def test_default_model_routing_uses_main_for_core_and_v4_flash_for_helpers(
+def test_default_model_routing_separates_helpers_from_quality_checks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.core.config import settings
@@ -75,10 +75,14 @@ def test_default_model_routing_uses_main_for_core_and_v4_flash_for_helpers(
         PATH_QUALITY_FINAL,
         PATH_QUALITY_RED_FLAGS,
         PATH_QUALITY_MANAGER,
+        PATH_RESPONSE_REPAIR_JUDGE,
+    ):
+        assert model_name_for_path(path) == "openai/gpt-6.1-terra"
+        assert model_name_for_path(path, override="custom/model") == "custom/model"
+    for path in (
         PATH_CONVERSATION_SUMMARY,
         PATH_FACT_EXTRACTION,
         PATH_RESPONSE_ADAPTER,
-        PATH_RESPONSE_REPAIR_JUDGE,
         PATH_AUTO_FAQ_TRANSLATE,
         PATH_AUTO_FAQ_CANDIDATE,
     ):
@@ -937,11 +941,12 @@ def test_gpt6_luna_core_reasoning_is_medium(path: str) -> None:
     assert payload["extra_body"]["reasoning"] == {"effort": "medium"}
 
 
-def test_gpt6_luna_non_core_reasoning_is_unchanged() -> None:
+def test_gpt6_luna_non_core_reasoning_is_disabled() -> None:
     from src.llm.safety import model_settings_for_path
 
     payload = model_settings_for_path("quality_final", model_name="openai/gpt-6-luna")
-    assert "reasoning" not in payload["extra_body"]
+    assert payload["extra_body"]["reasoning"] == {"effort": "none"}
+    assert "temperature" not in payload
 
 
 @pytest.mark.asyncio
