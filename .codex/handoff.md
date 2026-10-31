@@ -56,7 +56,7 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 
 ## Current work
 
-- tj-199k: owner requests helpers Luna, answer/quality checks Terra; source prepared, 216 focused tests/Ruff/format/Mypy pass. Runtime acceptance pending; preserve main Sol, voice/search, all disabled/channel/audit gates. See docs/reports/2026-10-31-noor-helper-model-migration.md.
+- tj-199k delivered: helpers Luna, repair/QA Terra; live 0f17419 / CI 41232988824 (4862 passed,27 skipped + pgvector1). App+worker readback preserves main Sol, voice/search, disabled/channel/audit gates; only FAST ENV and 3 QA model fields changed. Report/rollback: docs/reports/2026-10-31-noor-helper-model-migration.md.
 - tj-3jcn delivered: main DB-backed chat is openai/gpt-6.1-sol / medium in app+worker, live 6df11eb, CI 41229254700 (4858 passed / 27 skipped + pgvector 1). Two paid SDK/tool-cycle POSTs cost USD0.001346 of USD0.10. ENV/helpers/channel gates unchanged; private rollback /opt/noor/.hotfix-backups/tj-3jcn-sol-20261031T181216Z. Evidence: docs/reports/2026-10-31-noor-pilot-and-model-readiness.md and sol-provider/runtime receipts.
 - Client pilot choices v2: https://aidevteam.ru/a/S1zQSadyVtJDNCkX2FO10BMX2c2ODIk0 ; prompt docs/prompts/2026-10-31-customer-claude-noor-pilot.md. Pilot requires choices, shared egress ownership and channel/restore-mode agreement. Preserve the audit receiver/disabled guard; test0665 qridle, business9235 active; no customer sends or pilot activation performed.
 

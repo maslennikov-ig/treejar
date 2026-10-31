@@ -1,0 +1,97 @@
+"""Operator-triggered rollback for tj-199k only; never replay a model/message."""
+import json
+import os
+import pathlib
+import re
+import stat
+import subprocess
+import time
+import urllib.request
+
+ROOT=pathlib.Path('/opt/noor')
+BACKUP=ROOT/'.hotfix-backups/tj-199k-helpers-20261031T190556Z'
+RELEASE='0f17419ac711ca369b4269d5cf24f5c0a80a4fb9'
+BEFORE=json.loads((BACKUP/'before.json').read_text())
+OLD_QA=BEFORE['app']['configs']['ai_quality_controls']
+NEW_QA=json.loads(json.dumps(OLD_QA))
+for scope in ('bot_qa','manager_qa','red_flags'):
+ NEW_QA[scope]['model']='openai/gpt-6.1-terra'
+COMMAND=['docker','compose','--project-name','noor','-f',str(ROOT/'docker-compose.yml')]
+override=BACKUP/'rollback-compose.json'
+images=json.loads((BACKUP/'containers.json').read_text())
+for service in ('app','worker'):
+ tag='noor-helper-rollback-'+service+':20261031t190556z'
+ assert subprocess.check_output(['docker','image','inspect','--format','{{.Id}}',tag],text=True).strip()==images['/noor-'+service+'-1']['image']
+override.write_text(json.dumps({'services':{s:{'image':'noor-helper-rollback-'+s+':20261031t190556z'} for s in ('app','worker')}}))
+override.chmod(0o600)
+
+def run(code,isolated=False):
+ command=COMMAND+['-f',str(override),'run','--rm','--no-deps','--entrypoint','python','app','-'] if isolated else COMMAND+['exec','-T','app','python','-']
+ p=subprocess.run(command,input=code,text=True,capture_output=True,timeout=75,cwd=ROOT)
+ if p.returncode:
+  raise RuntimeError('Rollback container operation failed; inspect private state without retrying the mutation')
+ return json.loads(p.stdout)
+
+assert (ROOT/'.release-sha').read_text().strip() in (RELEASE,(BACKUP/'.release-sha').read_text().strip()), 'Concurrent release: stop'
+assert (ROOT/'docker-compose.yml').read_bytes()==(BACKUP/'docker-compose.yml').read_bytes(), 'Concurrent compose change: stop'
+old_env=(BACKUP/'.env').read_bytes()
+new_env=re.sub(rb'(?m)^OPENROUTER_MODEL_FAST=[^\r\n]*',b'OPENROUTER_MODEL_FAST=openai/gpt-6-luna',old_env)
+assert (ROOT/'.env').read_bytes() in (old_env,new_env), 'Concurrent ENV edit: stop'
+code='''import asyncio,json
+from sqlalchemy import text
+from src.core.database import async_session_factory
+OLD=OLD_PLACEHOLDER
+NEW=NEW_PLACEHOLDER
+async def main():
+ async with async_session_factory() as db:
+  await db.execute(text("SET LOCAL lock_timeout='5s'"))
+  await db.execute(text("SET LOCAL statement_timeout='15s'"))
+  locked=dict((await db.execute(text("SELECT key,value FROM system_configs WHERE key IN ('ai_quality_controls','openrouter_model_main') ORDER BY key FOR UPDATE"))).all())
+  assert locked['openrouter_model_main']=='openai/gpt-6.1-sol'
+  current=locked['ai_quality_controls']
+  assert current in (OLD,NEW), 'Concurrent QA edit: stop'
+  changed=current==NEW
+  if changed:
+   result=await db.execute(text("UPDATE system_configs SET value=CAST(:old AS jsonb),updated_at=NOW() WHERE key='ai_quality_controls' AND value=CAST(:new AS jsonb)"),{'old':json.dumps(OLD),'new':json.dumps(NEW)})
+   assert result.rowcount==1
+   await db.commit()
+  else:
+   await db.rollback()
+  print(json.dumps({'qa_restored':True,'updated_rows':int(changed)}))
+asyncio.run(main())
+'''.replace('OLD_PLACEHOLDER',repr(OLD_QA)).replace('NEW_PLACEHOLDER',repr(NEW_QA))
+db_change=run(code,isolated=True)
+
+metadata=(ROOT/'.env').stat()
+temp=ROOT/'.env.tj-199k-rollback'
+fd=os.open(temp,os.O_WRONLY|os.O_CREAT|os.O_EXCL,stat.S_IMODE(metadata.st_mode))
+os.fchown(fd,metadata.st_uid,metadata.st_gid)
+with os.fdopen(fd,'wb') as f:
+ f.write(old_env)
+ f.flush()
+ os.fsync(f.fileno())
+os.replace(temp,ROOT/'.env')
+subprocess.run(['rsync','--archive','--delete',str(BACKUP/'src')+'/',str(ROOT/'src')+'/'],check=True)
+(ROOT/'.release-sha').write_bytes((BACKUP/'.release-sha').read_bytes())
+with (BACKUP/'rollback-recreate.log').open('w') as f:
+ subprocess.run(COMMAND+['-f',str(override),'up','-d','--no-build','--no-deps','--timeout','200','app','worker'],stdout=f,stderr=subprocess.STDOUT,cwd=ROOT,check=True,timeout=300)
+for attempt in range(20):
+ try:
+  with urllib.request.urlopen('http://127.0.0.1:8002/api/v1/health',timeout=10) as f:
+   health=json.load(f)
+  assert health['status']=='ok' and health['release_sha']==(BACKUP/'.release-sha').read_text().strip()
+  break
+ except Exception:
+  if attempt==19: raise
+  time.sleep(3)
+after=run((BACKUP/'probe.py').read_text())
+assert after['settings']==BEFORE['app']['settings']
+assert after['configs']==BEFORE['app']['configs']
+assert after['worker']==BEFORE['app']['worker']
+assert after['effective']['main']=='openai/gpt-6.1-sol'
+assert after['effective']['repair']=='deepseek/deepseek-v4-flash'
+receipt={'rollback_verified':True,'db_change':db_change,'health':health,'backup':str(BACKUP)}
+p=BACKUP/'rollback-receipt.json'
+p.write_text(json.dumps(receipt,indent=2)+'\n')
+p.chmod(0o600)
+print(json.dumps(receipt))

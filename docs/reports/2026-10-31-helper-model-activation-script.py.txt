@@ -1,0 +1,221 @@
+"""VPS-only bounded helper migration. No model inference or customer sends."""
+import datetime
+import hashlib
+import json
+import os
+import pathlib
+import re
+import subprocess
+import urllib.request
+import stat
+
+ROOT = pathlib.Path('/opt/noor')
+BACKUP = ROOT / '.hotfix-backups/tj-199k-helpers-20261031T190556Z'
+RELEASE = '0f17419ac711ca369b4269d5cf24f5c0a80a4fb9'
+POLICY_HASH = '6a02c713157129820693ec6b32de73c069dd63ef8779ff183fbe9014cc6f4ffb'
+PROBE = (BACKUP/'probe.py').read_text()
+marker="print(json.dumps({'settings':"
+assert marker in PROBE
+PROBE=PROBE.replace(marker,"print(json.dumps({'policy_sha256':hashlib.sha256(__import__('pathlib').Path('/app/src/llm/safety.py').read_bytes()).hexdigest(),'settings':",1)
+BEFORE = json.loads((BACKUP/'before.json').read_text())
+OVERRIDE=BACKUP/'activation-compose.json'
+BASE_COMMAND=['docker','compose','--project-name','noor','-f',str(ROOT/'docker-compose.yml')]
+
+def check_worker(row):
+ s=row['settings']
+ assert s['test_channel_restore_mode'] is True
+ assert s['wazzup_channel_id'] and s['wazzup_channel_id']==s['wazzup_outbound_allowed_channel_id']
+ assert 'process_incoming_batch' in row['worker']['functions']
+ assert set(row['worker']['functions']) <= {'process_incoming_batch','retry_pending_quotation','refresh_conversation_summary','refresh_zoho_stock_snapshot','refresh_zoho_stock_delta','reconcile_telegram_webhook','reconcile_wazzup_webhook'}
+ assert set(row['worker']['cron']) <= {'refresh_zoho_stock_snapshot','refresh_zoho_stock_delta','reconcile_telegram_webhook','reconcile_wazzup_webhook'}
+
+TRAFFIC='''import asyncio,json,time
+from sqlalchemy import text
+from src.core.database import async_session_factory
+from src.core.redis import get_redis_client
+async def main():
+ r=get_redis_client()
+ due=await r.zcount('arq:queue','-inf',int(time.time()*1000))
+ active=[]
+ completed_markers=0
+ async for key in r.scan_iter(match='arq:in-progress:*'):
+  name=key.decode() if isinstance(key,bytes) else key
+  # ARQ deliberately retains completed cron markers for deduplication. Only
+  # queue membership still present means the job has not finished.
+  if await r.zscore('arq:queue',name.removeprefix('arq:in-progress:')) is not None:
+   active.append(key)
+  else:
+   completed_markers+=1
+ async with async_session_factory() as db:
+  await db.execute(text('SET TRANSACTION READ ONLY'))
+  rows=(await db.execute(text('SELECT role,count(*),max(created_at) FROM messages GROUP BY role ORDER BY role'))).all()
+  print(json.dumps({'due_jobs':due,'active_jobs':len(active),'completed_cron_markers':completed_markers,'messages':[[row[0],row[1],str(row[2])] for row in rows]}))
+  await db.rollback()
+asyncio.run(main())
+'''
+
+def write(name,value):
+ p=BACKUP/name
+ p.write_text(json.dumps(value,indent=2)+'\n')
+ p.chmod(0o600)
+
+def digest(value):
+ return hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
+
+def health():
+ with urllib.request.urlopen('http://127.0.0.1:8002/api/v1/health',timeout=15) as f:
+  value=json.load(f)
+ assert value['status']=='ok' and value['release_sha']==RELEASE, 'Wrong live release/health'
+ assert all(v['status']=='ok' for v in value['dependencies'].values())
+ return value
+
+def run(service,code,candidate=False):
+ command=BASE_COMMAND+(['-f',str(OVERRIDE)] if candidate else [])
+ if candidate:
+  command+=['run','--rm','--no-deps','--entrypoint','python',service,'-']
+ else:
+  command+=['exec','-T',service,'python','-']
+ p=subprocess.run(command,input=code,text=True,capture_output=True,cwd=ROOT,timeout=75)
+ if p.returncode:
+  # Exception text only; full potentially sensitive stdout never leaves VPS.
+  raise RuntimeError('Container probe failed: '+(p.stderr.splitlines()[-1] if p.stderr.splitlines() else str(p.returncode)))
+ return json.loads(p.stdout)
+
+health()
+assert hashlib.sha256((ROOT/'src/llm/safety.py').read_bytes()).hexdigest()==POLICY_HASH
+pre={s:run(s,PROBE) for s in ('app','worker')}
+images={s:subprocess.check_output(['docker','inspect','--format','{{.Image}}','noor-'+s+'-1'],text=True).strip() for s in ('app','worker')}
+for s,image in images.items():
+ assert subprocess.check_output(['docker','image','inspect','--format','{{.Id}}','noor-'+s],text=True).strip()==image, 'Compose tag differs from tested running image'
+ subprocess.run(['docker','image','tag',image,'noor-helper-candidate-'+s+':tj-199k'],check=True)
+write('activation-compose.json',{'services':{s:{'image':'noor-helper-candidate-'+s+':tj-199k'} for s in ('app','worker')}})
+write('after-source-before-config.json',pre)
+for service,row in pre.items():
+ check_worker(row)
+ assert row['policy_sha256']==POLICY_HASH, 'Wrong container policy source'
+ assert row['settings']==BEFORE[service]['settings'], 'Settings changed before activation'
+ assert row['configs']==BEFORE[service]['configs'], 'Configs changed concurrently'
+ assert row['worker']==BEFORE[service]['worker'], 'Worker registrations changed'
+ assert row['effective']['main']=='openai/gpt-6.1-sol'
+ assert row['effective']['repair']=='openai/gpt-6.1-terra'
+
+old_env=(BACKUP/'.env').read_bytes()
+assert (ROOT/'.env').read_bytes()==old_env, 'ENV changed concurrently'
+traffic_before=run('app',TRAFFIC)
+assert traffic_before['due_jobs']==0 and traffic_before['active_jobs']==0, 'Wait for current work to settle before changing ENV'
+write('traffic-before.json',traffic_before)
+matches=list(re.finditer(rb'(?m)^(OPENROUTER_MODEL_FAST=)([^\r\n]*)(\r?)$',old_env))
+assert len(matches)==1, 'Expected one explicit FAST ENV assignment'
+m=matches[0]
+assert m.group(2).strip(b'\'"')==b'deepseek/deepseek-v4-flash'
+new_env=old_env[:m.start()]+m.group(1)+b'openai/gpt-6-luna'+m.group(3)+old_env[m.end():]
+def set_env(value):
+ metadata=(ROOT/'.env').stat()
+ temp=ROOT/'.env.tj-199k'
+ fd=os.open(temp,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
+ os.fchmod(fd,stat.S_IMODE(metadata.st_mode))
+ os.fchown(fd,metadata.st_uid,metadata.st_gid)
+ with os.fdopen(fd,'wb') as f:
+  f.write(value)
+  f.flush()
+  os.fsync(f.fileno())
+ os.replace(temp,ROOT/'.env')
+
+set_env(new_env)
+try:
+ candidate=run('worker',PROBE,candidate=True)
+ check_worker(candidate)
+ assert candidate['policy_sha256']==POLICY_HASH
+ assert candidate['effective']['repair']=='openai/gpt-6.1-terra'
+ expected_settings={**BEFORE['worker']['settings'],'openrouter_model_fast':'openai/gpt-6-luna'}
+ assert candidate['settings']==expected_settings, 'Candidate changes unrelated settings'
+ assert candidate['configs']==BEFORE['worker']['configs']
+ assert candidate['worker']==BEFORE['worker']['worker'], 'Candidate changes registrations'
+ assert candidate['effective']['main']=='openai/gpt-6.1-sol'
+ write('candidate-before-recreate.json',candidate)
+except Exception:
+ set_env(old_env)
+ raise
+log=BACKUP/'config-recreate.log'
+with log.open('w') as f:
+ result=subprocess.run(BASE_COMMAND+['-f',str(OVERRIDE),'up','-d','--no-build','--no-deps','--timeout','200','app','worker'],cwd=ROOT,stdout=f,stderr=subprocess.STDOUT,timeout=300)
+log.chmod(0o600)
+assert result.returncode==0, 'Recreate failed; see private log and restore saved ENV/images'
+
+env_after={s:run(s,PROBE) for s in ('app','worker')}
+write('after-env-before-db.json',env_after)
+for service,row in env_after.items():
+ check_worker(row)
+ assert row['settings']=={**BEFORE[service]['settings'],'openrouter_model_fast':'openai/gpt-6-luna'}
+ assert row['configs']==BEFORE[service]['configs']
+ assert row['worker']==BEFORE[service]['worker']
+
+original_qa=BEFORE['app']['configs']['ai_quality_controls']
+new_qa=json.loads(json.dumps(original_qa))
+for scope in ('bot_qa','manager_qa','red_flags'):
+ assert new_qa[scope]['mode']=='disabled'
+ assert new_qa[scope]['model']=='deepseek/deepseek-v4-flash'
+ new_qa[scope]['model']='openai/gpt-6.1-terra'
+db_code='''import asyncio,json
+from src.core.database import async_session_factory
+from sqlalchemy import text
+OLD=OLD_PLACEHOLDER
+NEW=NEW_PLACEHOLDER
+async def main():
+ async with async_session_factory() as db:
+  await db.execute(text("SET LOCAL lock_timeout='5s'"))
+  await db.execute(text("SET LOCAL statement_timeout='15s'"))
+  locked=dict((await db.execute(text("SELECT key,value FROM system_configs WHERE key IN ('ai_quality_controls','openrouter_model_main') ORDER BY key FOR UPDATE"))).all())
+  old=locked['ai_quality_controls']
+  assert old==OLD, 'QA config changed concurrently'
+  main=locked['openrouter_model_main']
+  assert main=='openai/gpt-6.1-sol', 'Primary model changed concurrently'
+  result=await db.execute(text("UPDATE system_configs SET value=CAST(:new AS jsonb),updated_at=NOW() WHERE key='ai_quality_controls' AND value=CAST(:old AS jsonb)"),{'new':json.dumps(NEW),'old':json.dumps(OLD)})
+  assert result.rowcount==1
+  await db.commit()
+  print(json.dumps({'updated_rows':1,'updated_model_fields':3}))
+asyncio.run(main())
+'''.replace('OLD_PLACEHOLDER',repr(original_qa)).replace('NEW_PLACEHOLDER',repr(new_qa))
+change=run('app',db_code)
+after={s:run(s,PROBE) for s in ('app','worker')}
+write('after.json',after)
+expected_configs={**BEFORE['app']['configs'],'ai_quality_controls':new_qa}
+for service,row in after.items():
+ check_worker(row)
+ assert row['policy_sha256']==POLICY_HASH
+ assert row['settings']=={**BEFORE[service]['settings'],'openrouter_model_fast':'openai/gpt-6-luna'}
+ assert row['configs']==expected_configs, 'Unexpected DB config changes'
+ assert row['worker']==BEFORE[service]['worker']
+ e=row['effective']
+ assert e['main']=='openai/gpt-6.1-sol'
+ assert e['main_settings']['extra_body']['reasoning']=={'effort':'medium'}
+ assert e['main_settings']['max_tokens']==3200
+ assert e['repair']=='openai/gpt-6.1-terra'
+ for k in ('summary','adapter','faq','faq_fallback'):
+  assert e[k]=='openai/gpt-6-luna'
+ for scope in ('bot_qa','manager_qa','red_flags'):
+  assert e['qa'][scope]['mode']=='disabled'
+  assert e['qa'][scope]['model']=='openai/gpt-6.1-terra'
+ assert e['routes']['core_followup']['model']=='openai/gpt-6-luna'
+ for path,route in e['routes'].items():
+  if path!='core_followup':
+   assert route['settings']['extra_body']['reasoning']=={'effort':'none'}
+   assert 'temperature' not in route['settings']
+ assert hashlib.sha256((ROOT/'src/llm/safety.py').read_bytes()).hexdigest()==POLICY_HASH
+assert (ROOT/'.env').read_bytes()==new_env
+traffic_after=run('app',TRAFFIC)
+write('traffic-after.json',traffic_after)
+assert traffic_before['messages']==traffic_after['messages'], 'Message activity observed; inspect before claiming zero sends'
+
+inspected=json.loads(subprocess.check_output(['docker','inspect','noor-app-1','noor-worker-1','noor-db-1','noor-redis-1','noor-nginx-1'],text=True,cwd=ROOT))
+containers={c['Name']:{'id':c['Id'],'image':c['Image'],'started':c['State']['StartedAt'],'restart_count':c['RestartCount'],'oom':c['State']['OOMKilled'],'running':c['State']['Running']} for c in inspected}
+baseline_containers=json.loads((BACKUP/'containers.json').read_text())
+for name,c in containers.items():
+ assert c['running'] and not c['oom'] and c['restart_count']==0
+ if name not in ('/noor-app-1','/noor-worker-1'):
+  assert c['id']==baseline_containers[name]['id'] and c['started']==baseline_containers[name]['started']
+for s,image in images.items():
+ assert containers['/noor-'+s+'-1']['image']==image, 'Recreated wrong image'
+receipt={'checked_at_utc':datetime.datetime.now(datetime.UTC).isoformat(),'release':RELEASE,'health':health(),'backup':str(BACKUP),'policy_sha256':POLICY_HASH,'change':change,'env_only_fast_changed':True,'configs_only_qa_models_changed':True,'all_other_effective_settings_identical':True,'worker_registrations_identical':True,'protected_settings_digest':digest({k:v for k,v in after['app']['settings'].items() if k!='openrouter_model_fast'}),'processes':{s:{'effective':r['effective'],'voice':r['settings']['voice_transcription_model'],'embedding':r['settings']['embedding_model'],'embedding_dimension':r['settings']['embedding_dimension'],'customer_facts_mode':r['settings']['customer_facts_mode'],'restore_mode':r['settings']['test_channel_restore_mode'],'webhook_guard':r['settings']['wazzup_webhook_guard_enabled']} for s,r in after.items()},'containers':containers,'traffic_before':traffic_before,'traffic_after':traffic_after,'manual_inference_posts':0,'manual_customer_sends':0}
+write('activation-receipt.json',receipt)
+print(json.dumps(receipt))

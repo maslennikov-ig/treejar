@@ -1,0 +1,614 @@
+{
+  "checked_at_utc": "2026-10-31T19:19:12.446942+00:00",
+  "release": "0f17419ac711ca369b4269d5cf24f5c0a80a4fb9",
+  "health": {
+    "status": "ok",
+    "version": "0.4.0",
+    "release_sha": "0f17419ac711ca369b4269d5cf24f5c0a80a4fb9",
+    "dependencies": {
+      "redis": {
+        "name": "redis",
+        "status": "ok",
+        "latency_ms": 1.77,
+        "message": null
+      },
+      "database": {
+        "name": "database",
+        "status": "ok",
+        "latency_ms": 2.18,
+        "message": null
+      }
+    }
+  },
+  "backup": "/opt/noor/.hotfix-backups/tj-199k-helpers-20261031T190556Z",
+  "policy_sha256": "6a02c713157129820693ec6b32de73c069dd63ef8779ff183fbe9014cc6f4ffb",
+  "change": {
+    "updated_rows": 1,
+    "updated_model_fields": 3
+  },
+  "env_only_fast_changed": true,
+  "configs_only_qa_models_changed": true,
+  "all_other_effective_settings_identical": true,
+  "worker_registrations_identical": true,
+  "protected_settings_digest": "08137eddba611b5af5e233afee1d6056446f0693e0bfbb95d38cd06405d972a8",
+  "processes": {
+    "app": {
+      "effective": {
+        "main": "openai/gpt-6.1-sol",
+        "main_settings": {
+          "max_tokens": 3200,
+          "timeout": 90.0,
+          "extra_body": {
+            "usage": {
+              "include": true
+            },
+            "reasoning": {
+              "effort": "medium"
+            }
+          }
+        },
+        "repair": "openai/gpt-6.1-terra",
+        "summary": "openai/gpt-6-luna",
+        "adapter": "openai/gpt-6-luna",
+        "faq": "openai/gpt-6-luna",
+        "faq_fallback": "openai/gpt-6-luna",
+        "qa": {
+          "bot_qa": {
+            "mode": "disabled",
+            "transcript_mode": "summary",
+            "model": "openai/gpt-6.1-terra",
+            "daily_budget_cents": 100,
+            "max_calls_per_run": 1,
+            "max_calls_per_day": 5,
+            "retry": {
+              "max_attempts": 2,
+              "backoff_seconds": 60
+            },
+            "criteria": {
+              "greeting_and_identity": true,
+              "need_discovery_and_catalog": true,
+              "commercial_vat_and_quotation": true,
+              "tone_and_language": true
+            },
+            "cache_telemetry_enabled": true,
+            "alert_on_failure": true,
+            "full_transcript_warning_override": false,
+            "glm5_warning_override": false
+          },
+          "manager_qa": {
+            "mode": "disabled",
+            "transcript_mode": "summary",
+            "model": "openai/gpt-6.1-terra",
+            "daily_budget_cents": 100,
+            "max_calls_per_run": 1,
+            "max_calls_per_day": 5,
+            "retry": {
+              "max_attempts": 2,
+              "backoff_seconds": 60
+            },
+            "criteria": {
+              "response_speed_sla": true,
+              "handover_context_usage": true,
+              "professional_tone": true,
+              "commercial_terms_accuracy": true,
+              "closing_and_crm_hygiene": true
+            },
+            "cache_telemetry_enabled": true,
+            "alert_on_failure": true,
+            "full_transcript_warning_override": false,
+            "glm5_warning_override": false
+          },
+          "red_flags": {
+            "mode": "disabled",
+            "transcript_mode": "summary",
+            "model": "openai/gpt-6.1-terra",
+            "daily_budget_cents": 100,
+            "max_calls_per_run": 1,
+            "max_calls_per_day": 5,
+            "retry": {
+              "max_attempts": 2,
+              "backoff_seconds": 60
+            },
+            "criteria": {
+              "missing_identity": true,
+              "hard_deflection": true,
+              "unverified_commitment": true,
+              "ignored_question": true,
+              "bad_tone": true
+            },
+            "cache_telemetry_enabled": true,
+            "alert_on_failure": true,
+            "full_transcript_warning_override": false,
+            "glm5_warning_override": false
+          }
+        },
+        "routes": {
+          "quality_final": {
+            "model": "openai/gpt-6.1-terra",
+            "settings": {
+              "max_tokens": 8000,
+              "timeout": 60.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "quality_red_flags": {
+            "model": "openai/gpt-6.1-terra",
+            "settings": {
+              "max_tokens": 900,
+              "timeout": 45.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "quality_manager": {
+            "model": "openai/gpt-6.1-terra",
+            "settings": {
+              "max_tokens": 2000,
+              "timeout": 60.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "response_repair_judge": {
+            "model": "openai/gpt-6.1-terra",
+            "settings": {
+              "max_tokens": 2000,
+              "timeout": 20.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "fact_extraction": {
+            "model": "openai/gpt-6-luna",
+            "settings": {
+              "max_tokens": 700,
+              "timeout": 30.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "conversation_summary": {
+            "model": "openai/gpt-6-luna",
+            "settings": {
+              "max_tokens": 900,
+              "timeout": 45.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "response_adapter": {
+            "model": "openai/gpt-6-luna",
+            "settings": {
+              "max_tokens": 700,
+              "timeout": 30.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "auto_faq_translate": {
+            "model": "openai/gpt-6-luna",
+            "settings": {
+              "max_tokens": 700,
+              "timeout": 30.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "auto_faq_candidate": {
+            "model": "openai/gpt-6-luna",
+            "settings": {
+              "max_tokens": 900,
+              "timeout": 30.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "core_followup": {
+            "model": "openai/gpt-6-luna",
+            "settings": {
+              "max_tokens": 500,
+              "timeout": 45.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "medium"
+                }
+              }
+            }
+          }
+        }
+      },
+      "voice": "openai/gpt-4o-mini-transcribe",
+      "embedding": "BAAI/bge-m3",
+      "embedding_dimension": 1024,
+      "customer_facts_mode": "disabled",
+      "restore_mode": true,
+      "webhook_guard": false
+    },
+    "worker": {
+      "effective": {
+        "main": "openai/gpt-6.1-sol",
+        "main_settings": {
+          "max_tokens": 3200,
+          "timeout": 90.0,
+          "extra_body": {
+            "usage": {
+              "include": true
+            },
+            "reasoning": {
+              "effort": "medium"
+            }
+          }
+        },
+        "repair": "openai/gpt-6.1-terra",
+        "summary": "openai/gpt-6-luna",
+        "adapter": "openai/gpt-6-luna",
+        "faq": "openai/gpt-6-luna",
+        "faq_fallback": "openai/gpt-6-luna",
+        "qa": {
+          "bot_qa": {
+            "mode": "disabled",
+            "transcript_mode": "summary",
+            "model": "openai/gpt-6.1-terra",
+            "daily_budget_cents": 100,
+            "max_calls_per_run": 1,
+            "max_calls_per_day": 5,
+            "retry": {
+              "max_attempts": 2,
+              "backoff_seconds": 60
+            },
+            "criteria": {
+              "greeting_and_identity": true,
+              "need_discovery_and_catalog": true,
+              "commercial_vat_and_quotation": true,
+              "tone_and_language": true
+            },
+            "cache_telemetry_enabled": true,
+            "alert_on_failure": true,
+            "full_transcript_warning_override": false,
+            "glm5_warning_override": false
+          },
+          "manager_qa": {
+            "mode": "disabled",
+            "transcript_mode": "summary",
+            "model": "openai/gpt-6.1-terra",
+            "daily_budget_cents": 100,
+            "max_calls_per_run": 1,
+            "max_calls_per_day": 5,
+            "retry": {
+              "max_attempts": 2,
+              "backoff_seconds": 60
+            },
+            "criteria": {
+              "response_speed_sla": true,
+              "handover_context_usage": true,
+              "professional_tone": true,
+              "commercial_terms_accuracy": true,
+              "closing_and_crm_hygiene": true
+            },
+            "cache_telemetry_enabled": true,
+            "alert_on_failure": true,
+            "full_transcript_warning_override": false,
+            "glm5_warning_override": false
+          },
+          "red_flags": {
+            "mode": "disabled",
+            "transcript_mode": "summary",
+            "model": "openai/gpt-6.1-terra",
+            "daily_budget_cents": 100,
+            "max_calls_per_run": 1,
+            "max_calls_per_day": 5,
+            "retry": {
+              "max_attempts": 2,
+              "backoff_seconds": 60
+            },
+            "criteria": {
+              "missing_identity": true,
+              "hard_deflection": true,
+              "unverified_commitment": true,
+              "ignored_question": true,
+              "bad_tone": true
+            },
+            "cache_telemetry_enabled": true,
+            "alert_on_failure": true,
+            "full_transcript_warning_override": false,
+            "glm5_warning_override": false
+          }
+        },
+        "routes": {
+          "quality_final": {
+            "model": "openai/gpt-6.1-terra",
+            "settings": {
+              "max_tokens": 8000,
+              "timeout": 60.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "quality_red_flags": {
+            "model": "openai/gpt-6.1-terra",
+            "settings": {
+              "max_tokens": 900,
+              "timeout": 45.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "quality_manager": {
+            "model": "openai/gpt-6.1-terra",
+            "settings": {
+              "max_tokens": 2000,
+              "timeout": 60.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "response_repair_judge": {
+            "model": "openai/gpt-6.1-terra",
+            "settings": {
+              "max_tokens": 2000,
+              "timeout": 20.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "fact_extraction": {
+            "model": "openai/gpt-6-luna",
+            "settings": {
+              "max_tokens": 700,
+              "timeout": 30.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "conversation_summary": {
+            "model": "openai/gpt-6-luna",
+            "settings": {
+              "max_tokens": 900,
+              "timeout": 45.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "response_adapter": {
+            "model": "openai/gpt-6-luna",
+            "settings": {
+              "max_tokens": 700,
+              "timeout": 30.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "auto_faq_translate": {
+            "model": "openai/gpt-6-luna",
+            "settings": {
+              "max_tokens": 700,
+              "timeout": 30.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "auto_faq_candidate": {
+            "model": "openai/gpt-6-luna",
+            "settings": {
+              "max_tokens": 900,
+              "timeout": 30.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "none"
+                }
+              }
+            }
+          },
+          "core_followup": {
+            "model": "openai/gpt-6-luna",
+            "settings": {
+              "max_tokens": 500,
+              "timeout": 45.0,
+              "extra_body": {
+                "usage": {
+                  "include": true
+                },
+                "reasoning": {
+                  "effort": "medium"
+                }
+              }
+            }
+          }
+        }
+      },
+      "voice": "openai/gpt-4o-mini-transcribe",
+      "embedding": "BAAI/bge-m3",
+      "embedding_dimension": 1024,
+      "customer_facts_mode": "disabled",
+      "restore_mode": true,
+      "webhook_guard": false
+    }
+  },
+  "containers": {
+    "/noor-app-1": {
+      "id": "439d5f905f7f0471233b7500012c2df953ccd7d46596d053a6e76229799439e4",
+      "image": "sha256:61ce5e10217bed436eb9df3f7ab36ce9b954787980522e16b27631e56825dd9c",
+      "started": "2026-10-31T19:18:07.771561989Z",
+      "restart_count": 0,
+      "oom": false,
+      "running": true
+    },
+    "/noor-worker-1": {
+      "id": "4fc82c32f1e41964eefea21873c0b493408a3c70f5c84dff0536e9360dfc935e",
+      "image": "sha256:3e6bc433171b5d3eedea23cb956028f0247cf490b4c71fa436d0cc251a8807e2",
+      "started": "2026-10-31T19:18:07.770041929Z",
+      "restart_count": 0,
+      "oom": false,
+      "running": true
+    },
+    "/noor-db-1": {
+      "id": "43ccb64efb9deb16c908f00bcdaa8ae6eb08ccee856cd9267b0742ec254585cb",
+      "image": "sha256:7d400e340efb42f4d8c9c12c6427adb253f726881a9985d2a471bf0eed824dff",
+      "started": "2026-10-29T13:33:49.137952178Z",
+      "restart_count": 0,
+      "oom": false,
+      "running": true
+    },
+    "/noor-redis-1": {
+      "id": "1b9c9a5c99d0141a4d60131440a3f5c8d1f966cfcc56fb796f8c2ddc2dbfc757",
+      "image": "sha256:7aec734b2bb298a1d769fd8729f13b8514a41bf90fcdd1f38ec52267fbaa8ee6",
+      "started": "2026-10-29T13:33:49.172109398Z",
+      "restart_count": 0,
+      "oom": false,
+      "running": true
+    },
+    "/noor-nginx-1": {
+      "id": "0cdbce63c5db68deb3690b566ea701e547e7a7ac781b8156276a046c5b1f9694",
+      "image": "sha256:e7257f1ef28ba17cf7c248cb8ccf6f0c6e0228ab9c315c152f9c203cd34cf6d1",
+      "started": "2026-10-29T13:33:49.244964398Z",
+      "restart_count": 0,
+      "oom": false,
+      "running": true
+    }
+  },
+  "traffic_before": {
+    "due_jobs": 0,
+    "active_jobs": 0,
+    "completed_cron_markers": 1,
+    "messages": [
+      [
+        "assistant",
+        3419,
+        "2026-10-19 19:09:57.118321"
+      ],
+      [
+        "user",
+        3562,
+        "2026-10-19 19:08:00.001001"
+      ]
+    ]
+  },
+  "traffic_after": {
+    "due_jobs": 0,
+    "active_jobs": 0,
+    "completed_cron_markers": 2,
+    "messages": [
+      [
+        "assistant",
+        3419,
+        "2026-10-19 19:09:57.118321"
+      ],
+      [
+        "user",
+        3562,
+        "2026-10-19 19:08:00.001001"
+      ]
+    ]
+  },
+  "manual_inference_posts": 0,
+  "manual_customer_sends": 0
+}
