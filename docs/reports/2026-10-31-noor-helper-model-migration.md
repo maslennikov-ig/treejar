@@ -84,5 +84,11 @@ are retained. Redacted receipt: `2026-10-31-helper-model-preflight.json`.
 Metadata receipt: `2026-10-31-helper-model-metadata.json`.
 Pending canonical CI and live readback; local preparation alone is not delivery.
 
+Initial CI `41232676259` on `df9ffe3` stopped delivery: 4861 passed / 27 skipped,
+one test failed because it assumed FAST always differs from MAIN ENV fallback.
+Both requested helper/default routes can now be Luna. The test now explicitly
+sets main Sol and proves fact extraction still uses FAST; no runtime fix or
+test gate suppression is required. The failed CI remains in the audit trail.
+
 docs-reviewed: updated - route map, limitations, runtime acceptance and rollback.
 graph-reviewed: no-change-needed - existing model routing and controls only.

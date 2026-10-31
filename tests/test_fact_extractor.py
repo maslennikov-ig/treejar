@@ -599,9 +599,12 @@ async def test_explicit_no_thanks_with_price_objection_is_quote_refusal() -> Non
 
 
 @pytest.mark.asyncio
-async def test_fast_extractor_boundary_uses_fast_model_and_merges_structured_facts() -> (
-    None
-):
+async def test_fast_extractor_boundary_uses_fast_model_and_merges_structured_facts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Exercise independent routing even when the repository MAIN fallback and
+    # FAST defaults share Luna. The live conversational DB override is Sol.
+    monkeypatch.setattr(settings, "openrouter_model_main", "openai/gpt-6.1-sol")
     seen_requests: list[FastCustomerFactExtractionRequest] = []
 
     async def fake_fast_extractor(
