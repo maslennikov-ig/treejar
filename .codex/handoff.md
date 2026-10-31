@@ -56,7 +56,7 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 
 ## Current work
 
-- tj-3jcn: owner authorized Sol main-chat release after a USD0.10 probe; real candidate SDK/tool cycle passed (2 paid POSTs, USD0.001346). Branch codex/noor-pilot-sol-20261031; report docs/reports/2026-10-31-noor-pilot-and-model-readiness.md. Private rollback /opt/noor/.hotfix-backups/tj-3jcn-sol-20261031T181216Z; deployment/readback in progress, ENV/helpers retained.
+- tj-3jcn delivered: main DB-backed chat is openai/gpt-6.1-sol / medium in app+worker, live 6df11eb, CI 41229254700 (4858 passed / 27 skipped + pgvector 1). Two paid SDK/tool-cycle POSTs cost USD0.001346 of USD0.10. ENV/helpers/channel gates unchanged; private rollback /opt/noor/.hotfix-backups/tj-3jcn-sol-20261031T181216Z. Evidence: docs/reports/2026-10-31-noor-pilot-and-model-readiness.md and sol-provider/runtime receipts.
 - Client pilot choices v2: https://aidevteam.ru/a/S1zQSadyVtJDNCkX2FO10BMX2c2ODIk0 ; prompt docs/prompts/2026-10-31-customer-claude-noor-pilot.md. Pilot requires choices, shared egress ownership and channel/restore-mode agreement. Preserve the audit receiver/disabled guard; test0665 qridle, business9235 active; no customer sends or pilot activation performed.
 
 - Beads tj-uvld owns AC01–AC12 and remains in_progress until provider coverage,
@@ -153,7 +153,7 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 
 ## Explicit defers
 
-- tj-3jcn: Sol provider proof and release authority received; exact deployment/readback remains in progress. Client pilot still needs submitted choices and shared egress ownership/channel agreement.
+- tj-r62i: client pilot waits for submitted choices, customer-side durable ownership/final-send coordination, authorized channel/restore-mode plan and fresh delivery evidence. Main Sol release tj-3jcn is complete; it did not activate the pilot.
 
 - tj-i2b1: earlier527fe1f saved budget/hold but failed mixed matching/selection.
   Corrected a72da15live/CI4712passed; fresh2/3unit retained/held proof pending.

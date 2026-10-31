@@ -386,5 +386,14 @@
   "answer": "SYNTHETIC-CHAIR-001 costs AED 100 with 7 units available; would you like a quotation?",
   "tools_executed": [
     "SYNTHETIC-CHAIR-001"
-  ]
+  ],
+  "final_key_readback": {
+    "observed_at_utc": "2026-10-31T18:35:07.641730+00:00",
+    "usage": 3.870288934,
+    "usage_daily": 0.001346,
+    "limit_remaining": 1.129711066,
+    "byok_usage": 0
+  },
+  "final_key_usage_delta_usd": "0.001346000",
+  "sum_of_conservative_post_reservations_usd": "0.095410"
 }

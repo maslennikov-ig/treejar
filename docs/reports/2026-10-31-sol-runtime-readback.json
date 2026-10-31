@@ -1,0 +1,131 @@
+{
+  "health": {
+    "status": "ok",
+    "version": "0.4.0",
+    "release_sha": "6df11eb29cb88bcb63c8aadb52398bcb507f2580",
+    "dependencies": {
+      "redis": {
+        "name": "redis",
+        "status": "ok",
+        "latency_ms": 0.51,
+        "message": null
+      },
+      "database": {
+        "name": "database",
+        "status": "ok",
+        "latency_ms": 1.63,
+        "message": null
+      }
+    }
+  },
+  "change": {
+    "updated_rows": 1,
+    "previous": "openai/gpt-6-luna",
+    "current": "openai/gpt-6.1-sol"
+  },
+  "before": {
+    "app": {
+      "settings": {
+        "test_channel_restore_mode": true,
+        "wazzup_channel_id": "b49b1b9d-757f-4104-b56d-8f43d62cc515",
+        "wazzup_outbound_allowed_channel_id": "b49b1b9d-757f-4104-b56d-8f43d62cc515",
+        "wazzup_webhook_guard_enabled": false,
+        "openrouter_model_main": "openai/gpt-6-luna",
+        "openrouter_model_fast": "deepseek/deepseek-v4-flash",
+        "voice_transcription_model": "openai/gpt-4o-mini-transcribe",
+        "embedding_model": "BAAI/bge-m3"
+      },
+      "effective_main": "openai/gpt-6-luna",
+      "reasoning": {
+        "effort": "medium"
+      },
+      "max_tokens": 3200,
+      "policy_sha256": "2648c3b8bafa73cd7d7af3824e9f5d403aa7c8a0047e1cc81718e1cf68f465b6"
+    },
+    "worker": {
+      "settings": {
+        "test_channel_restore_mode": true,
+        "wazzup_channel_id": "b49b1b9d-757f-4104-b56d-8f43d62cc515",
+        "wazzup_outbound_allowed_channel_id": "b49b1b9d-757f-4104-b56d-8f43d62cc515",
+        "wazzup_webhook_guard_enabled": false,
+        "openrouter_model_main": "openai/gpt-6-luna",
+        "openrouter_model_fast": "deepseek/deepseek-v4-flash",
+        "voice_transcription_model": "openai/gpt-4o-mini-transcribe",
+        "embedding_model": "BAAI/bge-m3"
+      },
+      "effective_main": "openai/gpt-6-luna",
+      "reasoning": {
+        "effort": "medium"
+      },
+      "max_tokens": 3200,
+      "policy_sha256": "2648c3b8bafa73cd7d7af3824e9f5d403aa7c8a0047e1cc81718e1cf68f465b6"
+    }
+  },
+  "after": {
+    "app": {
+      "settings": {
+        "test_channel_restore_mode": true,
+        "wazzup_channel_id": "b49b1b9d-757f-4104-b56d-8f43d62cc515",
+        "wazzup_outbound_allowed_channel_id": "b49b1b9d-757f-4104-b56d-8f43d62cc515",
+        "wazzup_webhook_guard_enabled": false,
+        "openrouter_model_main": "openai/gpt-6-luna",
+        "openrouter_model_fast": "deepseek/deepseek-v4-flash",
+        "voice_transcription_model": "openai/gpt-4o-mini-transcribe",
+        "embedding_model": "BAAI/bge-m3"
+      },
+      "effective_main": "openai/gpt-6.1-sol",
+      "reasoning": {
+        "effort": "medium"
+      },
+      "max_tokens": 3200,
+      "policy_sha256": "2648c3b8bafa73cd7d7af3824e9f5d403aa7c8a0047e1cc81718e1cf68f465b6"
+    },
+    "worker": {
+      "settings": {
+        "test_channel_restore_mode": true,
+        "wazzup_channel_id": "b49b1b9d-757f-4104-b56d-8f43d62cc515",
+        "wazzup_outbound_allowed_channel_id": "b49b1b9d-757f-4104-b56d-8f43d62cc515",
+        "wazzup_webhook_guard_enabled": false,
+        "openrouter_model_main": "openai/gpt-6-luna",
+        "openrouter_model_fast": "deepseek/deepseek-v4-flash",
+        "voice_transcription_model": "openai/gpt-4o-mini-transcribe",
+        "embedding_model": "BAAI/bge-m3"
+      },
+      "effective_main": "openai/gpt-6.1-sol",
+      "reasoning": {
+        "effort": "medium"
+      },
+      "max_tokens": 3200,
+      "policy_sha256": "2648c3b8bafa73cd7d7af3824e9f5d403aa7c8a0047e1cc81718e1cf68f465b6"
+    }
+  },
+  "rollback_dir": "/opt/noor/.hotfix-backups/tj-3jcn-sol-20261031T181216Z",
+  "ci": {
+    "run_id": 41229254700,
+    "url": "https://github.com/maslennikov-ig/treejar/actions/runs/41229254700",
+    "status": "success",
+    "release_sha": "6df11eb29cb88bcb63c8aadb52398bcb507f2580",
+    "tests_passed": 4858,
+    "tests_skipped": 27,
+    "semantic_retrieval_tests_passed": 1
+  },
+  "post_verification": {
+    "observed_at_utc": "2026-10-31T18:35:07.641730+00:00",
+    "environment_bytes_unchanged": true,
+    "all_five_containers_running": true,
+    "restart_counts": {
+      "app": 0,
+      "worker": 0,
+      "db": 0,
+      "redis": 0,
+      "nginx": 0
+    },
+    "oom_killed": false,
+    "new_llm_error_lines": 0,
+    "new_error_lines": 0,
+    "webhook_host": "audit.treejartrading.ae",
+    "key_usage": 3.870288934,
+    "key_usage_daily": 0.001346,
+    "byok_usage": 0
+  }
+}

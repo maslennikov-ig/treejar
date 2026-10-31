@@ -1,0 +1,99 @@
+import json
+import pathlib
+import subprocess
+import urllib.request
+
+EXPECTED_RELEASE = "6df11eb29cb88bcb63c8aadb52398bcb507f2580"
+POLICY_SHA256 = "2648c3b8bafa73cd7d7af3824e9f5d403aa7c8a0047e1cc81718e1cf68f465b6"
+BACKUP = pathlib.Path("/opt/noor/.hotfix-backups/tj-3jcn-sol-20261031T181216Z")
+ROOT = pathlib.Path("/opt/noor")
+with urllib.request.urlopen("http://127.0.0.1:8002/api/v1/health", timeout=15) as f:
+    health = json.load(f)
+assert health["status"] == "ok" and health["release_sha"] == EXPECTED_RELEASE, (
+    "Wrong deployed release"
+)
+assert all(v["status"] == "ok" for v in health["dependencies"].values()), (
+    "Unhealthy dependency"
+)
+previous = json.loads((BACKUP / "model-row-before.json").read_text())
+assert len(previous) == 1 and previous[0]["value"] == "openai/gpt-6-luna", (
+    "Unexpected saved model identity"
+)
+before_settings = json.loads((BACKUP / "settings-before.json").read_text())
+probe = """import asyncio,json,hashlib,pathlib
+from src.core.config import settings
+from src.core.database import async_session_factory
+from src.llm.message_processor import _LazyModelRuntime
+from sqlalchemy import text
+keys=('test_channel_restore_mode','wazzup_channel_id','wazzup_outbound_allowed_channel_id','wazzup_webhook_guard_enabled','openrouter_model_main','openrouter_model_fast','voice_transcription_model','embedding_model')
+async def main():
+ async with async_session_factory() as db:
+  await db.execute(text('SET TRANSACTION READ ONLY'))
+  val=(await db.execute(text("SELECT value FROM system_configs WHERE key='openrouter_model_main'"))).scalar_one()
+  runtime_name, runtime_model=await _LazyModelRuntime(db).get()
+  if runtime_name!=val: raise RuntimeError("Runtime factory disagrees with DB setting")
+  cfg=runtime_model.settings
+  print(json.dumps({'settings':{k:getattr(settings,k,None) for k in keys},'effective_main':val,'reasoning':cfg.get('extra_body',{}).get('reasoning'),'max_tokens':cfg.get('max_tokens'),'policy_sha256':hashlib.sha256(pathlib.Path('/app/src/llm/safety.py').read_bytes()).hexdigest()}))
+  await db.rollback()
+asyncio.run(main())
+"""
+
+
+def run(service, code):
+    p = subprocess.run(
+        ["docker", "compose", "exec", "-T", service, "python", "-"],
+        input=code,
+        text=True,
+        capture_output=True,
+        cwd=ROOT,
+        check=True,
+        timeout=40,
+    )
+    return json.loads(p.stdout)
+
+
+before = {s: run(s, probe) for s in ("app", "worker")}
+for service, row in before.items():
+    assert row["settings"] == before_settings, (
+        "Protected settings changed in " + service
+    )
+    assert row["policy_sha256"] == POLICY_SHA256, "Policy hash mismatch in " + service
+    assert row["effective_main"] == "openai/gpt-6-luna", "Concurrent main-model change"
+activation = """import asyncio,json
+from sqlalchemy import text
+from src.core.database import async_session_factory
+async def main():
+ async with async_session_factory() as db:
+  await db.execute(text("SET LOCAL lock_timeout='5s'"))
+  await db.execute(text("SET LOCAL statement_timeout='15s'"))
+  value=(await db.execute(text("SELECT value FROM system_configs WHERE key='openrouter_model_main' FOR UPDATE"))).scalar_one()
+  if value!='openai/gpt-6-luna': raise RuntimeError('Model changed concurrently; refusing overwrite')
+  result=await db.execute(text("UPDATE system_configs SET value=to_jsonb(CAST(:new AS text)),updated_at=NOW() WHERE key='openrouter_model_main' AND value=CAST(:old AS jsonb)"),{'new':'openai/gpt-6.1-sol','old':json.dumps('openai/gpt-6-luna')})
+  if result.rowcount!=1: raise RuntimeError('Unexpected affected row count')
+  await db.commit()
+  print(json.dumps({'updated_rows':1,'previous':'openai/gpt-6-luna','current':'openai/gpt-6.1-sol'}))
+asyncio.run(main())
+"""
+change = run("app", activation)
+after = {s: run(s, probe) for s in ("app", "worker")}
+for row in after.values():
+    assert row["settings"] == before_settings, (
+        "Protected settings changed during DB update"
+    )
+    assert (
+        row["effective_main"] == "openai/gpt-6.1-sol"
+        and row["reasoning"] == {"effort": "medium"}
+        and row["max_tokens"] == 3200
+    ), "Unexpected effective chat policy"
+    assert row["policy_sha256"] == POLICY_SHA256, "Policy changed unexpectedly"
+receipt = {
+    "health": health,
+    "change": change,
+    "before": before,
+    "after": after,
+    "rollback_dir": str(BACKUP),
+}
+p = BACKUP / "activation-receipt.json"
+p.write_text(json.dumps(receipt, indent=2) + "\n")
+p.chmod(0o600)
+print(json.dumps(receipt))
