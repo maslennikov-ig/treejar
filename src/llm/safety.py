@@ -508,6 +508,12 @@ def _openrouter_core_reasoning_effort(
     ):
         return "medium"
     if (
+        policy.path == PATH_CORE_CHAT
+        and model_name is not None
+        and model_name.strip().lower() == "openai/gpt-6.1-sol"
+    ):
+        return "medium"
+    if (
         policy.scope == "core"
         and model_name is not None
         and model_name.strip().lower()

@@ -86,6 +86,133 @@ def test_default_model_routing_uses_main_for_core_and_v4_flash_for_helpers(
         assert not is_glm5_model_name(model_name_for_path(path))
 
 
+def test_sol_chat_settings_bound_reasoning_without_changing_fallback_routes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.core.config import settings
+    from src.llm.safety import (
+        PATH_CORE_CHAT,
+        PATH_CORE_FOLLOWUP,
+        model_name_for_path,
+        model_settings_for_path,
+        policy_for_path,
+    )
+
+    monkeypatch.setattr(settings, "openrouter_model_main", "openai/gpt-6-luna")
+    sol_chat = model_settings_for_path(
+        PATH_CORE_CHAT,
+        model_name="openai/gpt-6.1-sol",
+    )
+
+    assert sol_chat["extra_body"]["reasoning"] == {"effort": "medium"}
+    assert sol_chat["max_tokens"] == 3200
+    assert "temperature" not in sol_chat
+    assert policy_for_path(PATH_CORE_CHAT).timeout_seconds == 90
+    assert model_name_for_path(PATH_CORE_CHAT) == "openai/gpt-6-luna"
+    assert model_name_for_path(PATH_CORE_FOLLOWUP) == "openai/gpt-6-luna"
+
+
+@pytest.mark.asyncio
+async def test_sol_db_override_serializes_bounded_tool_cycle_without_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+
+    from openai import AsyncOpenAI
+    from pydantic_ai import Agent
+    from pydantic_ai.providers.openrouter import OpenRouterProvider
+
+    from src.core import config
+    from src.llm import message_processor
+
+    payloads: list[dict] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        payloads.append(json.loads(request.content))
+        tool_turn = len(payloads) == 1
+        message = (
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "fake-tool-call",
+                        "type": "function",
+                        "function": {"name": "lookup_product", "arguments": "{}"},
+                    }
+                ],
+            }
+            if tool_turn
+            else {"role": "assistant", "content": "Synthetic chair costs AED 100."}
+        )
+        return httpx.Response(
+            200,
+            json={
+                "id": f"fake-generation-{len(payloads)}",
+                "created": 1,
+                "object": "chat.completion",
+                "model": "openai/gpt-6.1-sol",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": message,
+                        "finish_reason": "tool_calls" if tool_turn else "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 5,
+                    "total_tokens": 15,
+                },
+            },
+        )
+
+    def lookup_product() -> str:
+        return "Synthetic chair costs AED 100."
+
+    lookup = AsyncMock(return_value="openai/gpt-6.1-sol")
+    monkeypatch.setattr(config, "get_system_config", lookup)
+    monkeypatch.setattr(config.settings, "openrouter_model_main", "openai/gpt-6-luna")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http_client:
+        client = AsyncOpenAI(
+            api_key="fake-test-key",
+            base_url="https://openrouter.invalid/api/v1",
+            http_client=http_client,
+            max_retries=0,
+        )
+        provider = OpenRouterProvider(openai_client=client)
+        monkeypatch.setattr(
+            message_processor, "OpenRouterProvider", lambda **_: provider
+        )
+        db = AsyncMock()
+        name, model = await message_processor._LazyModelRuntime(db).get()
+        result = await Agent(model, tools=[lookup_product]).run("Find a chair.")
+
+    lookup.assert_awaited_once_with(db, "openrouter_model_main", "openai/gpt-6-luna")
+    assert name == "openai/gpt-6.1-sol"
+    assert result.output == "Synthetic chair costs AED 100."
+    assert len(payloads) == 2
+    for payload in payloads:
+        assert payload["model"] == name
+        assert payload["reasoning"] == {"effort": "medium"}
+        assert payload.get("max_tokens", payload.get("max_completion_tokens")) == 3200
+        assert "temperature" not in payload
+        assert payload["tools"]
+    assert any(message["role"] == "tool" for message in payloads[1]["messages"])
+    assert config.settings.openrouter_model_main == "openai/gpt-6-luna"
+
+
+@pytest.mark.parametrize(
+    "path", ["core_followup", "conversation_summary", "quality_final"]
+)
+def test_sol_chat_reasoning_does_not_change_other_paths(path: str) -> None:
+    from src.llm.safety import model_settings_for_path
+
+    model_settings = model_settings_for_path(path, model_name="openai/gpt-6.1-sol")
+
+    assert "reasoning" not in model_settings["extra_body"]
+
+
 @pytest.mark.parametrize("path", ["core_chat", "core_followup"])
 def test_glm53_flash_core_routes_bound_mandatory_reasoning_to_low(path: str) -> None:
     """A max-effort default can consume the core route's customer reply budget."""
