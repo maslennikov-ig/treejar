@@ -1,0 +1,208 @@
+{
+  "model": "openai/gpt-6.1-sol",
+  "budget_usd": "0.10",
+  "started_utc": "2026-10-31T18:14:55.068978+00:00",
+  "calls": [
+    {
+      "index": 1,
+      "reservation_usd": "0.046675",
+      "input_token_upper_bound": 3191,
+      "request": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "This is an isolated synthetic sales-assistant test. Call lookup_product once for SYNTHETIC-CHAIR-001 before answering. Use only the tool facts. Reply in one short English sentence with exact price, currency and available stock, and ask whether the customer would like a quotation. Do not claim a quote, order, payment or customer message was created."
+          },
+          {
+            "role": "user",
+            "content": "Please find SYNTHETIC-CHAIR-001 and tell me its price and available stock."
+          }
+        ],
+        "model": "openai/gpt-6.1-sol",
+        "max_completion_tokens": 2048,
+        "stream": false,
+        "tool_choice": "auto",
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_product",
+              "description": "Read synthetic furniture inventory; no real data or side effects.",
+              "parameters": {
+                "additionalProperties": false,
+                "properties": {
+                  "sku": {
+                    "const": "SYNTHETIC-CHAIR-001",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "sku"
+                ],
+                "type": "object"
+              },
+              "strict": true
+            }
+          }
+        ],
+        "usage": {
+          "include": true
+        },
+        "reasoning": {
+          "effort": "medium"
+        },
+        "provider": {
+          "only": [
+            "openai"
+          ],
+          "allow_fallbacks": false,
+          "require_parameters": true,
+          "max_price": {
+            "prompt": "2",
+            "completion": "10",
+            "request": "0"
+          }
+        },
+        "prompt_cache_options": {
+          "mode": "explicit"
+        }
+      },
+      "cost_usd": null,
+      "elapsed_s": 2.443,
+      "http_status": 200,
+      "response": {
+        "id": "gen-1793470499-Nri4u85rSvgtNPtSXkEc",
+        "object": "chat.completion",
+        "created": 1793470499,
+        "model": "openai/gpt-6.1-sol",
+        "provider": "OpenAI",
+        "system_fingerprint": null,
+        "service_tier": "default",
+        "choices": [
+          {
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "tool_calls",
+            "native_finish_reason": "completed",
+            "message": {
+              "role": "assistant",
+              "content": null,
+              "refusal": null,
+              "reasoning": null,
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "index": 0,
+                  "id": "call_uyfapPiJVqVoxrMk4xRGQPEj",
+                  "function": {
+                    "name": "lookup_product",
+                    "arguments": "{\"sku\":\"SYNTHETIC-CHAIR-001\"}"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 156,
+          "completion_tokens": 27,
+          "total_tokens": 183,
+          "cost": 0.000582,
+          "is_byok": false,
+          "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "cache_write_tokens": 0,
+            "audio_tokens": 0,
+            "video_tokens": 0
+          },
+          "cost_details": {
+            "upstream_inference_cost": 0.000582,
+            "upstream_inference_prompt_cost": 0.000312,
+            "upstream_inference_completions_cost": 0.00027
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "image_tokens": 0,
+            "audio_tokens": 0
+          }
+        }
+      },
+      "generation_id": "gen-1793470499-Nri4u85rSvgtNPtSXkEc",
+      "generation_lookup_status": 404
+    }
+  ],
+  "passed": false,
+  "no_customer_sends": true,
+  "no_retries": true,
+  "adapter": "candidate OpenRouterTelemetryChatModel + PydanticAI Agent",
+  "source_sha256": "2648c3b8bafa73cd7d7af3824e9f5d403aa7c8a0047e1cc81718e1cf68f465b6",
+  "key_usage_before": {
+    "usage": 3.868942934,
+    "usage_daily": 0,
+    "limit_remaining": 1.1310570659999999,
+    "byok_usage": 0
+  },
+  "endpoint": {
+    "tag": "openai",
+    "name": "OpenAI | openai/gpt-6.1-sol-20260929",
+    "pricing": {
+      "prompt": "0.000002",
+      "completion": "0.00001",
+      "web_search": "0.01",
+      "input_cache_read": "0.0000001",
+      "input_cache_write": "0.0000025",
+      "discount": 0,
+      "overrides": [
+        {
+          "min_prompt_tokens": 272000,
+          "prompt": "0.000004",
+          "completion": "0.000015",
+          "input_cache_read": "0.0000002",
+          "input_cache_write": "0.000005"
+        }
+      ]
+    },
+    "supported_parameters": [
+      "reasoning",
+      "include_reasoning",
+      "seed",
+      "max_tokens",
+      "response_format",
+      "structured_outputs",
+      "tools",
+      "tool_choice",
+      "verbosity",
+      "reasoning_effort"
+    ]
+  },
+  "error_type": "ModelAPIError",
+  "error": "Connection error.",
+  "charged_or_reserved_usd": "0.046675",
+  "finished_utc": "2026-10-31T18:15:03.952038+00:00",
+  "key_usage_after": {
+    "usage": 3.868942934,
+    "usage_daily": 0,
+    "limit_remaining": 1.1310570659999999,
+    "byok_usage": 0
+  },
+  "billing_recheck": {
+    "generation_status": 200,
+    "generation_body": {
+      "data": {
+        "created_at": "2026-10-31T18:14:59.35Z",
+        "model": "openai/gpt-6.1-sol-20260929",
+        "is_byok": false,
+        "finish_reason": "tool_calls",
+        "id": "gen-1793470499-Nri4u85rSvgtNPtSXkEc",
+        "total_cost": 0.000582,
+        "provider_name": "OpenAI"
+      }
+    },
+    "key": {
+      "usage": 3.869524934,
+      "usage_daily": 0.000582,
+      "limit_remaining": 1.1304750659999998,
+      "byok_usage": 0
+    }
+  }
+}

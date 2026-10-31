@@ -1,0 +1,390 @@
+{
+  "model": "openai/gpt-6.1-sol",
+  "budget_usd": "0.10",
+  "started_utc": "2026-10-31T18:14:55.068978+00:00",
+  "calls": [
+    {
+      "index": 1,
+      "reservation_usd": "0.046675",
+      "input_token_upper_bound": 3191,
+      "request": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "This is an isolated synthetic sales-assistant test. Call lookup_product once for SYNTHETIC-CHAIR-001 before answering. Use only the tool facts. Reply in one short English sentence with exact price, currency and available stock, and ask whether the customer would like a quotation. Do not claim a quote, order, payment or customer message was created."
+          },
+          {
+            "role": "user",
+            "content": "Please find SYNTHETIC-CHAIR-001 and tell me its price and available stock."
+          }
+        ],
+        "model": "openai/gpt-6.1-sol",
+        "max_completion_tokens": 2048,
+        "stream": false,
+        "tool_choice": "auto",
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_product",
+              "description": "Read synthetic furniture inventory; no real data or side effects.",
+              "parameters": {
+                "additionalProperties": false,
+                "properties": {
+                  "sku": {
+                    "const": "SYNTHETIC-CHAIR-001",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "sku"
+                ],
+                "type": "object"
+              },
+              "strict": true
+            }
+          }
+        ],
+        "usage": {
+          "include": true
+        },
+        "reasoning": {
+          "effort": "medium"
+        },
+        "provider": {
+          "only": [
+            "openai"
+          ],
+          "allow_fallbacks": false,
+          "require_parameters": true,
+          "max_price": {
+            "prompt": "2",
+            "completion": "10",
+            "request": "0"
+          }
+        },
+        "prompt_cache_options": {
+          "mode": "explicit"
+        }
+      },
+      "cost_usd": "0.000582",
+      "elapsed_s": 2.443,
+      "http_status": 200,
+      "response": {
+        "id": "gen-1793470499-Nri4u85rSvgtNPtSXkEc",
+        "object": "chat.completion",
+        "created": 1793470499,
+        "model": "openai/gpt-6.1-sol",
+        "provider": "OpenAI",
+        "system_fingerprint": null,
+        "service_tier": "default",
+        "choices": [
+          {
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "tool_calls",
+            "native_finish_reason": "completed",
+            "message": {
+              "role": "assistant",
+              "content": null,
+              "refusal": null,
+              "reasoning": null,
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "index": 0,
+                  "id": "call_uyfapPiJVqVoxrMk4xRGQPEj",
+                  "function": {
+                    "name": "lookup_product",
+                    "arguments": "{\"sku\":\"SYNTHETIC-CHAIR-001\"}"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 156,
+          "completion_tokens": 27,
+          "total_tokens": 183,
+          "cost": 0.000582,
+          "is_byok": false,
+          "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "cache_write_tokens": 0,
+            "audio_tokens": 0,
+            "video_tokens": 0
+          },
+          "cost_details": {
+            "upstream_inference_cost": 0.000582,
+            "upstream_inference_prompt_cost": 0.000312,
+            "upstream_inference_completions_cost": 0.00027
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "image_tokens": 0,
+            "audio_tokens": 0
+          }
+        }
+      },
+      "generation_id": "gen-1793470499-Nri4u85rSvgtNPtSXkEc",
+      "generation_lookup_status": 200,
+      "generation": {
+        "created_at": "2026-10-31T18:14:59.35Z",
+        "model": "openai/gpt-6.1-sol-20260929",
+        "native_tokens_prompt": 156,
+        "native_tokens_completion": 27,
+        "native_tokens_reasoning": 0,
+        "is_byok": false,
+        "finish_reason": "tool_calls",
+        "native_finish_reason": "completed",
+        "service_tier": "default",
+        "usage": 0.000582,
+        "api_type": "completions",
+        "id": "gen-1793470499-Nri4u85rSvgtNPtSXkEc",
+        "total_cost": 0.000582,
+        "provider_name": "OpenAI"
+      }
+    },
+    {
+      "index": 2,
+      "reservation_usd": "0.048735",
+      "input_token_upper_bound": 3603,
+      "request": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "This is an isolated synthetic sales-assistant test. Call lookup_product once for SYNTHETIC-CHAIR-001 before answering. Use only the tool facts. Reply in one short English sentence with exact price, currency and available stock, and ask whether the customer would like a quotation. Do not claim a quote, order, payment or customer message was created."
+          },
+          {
+            "role": "user",
+            "content": "Please find SYNTHETIC-CHAIR-001 and tell me its price and available stock."
+          },
+          {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "call_uyfapPiJVqVoxrMk4xRGQPEj",
+                "type": "function",
+                "function": {
+                  "name": "lookup_product",
+                  "arguments": "{\"sku\":\"SYNTHETIC-CHAIR-001\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_uyfapPiJVqVoxrMk4xRGQPEj",
+            "content": "{\"sku\":\"SYNTHETIC-CHAIR-001\",\"name\":\"Synthetic Chair\",\"currency\":\"AED\",\"unit_price\":100,\"available_stock\":7,\"synthetic\":true}"
+          }
+        ],
+        "model": "openai/gpt-6.1-sol",
+        "max_completion_tokens": 2048,
+        "stream": false,
+        "tool_choice": "auto",
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_product",
+              "description": "Read synthetic furniture inventory; no real data or side effects.",
+              "parameters": {
+                "additionalProperties": false,
+                "properties": {
+                  "sku": {
+                    "const": "SYNTHETIC-CHAIR-001",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "sku"
+                ],
+                "type": "object"
+              },
+              "strict": true
+            }
+          }
+        ],
+        "usage": {
+          "include": true
+        },
+        "reasoning": {
+          "effort": "medium"
+        },
+        "provider": {
+          "only": [
+            "openai"
+          ],
+          "allow_fallbacks": false,
+          "require_parameters": true,
+          "max_price": {
+            "prompt": "2",
+            "completion": "10",
+            "request": "0"
+          }
+        },
+        "prompt_cache_options": {
+          "mode": "explicit"
+        }
+      },
+      "cost_usd": "0.000764",
+      "elapsed_s": 2.423,
+      "http_status": 200,
+      "response": {
+        "id": "gen-1793470634-3Dz0jbhwBirpLMnmu01C",
+        "object": "chat.completion",
+        "created": 1793470634,
+        "model": "openai/gpt-6.1-sol",
+        "provider": "OpenAI",
+        "system_fingerprint": null,
+        "service_tier": "default",
+        "choices": [
+          {
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "stop",
+            "native_finish_reason": "completed",
+            "message": {
+              "role": "assistant",
+              "content": "SYNTHETIC-CHAIR-001 costs AED 100 with 7 units available; would you like a quotation?",
+              "refusal": null,
+              "reasoning": null
+            }
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 232,
+          "completion_tokens": 30,
+          "total_tokens": 262,
+          "cost": 0.000764,
+          "is_byok": false,
+          "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "cache_write_tokens": 0,
+            "audio_tokens": 0,
+            "video_tokens": 0
+          },
+          "cost_details": {
+            "upstream_inference_cost": 0.000764,
+            "upstream_inference_prompt_cost": 0.000464,
+            "upstream_inference_completions_cost": 0.0003
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "image_tokens": 0,
+            "audio_tokens": 0
+          }
+        }
+      },
+      "generation_id": "gen-1793470634-3Dz0jbhwBirpLMnmu01C",
+      "generation_lookup_status": 200,
+      "generation": {
+        "created_at": "2026-10-31T18:17:14.086Z",
+        "model": "openai/gpt-6.1-sol-20260929",
+        "native_tokens_prompt": 232,
+        "native_tokens_completion": 30,
+        "native_tokens_reasoning": 0,
+        "is_byok": false,
+        "finish_reason": "stop",
+        "native_finish_reason": "completed",
+        "service_tier": "default",
+        "usage": 0.000764,
+        "api_type": "completions",
+        "id": "gen-1793470634-3Dz0jbhwBirpLMnmu01C",
+        "total_cost": 0.000764,
+        "provider_name": "OpenAI"
+      }
+    }
+  ],
+  "passed": true,
+  "no_customer_sends": true,
+  "no_retries": true,
+  "adapter": "candidate OpenRouterTelemetryChatModel + PydanticAI Agent",
+  "source_sha256": "2648c3b8bafa73cd7d7af3824e9f5d403aa7c8a0047e1cc81718e1cf68f465b6",
+  "key_usage_before": {
+    "usage": 3.868942934,
+    "usage_daily": 0,
+    "limit_remaining": 1.1310570659999999,
+    "byok_usage": 0
+  },
+  "endpoint": {
+    "tag": "openai",
+    "name": "OpenAI | openai/gpt-6.1-sol-20260929",
+    "pricing": {
+      "prompt": "0.000002",
+      "completion": "0.00001",
+      "web_search": "0.01",
+      "input_cache_read": "0.0000001",
+      "input_cache_write": "0.0000025",
+      "discount": 0,
+      "overrides": [
+        {
+          "min_prompt_tokens": 272000,
+          "prompt": "0.000004",
+          "completion": "0.000015",
+          "input_cache_read": "0.0000002",
+          "input_cache_write": "0.000005"
+        }
+      ]
+    },
+    "supported_parameters": [
+      "reasoning",
+      "include_reasoning",
+      "seed",
+      "max_tokens",
+      "response_format",
+      "structured_outputs",
+      "tools",
+      "tool_choice",
+      "verbosity",
+      "reasoning_effort"
+    ]
+  },
+  "charged_or_reserved_usd": "0.001346",
+  "finished_utc": "2026-10-31T18:17:29.630015+00:00",
+  "key_usage_after": {
+    "usage": 3.869524934,
+    "usage_daily": 0.000582,
+    "limit_remaining": 1.1304750659999998,
+    "byok_usage": 0
+  },
+  "billing_recheck": {
+    "generation_status": 200,
+    "generation_body": {
+      "data": {
+        "created_at": "2026-10-31T18:14:59.35Z",
+        "model": "openai/gpt-6.1-sol-20260929",
+        "is_byok": false,
+        "finish_reason": "tool_calls",
+        "id": "gen-1793470499-Nri4u85rSvgtNPtSXkEc",
+        "total_cost": 0.000582,
+        "provider_name": "OpenAI"
+      }
+    },
+    "key": {
+      "usage": 3.869524934,
+      "usage_daily": 0.000582,
+      "limit_remaining": 1.1304750659999998,
+      "byok_usage": 0
+    }
+  },
+  "observer_recovery": "First model POST succeeded; generation receipt indexing lag stopped the initial SDK run. Reuse its exact recorded response without another paid POST.",
+  "previous_local_error": {
+    "error_type": "ModelAPIError",
+    "error": "Connection error."
+  },
+  "resume_started_utc": "2026-10-31T18:17:09.319755+00:00",
+  "resume_key_usage_before": {
+    "usage": 3.869524934,
+    "usage_daily": 0.000582,
+    "limit_remaining": 1.1304750659999998,
+    "byok_usage": 0
+  },
+  "replayed_provider_responses": 1,
+  "answer": "SYNTHETIC-CHAIR-001 costs AED 100 with 7 units available; would you like a quotation?",
+  "tools_executed": [
+    "SYNTHETIC-CHAIR-001"
+  ]
+}

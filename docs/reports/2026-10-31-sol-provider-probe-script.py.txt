@@ -1,0 +1,181 @@
+import asyncio
+import hashlib
+import json
+import subprocess
+import time
+from datetime import UTC, datetime
+from decimal import Decimal
+from pathlib import Path
+from typing import Any, Literal
+
+import httpx
+from openai import AsyncOpenAI
+from pydantic_ai import Agent
+from pydantic_ai.providers.openrouter import OpenRouterProvider
+
+from src.llm import safety
+
+MODEL = 'openai/gpt-6.1-sol'
+BUDGET = Decimal('0.10')
+MAX_OUTPUT = 2048
+BASE = 'https://openrouter.ai/api/v1'
+OUT = Path('docs/reports/2026-10-31-sol-provider-probe.json')
+receipt: dict[str, Any] = {'model': MODEL, 'budget_usd': str(BUDGET), 'started_utc': datetime.now(UTC).isoformat(), 'calls': [], 'passed': False, 'no_customer_sends': True, 'no_retries': True, 'adapter': 'candidate OpenRouterTelemetryChatModel + PydanticAI Agent', 'source_sha256': hashlib.sha256(Path('src/llm/safety.py').read_bytes()).hexdigest()}
+previous = json.loads(OUT.read_text())
+receipt = previous
+receipt['passed'] = False
+receipt.pop('error_type', None)
+receipt.pop('error', None)
+receipt['resume_started_utc'] = datetime.now(UTC).isoformat()
+charged = sum(Decimal(r['cost_usd']) if r.get('cost_usd') is not None else Decimal(r['reservation_usd']) for r in receipt['calls'])
+key_process = subprocess.run(['ssh', '-o', 'BatchMode=yes', 'noor-server', 'cd /opt/noor && docker compose exec -T app python -'], input='from src.core.config import settings\nprint(settings.openrouter_api_key)\n', text=True, capture_output=True, timeout=25)
+if key_process.returncode != 0:
+    raise SystemExit('Cannot obtain authorized runtime credential')
+key = key_process.stdout.strip()
+if not key.startswith('sk-or-'):
+    raise SystemExit('Unexpected runtime credential format')
+headers = {'Authorization': 'Bearer ' + key}
+reads = httpx.Client(headers=headers, timeout=15, follow_redirects=False, transport=httpx.HTTPTransport(retries=0))
+
+def read(path, **kwargs):
+    response = reads.get(BASE + path, **kwargs)
+    response.raise_for_status()
+    return response.json()
+
+class BudgetTransport(httpx.AsyncBaseTransport):
+    def __init__(self):
+        self.inner = httpx.AsyncHTTPTransport(retries=0)
+        self.replay_index = 0
+        self.cached_count = len(receipt['calls'])
+
+    async def handle_async_request(self, request):
+        global charged
+        if request.url.host != 'openrouter.ai' or request.method != 'POST' or request.url.path != '/api/v1/chat/completions':
+            raise RuntimeError('Unexpected SDK network operation')
+        body = await request.aread()
+        payload = json.loads(body)
+        if self.replay_index < self.cached_count:
+            cached = receipt['calls'][self.replay_index]
+            if payload != cached['request'] or not cached.get('cost_usd'):
+                raise RuntimeError('Cached SDK request differs or is not fully billed')
+            self.replay_index += 1
+            receipt['replayed_provider_responses'] = self.replay_index
+            return httpx.Response(200, json=cached['response'])
+        if len(receipt['calls']) >= 2:
+            raise RuntimeError('Hard cumulative two-POST ceiling reached')
+        if payload.get('model') != MODEL or payload.get('reasoning') != {'effort': 'medium'} or 'temperature' in payload:
+            raise RuntimeError('Candidate adapter request is not the approved model/policy')
+        if payload.get('max_tokens', payload.get('max_completion_tokens')) != MAX_OUTPUT:
+            raise RuntimeError('SDK output ceiling missing')
+        # BPE tokens are bounded by serialized input bytes, plus a generous
+        # framing allowance; price caps and no fallback bind the endpoint.
+        input_bound = len(body) + 2048
+        if input_bound > 16000:
+            raise RuntimeError('Synthetic input exceeded its token upper bound')
+        reservation = input_bound * Decimal('0.000005') + MAX_OUTPUT * Decimal('0.000015')
+        if charged + reservation > BUDGET:
+            raise RuntimeError('Worst-case next request exceeds remaining USD0.10')
+        record = {'index': len(receipt['calls']) + 1, 'reservation_usd': str(reservation), 'input_token_upper_bound': input_bound, 'request': payload, 'cost_usd': None}
+        receipt['calls'].append(record)
+        charged += reservation
+        started = time.monotonic()
+        try:
+            response = await self.inner.handle_async_request(request)
+            content = await response.aread()
+        except Exception as exc:
+            record['error_type'] = type(exc).__name__
+            raise
+        record['elapsed_s'] = round(time.monotonic() - started, 3)
+        record['http_status'] = response.status_code
+        data = json.loads(content)
+        record['response'] = data
+        if response.status_code != 200 or data.get('error'):
+            raise RuntimeError('Provider HTTP/in-band failure; no retry permitted')
+        generation_id = data.get('id')
+        record['generation_id'] = generation_id
+        usage_cost = data.get('usage', {}).get('cost')
+        generation_cost = None
+        # GET receipt polling is free and never repeats the paid request.
+        for attempt in range(30):
+            stats = reads.get(BASE + '/generation', params={'id': generation_id})
+            record['generation_lookup_status'] = stats.status_code
+            if stats.status_code == 200:
+                record['generation'] = stats.json().get('data', {})
+                generation_cost = record['generation'].get('total_cost')
+                if generation_cost is not None:
+                    break
+            if attempt < 29:
+                await asyncio.sleep(2)
+        if usage_cost is None or generation_cost is None:
+            raise RuntimeError('Missing final cost receipt; retaining full reservation')
+        u, g = Decimal(str(usage_cost)), Decimal(str(generation_cost))
+        if not u.is_finite() or not g.is_finite() or min(u, g) < 0 or abs(u - g) > Decimal('0.000000001'):
+            raise RuntimeError('Usage and generation costs disagree; no further request')
+        cost = max(u, g)
+        if cost > reservation:
+            raise RuntimeError('Provider cost exceeded conservative API-bound reservation')
+        charged = charged - reservation + cost
+        record['cost_usd'] = str(cost)
+        if data.get('model') not in (MODEL, 'openai/gpt-6.1-sol-20260929'):
+            raise RuntimeError('Provider model identity mismatch')
+        if data['choices'][0].get('finish_reason') == 'length':
+            raise RuntimeError('Generation exhausted output budget')
+        return response
+
+    async def aclose(self):
+        await self.inner.aclose()
+
+async def probe():
+    before = read('/key')['data']
+    receipt['resume_key_usage_before'] = {k: before.get(k) for k in ('usage', 'usage_daily', 'limit_remaining', 'byok_usage')}
+    if Decimal(str(before.get('limit_remaining', '0'))) < BUDGET:
+        raise RuntimeError('Key has insufficient remaining allowance')
+    endpoints = read('/models/openai/gpt-6.1-sol/endpoints')['data']['endpoints']
+    pinned = [e for e in endpoints if e.get('tag') == 'openai']
+    if len(pinned) != 1:
+        raise RuntimeError('Exact OpenAI endpoint not uniquely available')
+    endpoint = pinned[0]
+    receipt['endpoint'] = {k: endpoint.get(k) for k in ('tag', 'name', 'pricing', 'supported_parameters')}
+    prices = endpoint['pricing']
+    if Decimal(str(prices['prompt'])) > Decimal('0.000002') or Decimal(str(prices['completion'])) > Decimal('0.00001') or Decimal(str(prices.get('input_cache_write') or 0)) > Decimal('0.000005'):
+        raise RuntimeError('Current endpoint rates exceed the budget envelope')
+    called = []
+    def lookup_product(sku: Literal['SYNTHETIC-CHAIR-001']) -> dict[str, Any]:
+        """Read synthetic furniture inventory; no real data or side effects."""
+        if called:
+            raise RuntimeError('Repeated tool execution refused')
+        called.append(sku)
+        return {'sku': sku, 'name': 'Synthetic Chair', 'currency': 'AED', 'unit_price': 100, 'available_stock': 7, 'synthetic': True}
+    settings = safety.model_settings_for_path(safety.PATH_CORE_CHAT, model_name=MODEL)
+    settings['max_tokens'] = MAX_OUTPUT
+    settings['extra_body'].update({'provider': {'only': ['openai'], 'allow_fallbacks': False, 'require_parameters': True, 'max_price': {'prompt': '2', 'completion': '10', 'request': '0'}}, 'prompt_cache_options': {'mode': 'explicit'}})
+    safety._OPENROUTER_RETRYABLE_ERROR_TYPES = frozenset()
+    async with httpx.AsyncClient(transport=BudgetTransport(), timeout=httpx.Timeout(65, connect=15), follow_redirects=False) as http:
+        client = AsyncOpenAI(api_key=key, base_url=BASE, max_retries=0, http_client=http)
+        model = safety.OpenRouterTelemetryChatModel(MODEL, provider=OpenRouterProvider(openai_client=client), settings=settings)
+        agent = Agent(model, tools=[lookup_product], retries=0, system_prompt='This is an isolated synthetic sales-assistant test. Call lookup_product once for SYNTHETIC-CHAIR-001 before answering. Use only the tool facts. Reply in one short English sentence with exact price, currency and available stock, and ask whether the customer would like a quotation. Do not claim a quote, order, payment or customer message was created.')
+        result = await agent.run('Please find SYNTHETIC-CHAIR-001 and tell me its price and available stock.')
+    receipt['answer'] = result.output
+    receipt['tools_executed'] = called
+    if len(receipt['calls']) != 2 or called != ['SYNTHETIC-CHAIR-001'] or not all(s in result.output for s in ('100', '7', 'AED')) or 'quot' not in result.output.lower():
+        raise RuntimeError('Synthetic tool/fact/final-answer contract failed')
+    if receipt['calls'][-1]['response']['choices'][0]['finish_reason'] != 'stop':
+        raise RuntimeError('Final completion did not stop normally')
+    receipt['passed'] = True
+
+try:
+    asyncio.run(probe())
+except Exception as exc:
+    receipt['error_type'] = type(exc).__name__
+    receipt['error'] = str(exc)[:500]
+finally:
+    receipt['charged_or_reserved_usd'] = str(charged)
+    receipt['finished_utc'] = datetime.now(UTC).isoformat()
+    try:
+        after = read('/key')['data']
+        receipt['key_usage_after'] = {k: after.get(k) for k in ('usage', 'usage_daily', 'limit_remaining', 'byok_usage')}
+    except Exception as exc:
+        receipt['key_readback_error'] = type(exc).__name__
+    reads.close()
+    OUT.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n')
+    print(json.dumps({k: receipt.get(k) for k in ('passed', 'error_type', 'error', 'answer', 'charged_or_reserved_usd', 'tools_executed')} | {'post_count': len(receipt['calls']), 'receipt_path': str(OUT), 'calls': [{k: r.get(k) for k in ('index','reservation_usd','cost_usd','elapsed_s','http_status','generation_id')} for r in receipt['calls']]}, ensure_ascii=False), flush=True)

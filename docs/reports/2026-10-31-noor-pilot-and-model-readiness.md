@@ -1,6 +1,6 @@
 # Noor pilot and model readiness — 31 October 2026
 
-Task: tj-3jcn. Baseline and observed live release: `0f9c97bd665258f4d13b007d915443cf681b0391`. Branch: `codex/noor-pilot-sol-20261031`. Preparation only: no model POST, customer send, provider write, deploy or production configuration change.
+Task: tj-3jcn. Baseline and observed live release: `0f9c97bd665258f4d13b007d915443cf681b0391`. Branch: `codex/noor-pilot-sol-20261031`. Initial audit/preparation was local and read-only. The later authorized provider test and model delivery are recorded in the final section; no customer sends or pilot/channel activation are included.
 
 ## Live observations, approximately 20:31–20:33 Moscow
 
@@ -22,7 +22,7 @@ Both assistants need one durable dialogue owner and coordinated final-send contr
 
 ## Current models and proposed roles
 
-Configuration below is not proof of recent invocation; no current-day model traffic was observed.
+Configuration below reflects the initial audit, before the separately authorized Sol probe; it is not evidence of earlier model invocation.
 
 | Workload | Current configuration / source | Proposed role, not yet activated |
 |---|---|---|
@@ -67,3 +67,11 @@ After provider acceptance, proposed production action: deliver this narrow sourc
 - https://developers.openai.com/api/docs/guides/latest-model#gpt-6-astra-update-api-and-model-parameters
 - https://openrouter.ai/docs/guides/features/tool-calling
 - https://wazzup24.com/help/api/channels/
+
+## Authorized Sol provider acceptance and delivery (same day)
+
+The owner explicitly authorized a test within $0.10 and, if successful, deployment of the main-chat switch. The actual candidate OpenRouterTelemetryChatModel plus PydanticAI Agent completed the synthetic lookup tool and final sales reply through OpenRouter. Exactly two paid POSTs cost $0.000582 + $0.000764 = $0.001346. Both response usage and generation metadata agree. Actual SDK wire payloads carried exact Sol/medium, the controlled output ceiling, no temperature, pinned OpenAI/no fallback and maximum provider prices. A conservative predispatch reservation bounded cumulative calls under $0.10; SDK, agent and adapter retries were disabled. No real CRM/customer data or outgoing messages were used.
+
+The first local observer stopped because the generation receipt was not indexed immediately, despite a successful tool-call completion. Initial evidence is retained in 2026-10-31-sol-provider-probe-initial.json. A later read confirmed the $0.000582 cost; the exact first response was replayed to the isolated SDK without another model POST, then the second paid completion finished successfully. Final receipt: 2026-10-31-sol-provider-probe.json. This preserves the failed observer rather than hiding or repaying it.
+
+Private rollback: /opt/noor/.hotfix-backups/tj-3jcn-sol-20261031T181216Z (environment, compose, previous policy, previous DB model row, protected settings and tagged app/worker images). Production activation is now authorized for this model change; the customer pilot/channel changes remain outside it. Next: canonical CI delivery, exact release and worker safety readback, then compare-and-set only the main DB setting. Runtime delivery proof will follow separately.

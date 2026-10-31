@@ -4,9 +4,9 @@
 - Dedicated branch codex/noor-pilot-sol-20261031, base live/main0f9c97b.
 - Client page v2: https://aidevteam.ru/a/S1zQSadyVtJDNCkX2FO10BMX2c2ODIk0 ; source docs/client-answers/noor-nikita-pilot-2026-10.html.
 - Readiness/model map: docs/reports/2026-10-31-noor-pilot-and-model-readiness.md; customer developer prompt: docs/prompts/2026-10-31-customer-claude-noor-pilot.md.
-- Main chat remains Luna in live DB/env. Sol core_chat medium candidate accepted locally (48 focused tests), not deployed or provider-validated; global defaults and helpers unchanged.
+- Owner authorized the $0.10 Sol test and conditional deployment. The real candidate SDK/tool cycle passed: exactly2paidPOSTs, USD0.001346, receipts docs/reports/2026-10-31-sol-provider-probe*.json. Source/DB switch is being delivered; global ENV/default and helpers stay unchanged.
 - Live31October: healthy0f9c97b; customer audit callback, guard disabled; test0665 qridle and business9235 active; sender/allowlist still test0665. Last persisted message19October. Do not enable the direct-callback guard against the customer router.
-- Pilot still needs customer choices, durable single-owner/final-send coordination on both assistants, authorized business-channel/restore-mode decisions and fresh end-to-end proof. No paid requests, production writes or customer sends were made.
+- Pilot still needs customer choices, durable single-owner/final-send coordination on both assistants, authorized business-channel/restore-mode decisions and fresh end-to-end proof. No customer sends, CRM writes or pilot/channel activation were performed; the authorized Sol probe and private rollback preparation are recorded above.
 
 ## Stages tj-fsfx, tj-myx7 & tj-p82s (2026-10-26): Admin Dashboard controls/session/filter sweep, Month default period, full 14-step onboarding & v3 client portal guide
 - Combined `codex/tj-myx7-admin-controls` + `codex/tj-p82s-dashboard-period` (`f2d040d`, live via CI `40325698749`) and expanded Viktor's portal guide in `tj-fsfx` (`.codex/stages/tj-fsfx/summary.md`, `.codex/stages/tj-myx7/summary.md`, `.codex/stages/tj-p82s/summary.md`). Added `GET /api/v1/admin/session` account/logout menu with per-admin audit actor attribution, exact deal/target/escalation drilldowns, Overview default `month` period with `localStorage` persistence, 14-step tour + 9-playbook guide, and republished client manual v3 (`https://aidevteam.ru/a/GaZJfnrjnN5VKtU2wLJdu1nFlqJq3xYO`) with all 8 help/training entrypoints and the 22-item recent delivery changelog.
@@ -158,7 +158,7 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 
 ## Explicit defers
 
-- tj-3jcn: provider tool-cycle proof and explicit Sol release/DB-switch approval remain pending; client pilot needs submitted choices and shared egress ownership. Source/report/prompt above are concrete preparation only.
+- tj-3jcn: Sol provider proof and release authority received; exact deployment/readback remains in progress. Client pilot still needs submitted choices and shared egress ownership/channel agreement.
 
 - tj-i2b1: earlier527fe1f saved budget/hold but failed mixed matching/selection.
   Corrected a72da15live/CI4712passed; fresh2/3unit retained/held proof pending.
