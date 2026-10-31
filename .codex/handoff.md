@@ -1,13 +1,5 @@
 # Orchestrator Handoff
 
-## Task tj-3jcn (2026-10-31): pilot choices and Sol preparation
-- Dedicated branch codex/noor-pilot-sol-20261031, base live/main0f9c97b.
-- Client page v2: https://aidevteam.ru/a/S1zQSadyVtJDNCkX2FO10BMX2c2ODIk0 ; source docs/client-answers/noor-nikita-pilot-2026-10.html.
-- Readiness/model map: docs/reports/2026-10-31-noor-pilot-and-model-readiness.md; customer developer prompt: docs/prompts/2026-10-31-customer-claude-noor-pilot.md.
-- Owner authorized the $0.10 Sol test and conditional deployment. The real candidate SDK/tool cycle passed: exactly2paidPOSTs, USD0.001346, receipts docs/reports/2026-10-31-sol-provider-probe*.json. Source/DB switch is being delivered; global ENV/default and helpers stay unchanged.
-- Live31October: healthy0f9c97b; customer audit callback, guard disabled; test0665 qridle and business9235 active; sender/allowlist still test0665. Last persisted message19October. Do not enable the direct-callback guard against the customer router.
-- Pilot still needs customer choices, durable single-owner/final-send coordination on both assistants, authorized business-channel/restore-mode decisions and fresh end-to-end proof. No customer sends, CRM writes or pilot/channel activation were performed; the authorized Sol probe and private rollback preparation are recorded above.
-
 ## Stages tj-fsfx, tj-myx7 & tj-p82s (2026-10-26): Admin Dashboard controls/session/filter sweep, Month default period, full 14-step onboarding & v3 client portal guide
 - Combined `codex/tj-myx7-admin-controls` + `codex/tj-p82s-dashboard-period` (`f2d040d`, live via CI `40325698749`) and expanded Viktor's portal guide in `tj-fsfx` (`.codex/stages/tj-fsfx/summary.md`, `.codex/stages/tj-myx7/summary.md`, `.codex/stages/tj-p82s/summary.md`). Added `GET /api/v1/admin/session` account/logout menu with per-admin audit actor attribution, exact deal/target/escalation drilldowns, Overview default `month` period with `localStorage` persistence, 14-step tour + 9-playbook guide, and republished client manual v3 (`https://aidevteam.ru/a/GaZJfnrjnN5VKtU2wLJdu1nFlqJq3xYO`) with all 8 help/training entrypoints and the 22-item recent delivery changelog.
 
@@ -63,6 +55,9 @@ Status: full release verified;4458 passed,20 gated skips; Ruff/mypy/process pass
 Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI37130777663 passed.
 
 ## Current work
+
+- tj-3jcn: owner authorized Sol main-chat release after a USD0.10 probe; real candidate SDK/tool cycle passed (2 paid POSTs, USD0.001346). Branch codex/noor-pilot-sol-20261031; report docs/reports/2026-10-31-noor-pilot-and-model-readiness.md. Private rollback /opt/noor/.hotfix-backups/tj-3jcn-sol-20261031T181216Z; deployment/readback in progress, ENV/helpers retained.
+- Client pilot choices v2: https://aidevteam.ru/a/S1zQSadyVtJDNCkX2FO10BMX2c2ODIk0 ; prompt docs/prompts/2026-10-31-customer-claude-noor-pilot.md. Pilot requires choices, shared egress ownership and channel/restore-mode agreement. Preserve the audit receiver/disabled guard; test0665 qridle, business9235 active; no customer sends or pilot activation performed.
 
 - Beads tj-uvld owns AC01–AC12 and remains in_progress until provider coverage,
   delta activation and real 24h optimized measurement are accepted.

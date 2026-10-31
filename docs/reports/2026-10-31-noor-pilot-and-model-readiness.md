@@ -75,3 +75,18 @@ The owner explicitly authorized a test within $0.10 and, if successful, deployme
 The first local observer stopped because the generation receipt was not indexed immediately, despite a successful tool-call completion. Initial evidence is retained in 2026-10-31-sol-provider-probe-initial.json. A later read confirmed the $0.000582 cost; the exact first response was replayed to the isolated SDK without another model POST, then the second paid completion finished successfully. Final receipt: 2026-10-31-sol-provider-probe.json. This preserves the failed observer rather than hiding or repaying it.
 
 Private rollback: /opt/noor/.hotfix-backups/tj-3jcn-sol-20261031T181216Z (environment, compose, previous policy, previous DB model row, protected settings and tagged app/worker images). Production activation is now authorized for this model change; the customer pilot/channel changes remain outside it. Next: canonical CI delivery, exact release and worker safety readback, then compare-and-set only the main DB setting. Runtime delivery proof will follow separately.
+
+Initial canonical CI 41228818576 on b056e76 passed lint/types and 4857 tests but failed one process-verification test because this task's handoff addition exceeded the 200-line current-state limit (203 lines). Deployment was skipped and the live DB was not changed. The correction compacts only this task's entry, retains all prior project context, and re-pins declared current-state metadata. The original failed CI remains part of the evidence.
+
+## Technical premortem for the authorized rollout
+
+Verdict: GO WITH CONDITIONS — canonical checks must pass; exact runtime source/hash and protected settings must match before the single-row switch. Scope: main chat and existing DB-backed order subroutes. Source rollback and previous DB row are retained privately; no database restore or customer replay is required.
+
+| Failure symptom | Evidence / mechanism | Detection and mitigation | Disposition / owner |
+|---|---|---|---|
+| Sol cannot complete catalogue tools | Concrete API compatibility risk; the real candidate SDK tool cycle now passes | Retain exact wire/usage/generation receipts; no silent model substitution | Preflight satisfied / root |
+| Follow-up or helper behavior changes unintentionally | MAIN ENV also feeds follow-up/FAQ; other paths have independent pins | Change only DB override; assert unchanged ENV/FAST/voice/embedding and exact protected settings in both containers | Preflight / root |
+| Higher cost or reply latency under real context | Sol unit prices differ; a short synthetic test is not a conversation-quality/cost benchmark | Keep existing 3200-token/90-second chat limits, medium effort, no broader job activation; preserve unknown-cost distinctions | Monitor when authorized traffic resumes / owner |
+| Executor updates wrong row/release or widens WhatsApp traffic | Shared runtime has channel/guard/restore invariants | Exact SHA and policy hash, app+worker fingerprint equality, row lock and compare-and-set; retain previous row and old images | Preflight / root |
+
+Recovery trigger: wrong effective model/policy, changed protected setting or unhealthy service. Revert only the changed main-model row to its saved JSON value; if source itself is faulty, restore the saved policy/previous app and worker images through the same safety checks. Preserve current customer data, queues, credentials and unrelated environment fields. Recovery confidence is based on exact saved artifacts and bounded config/image rollback; no destructive restore has been performed. Deployment gate is never bypassed after a failed check.
