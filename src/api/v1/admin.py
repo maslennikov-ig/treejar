@@ -1021,8 +1021,8 @@ async def list_pending_manager_reviews(
 )
 async def evaluate_admin_manager_review(
     escalation_id: uuid.UUID,
-    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
+    request: Request = None,  # type: ignore[assignment]
 ) -> ManagerReviewDetail:
     """Run a manager review from the dashboard operator surface."""
     gate = await require_admin_ai_quality_manual_gate(db, AIQualityScope.MANAGER_QA)
@@ -1040,19 +1040,23 @@ async def evaluate_admin_manager_review(
         before_llm_call=reserve_call,
         after_llm_call=record_spend,
     )
-    await log_admin_action(
+    after_payload = (
+        {
+            "review_id": str(result.id),
+            "total_score": result.total_score,
+            "rating": result.rating,
+        }
+        if hasattr(result, "id")
+        else {"result": str(result)}
+    )
+    await record_best_effort_admin_audit(
         db,
         action="quality.manager_review",
         entity_type="escalation",
         entity_id=escalation_id,
-        after={
-            "review_id": str(result.id),
-            "total_score": result.total_score,
-            "rating": result.rating,
-        },
+        after=after_payload,
         request=request,
     )
-    await db.commit()
     return result
 
 

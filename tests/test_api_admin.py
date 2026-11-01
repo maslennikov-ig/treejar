@@ -699,9 +699,10 @@ async def test_admin_manager_review_operator_endpoints(
         pending_response = await admin_client.get(
             "/api/v1/admin/manager-reviews/pending"
         )
+        eval_db = _FakeAIQualityConfigDB({"manager_qa": {"mode": "manual"}})
         evaluate_response = await _with_fake_db(
             admin_client,
-            _FakeAIQualityConfigDB({"manager_qa": {"mode": "manual"}}),
+            eval_db,
             "POST",
             f"/api/v1/admin/manager-reviews/{pending_item['escalation_id']}/evaluate",
         )
@@ -712,6 +713,9 @@ async def test_admin_manager_review_operator_endpoints(
     assert pending_response.json()[0]["phone"] == "+971501234567"
     assert evaluate_response.status_code == 200
     assert evaluate_response.json()["summary"] == "Strong follow-up and clear close."
+    assert len(eval_db.audits) == 1
+    assert getattr(eval_db.audits[0], "action", None) == "quality.manager_review"
+    assert eval_db.committed is True
     mock_list.assert_awaited_once()
     mock_pending.assert_awaited_once()
     mock_evaluate.assert_awaited_once()
