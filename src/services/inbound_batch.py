@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 import re
+import time
 from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -137,3 +139,14 @@ def inbound_execution_key(batch_id: str) -> str:
 def inbound_grace_key(batch_ref: str) -> str:
     """Return the marker key for an open first-turn manager grace window."""
     return f"{_GRACE_PREFIX}{batch_ref}"
+
+
+def serialize_inbound_message(
+    msg: Any,
+    *,
+    received_at: float | None = None,
+) -> str:
+    """Serialize an inbound message with server-side webhook receipt epoch time."""
+    payload = msg.model_dump(mode="json")
+    payload["received_at"] = time.time() if received_at is None else float(received_at)
+    return json.dumps(payload, separators=(",", ":"))

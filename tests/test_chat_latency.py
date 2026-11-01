@@ -86,3 +86,27 @@ def test_chat_latency_parser_and_summary_find_dominant_phase() -> None:
 )
 def test_chat_latency_parser_rejects_payloads_with_unapproved_fields(line: str) -> None:
     assert parse_chat_latency_line(line) is None
+
+
+def test_chat_latency_tracks_arq_queue_wait_without_skewing_dominant_phase() -> None:
+    values = _clock([10.0, 11.0, 12.0, 13.0])
+    trace = ChatLatencyTrace(clock=lambda: next(values))
+    trace.set_queue_wait_ms(5200.0)
+    trace.set_arq_queue_wait_ms(5185.4321)
+    pre_started = trace.start_phase()
+    trace.finish_phase("pre_llm", pre_started)
+
+    payload = trace.snapshot(status="skipped")
+    assert payload["latency_ms"]["queue_wait"] == 5200.0
+    assert payload["latency_ms"]["arq_queue_wait"] == 5185.432
+    assert payload["latency_ms"]["pre_llm"] == 1000.0
+
+    summary = summarize_chat_latency([payload])
+    assert summary["queue_wait_ms"] == {"p50": 5200.0, "p95": 5200.0, "max": 5200.0}
+    assert summary["arq_queue_wait_ms"] == {
+        "p50": 5185.432,
+        "p95": 5185.432,
+        "max": 5185.432,
+    }
+    assert summary["dominant_phase"] == "queue_wait"
+    assert "arq_queue_wait" not in summary["phase_ms"]

@@ -290,6 +290,28 @@ def _count_recent_oauth_failures(
     return failures
 
 
+def _count_recent_terminal_inbound_failures(
+    records: list[Any],
+    *,
+    cutoff: datetime,
+) -> int:
+    failures = 0
+    for raw in records:
+        payload = _decode_json_record(raw)
+        if payload is None or payload.get("status") != "terminal":
+            continue
+        failed_at_raw = payload.get("failed_at")
+        if not isinstance(failed_at_raw, str):
+            continue
+        try:
+            failed_at = _as_utc(datetime.fromisoformat(failed_at_raw))
+        except ValueError:
+            continue
+        if failed_at >= cutoff:
+            failures += 1
+    return failures
+
+
 async def _durable_inbound_queue_metadata(
     redis: Any,
 ) -> tuple[int, float | None, bool]:
@@ -377,7 +399,20 @@ async def collect_runtime_snapshot(
     failed_jobs = sum(
         1
         for result in job_results
-        if not result.success and _as_utc(result.finish_time) >= cutoff
+        if not result.success
+        and _as_utc(result.finish_time) >= cutoff
+        and str(getattr(result, "function", "") or "").rsplit(".", maxsplit=1)[-1]
+        != _INBOUND_JOB_FUNCTION
+    )
+
+    try:
+        inbound_failure_records = await redis.lrange(INBOUND_BATCH_FAILURES_KEY, 0, -1)
+    except Exception:
+        inbound_failure_records = []
+        logger.exception("Runtime monitoring could not read inbound failure counters")
+    failed_jobs += _count_recent_terminal_inbound_failures(
+        list(inbound_failure_records),
+        cutoff=cutoff,
     )
 
     try:

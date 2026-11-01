@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import UTC
 from typing import Any
 
@@ -44,6 +45,19 @@ logger = logging.getLogger(__name__)
 # tool and send time; docker-compose.yml stop_grace_period and the deploy
 # script's stop timeout must exceed this value.
 WORKER_JOB_COMPLETION_WAIT_SECONDS = 170
+DEFAULT_WORKER_MAX_JOBS = 8
+
+
+def _resolve_worker_max_jobs(raw: str | None = None) -> int:
+    """Resolve worker concurrency from ARQ_MAX_JOBS with a safe default of 8."""
+    candidate = os.getenv("ARQ_MAX_JOBS") if raw is None else raw
+    if candidate is None:
+        return DEFAULT_WORKER_MAX_JOBS
+    try:
+        parsed = int(str(candidate).strip())
+    except (TypeError, ValueError):
+        return DEFAULT_WORKER_MAX_JOBS
+    return parsed if parsed >= 1 else DEFAULT_WORKER_MAX_JOBS
 
 
 async def startup(ctx: dict[str, Any]) -> None:
@@ -111,7 +125,15 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 def build_worker_functions() -> list[Any]:
     """Build the ARQ function allowlist for the selected runtime mode."""
-    inbound = func(process_incoming_batch, max_tries=INBOUND_BATCH_MAX_TRIES)
+    # Do not retain arq:result:<job_id> for time-windowed inbound batch jobs:
+    # if a job completes inside its 10s dedup window, a retained result blocks
+    # re-enqueue for the next message in that same window. Durable replay
+    # safety lives in wazzup:inbound:execution:<batch_id>.
+    inbound = func(
+        process_incoming_batch,
+        max_tries=INBOUND_BATCH_MAX_TRIES,
+        keep_result=0,
+    )
     # Acts only on quotations a customer already requested in an accepted
     # inbound conversation, so it stays on in test-channel restore mode.
     quotation_retry = func(retry_pending_quotation, max_tries=1)
@@ -187,11 +209,19 @@ def build_worker_cron_jobs() -> list[Any]:
     stock_crons = [stock_snapshot, stock_delta] if eligible else [stock_snapshot]
     webhook_reconcile = cron(
         reconcile_telegram_webhook,
+        minute=set(range(3, 60, 5)),
         run_at_startup=True,
         unique=True,
     )
     wazzup_guard = (
-        [cron(reconcile_wazzup_webhook, run_at_startup=True, unique=True)]
+        [
+            cron(
+                reconcile_wazzup_webhook,
+                minute=set(range(4, 60, 5)),
+                run_at_startup=True,
+                unique=True,
+            )
+        ]
         if settings.wazzup_webhook_guard_enabled
         else []
     )
@@ -255,5 +285,5 @@ class WorkerSettings:
     timezone = UTC
     job_timeout = 600  # 10 min — accommodate large catalogs (856+ SKU)
     job_completion_wait = WORKER_JOB_COMPLETION_WAIT_SECONDS
-    max_jobs = 2
+    max_jobs = _resolve_worker_max_jobs()
     keep_result = 3600  # keep results for 1 hour for debugging

@@ -23,6 +23,7 @@ from src.services.inbound_batch import (
     inbound_grace_key,
     inbound_queue_key,
     resolve_inbound_batch_defer_seconds,
+    serialize_inbound_message,
 )
 from src.services.outbound_audit import update_wazzup_statuses
 from src.services.proposal_followup import apply_proposal_read_statuses
@@ -349,12 +350,16 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
             # Client message — standard flow
             logger.info("Accepted client message: message_type=%s", msg.type)
 
-        # Push to Redis list
+        # Push to Redis list with server-side webhook receipt timestamp
+        received_at = time.time()
         batch_ref = inbound_chat_reference(msg.chatId)
-        await redis.rpush(inbound_queue_key(batch_ref), msg.model_dump_json())
+        await redis.rpush(
+            inbound_queue_key(batch_ref),
+            serialize_inbound_message(msg, received_at=received_at),
+        )
 
         # Use time-windowed job ID: same window = dedup, new window = new job
-        window = int(time.time()) // 10  # 10-second windows
+        window = int(received_at) // 10  # 10-second windows
         job_id = f"wazzup_batch_{batch_ref}_{window}"
         defer_by = DEFAULT_INBOUND_BATCH_DEFER_SECONDS
         grace_key: str | None = None
