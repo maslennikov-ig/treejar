@@ -31,8 +31,6 @@ class Settings(BaseSettings):
     app_debug: bool = False
     # Swagger/ReDoc/OpenAPI routes expose the full API map; opt-in only.
     app_docs_enabled: bool = False
-    app_host: str = "0.0.0.0"
-    app_port: int = 8000
     app_log_level: str = "INFO"
     app_secret_key: str = "change-me-in-production"
     # Emergency recovery gate: app accepts only Wazzup inbound and the worker
@@ -153,11 +151,6 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
-
-    @property
-    def voxtral_model(self) -> str:
-        """Deprecated Python alias for voice transcription configuration."""
-        return self.voice_transcription_model
 
     @property
     def migration_database_url(self) -> str:

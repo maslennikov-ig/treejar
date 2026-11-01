@@ -50,7 +50,6 @@ from .admin import (
 )
 from .common import (
     ConversationStatus,
-    ErrorResponse,
     EscalationStatus,
     Language,
     PaginatedResponse,
@@ -60,11 +59,9 @@ from .common import (
     UUIDModel,
 )
 from .conversation import (
-    ConversationCreate,
     ConversationDetail,
     ConversationRead,
     ConversationUpdate,
-    MessageCreate,
     MessageRead,
 )
 from .crm import (
@@ -104,7 +101,6 @@ from .webhook import (
 __all__ = [
     # common
     "ConversationStatus",
-    "ErrorResponse",
     "EscalationStatus",
     "Language",
     "PaginatedResponse",
@@ -120,11 +116,9 @@ __all__ = [
     "WazzupMedia",
     "WazzupWebhookPayload",
     # conversation
-    "ConversationCreate",
     "ConversationDetail",
     "ConversationRead",
     "ConversationUpdate",
-    "MessageCreate",
     "MessageRead",
     # product
     "ProductRead",

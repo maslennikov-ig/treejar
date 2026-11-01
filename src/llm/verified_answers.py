@@ -66,25 +66,6 @@ _STOPWORDS = frozenset(
         "your",
     }
 )
-_SOCIAL_GREETING_PHRASES = frozenset(
-    {
-        "hello",
-        "hi",
-        "hey",
-        "good morning",
-        "good afternoon",
-        "good evening",
-        "مرحبا",
-        "اهلا",
-        "أهلا",
-        "سلام عليكم",
-        "السلام عليكم",
-        "السلام عليكم ورحمة الله",
-        "سلام عليكم ورحمة الله",
-        "صباح الخير",
-        "مساء الخير",
-    }
-)
 _LOCATION_TERMS = (
     "abu dhabi",
     "dubai",
@@ -94,51 +75,6 @@ _LOCATION_TERMS = (
     "uae",
     "ras al khaimah",
     "fujairah",
-)
-_QUOTE_PROPOSAL_PHRASES = (
-    "sales order",
-    "sale order",
-    "commercial offer",
-    "commercial proposal",
-    "business proposal",
-    "formal offer",
-    "formal quotation",
-    "proforma invoice",
-    "pro forma invoice",
-    "invoice",
-)
-_PROPOSAL_CONTEXT_TERMS = (
-    "business",
-    "commercial",
-    "formal",
-    "quotation",
-    "quote",
-    "for me",
-)
-_QUOTE_HOLD_RE = re.compile(
-    r"(?:"
-    r"\b(?:keep|maintain|preserve)\s+(?:the\s+)?"
-    r"(?:no[\s-]+(?:quote|quotation)|(?:quote|quotation)[\s-]+hold)"
-    r"(?:\s+(?:instruction|request))?\b|"
-    r"\bno\s+(?:formal\s+)?(?:quote|quotation|commercial\s+offer|proposal)"
-    r"\s+(?:yet|now)\b|"
-    r"\bnot\s+ready\s+for\s+(?:an?\s+)?(?:quote|quotation|proposal)\b|"
-    r"\bwithout\s+(?:creating|preparing|making|issuing|generating|sending)"
-    r"\s+(?:an?\s+|any\s+|the\s+)?(?:formal\s+)?"
-    r"(?:quote|quotation|commercial\s+offer|commercial\s+proposal|"
-    r"proforma\s+invoice|pro\s+forma\s+invoice|invoice)\b|"
-    r"\b(?:do\s+not|don't|dont)\s+"
-    r"(?:want|need|request|accept|offer|create|prepare|make|issue|generate|send)\s+"
-    r"(?:me\s+)?"
-    r"(?:an?\s+|any\s+|the\s+)?(?:formal\s+)?"
-    r"(?:quote|quotation|commercial\s+offer|commercial\s+proposal|"
-    r"proforma\s+invoice|pro\s+forma\s+invoice|invoice)(?:\s+yet)?\b|"
-    r"(?:بدون|لا)\s+(?:إنشاء|اعداد|إعداد|ارسال|إرسال)?\s*"
-    r"(?:عرض\s+سعر|عرض\s+رسمي)|"
-    r"(?:لا|لن)\s+(?:أريد|اريد|أحتاج|احتاج)\s+"
-    r"(?:عرض\s+سعر|عرض\s+رسمي|فاتورة\s+مبدئية)"
-    r")",
-    re.IGNORECASE,
 )
 _TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
     "delivery": (
@@ -228,23 +164,12 @@ def _normalize(text: str) -> str:
     return " ".join(text.lower().split())
 
 
-def _normalize_social_text(text: str) -> str:
-    normalized = _normalize(text).casefold()
-    normalized = re.sub(r"[^\w\s]+", "", normalized, flags=re.UNICODE)
-    return " ".join(normalized.split())
-
-
 def _tokenize(text: str) -> set[str]:
     return {
         token
         for token in _TOKEN_RE.findall(_normalize(text))
         if token not in _STOPWORDS and len(token) > 1
     }
-
-
-def is_social_greeting_query(query: str) -> bool:
-    normalized = _normalize_social_text(query)
-    return normalized in _SOCIAL_GREETING_PHRASES
 
 
 def _query_topics(query: str) -> tuple[str, ...]:
@@ -255,24 +180,6 @@ def _query_topics(query: str) -> tuple[str, ...]:
         if any(keyword in normalized for keyword in keywords)
     ]
     return tuple(topics)
-
-
-def is_quote_or_proposal_request(query: str) -> bool:
-    normalized = _normalize(query).casefold()
-    if is_quote_or_proposal_hold(normalized):
-        return False
-    if any(phrase in normalized for phrase in _QUOTE_PROPOSAL_PHRASES):
-        return True
-    if "quotation" in normalized or "quote" in normalized:
-        return True
-    return "proposal" in normalized and any(
-        term in normalized for term in _PROPOSAL_CONTEXT_TERMS
-    )
-
-
-def is_quote_or_proposal_hold(query: str) -> bool:
-    normalized = _normalize(query).casefold()
-    return bool(normalized and _QUOTE_HOLD_RE.search(normalized))
 
 
 def _entry_topics(entry_text: str) -> set[str]:

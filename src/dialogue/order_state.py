@@ -188,12 +188,6 @@ class OrderIntent(BaseModel):
     quote_details: QuoteDetails = Field(default_factory=QuoteDetails)
     source_text: str = ""
 
-    @property
-    def has_complete_lines(self) -> bool:
-        return bool(self.lines) and all(
-            line.quantity and line.quantity > 0 for line in self.lines
-        )
-
 
 class OrderState(BaseModel):
     version: int = 1

@@ -78,8 +78,3 @@ class PaginatedResponse[T](BaseModel):
     page: int
     page_size: int
     pages: int
-
-
-class ErrorResponse(BaseModel):
-    detail: str
-    error_code: str | None = None

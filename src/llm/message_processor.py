@@ -186,10 +186,6 @@ def _is_first_turn(
     return assistant_turns == 0 and user_turns >= 1
 
 
-def _has_escalation(conversation: ConversationT) -> bool:
-    return is_active_human_handoff(conversation.escalation_status)
-
-
 def _deferred_product_media_for_response(
     response_deps: SalesDepsT,
     *,

@@ -132,61 +132,11 @@ async def get_review_for_conversation(
     return result.scalar_one_or_none()
 
 
-async def get_unreviewed_completed_conversations(
-    db: AsyncSession,
-    limit: int = 50,
-) -> list[UUID]:
-    """Find closed conversations that have not been reviewed yet.
-
-    A conversation is eligible for review if:
-    - status == 'closed'
-    - No entry in quality_reviews for this conversation_id
-
-    Args:
-        db: Async SQLAlchemy session.
-        limit: Maximum number of conversation IDs to return.
-
-    Returns:
-        List of conversation UUIDs eligible for evaluation.
-    """
-    stmt = (
-        select(Conversation.id)
-        .where(
-            Conversation.status == "closed",
-            ~exists().where(QualityReview.conversation_id == Conversation.id),
-        )
-        .order_by(Conversation.updated_at.desc())
-        .limit(limit)
-    )
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
-
-
 def _normalize_naive_utc(value: datetime) -> datetime:
     """Normalize datetimes to naive UTC for timestamp-without-time-zone columns."""
     if value.tzinfo is None:
         return value
     return value.astimezone(UTC).replace(tzinfo=None)
-
-
-async def get_recent_conversation_ids_with_assistant_activity(
-    db: AsyncSession,
-    *,
-    since: datetime | None = None,
-    limit: int = 50,
-    offset: int = 0,
-) -> list[UUID]:
-    """Return recent conversation IDs with assistant activity ordered by latest turn.
-
-    This powers rolling quality evaluation for active bot dialogues.
-    """
-    candidates = await get_recent_assistant_conversation_candidates(
-        db,
-        since=since,
-        limit=limit,
-        offset=offset,
-    )
-    return [candidate.conversation_id for candidate in candidates]
 
 
 async def get_recent_assistant_conversation_candidates(

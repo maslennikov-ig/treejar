@@ -6,19 +6,7 @@ from pathlib import Path
 import pytest
 
 from src.llm import verified_answers as verified_answers_module
-from src.llm.verified_answers import (
-    classify_product_match,
-    is_quote_or_proposal_request,
-)
-
-
-def test_sales_order_is_quotation_like_request() -> None:
-    assert is_quote_or_proposal_request(
-        "give me please sales order on SKYLAND NOVO 1800 - 1 pcs"
-    )
-    assert not is_quote_or_proposal_request(
-        "Give me a cheaper option, but do not prepare a quotation."
-    )
+from src.llm.verified_answers import classify_product_match
 
 
 @pytest.mark.parametrize(

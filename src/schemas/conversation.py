@@ -16,11 +16,6 @@ from .common import (
 )
 
 
-class ConversationCreate(BaseModel):
-    phone: str
-    language: Language = Language.EN
-
-
 class ConversationRead(UUIDModel, TimestampModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -45,13 +40,6 @@ class ConversationUpdate(BaseModel):
     escalation_status: EscalationStatus | None = None
     customer_name: str | None = None
     deal_status: str | None = None
-
-
-class MessageCreate(BaseModel):
-    conversation_id: uuid.UUID
-    role: str
-    content: str
-    message_type: str = "text"
 
 
 class MessageRead(UUIDModel):

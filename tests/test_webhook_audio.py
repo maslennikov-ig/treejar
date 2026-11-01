@@ -55,14 +55,6 @@ class TestVoxtralConfig:
 
         assert configured.voice_transcription_model == "openai/gpt-4o-mini-transcribe"
 
-    def test_legacy_python_attribute_reads_new_voice_model(self) -> None:
-        configured = Settings(
-            _env_file=None,
-            VOICE_TRANSCRIPTION_MODEL="mistralai/voxtral-mini-transcribe",
-        )
-
-        assert configured.voxtral_model == configured.voice_transcription_model
-
     def test_default_openrouter_models_use_approved_routes(self) -> None:
         """The defaults must name the repository routes used without DB overrides.
 

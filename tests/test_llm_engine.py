@@ -37,10 +37,8 @@ from src.llm.engine import (
     ProductMediaPayload,
     QuotationItem,
     SalesDeps,
-    _extract_bare_name_gate_reply,
     _extract_quote_customer_details,
     _product_media_is_referenced,
-    extract_exact_quote_candidate,
     grounded_amounts_for_turn,
     inject_system_prompt,
     process_message,
@@ -60,36 +58,14 @@ from src.schemas.product import ProductRead
 pytestmark = pytest.mark.usefixtures("authorized_outbound_unit_path")
 
 
-def test_a_question_is_never_read_as_the_customers_name() -> None:
-    """The terse extractor guards against questions and the guard did not hold.
-
-    It strips trailing punctuation before testing for a question mark, so any
-    question ending in one slipped through: "Before we continue, do you provide
-    delivery and assembly in Dubai?" was parsed as a customer named "Before we
-    continue", which then read as a reply to the detail request and let the
-    quote-resume route answer a question with another question.
-    """
-
-    assert (
-        engine_module._extract_terse_quote_customer_details(
-            "Before we continue, do you provide delivery and assembly in Dubai?"
-        )
-        == {}
-    )
-    assert engine_module._extract_terse_quote_customer_details(
-        "Leila Hassan, Horizon QA Test LLC"
-    ) == {"name": "Leila Hassan", "company": "Horizon QA Test LLC"}
-
-
 def test_the_raw_product_note_is_never_rendered_into_a_reply() -> None:
     """tj-g51h: the saved product note is the customer's own sentence.
 
     It reached a customer-visible line once, in the saved-context summary's
     "Products and quantities" slot, and printed back what they had just typed
     while the three model-written turns before it had parsed it correctly. The
-    two readers that remain are the captured-context block, which escapes it and
-    labels it untrusted before the model parses it, and the CRM deal title,
-    which runs it through the catalog-reference parser first.
+    readers that remain are `_sales_memory_from_metadata` and the captured-context
+    block, which escapes it and labels it untrusted before the model parses it.
     """
 
     engine_source = Path(engine_module.__file__ or "").read_text(encoding="utf-8")
@@ -107,7 +83,6 @@ def test_the_raw_product_note_is_never_rendered_into_a_reply() -> None:
     assert readers == {
         "_sales_memory_from_metadata",
         "_format_captured_sales_context",
-        "_sales_opportunity_title",
     }
 
 
@@ -2298,28 +2273,6 @@ async def test_process_message_known_customer_bed_request_uses_catalog_path_not_
     messaging.send_media.assert_not_called()
 
 
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ("Lili", "Lili"),
-        ("Lilia Orderstate", "Lilia Orderstate"),
-        ("ليلى", "ليلى"),
-        ("My name is Jio", ""),
-        ("yes", ""),
-        ("ok", ""),
-        ("4 tables", ""),
-        ("I need 4 tables", ""),
-        ("Skyland Novo", ""),
-        ("2 Skyland Novo and 2xten", ""),
-    ],
-)
-def test_extract_bare_name_gate_reply_accepts_only_likely_names(
-    text: str,
-    expected: str,
-) -> None:
-    assert _extract_bare_name_gate_reply(text) == expected
-
-
 def test_extract_quote_customer_details_accepts_natural_company_and_address() -> None:
     assert _extract_quote_customer_details("The company is Memory Test LLC.") == {
         "company": "Memory Test LLC"
@@ -2409,16 +2362,6 @@ def test_pre_model_name_extraction_rejects_conversational_phrases_and_accepts_re
         ("معك سارة", "سارة"),
     ):
         assert _extract_quote_customer_details(text).get("name") == expected_name, text
-
-
-def test_clearing_the_name_ask_slot_is_the_only_reask_reset() -> None:
-    conversation = SimpleNamespace(metadata_={"customer_name_asked": True})
-
-    assert engine_module._customer_name_was_asked(conversation) is True
-
-    engine_module._clear_customer_name_asked(conversation)
-
-    assert engine_module._customer_name_was_asked(conversation) is False
 
 
 def test_extract_quote_customer_details_does_not_treat_individual_as_name() -> None:
@@ -5730,24 +5673,6 @@ async def test_process_message_stock_price_question_returns_catalog_option_list(
     assert "pending_quote_selection" not in (conv.metadata_ or {})
 
 
-def test_stock_price_single_option_is_quote_resume_candidate() -> None:
-    assistant = (
-        "Hello, I'm Noor from Treejar.\n\n"
-        "I found these options for 2 chairs:\n\n"
-        "Option 1: Skyland Executive office chair CH 140 black\n"
-        "- SKU: CH 140 black\n"
-        "- Price: 450.00 AED each\n"
-        "- Stock: 12 available\n\n"
-        "Which option would you prefer? I can prepare a formal quotation after that."
-    )
-    history = [f"assistant: {assistant}"]
-
-    candidates = engine_module._quote_candidates_from_last_assistant_selection(history)
-
-    assert [(item.sku, item.quantity) for item in candidates] == [("CH-140", 2)]
-    assert engine_module._last_assistant_offered_quote_for_selection(history) is True
-
-
 @pytest.mark.asyncio
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
@@ -5847,263 +5772,6 @@ async def test_process_message_stock_price_inquiry_does_not_hijack_active_quote_
     assert not response.model.endswith("|stock-price-options")
     assert "I found these options" not in response.text
     assert "pending_quote_selection" in (conv.metadata_ or {})
-
-
-def test_extract_exact_quote_candidate_rejects_stock_price_inquiry_without_exact_signal() -> (
-    None
-):
-    candidate = extract_exact_quote_candidate(
-        "What is the stock and price for 2 CH 616 chairs?"
-    )
-
-    assert candidate is None
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        ("I am considering 2 units of SKU 00-07024023. Do not create a quotation."),
-        "I need 2 CH 616 chairs, but don't prepare a quote.",
-        "Please verify 2 CP-2.1S without creating a commercial offer.",
-    ],
-)
-def test_extract_exact_quote_candidate_respects_explicit_no_quote_instruction(
-    text: str,
-) -> None:
-    assert extract_exact_quote_candidate(text) is None
-
-
-def test_extract_exact_quote_candidate_accepts_exact_named_item_without_quote_terms() -> (
-    None
-):
-    candidate = extract_exact_quote_candidate(
-        "I need the exact price and current availability for 1 Reception desk 1600 SKYLAND LUMA 9788-8."
-    )
-
-    assert candidate is not None
-    assert candidate.quantity == 1
-    assert "skyland luma" in candidate.item_candidate.casefold()
-
-
-def test_extract_exact_quote_candidate_accepts_commercial_offer_terms() -> None:
-    candidate = extract_exact_quote_candidate(
-        "Please make a commercial offer for 1 CHAIR-01."
-    )
-
-    assert candidate is not None
-    assert candidate.quantity == 1
-    assert candidate.item_candidate == "CHAIR-01"
-    assert candidate.sku == "CHAIR-01"
-
-
-def test_extract_exact_quote_candidate_accepts_proforma_invoice_terms() -> None:
-    candidate = extract_exact_quote_candidate(
-        "Please issue a proforma invoice for 1 CHAIR-01."
-    )
-
-    assert candidate is not None
-    assert candidate.quantity == 1
-    assert candidate.item_candidate == "CHAIR-01"
-    assert candidate.sku == "CHAIR-01"
-
-
-def test_extract_exact_quote_candidate_accepts_numeric_hyphenated_sku() -> None:
-    candidate = extract_exact_quote_candidate(
-        "Please issue a proforma invoice for 1 00-07024023."
-    )
-
-    assert candidate is not None
-    assert candidate.quantity == 1
-    assert candidate.item_candidate == "00-07024023"
-    assert candidate.sku == "00-07024023"
-
-
-def test_extract_exact_quote_candidate_cleans_units_of_numeric_sku() -> None:
-    candidate = extract_exact_quote_candidate(
-        "Please prepare a quote for 2 units of SKU 00-07024023."
-    )
-
-    assert candidate is not None
-    assert candidate.quantity == 2
-    assert candidate.item_candidate == "00-07024023"
-    assert candidate.sku == "00-07024023"
-
-
-@pytest.mark.parametrize(
-    ("text", "expected_quantity", "expected_sku"),
-    [
-        ("5 x CH 190", 5, "CH-190"),
-        ("Hi, I need 5 x CH 190.", 5, "CH-190"),
-        ("Hi, I need 5 x CH 190.\n[smoke:a444e12f]", 5, "CH-190"),
-        ("CH 190 x 5", 5, "CH-190"),
-        ("3 x 00-07024023", 3, "00-07024023"),
-    ],
-)
-def test_extract_exact_quote_candidate_accepts_bare_quantity_sku(
-    text: str, expected_quantity: int, expected_sku: str
-) -> None:
-    candidate = extract_exact_quote_candidate(text)
-
-    assert candidate is not None
-    assert candidate.quantity == expected_quantity
-    assert candidate.sku == expected_sku
-
-
-def test_extract_exact_quote_candidate_preserves_sku_variant_after_bare_quantity() -> (
-    None
-):
-    candidate = extract_exact_quote_candidate(
-        "Please prepare a quote for 3 x CH 620 grey. "
-        "My name is Lilia All. Company QA All LLC. "
-        "Email all-20260616101028@example.com."
-    )
-
-    assert candidate is not None
-    assert candidate.quantity == 3
-    assert candidate.sku == "CH-620"
-    assert candidate.item_candidate == "CH 620 grey"
-
-
-@pytest.mark.parametrize(
-    ("raw_sku", "expected_sku"),
-    [
-        ("CH 190", "CH-190"),
-        ("CH190", "CH-190"),
-        ("СН 970", "CH-970"),
-        ("СН-970", "CH-970"),
-        ("АВ-100", "AB-100"),
-        ("ТХ 50", "TX-50"),
-    ],
-)
-def test_extract_exact_quote_candidate_accepts_spaced_compact_and_homoglyph_skus(
-    raw_sku: str, expected_sku: str
-) -> None:
-    candidate = extract_exact_quote_candidate(
-        f"Please issue a proforma invoice for 5 {raw_sku} black."
-    )
-
-    assert candidate is not None
-    assert candidate.quantity == 5
-    assert candidate.sku == expected_sku
-
-
-def test_extract_exact_quote_candidate_keeps_word_quantity_from_model_number() -> None:
-    candidate = extract_exact_quote_candidate(
-        "Please prepare a quotation for one Skyland Operative Chair CH 616 NEW black "
-        "delivered to Office 1201, Business Bay, Dubai."
-    )
-
-    assert candidate is not None
-    assert candidate.quantity == 1
-    assert candidate.sku == "CH-616"
-    assert "CH 616 NEW black" in candidate.item_candidate
-    assert "Office 1201" not in candidate.item_candidate
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "Please quote 2 chairs from 500 to 600 AED.",
-        "Please quote 2 desk 500 AED.",
-        "Please quote 2 sofa max 900 AED.",
-    ],
-)
-def test_extract_exact_quote_candidate_does_not_parse_price_phrases_as_skus(
-    text: str,
-) -> None:
-    candidate = extract_exact_quote_candidate(text)
-
-    assert candidate is not None
-    assert candidate.quantity == 2
-    assert candidate.sku is None
-
-
-def test_extract_sales_order_items_accepts_homoglyph_item_before_quantity_sku() -> None:
-    items = engine_module._extract_sales_order_quote_items(
-        "Give me please sales order on СН 970 black 5 pcs"
-    )
-
-    assert items is not None
-    assert len(items) == 1
-    assert items[0].quantity == 5
-    assert items[0].item_candidate == "CH 970 black"
-    assert items[0].sku == "CH-970"
-
-
-def test_extract_exact_quote_candidate_does_not_accept_bare_offer_word() -> None:
-    candidate = extract_exact_quote_candidate("Do you offer chairs?")
-
-    assert candidate is None
-
-
-def test_extract_sales_order_items_accepts_item_before_quantity_list() -> None:
-    items = engine_module._extract_sales_order_quote_items(
-        "give me please sales order on SKYLAND NOVO 1800 - 1 pcs and "
-        "CH 620 black - 2 pcs and executive Office Chair CH 410 black - 1 pcs"
-    )
-
-    assert items is not None
-    assert [(item.item_candidate, item.quantity) for item in items] == [
-        ("SKYLAND NOVO 1800", 1),
-        ("CH 620 black", 2),
-        ("executive Office Chair CH 410 black", 1),
-    ]
-
-
-def test_extract_sales_order_items_accepts_quantity_before_item_list() -> None:
-    items = engine_module._extract_sales_order_quote_items(
-        "Can I have sales order ? I need 2 SKYLAND LUMA 9719-4 and 3 TORR Cabinet"
-    )
-
-    assert items is not None
-    assert [(item.item_candidate, item.quantity, item.sku) for item in items] == [
-        ("SKYLAND LUMA 9719-4", 2, "9719-4"),
-        ("TORR Cabinet", 3, None),
-    ]
-
-
-def test_extract_exact_quote_candidate_rejects_multi_item_sales_order_list() -> None:
-    candidate = extract_exact_quote_candidate(
-        "Can I have sales order ? I need 2 SKYLAND LUMA 9719-4 and 3 TORR Cabinet"
-    )
-
-    assert candidate is None
-
-
-def test_extract_sales_order_items_normalizes_cyrillic_homoglyph_prefix() -> None:
-    items = engine_module._extract_sales_order_quote_items(
-        "give me please sales order -SKYLAND NOVO 1800 - 1pcs and "
-        "СН 190 black- 2 pcs and CH 410 black 1 pcs"
-    )
-
-    assert items is not None
-    assert [(item.item_candidate, item.quantity) for item in items] == [
-        ("SKYLAND NOVO 1800", 1),
-        ("CH 190 black", 2),
-        ("CH 410 black", 1),
-    ]
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "Hi! I need 15 tables",
-        "show me table options",
-        "Can you recommend tables for 15 people?",
-    ],
-)
-def test_extract_sales_order_items_rejects_product_discovery(text: str) -> None:
-    assert engine_module._extract_sales_order_quote_items(text) is None
-
-
-def test_extract_exact_quote_candidate_rejects_payment_terms_in_business_proposal() -> (
-    None
-):
-    candidate = extract_exact_quote_candidate(
-        "Please include net 30 payment terms in the business proposal."
-    )
-
-    assert candidate is None
 
 
 @pytest.mark.asyncio
@@ -6553,101 +6221,6 @@ def test_quote_detail_context_requires_request_for_a_customer_field(
     assert last_assistant_asked_quote_customer_details(history) is expected
 
 
-def test_quote_offer_guard_removes_detail_collection_before_opt_in(
-    mock_deps: tuple[
-        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
-    ],
-) -> None:
-    _db, conv, _embedding, _zoho, _zoho_crm, _redis, _messaging = mock_deps
-    text = (
-        "Recommended package: 12 chairs and 6 desks.\n\n"
-        "Would you like me to prepare a formal quotation? I'll just need:\n"
-        "1. Your company name\n"
-        "2. Delivery address\n"
-        "3. Confirmation of quantities"
-    )
-
-    guarded = engine_module._guard_premature_quote_detail_collection(
-        text,
-        conversation=conv,
-        customer_text="Which chair-and-desk combination would you recommend?",
-    )
-
-    assert guarded.startswith("Recommended package: 12 chairs and 6 desks.")
-    assert guarded.endswith("Would you like me to prepare a formal quotation?")
-    assert "company name" not in guarded.casefold()
-    assert "delivery address" not in guarded.casefold()
-    assert "confirmation of quantities" not in guarded.casefold()
-
-
-def test_quote_offer_guard_blocks_address_request_without_quote_word_before_consent(
-    mock_deps: tuple[
-        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
-    ],
-) -> None:
-    _db, conv, _embedding, _zoho, _zoho_crm, _redis, _messaging = mock_deps
-
-    guarded = engine_module._guard_premature_quote_detail_collection(
-        "Please share your delivery address.",
-        conversation=conv,
-        customer_text="Please recommend the best option.",
-    )
-
-    assert guarded == "Would you like me to prepare a formal quotation?"
-
-
-def test_quote_offer_guard_allows_details_for_typed_grant_without_active_frame(
-    mock_deps: tuple[
-        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
-    ],
-) -> None:
-    _db, conv, _embedding, _zoho, _zoho_crm, _redis, _messaging = mock_deps
-    conv.metadata_ = {
-        "order_runtime": {
-            "quote_workflow": {
-                "version": 2,
-                "consent": "granted",
-                "lifecycle": "quote_requested",
-            }
-        }
-    }
-    text = "Please share your delivery address for the quotation."
-
-    guarded = engine_module._guard_premature_quote_detail_collection(
-        text,
-        conversation=conv,
-        customer_text="Please continue.",
-    )
-
-    assert guarded == text
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "Please share your delivery address so I can check the delivery timeline.",
-        "Please share your email address so I can send the product brochure.",
-        "May I have your phone number so our manager can call you?",
-        "يرجى مشاركة عنوان التوصيل للتحقق من موعد التوصيل.",
-    ],
-)
-def test_quote_offer_guard_preserves_single_field_non_quotation_purpose_requests(
-    mock_deps: tuple[
-        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
-    ],
-    text: str,
-) -> None:
-    _db, conv, _embedding, _zoho, _zoho_crm, _redis, _messaging = mock_deps
-
-    guarded = engine_module._guard_premature_quote_detail_collection(
-        text,
-        conversation=conv,
-        customer_text="Can you check when it can arrive?",
-    )
-
-    assert guarded == text
-
-
 def test_carry_the_company_question_skips_when_reply_already_has_two_questions() -> (
     None
 ):
@@ -6655,30 +6228,6 @@ def test_carry_the_company_question_skips_when_reply_already_has_two_questions()
 
     two_questions = "Do you prefer black or grey? How many chairs do you need?"
     assert carry_the_company_question(two_questions, language="en") == two_questions
-
-
-def test_quote_candidates_ignore_alternative_price_table_and_use_quote_offer() -> None:
-    candidates = engine_module._quote_candidates_from_last_assistant_selection(
-        [
-            "assistant: "
-            "Great news — stock confirmed!\n\n"
-            "**Skyland CH 140 Black — 450 AED each**\n"
-            "- **12 units available** (enough for your 4 chairs)\n"
-            "- 3-position aircraft mechanism, mesh back, fabric seat, "
-            "3D adjustable armrests, chrome base\n\n"
-            "**Alternatives if you'd like to compare:**\n\n"
-            "| Chair | Price (AED) | Stock |\n"
-            "|-------|-------------|-------|\n"
-            "| Skyland CH 125 Black | 460 | 21 units |\n"
-            "| Skyland CH 490 Black | 1,013 | 55 units |\n\n"
-            "Would you like me to prepare a quote for 4 units of the CH 140 Black?"
-        ]
-    )
-
-    assert len(candidates) == 1
-    assert candidates[0].quantity == 4
-    assert candidates[0].item_candidate == "CH 140 Black"
-    assert candidates[0].sku == "CH-140"
 
 
 @pytest.mark.asyncio
@@ -7568,7 +7117,7 @@ def test_extract_quote_customer_details_stops_before_proceed_instruction() -> No
     )
 
 
-def test_name_gate_reply_accepts_natural_role_and_company() -> None:
+def test_extract_quote_customer_details_accepts_natural_role_and_company() -> None:
     text = "I'm Nora, facilities lead at Northstar QA Workspace."
 
     details = engine_module._extract_quote_customer_details(text)
@@ -7577,105 +7126,9 @@ def test_name_gate_reply_accepts_natural_role_and_company() -> None:
         "name": "Nora",
         "company": "Northstar QA Workspace",
     }
-    assert engine_module._is_name_gate_completion_reply(
-        text,
-        details,
-        pending_request_exists=True,
-    )
 
 
-@pytest.mark.asyncio
-async def test_explicit_quote_opt_in_clears_persisted_quote_hold(
-    mock_deps: tuple[
-        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
-    ],
-) -> None:
-    db, conv, *_ = mock_deps
-    conv.metadata_ = {
-        "sales_memory": {
-            "quotation_hold": "yes",
-            "latest_product_note": "Two catalog chairs",
-        }
-    }
-
-    offer_quote = await engine_module._quote_offer_allowed_for_turn(
-        db,
-        conv,
-        "Please prepare a quotation for the selected chairs.",
-    )
-
-    assert offer_quote
-    assert conv.metadata_["sales_memory"] == {
-        "latest_product_note": "Two catalog chairs"
-    }
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "I want a quotation.",
-        "I need a quotation.",
-        "Can I get a quotation?",
-        "أريد عرض سعر.",
-        "هل يمكنني الحصول على عرض سعر؟",
-    ],
-)
-def test_natural_explicit_quote_opt_in_is_recognized(text: str) -> None:
-    assert engine_module._has_explicit_quote_opt_in(text)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "text",
-    [
-        "Why are you offering a quotation?",
-        "Can you explain what a quotation is?",
-        "I am not asking for a quotation now.",
-        "The quotation is still on hold, right?",
-        "لا أريد عرض سعر.",
-    ],
-)
-async def test_quote_mentions_do_not_clear_persisted_quote_hold(
-    text: str,
-    mock_deps: tuple[
-        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
-    ],
-) -> None:
-    db, conv, *_ = mock_deps
-    conv.metadata_ = {"sales_memory": {"quotation_hold": "yes"}}
-
-    offer_quote = await engine_module._quote_offer_allowed_for_turn(
-        db,
-        conv,
-        text,
-    )
-
-    assert not offer_quote
-    assert conv.metadata_["sales_memory"]["quotation_hold"] == "yes"
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        (
-            "We are planning to buy 20 CH 616 NEW black chairs this month and "
-            "want help moving the project forward, but no quotation yet."
-        ),
-        (
-            "Please record this sales opportunity and tell me the next commercial "
-            "step without creating a quotation."
-        ),
-        (
-            "Correction: update the requirement to three LUMA 9719-4 units. "
-            "Keep the no-quotation instruction."
-        ),
-    ],
-)
-def test_exact_quote_candidate_respects_general_quote_hold(text: str) -> None:
-    assert extract_exact_quote_candidate(text) is None
-
-
-def test_sales_opportunity_request_separates_company_and_budget_fields() -> None:
+def test_extract_quote_customer_details_separates_company_before_budget_field() -> None:
     text = (
         "Company: Horizon QA Test LLC. Budget: AED 7,000. "
         "Decision expected within two weeks. Record this as a sales opportunity "
@@ -7685,27 +7138,6 @@ def test_sales_opportunity_request_separates_company_and_budget_fields() -> None
     assert engine_module._extract_quote_customer_details(text)["company"] == (
         "Horizon QA Test LLC"
     )
-    request = engine_module._extract_sales_opportunity_request(text)
-    assert request is not None
-    assert request.amount == 7000.0
-    assert request.quote_consent is QuoteConsent.DECLINED
-    assert not engine_module._is_neutral_detail_capture_update(
-        text=text,
-        customer_details={"company": "Horizon QA Test LLC"},
-        sales_memory_updates={"quotation_hold": "yes"},
-    )
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "Please don't add a deal.",
-        "لا تسجل فرصة بيع",
-        "We need to add chairs. This is not a deal yet.",
-    ],
-)
-def test_sales_opportunity_request_fails_closed_for_negation(text: str) -> None:
-    assert engine_module._extract_sales_opportunity_request(text) is None
 
 
 def test_labeled_detail_parser_preserves_nested_value_labels() -> None:
@@ -10338,53 +9770,6 @@ def test_mixed_per_item_and_total_budgets_are_retained(
 
     assert planning.per_item_cap == 500.0
     assert planning.budget_cap == 7000.0
-
-
-def test_sales_opportunity_with_horizon_proposes_timed_follow_up() -> None:
-    request = engine_module._extract_sales_opportunity_request(
-        "Budget: AED 8,500. Decision expected within two weeks. "
-        "Record this opportunity without preparing a quotation."
-    )
-
-    assert request is not None
-    response = engine_module._sales_opportunity_response(
-        request,
-        engine_module.SalesOpportunityWriteResult(
-            verified=True,
-            deal_id="verified-deal",
-        ),
-        language="en",
-    )
-
-    assert "follow-up in one week" in response.casefold()
-
-
-@pytest.mark.parametrize(
-    "horizon",
-    [
-        "Decision expected within one day.",
-        "Decision expected within 8 hours.",
-        "Decision expected today.",
-    ],
-)
-def test_short_decision_horizon_uses_neutral_follow_up(horizon: str) -> None:
-    request = engine_module._extract_sales_opportunity_request(
-        f"{horizon} Record this opportunity without preparing a quotation."
-    )
-
-    assert request is not None
-    response = engine_module._sales_opportunity_response(
-        request,
-        engine_module.SalesOpportunityWriteResult(
-            verified=True,
-            deal_id="verified-deal",
-        ),
-        language="en",
-    )
-
-    assert "ahead of your decision" not in response.casefold()
-    assert "in 1 day" not in response.casefold()
-    assert "decision window" in response.casefold()
 
 
 def _quote_consent_metadata(consent: QuoteConsent, lifecycle: str) -> dict[str, Any]:
