@@ -85,7 +85,7 @@ def test_normal_mode_guard_is_opt_in_and_runs_at_startup(monkeypatch) -> None:
     assert scheduled.unique is True
 
 
-def test_inbound_batch_job_has_bounded_retries() -> None:
+def test_inbound_batch_job_has_bounded_retries_and_drops_arq_result() -> None:
     inbound_batch = next(
         function
         for function in WorkerSettings.functions
@@ -94,6 +94,36 @@ def test_inbound_batch_job_has_bounded_retries() -> None:
 
     assert isinstance(inbound_batch, Function)
     assert inbound_batch.max_tries == 3
+    assert inbound_batch.keep_result_s == 0
+
+
+def test_worker_max_jobs_defaults_to_8_and_accepts_env_override() -> None:
+    from src.worker import DEFAULT_WORKER_MAX_JOBS, _resolve_worker_max_jobs
+
+    assert DEFAULT_WORKER_MAX_JOBS == 8
+    assert WorkerSettings.max_jobs == 8
+    assert _resolve_worker_max_jobs(None) == 8
+    assert _resolve_worker_max_jobs("12") == 12
+    assert _resolve_worker_max_jobs("0") == 8
+    assert _resolve_worker_max_jobs("invalid") == 8
+
+
+def test_webhook_reconciler_crons_use_staggered_five_minute_schedules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.core.config import settings
+
+    monkeypatch.setattr(settings, "test_channel_restore_mode", False)
+    monkeypatch.setattr(settings, "wazzup_webhook_guard_enabled", True)
+    crons = {job.coroutine.__qualname__: job for job in build_worker_cron_jobs()}
+
+    telegram_cron = crons["reconcile_telegram_webhook"]
+    wazzup_cron = crons["reconcile_wazzup_webhook"]
+    assert telegram_cron.minute == set(range(3, 60, 5))
+    assert wazzup_cron.minute == set(range(4, 60, 5))
+    assert telegram_cron.minute.isdisjoint(wazzup_cron.minute)
+    assert 0 not in telegram_cron.minute
+    assert 0 not in wazzup_cron.minute
 
 
 def test_inbound_batch_lease_outlives_worker_job_timeout() -> None:

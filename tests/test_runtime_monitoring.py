@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from src.services.runtime_monitoring import (
+    INBOUND_BATCH_FAILURES_KEY,
     ZOHO_OAUTH_FAILURES_KEY,
     RuntimeSnapshot,
     RuntimeThresholds,
@@ -270,7 +271,60 @@ async def test_collect_runtime_snapshot_reads_real_sources_without_payloads(
     assert snapshot.maintenance_age_seconds == 1800
     assert snapshot.maintenance_last_run_succeeded is True
     assert snapshot.maintenance_heartbeat_missing is False
-    redis.lrange.assert_awaited_once_with(ZOHO_OAUTH_FAILURES_KEY, 0, -1)
+    assert [call.args for call in redis.lrange.await_args_list] == [
+        (INBOUND_BATCH_FAILURES_KEY, 0, -1),
+        (ZOHO_OAUTH_FAILURES_KEY, 0, -1),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_collect_runtime_snapshot_counts_terminal_inbound_failures_without_arq_results(
+    tmp_path: Path,
+) -> None:
+    redis = AsyncMock()
+    redis.ping.return_value = True
+    redis.all_job_results.return_value = []
+    redis.queued_jobs.return_value = []
+    redis.scan.side_effect = [(0, []), (0, [])]
+
+    async def lrange_side_effect(key: str, start: int, end: int) -> list[str]:
+        del start, end
+        if key == INBOUND_BATCH_FAILURES_KEY:
+            return [
+                json.dumps(
+                    {
+                        "batch_id": "terminal-1",
+                        "status": "terminal",
+                        "failed_at": "2026-07-23T11:50:00+00:00",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "batch_id": "terminal-old",
+                        "status": "terminal",
+                        "failed_at": "2026-07-23T09:00:00+00:00",
+                    }
+                ),
+            ]
+        return []
+
+    redis.lrange.side_effect = lrange_side_effect
+    db = AsyncMock()
+    db.execute.side_effect = [SimpleNamespace(), _ScalarResult(0)]
+    heartbeat = tmp_path / "maintenance.status"
+    heartbeat.write_text(
+        '{"status":"success","finished_at_epoch":1784806200}\n',
+        encoding="utf-8",
+    )
+
+    snapshot = await collect_runtime_snapshot(
+        redis,
+        db,
+        observed_at=NOW,
+        maintenance_status_path=heartbeat,
+    )
+
+    assert snapshot.failed_jobs_last_hour == 1
 
 
 @pytest.mark.parametrize(

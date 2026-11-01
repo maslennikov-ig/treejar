@@ -3,11 +3,15 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import email.utils
+import hashlib
 import json
 import logging
 import math
+import os
+import threading
 import time
 import uuid
+from collections import OrderedDict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
@@ -21,20 +25,17 @@ from src.core.config import settings
 from src.integrations.inventory.base import InventoryProvider
 from src.integrations.inventory.stock_state import (
     COOLDOWN_SCRIPT,
+    LEGACY_KEY,
+    LOCK_KEY,
     StockMetrics,
     StockState,
     StockStore,
+    raw_text,
 )
 from src.integrations.zoho_oauth import (
-    ZOHO_OAUTH_LOCK_POLL_ATTEMPTS,
-    ZOHO_OAUTH_LOCK_POLL_INTERVAL_SECONDS,
-    ZOHO_OAUTH_REFRESH_LOCK_TTL_SECONDS,
-    ZOHO_OAUTH_REFRESH_TIMEOUT_SECONDS,
-    ZohoOAuthError,
-    parse_zoho_oauth_response,
+    DEFAULT_ZOHO_ACCOUNTS_URL,
+    ensure_zoho_access_token,
     release_zoho_oauth_lock,
-    report_rejected_zoho_credentials,
-    zoho_oauth_transport_error,
 )
 from src.llm.inventory_read import InventoryReadUnavailable
 
@@ -63,15 +64,11 @@ _process_rate_limited_until = 0.0
 # into 429s (live 2026-09-24). Every process now reads one shared snapshot of
 # the active item list from Redis and only asks Zoho live for SKUs the
 # snapshot cannot answer with a number.
-ZOHO_STOCK_SNAPSHOT_KEY = "zoho:inventory:stock_snapshot:v1"
-ZOHO_STOCK_SNAPSHOT_LOCK_KEY = "zoho:inventory:stock_snapshot:lock"
-# The worker job rebuilds the snapshot this often (tj-3vz5).
-STOCK_SNAPSHOT_FRESH_SECONDS = 300.0
+ZOHO_STOCK_SNAPSHOT_KEY = LEGACY_KEY
+ZOHO_STOCK_SNAPSHOT_LOCK_KEY = LOCK_KEY
 # Served without a refresh up to this age, so a customer turn never waits for
 # one while the job runs; past it the snapshot has expired from Redis.
 STOCK_SNAPSHOT_STALE_SECONDS = 3600.0
-# Covers a full refresh including the bounded inline 429 waits of each page.
-STOCK_SNAPSHOT_LOCK_TTL_SECONDS = 120
 STOCK_SNAPSHOT_PAGE_SIZE = 200
 # 50 x 200 items; the organisation had about 2,100 active items in 2026.
 STOCK_SNAPSHOT_MAX_PAGES = 50
@@ -198,21 +195,13 @@ def _stock_identity_group(
     return []
 
 
-def _stock_snapshot_record(raw_item: Any) -> dict[str, Any] | None:
-    if not isinstance(raw_item, Mapping):
-        return None
-    sku = raw_item.get("sku")
-    if not isinstance(sku, str) or not sku.strip():
-        return None
-    return {name: raw_item[name] for name in _STOCK_SNAPSHOT_FIELDS if name in raw_item}
-
-
 @dataclass
 class StockSnapshot:
     """Minimal Zoho item fields keyed by exact SKU, built at ``as_of``."""
 
     as_of: float
     items: dict[str, dict[str, Any]]
+    _as_of_iso: str = dataclass_field(init=False, repr=False)
     _by_key: dict[str, list[dict[str, Any]]] = dataclass_field(
         default_factory=dict, init=False, repr=False
     )
@@ -222,6 +211,7 @@ class StockSnapshot:
     )
 
     def __post_init__(self) -> None:
+        self._as_of_iso = datetime.fromtimestamp(self.as_of, UTC).isoformat()
         for item in self.items.values():
             key = _sku_match_key(str(item.get("sku", "")))
             self._by_key.setdefault(key, []).append(item)
@@ -240,20 +230,18 @@ class StockSnapshot:
         item = select_stock_item(sku, candidates)
         if item is None:
             return None
-        item.setdefault(
-            "stock_as_of", datetime.fromtimestamp(self.as_of, UTC).isoformat()
-        )
-        return item
+        result = dict(item)
+        result.setdefault("stock_as_of", self._as_of_iso)
+        return result
 
     def lookup_item_id(self, item_id: str) -> dict[str, Any] | None:
         """The item with a Zoho item_id, stamped with the snapshot time, or None."""
         item = self._by_item_id.get(item_id.strip())
         if item is None:
             return None
-        item.setdefault(
-            "stock_as_of", datetime.fromtimestamp(self.as_of, UTC).isoformat()
-        )
-        return item
+        result = dict(item)
+        result.setdefault("stock_as_of", self._as_of_iso)
+        return result
 
     def to_json(self) -> str:
         return json.dumps({"as_of": self.as_of, "items": self.items})
@@ -287,6 +275,37 @@ class StockSnapshot:
                 if isinstance(item, dict)
             },
         )
+
+
+_STOCK_SNAPSHOT_MEMO_MAX_ENTRIES = 4
+_stock_snapshot_memo: OrderedDict[tuple[bytes, str], StockSnapshot] = OrderedDict()
+_stock_snapshot_memo_lock = threading.Lock()
+
+
+def clear_stock_snapshot_memo() -> None:
+    """Clear the process-local parsed StockSnapshot memo."""
+    with _stock_snapshot_memo_lock:
+        _stock_snapshot_memo.clear()
+
+
+def _get_memoized_stock_snapshot(key: tuple[bytes, str]) -> StockSnapshot | None:
+    with _stock_snapshot_memo_lock:
+        snapshot = _stock_snapshot_memo.get(key)
+        if snapshot is None:
+            return None
+        _stock_snapshot_memo.move_to_end(key)
+        return snapshot
+
+
+def _store_memoized_stock_snapshot(
+    key: tuple[bytes, str],
+    snapshot: StockSnapshot,
+) -> None:
+    with _stock_snapshot_memo_lock:
+        _stock_snapshot_memo[key] = snapshot
+        _stock_snapshot_memo.move_to_end(key)
+        while len(_stock_snapshot_memo) > _STOCK_SNAPSHOT_MEMO_MAX_ENTRIES:
+            _stock_snapshot_memo.popitem(last=False)
 
 
 def contact_lists_only_other_phones(
@@ -532,18 +551,37 @@ def normalize_sale_order_response(payload: Any) -> dict[str, Any]:
     return normalized
 
 
+def _resolve_inventory_accounts_url() -> str:
+    configured = getattr(settings, "zoho_inventory_accounts_url", None) or os.getenv(
+        "ZOHO_INVENTORY_ACCOUNTS_URL", ""
+    )
+    if isinstance(configured, str) and configured.strip():
+        return configured.strip()
+    crm_url = getattr(settings, "zoho_crm_accounts_url", None)
+    if isinstance(crm_url, str) and crm_url.strip():
+        return crm_url.strip()
+    return DEFAULT_ZOHO_ACCOUNTS_URL
+
+
 class ZohoInventoryClient(InventoryProvider):
     """Zoho Inventory API client implementing InventoryProvider protocol."""
 
-    def __init__(self, redis_client: Any) -> None:
+    def __init__(
+        self,
+        redis_client: Any,
+        *,
+        accounts_url: str | None = None,
+    ) -> None:
         """Initialize the Zoho Inventory client.
 
         Args:
             redis_client: Redis connection dependency for caching the OAuth token.
+            accounts_url: Optional override for Zoho OAuth accounts base URL.
         """
         self.redis = redis_client
         self.base_url = settings.zoho_inventory_api_url
         self.org_id = settings.zoho_inventory_org_id
+        self.accounts_url = accounts_url
         self.stock_store = StockStore(redis_client)
         self.metrics = StockMetrics(redis_client)
 
@@ -558,78 +596,20 @@ class ZohoInventoryClient(InventoryProvider):
 
     async def _ensure_token(self) -> str:
         """Get the current access token, refreshing if necessary via Redis lock."""
-        token_key = "zoho:access_token"
-        lock_key = "zoho:access_token:lock"
-        lock_owner = uuid.uuid4().hex
-
-        # 1. Try to get existing token
-        token = await self.redis.get(token_key)
-        if token:
-            return token if isinstance(token, str) else token.decode("utf-8")
-
-        # 2. Acquire lock (race condition protection)
-        # Keep the lock alive longer than the refresh request timeout.
-        acquired = await self.redis.set(
-            lock_key,
-            lock_owner,
-            ex=ZOHO_OAUTH_REFRESH_LOCK_TTL_SECONDS,
-            nx=True,
+        accounts_url = (
+            getattr(self, "accounts_url", None) or _resolve_inventory_accounts_url()
         )
-
-        if not acquired:
-            # Wait for another worker to refresh the token
-            for _ in range(ZOHO_OAUTH_LOCK_POLL_ATTEMPTS):
-                await asyncio.sleep(ZOHO_OAUTH_LOCK_POLL_INTERVAL_SECONDS)
-                token = await self.redis.get(token_key)
-                if token:
-                    return token if isinstance(token, str) else token.decode("utf-8")
-
-            raise ZohoOAuthError("lock_timeout", retryable=True)
-
-        try:
-            # 3. We have the lock, check token again just in case
-            token = await self.redis.get(token_key)
-            if token:
-                return token if isinstance(token, str) else token.decode("utf-8")
-
-            # 4. Refresh token
-            async with httpx.AsyncClient() as client:
-                try:
-                    response = await client.post(
-                        "https://accounts.zoho.eu/oauth/v2/token",
-                        data={
-                            "refresh_token": settings.zoho_inventory_refresh_token,
-                            "client_id": settings.zoho_inventory_client_id,
-                            "client_secret": settings.zoho_inventory_client_secret,
-                            "grant_type": "refresh_token",
-                        },
-                        timeout=ZOHO_OAUTH_REFRESH_TIMEOUT_SECONDS,
-                    )
-                except httpx.RequestError as exc:
-                    raise zoho_oauth_transport_error() from exc
-
-                try:
-                    token_response = parse_zoho_oauth_response(response)
-                except ZohoOAuthError as exc:
-                    if exc.kind == "invalid_credentials":
-                        await report_rejected_zoho_credentials(
-                            self.redis, service="inventory"
-                        )
-                    raise
-                await self.redis.set(
-                    token_key,
-                    token_response.access_token,
-                    ex=token_response.cache_ttl_seconds,
-                )
-                return token_response.access_token
-
-        finally:
-            # 5. Release lock
-            await release_zoho_oauth_lock(
-                self.redis,
-                lock_key=lock_key,
-                owner_token=lock_owner,
-            )
+        return await ensure_zoho_access_token(
+            self.redis,
+            token_key="zoho:access_token",
+            lock_key="zoho:access_token:lock",
+            accounts_url=accounts_url,
+            refresh_token=settings.zoho_inventory_refresh_token,
+            client_id=settings.zoho_inventory_client_id,
+            client_secret=settings.zoho_inventory_client_secret,
+            service="inventory",
+            sleep_fn=asyncio.sleep,
+        )
 
     async def _cooldown_remaining(self) -> float:
         """Seconds left in a process- or Redis-wide Zoho rate-limit cooldown."""
@@ -916,22 +896,53 @@ class ZohoInventoryClient(InventoryProvider):
             and settings.zoho_stock_coverage_evidence.strip()
         )
 
+    async def _read_v2_stock_snapshot(self) -> tuple[StockSnapshot | None, str]:
+        raw = await self.stock_store.read_raw()
+        if not raw:
+            return None, raw
+        evidence = (
+            settings.zoho_stock_coverage_evidence if self.incremental_eligible() else ""
+        )
+        memo_key = (
+            hashlib.blake2b(raw.encode("utf-8"), digest_size=16).digest(),
+            evidence,
+        )
+        cached = _get_memoized_stock_snapshot(memo_key)
+        if cached is not None:
+            return cached, raw
+        state = StockState.from_raw(raw)
+        if state is None:
+            return None, raw
+        snapshot = StockSnapshot(
+            as_of=state.full_at or 0,
+            items=state.stock_items(evidence),
+        )
+        _store_memoized_stock_snapshot(memo_key, snapshot)
+        return snapshot, raw
+
     async def _read_stock_snapshot(self) -> tuple[StockSnapshot | None, bool]:
         try:
-            state, raw = await self.stock_store.read()
-            if state is not None:
-                evidence = (
-                    settings.zoho_stock_coverage_evidence
-                    if self.incremental_eligible()
-                    else ""
-                )
-                items = state.stock_items(evidence)
-                return StockSnapshot(as_of=state.full_at or 0, items=items), True
+            v2_snapshot, raw = await self._read_v2_stock_snapshot()
+            if v2_snapshot is not None:
+                return v2_snapshot, True
             # Never reinterpret corrupt v2 as a new covered generation. Legacy
             # data is safe only at its original full observation time.
             legacy = await self.redis.get(ZOHO_STOCK_SNAPSHOT_KEY)
-            snapshot = StockSnapshot.from_raw(legacy)
-            return snapshot, not raw and (legacy is None or snapshot is not None)
+            if legacy is None:
+                return None, not raw
+            legacy_raw = raw_text(legacy)
+            if not legacy_raw:
+                return None, False
+            legacy_key = (
+                hashlib.blake2b(legacy_raw.encode("utf-8"), digest_size=16).digest(),
+                "__legacy__",
+            )
+            snapshot = _get_memoized_stock_snapshot(legacy_key)
+            if snapshot is None:
+                snapshot = StockSnapshot.from_raw(legacy_raw)
+                if snapshot is not None:
+                    _store_memoized_stock_snapshot(legacy_key, snapshot)
+            return snapshot, not raw and snapshot is not None
         except Exception:
             logger.warning("Could not read Zoho stock state")
             return None, False

@@ -408,3 +408,52 @@ async def test_get_deal_status_empty_data() -> None:
 
     assert result is None
     await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_find_contact_by_phone_negative_caches_miss_and_invalidates_on_create() -> (
+    None
+):
+    store: dict[str, Any] = {"zoho_crm:access_token": b"valid_token"}
+    redis = AsyncMock()
+    redis.get.side_effect = lambda key: store.get(key)
+
+    async def fake_set(key: str, value: Any, ex: int | None = None) -> bool:
+        del ex
+        store[key] = value
+        return True
+
+    async def fake_delete(key: str) -> int:
+        return 1 if store.pop(key, None) is not None else 0
+
+    redis.set.side_effect = fake_set
+    redis.delete.side_effect = fake_delete
+
+    client = ZohoCRMClient(redis)
+    with patch.object(client.client, "request", new_callable=AsyncMock) as mock_request:
+        mock_request.side_effect = [
+            _make_response(204),
+            _make_response(
+                200, {"data": [{"code": "SUCCESS", "details": {"id": "9"}}]}
+            ),
+            _make_response(200, {"data": [{"id": "9", "Phone": "+971501112233"}]}),
+        ]
+
+        # First lookup misses -> populates negative cache
+        assert await client.find_contact_by_phone("+971501112233") is None
+        assert mock_request.await_count == 1
+
+        # Second lookup hits negative cache -> zero HTTP calls
+        assert await client.find_contact_by_phone("+971501112233") is None
+        assert mock_request.await_count == 1
+
+        # Creating contact invalidates negative cache so next lookup hits Zoho
+        await client.create_contact({"Last_Name": "Nadia", "Phone": "+971501112233"})
+        assert mock_request.await_count == 2
+
+        found = await client.find_contact_by_phone("+971501112233")
+        assert found == {"id": "9", "Phone": "+971501112233"}
+        assert mock_request.await_count == 3
+
+    await client.close()

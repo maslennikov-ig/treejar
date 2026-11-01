@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
-from collections.abc import Mapping
+import uuid
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -21,6 +23,7 @@ ZohoOAuthFailureKind = Literal[
     "transport",
 ]
 
+DEFAULT_ZOHO_ACCOUNTS_URL = "https://accounts.zoho.eu"
 _ACCESS_TOKEN_VALIDITY_SECONDS = 3600
 _CACHE_EXPIRY_BUFFER_SECONDS = 60
 ZOHO_OAUTH_REFRESH_TIMEOUT_SECONDS = 15.0
@@ -210,4 +213,80 @@ async def report_rejected_zoho_credentials(redis: Any, *, service: str) -> None:
     except Exception:
         logger.warning(
             "Could not report rejected Zoho %s credentials", service, exc_info=True
+        )
+
+
+async def ensure_zoho_access_token(
+    redis: Any,
+    *,
+    token_key: str,
+    lock_key: str,
+    accounts_url: str,
+    refresh_token: str,
+    client_id: str,
+    client_secret: str,
+    service: str,
+    sleep_fn: Callable[[float], Awaitable[Any]] = asyncio.sleep,
+) -> str:
+    """Return a cached Zoho access token or refresh it under a Redis lease lock."""
+    lock_owner = uuid.uuid4().hex
+
+    token = await redis.get(token_key)
+    if token:
+        return token if isinstance(token, str) else token.decode("utf-8")
+
+    acquired = await redis.set(
+        lock_key,
+        lock_owner,
+        ex=ZOHO_OAUTH_REFRESH_LOCK_TTL_SECONDS,
+        nx=True,
+    )
+
+    if not acquired:
+        for _ in range(ZOHO_OAUTH_LOCK_POLL_ATTEMPTS):
+            await sleep_fn(ZOHO_OAUTH_LOCK_POLL_INTERVAL_SECONDS)
+            token = await redis.get(token_key)
+            if token:
+                return token if isinstance(token, str) else token.decode("utf-8")
+
+        raise ZohoOAuthError("lock_timeout", retryable=True)
+
+    try:
+        token = await redis.get(token_key)
+        if token:
+            return token if isinstance(token, str) else token.decode("utf-8")
+
+        base_accounts_url = (accounts_url or DEFAULT_ZOHO_ACCOUNTS_URL).rstrip("/")
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    f"{base_accounts_url}/oauth/v2/token",
+                    data={
+                        "refresh_token": refresh_token,
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "grant_type": "refresh_token",
+                    },
+                    timeout=ZOHO_OAUTH_REFRESH_TIMEOUT_SECONDS,
+                )
+            except httpx.RequestError as exc:
+                raise zoho_oauth_transport_error() from exc
+
+            try:
+                token_response = parse_zoho_oauth_response(response)
+            except ZohoOAuthError as exc:
+                if exc.kind == "invalid_credentials":
+                    await report_rejected_zoho_credentials(redis, service=service)
+                raise
+            await redis.set(
+                token_key,
+                token_response.access_token,
+                ex=token_response.cache_ttl_seconds,
+            )
+            return token_response.access_token
+    finally:
+        await release_zoho_oauth_lock(
+            redis,
+            lock_key=lock_key,
+            owner_token=lock_owner,
         )

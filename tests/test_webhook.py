@@ -1,4 +1,5 @@
 import datetime
+import json
 import logging
 import uuid
 from typing import Any
@@ -279,6 +280,9 @@ def test_wazzup_webhook_endpoint(mock_networks: Any) -> None:
     assert call_args.kwargs["_job_id"].startswith(f"wazzup_batch_{batch_ref}_")
     assert call_args.kwargs["_defer_by"] == 5
     assert app.state.redis.rpush.await_args.args[0] == inbound_queue_key(batch_ref)
+    queued_payload = json.loads(app.state.redis.rpush.await_args.args[1])
+    assert isinstance(queued_payload.get("received_at"), float)
+    assert queued_payload["received_at"] > 1_700_000_000.0
 
 
 @patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])

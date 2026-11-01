@@ -5,10 +5,12 @@ import hashlib
 import inspect
 import json
 import logging
+import math
 import re
 import secrets
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -899,6 +901,7 @@ async def process_incoming_batch(
         raise Retry(defer=INBOUND_BATCH_LOCK_TTL_SECONDS + 1)
 
     lock_released = False
+    is_initial_claim = True
     try:
         while True:
             try:
@@ -915,6 +918,7 @@ async def process_incoming_batch(
                 raise Retry(defer=2 ** min(attempt, INBOUND_BATCH_MAX_TRIES)) from exc
 
             if not raw_messages:
+                is_initial_claim = False
                 release_state = await _release_or_continue_inbound_lock(
                     redis,
                     lock_key=lock_key,
@@ -931,6 +935,8 @@ async def process_incoming_batch(
                     )
                 return
 
+            claim_enqueue_time = ctx.get("enqueue_time") if is_initial_claim else None
+            is_initial_claim = False
             batch_id = _inbound_batch_id(raw_messages)
             try:
                 execution_state = _normalize_execution_state(
@@ -945,7 +951,11 @@ async def process_incoming_batch(
                 elif execution_state == INBOUND_EXECUTION_STARTED:
                     raise InboundBatchTerminalError("uncertain_replay")
                 else:
-                    await _process_batch_inner(redis, queue_token, raw_messages)
+                    enqueue_token = _CURRENT_BATCH_ENQUEUE_TIME.set(claim_enqueue_time)
+                    try:
+                        await _process_batch_inner(redis, queue_token, raw_messages)
+                    finally:
+                        _CURRENT_BATCH_ENQUEUE_TIME.reset(enqueue_token)
                     await _mark_inbound_execution_completed(redis, batch_id)
             except Exception as exc:
                 failed_at = datetime.now(UTC)
@@ -1057,10 +1067,43 @@ async def process_incoming_batch(
                 )
 
 
+_CURRENT_BATCH_ENQUEUE_TIME: ContextVar[Any] = ContextVar(
+    "_CURRENT_BATCH_ENQUEUE_TIME",
+    default=None,
+)
+
+
+def _coerce_utc_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+    if (
+        not isinstance(value, bool)
+        and isinstance(value, int | float)
+        and math.isfinite(float(value))
+        and float(value) > 0
+    ):
+        return datetime.fromtimestamp(float(value), tz=UTC)
+    return None
+
+
+def _inbound_message_received_at_utc(message: WazzupIncomingMessage) -> datetime:
+    received_at = _coerce_utc_datetime(getattr(message, "received_at", None))
+    if received_at is not None:
+        return received_at
+    return message_created_at_from_wazzup(
+        date_time=message.dateTime,
+        timestamp=message.timestamp,
+    ).replace(tzinfo=UTC)
+
+
 async def _process_batch_inner(
     redis: Any,
     queue_token: str,
     raw_messages: Sequence[str],
+    *,
+    enqueue_time: Any = None,
 ) -> None:
     """Inner implementation — separated for clean error handling."""
     batch_id = _inbound_batch_id(raw_messages)
@@ -1103,19 +1146,24 @@ async def _process_batch_inner(
 
     # Sort messages by dateTime (Wazzup v3 format) or timestamp (legacy)
     messages.sort(key=lambda m: m.dateTime or str(m.timestamp or 0))
-    oldest_message_at = min(
-        message_created_at_from_wazzup(
-            date_time=message.dateTime,
-            timestamp=message.timestamp,
-        )
-        for message in messages
+    now_utc = datetime.now(UTC)
+    oldest_received_at = min(
+        _inbound_message_received_at_utc(message) for message in messages
     )
     queue_wait_ms = max(
-        (datetime.now(UTC).replace(tzinfo=None) - oldest_message_at).total_seconds()
-        * 1000.0,
+        (now_utc - oldest_received_at).total_seconds() * 1000.0,
         0.0,
     )
     latency_trace.set_queue_wait_ms(queue_wait_ms)
+    effective_enqueue_time = _coerce_utc_datetime(
+        enqueue_time if enqueue_time is not None else _CURRENT_BATCH_ENQUEUE_TIME.get()
+    )
+    if effective_enqueue_time is not None:
+        arq_queue_wait_ms = max(
+            (now_utc - effective_enqueue_time).total_seconds() * 1000.0,
+            0.0,
+        )
+        latency_trace.set_arq_queue_wait_ms(arq_queue_wait_ms)
 
     expected_channel = settings.wazzup_channel_id
     if not expected_channel:
@@ -1413,6 +1461,12 @@ async def _process_batch_inner(
 
         # CR-WA-01 fix: pass channel_id from settings to WazzupProvider
         async with WazzupProvider(channel_id=channel_id) as wazzup_provider:
+            if (
+                isinstance(WazzupProvider, type)
+                and isinstance(wazzup_provider, WazzupProvider)
+                and wazzup_provider.redis is None
+            ):
+                wazzup_provider.redis = redis
             if isinstance(channel_id, str):
                 try:
                     resolved_phone = await wazzup_provider.resolve_channel_phone(

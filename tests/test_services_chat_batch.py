@@ -1744,3 +1744,105 @@ async def test_process_incoming_batch_persists_stable_created_at_for_batched_mes
     ]
     assert all(isinstance(message.created_at, datetime) for message in inbound_messages)
     assert inbound_messages[0].created_at < inbound_messages[1].created_at
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_process_incoming_batch_uses_server_received_at_and_arq_enqueue_time(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Upstream Wazzup dateTime lag must not inflate queue_wait_ms when received_at is stamped."""
+    from datetime import UTC, timedelta
+
+    from src.llm import LLMResponse
+    from src.services.chat_latency import parse_chat_latency_line
+    from src.services.inbound_batch import serialize_inbound_message
+
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+    mock_session.add = MagicMock()
+
+    existing_conv = MagicMock()
+    existing_conv.id = "conv-latency"
+    existing_conv.phone = "1234567890"
+    existing_conv.escalation_status = "none"
+    existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
+
+    mock_session.execute.side_effect = [
+        MockResult(None),  # bot_enabled
+        MockResult(existing_conv),  # conversation lookup
+        MockResult([]),  # msg dedup check
+        MockResult(None),  # outbound audit idempotency lookup
+        MockResult(2),  # total messages after assistant commit
+        MockResult(None),  # no existing summary
+    ]
+
+    mock_process_message.return_value = LLMResponse(
+        text="Hello there!",
+        tokens_in=10,
+        tokens_out=10,
+        cost=0.01,
+        model="test-model",
+    )
+
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_wazzup = AsyncMock()
+    mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
+    mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_wazzup.send_text.return_value = "msg-latency-reply"
+    mock_wazzup.send_typing = AsyncMock()
+    mock_wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
+
+    now_utc = datetime.now(UTC)
+    server_received_at = (now_utc - timedelta(seconds=6)).timestamp()
+    arq_enqueue_at = now_utc - timedelta(seconds=5)
+    # Upstream Wazzup dateTime is years stale (e.g. timezone/delivery skew).
+    msg = WazzupIncomingMessage(
+        messageId="msg-skewed-upstream",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Hi",
+        channelId="chan-1",
+        dateTime="2020-01-01T00:00:00.000Z",
+    )
+
+    mock_redis = AsyncMock()
+    _seed_inbound_redis(
+        mock_redis,
+        [serialize_inbound_message(msg, received_at=server_received_at)],
+    )
+
+    with (
+        patch("src.services.chat.settings.wazzup_channel_id", "chan-1"),
+        caplog.at_level("INFO", logger="src.services.chat"),
+    ):
+        await process_incoming_batch(
+            {"redis": mock_redis, "enqueue_time": arq_enqueue_at},
+            "1234567890",
+        )
+
+    parsed_records = [
+        parsed
+        for record in caplog.records
+        if (parsed := parse_chat_latency_line(record.getMessage())) is not None
+    ]
+    assert len(parsed_records) == 1
+    timings = parsed_records[0]["latency_ms"]
+    assert 5000.0 <= timings["queue_wait"] < 15000.0
+    assert 4000.0 <= timings["arq_queue_wait"] < 15000.0

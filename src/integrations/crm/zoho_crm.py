@@ -1,25 +1,19 @@
 from __future__ import annotations
 
 import asyncio
-import uuid
 from collections.abc import Mapping
 from typing import Any
 
 import httpx
 
+from src.core.cache import (
+    invalidate_crm_contact_cache,
+    is_crm_contact_negatively_cached,
+    set_crm_contact_negative_cache,
+)
 from src.core.config import settings
 from src.integrations.crm.base import CRMProvider
-from src.integrations.zoho_oauth import (
-    ZOHO_OAUTH_LOCK_POLL_ATTEMPTS,
-    ZOHO_OAUTH_LOCK_POLL_INTERVAL_SECONDS,
-    ZOHO_OAUTH_REFRESH_LOCK_TTL_SECONDS,
-    ZOHO_OAUTH_REFRESH_TIMEOUT_SECONDS,
-    ZohoOAuthError,
-    parse_zoho_oauth_response,
-    release_zoho_oauth_lock,
-    report_rejected_zoho_credentials,
-    zoho_oauth_transport_error,
-)
+from src.integrations.zoho_oauth import ensure_zoho_access_token
 
 
 def _attribution_path_value(
@@ -82,77 +76,17 @@ class ZohoCRMClient(CRMProvider):
 
     async def _ensure_token(self) -> str:
         """Get the current access token, refreshing if necessary via Redis lock."""
-        token_key = "zoho_crm:access_token"
-        lock_key = "zoho_crm:access_token:lock"
-        lock_owner = uuid.uuid4().hex
-
-        # 1. Try to get existing token
-        token = await self.redis.get(token_key)
-        if token:
-            return token if isinstance(token, str) else token.decode("utf-8")
-
-        # 2. Acquire lock (race condition protection)
-        acquired = await self.redis.set(
-            lock_key,
-            lock_owner,
-            ex=ZOHO_OAUTH_REFRESH_LOCK_TTL_SECONDS,
-            nx=True,
+        return await ensure_zoho_access_token(
+            self.redis,
+            token_key="zoho_crm:access_token",
+            lock_key="zoho_crm:access_token:lock",
+            accounts_url=settings.zoho_crm_accounts_url,
+            refresh_token=settings.zoho_crm_refresh_token,
+            client_id=settings.zoho_crm_client_id,
+            client_secret=settings.zoho_crm_client_secret,
+            service="crm",
+            sleep_fn=asyncio.sleep,
         )
-
-        if not acquired:
-            # Wait for another worker to refresh the token
-            for _ in range(ZOHO_OAUTH_LOCK_POLL_ATTEMPTS):
-                await asyncio.sleep(ZOHO_OAUTH_LOCK_POLL_INTERVAL_SECONDS)
-                token = await self.redis.get(token_key)
-                if token:
-                    return token if isinstance(token, str) else token.decode("utf-8")
-
-            raise ZohoOAuthError("lock_timeout", retryable=True)
-
-        try:
-            # 3. We have the lock, check token again just in case
-            token = await self.redis.get(token_key)
-            if token:
-                return token if isinstance(token, str) else token.decode("utf-8")
-
-            # 4. Refresh token
-            async with httpx.AsyncClient() as client:
-                try:
-                    response = await client.post(
-                        f"{settings.zoho_crm_accounts_url}/oauth/v2/token",
-                        data={
-                            "refresh_token": settings.zoho_crm_refresh_token,
-                            "client_id": settings.zoho_crm_client_id,
-                            "client_secret": settings.zoho_crm_client_secret,
-                            "grant_type": "refresh_token",
-                        },
-                        timeout=ZOHO_OAUTH_REFRESH_TIMEOUT_SECONDS,
-                    )
-                except httpx.RequestError as exc:
-                    raise zoho_oauth_transport_error() from exc
-
-                try:
-                    token_response = parse_zoho_oauth_response(response)
-                except ZohoOAuthError as exc:
-                    if exc.kind == "invalid_credentials":
-                        await report_rejected_zoho_credentials(
-                            self.redis, service="crm"
-                        )
-                    raise
-                await self.redis.set(
-                    token_key,
-                    token_response.access_token,
-                    ex=token_response.cache_ttl_seconds,
-                )
-                return token_response.access_token
-
-        finally:
-            # 5. Release lock
-            await release_zoho_oauth_lock(
-                self.redis,
-                lock_key=lock_key,
-                owner_token=lock_owner,
-            )
 
     async def _request(
         self,
@@ -214,19 +148,24 @@ class ZohoCRMClient(CRMProvider):
         raise RuntimeError("Unreachable")
 
     async def find_contact_by_phone(self, phone: str) -> dict[str, Any] | None:
-        """Find a contact by phone number."""
+        """Find a contact by phone number, negative-caching misses for 600s."""
+        if await is_crm_contact_negatively_cached(self.redis, phone):
+            return None
+
         # Zoho CRM v7 search endpoint
         response = await self._request(
             "GET", "/Contacts/search", params={"phone": phone}
         )
 
         if response.status_code == 204:
+            await set_crm_contact_negative_cache(self.redis, phone)
             return None
 
         data = response.json()
         if "data" in data and len(data["data"]) > 0:
             return dict(data["data"][0])
 
+        await set_crm_contact_negative_cache(self.redis, phone)
         return None
 
     async def get_contact(self, contact_id: str) -> dict[str, Any] | None:
@@ -241,10 +180,15 @@ class ZohoCRMClient(CRMProvider):
         return None
 
     async def create_contact(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Create a new contact."""
+        """Create a new contact and invalidate any negative-cached phone miss."""
         # Zoho expects data in the 'data' array payload
         payload = {"data": [data]}
         response = await self._request("POST", "/Contacts", json=payload)
+
+        for field_name in ("Phone", "Mobile", "phone"):
+            raw_phone = data.get(field_name)
+            if isinstance(raw_phone, str) and raw_phone.strip():
+                await invalidate_crm_contact_cache(self.redis, raw_phone)
 
         resp_data = response.json()
         if "data" in resp_data and len(resp_data["data"]) > 0:

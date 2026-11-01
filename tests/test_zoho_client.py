@@ -10,7 +10,11 @@ import httpx
 import pytest
 
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
-from src.integrations.zoho_oauth import ZohoOAuthError, release_zoho_oauth_lock
+from src.integrations.zoho_oauth import (
+    ZohoOAuthError,
+    ensure_zoho_access_token,
+    release_zoho_oauth_lock,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -523,3 +527,54 @@ async def test_rejected_refresh_token_alerts_admin_once_per_hour() -> None:
     send.assert_awaited_once()
     assert "ZOHO_INVENTORY_REFRESH_TOKEN" in send.await_args.args[0]
     await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_inventory_ensure_token_uses_configurable_accounts_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ZohoInventoryClient refreshes tokens against ZOHO_INVENTORY_ACCOUNTS_URL when set."""
+    monkeypatch.setenv("ZOHO_INVENTORY_ACCOUNTS_URL", "https://accounts.zoho.com/")
+    redis = AsyncMock()
+    redis.get.return_value = None
+    redis.set.return_value = True
+    client = ZohoInventoryClient(redis)
+
+    response = _make_response(
+        200,
+        {"access_token": "us_region_token", "expires_in": 3600},
+    )
+    with patch("httpx.AsyncClient") as mock_httpx_client:
+        mock_post = AsyncMock(return_value=response)
+        mock_httpx_client.return_value.__aenter__.return_value.post = mock_post
+        token = await client._ensure_token()
+
+    assert token == "us_region_token"
+    assert mock_post.await_args.args[0] == "https://accounts.zoho.com/oauth/v2/token"
+    await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_ensure_zoho_access_token_rechecks_cache_after_acquiring_lock() -> None:
+    """Shared ensure_zoho_access_token returns token populated right before lock acquisition."""
+    redis = AsyncMock()
+    redis.get.side_effect = [None, b"populated_just_in_time"]
+    redis.set.return_value = True
+
+    with patch("httpx.AsyncClient") as mock_httpx_client:
+        token = await ensure_zoho_access_token(
+            redis,
+            token_key="zoho:access_token",
+            lock_key="zoho:access_token:lock",
+            accounts_url="https://accounts.zoho.eu",
+            refresh_token="rt",
+            client_id="cid",
+            client_secret="sec",
+            service="inventory",
+        )
+
+    assert token == "populated_just_in_time"
+    mock_httpx_client.assert_not_called()
+    redis.eval.assert_awaited_once()

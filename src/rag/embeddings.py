@@ -3,14 +3,28 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
+from collections import OrderedDict
+from typing import TYPE_CHECKING, Any
 
-from sentence_transformers import SentenceTransformer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
 from src.models.knowledge_base import KnowledgeBase
 from src.models.product import Product
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer as SentenceTransformerType
+else:
+    SentenceTransformerType = Any
+
+# Kept as a module attribute so patch("src.rag.embeddings.SentenceTransformer")
+# continues to work without importing torch / sentence_transformers on module load.
+SentenceTransformer: Any = None
+
+EMBEDDING_CACHE_MAX_ENTRIES = 128
+EMBEDDING_CACHE_TTL_SECONDS = 60.0
 
 logger = logging.getLogger(__name__)
 
@@ -19,17 +33,52 @@ class EmbeddingEngine:
     """Singleton engine for generating text embeddings."""
 
     _instance: EmbeddingEngine | None = None
-    _model: SentenceTransformer | None = None
+    _model: SentenceTransformerType | None = None
     _lock: threading.Lock = threading.Lock()
+    _cache: OrderedDict[tuple[str, str], tuple[tuple[float, ...], float]]
+    _cache_lock: threading.Lock
 
     def __new__(cls) -> EmbeddingEngine:
         """Ensure singleton pattern to avoid loading the model multiple times."""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._model = None
+            cls._instance._cache = OrderedDict()
+            cls._instance._cache_lock = threading.Lock()
         return cls._instance
 
-    def _get_model(self) -> SentenceTransformer:
+    def clear_cache(self) -> None:
+        """Clear the bounded in-memory query embedding cache."""
+        with self._cache_lock:
+            self._cache.clear()
+
+    def _get_cached_embedding(self, key: tuple[str, str]) -> list[float] | None:
+        now = time.monotonic()
+        with self._cache_lock:
+            entry = self._cache.get(key)
+            if entry is None:
+                return None
+            vec_tuple, expires_at = entry
+            if now >= expires_at:
+                del self._cache[key]
+                return None
+            self._cache.move_to_end(key)
+            return list(vec_tuple)
+
+    def _store_cached_embedding(
+        self,
+        key: tuple[str, str],
+        vector: list[float],
+    ) -> None:
+        vec_tuple = tuple(vector)
+        expires_at = time.monotonic() + EMBEDDING_CACHE_TTL_SECONDS
+        with self._cache_lock:
+            self._cache[key] = (vec_tuple, expires_at)
+            self._cache.move_to_end(key)
+            while len(self._cache) > EMBEDDING_CACHE_MAX_ENTRIES:
+                self._cache.popitem(last=False)
+
+    def _get_model(self) -> SentenceTransformerType:
         """Lazy load the embedding model with double-checked locking."""
         if self._model is None:
             with self._lock:
@@ -37,15 +86,28 @@ class EmbeddingEngine:
                     logger.info(
                         "Loading embedding model %s...", settings.embedding_model
                     )
-                    self._model = SentenceTransformer(settings.embedding_model)
+                    st_cls = SentenceTransformer
+                    if st_cls is None:
+                        from sentence_transformers import (
+                            SentenceTransformer as _SentenceTransformer,
+                        )
+
+                        st_cls = _SentenceTransformer
+                    self._model = st_cls(settings.embedding_model)
                     logger.info("Embedding model loaded successfully.")
         return self._model
 
     def embed(self, text: str) -> list[float]:
         """Generate an embedding for a single text string."""
+        cache_key = (settings.embedding_model, text)
+        cached = self._get_cached_embedding(cache_key)
+        if cached is not None:
+            return cached
         model = self._get_model()
         embedding = model.encode(text, normalize_embeddings=True)
-        return embedding.tolist()
+        vector: list[float] = embedding.tolist()
+        self._store_cached_embedding(cache_key, vector)
+        return list(vector)
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings for a batch of text strings."""
@@ -55,6 +117,10 @@ class EmbeddingEngine:
 
     async def embed_async(self, text: str) -> list[float]:
         """Generate an embedding for a single text string without blocking the event loop."""
+        cache_key = (settings.embedding_model, text)
+        cached = self._get_cached_embedding(cache_key)
+        if cached is not None:
+            return cached
         return await asyncio.to_thread(self.embed, text)
 
     async def embed_batch_async(self, texts: list[str]) -> list[list[float]]:
