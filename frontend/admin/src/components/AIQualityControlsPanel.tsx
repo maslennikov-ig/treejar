@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     AlertTriangle,
     Bot,
@@ -29,12 +29,93 @@ import type {
 
 const AI_QUALITY_SCOPES: AIQualityScope[] = ['bot_qa', 'manager_qa', 'red_flags'];
 const AI_QUALITY_MODES: AIQualityMode[] = ['disabled', 'manual', 'daily_sample', 'scheduled'];
+const RED_FLAGS_MODES: AIQualityMode[] = ['disabled', 'daily_sample', 'scheduled'];
 const AI_QUALITY_TRANSCRIPT_MODES: AIQualityTranscriptMode[] = ['disabled', 'summary', 'full'];
-const AI_QUALITY_MODELS: string[] = [
+
+export const FALLBACK_AI_QUALITY_MODELS: string[] = [
+    'openai/gpt-6.1-terra',
+    'z-ai/glm-5.2',
     'google/gemini-3.1-flash-lite-preview',
     'openai/gpt-5.4-mini',
     'z-ai/glm5-20260211',
 ];
+
+export interface ScopeModelOption {
+    value: string;
+    isCustomCurrent: boolean;
+}
+
+export function resolveScopeModelOptions(
+    currentModel: string,
+    availableModels?: string[] | null,
+    defaultModel?: string | null,
+): ScopeModelOption[] {
+    const rawList =
+        availableModels && availableModels.length > 0
+            ? availableModels
+            : FALLBACK_AI_QUALITY_MODELS;
+    const seen = new Set<string>();
+    const base: string[] = [];
+    for (const candidate of rawList) {
+        const trimmed = candidate?.trim();
+        if (trimmed && !seen.has(trimmed)) {
+            seen.add(trimmed);
+            base.push(trimmed);
+        }
+    }
+    const trimmedDefault = defaultModel?.trim();
+    if (trimmedDefault && !seen.has(trimmedDefault)) {
+        seen.add(trimmedDefault);
+        base.push(trimmedDefault);
+    }
+    const options: ScopeModelOption[] = base.map((value) => ({
+        value,
+        isCustomCurrent: false,
+    }));
+    const trimmedCurrent = currentModel?.trim();
+    if (trimmedCurrent && !seen.has(trimmedCurrent)) {
+        options.unshift({
+            value: trimmedCurrent,
+            isCustomCurrent: true,
+        });
+    }
+    return options;
+}
+
+export function allowedModesForScope(
+    scope: AIQualityScope,
+    currentMode: AIQualityMode,
+): Array<{ value: AIQualityMode; isLegacyManual: boolean }> {
+    if (scope !== 'red_flags') {
+        return AI_QUALITY_MODES.map((value) => ({ value, isLegacyManual: false }));
+    }
+    const base = RED_FLAGS_MODES.map((value) => ({ value, isLegacyManual: false }));
+    if (currentMode === 'manual') {
+        return [{ value: 'manual', isLegacyManual: true }, ...base];
+    }
+    return base;
+}
+
+function isExpensiveGlm5Model(model: string): boolean {
+    const normalized = model.trim().toLowerCase();
+    if (
+        normalized === 'glm-5.2' ||
+        normalized.endsWith('/glm-5.2') ||
+        normalized.startsWith('glm-5.2-') ||
+        normalized.includes('/glm-5.2-')
+    ) {
+        return false;
+    }
+    return (
+        normalized === 'glm-5' ||
+        normalized.endsWith('/glm-5') ||
+        normalized === 'glm-5.1' ||
+        normalized.endsWith('/glm-5.1') ||
+        normalized === 'glm-5-turbo' ||
+        normalized.endsWith('/glm-5-turbo') ||
+        normalized.includes('glm5-')
+    );
+}
 
 interface Props {
     initialControls?: AIQualityControlsResponse | null;
@@ -137,6 +218,7 @@ export default function AIQualityControlsPanel({
     const [saving, setSaving] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [status, setStatus] = useState<StatusMessage | null>(null);
+    const lastRefreshSignalRef = useRef<number>(refreshSignal);
 
     const applyResponse = useCallback((next: AIQualityControlsResponse) => {
         setControls(next);
@@ -164,6 +246,10 @@ export default function AIQualityControlsPanel({
     }, [initialControls, loadControls]);
 
     useEffect(() => {
+        if (refreshSignal === lastRefreshSignalRef.current) {
+            return;
+        }
+        lastRefreshSignalRef.current = refreshSignal;
         if (!refreshSignal || initialControls !== null) {
             return;
         }
@@ -186,7 +272,7 @@ export default function AIQualityControlsPanel({
             if (field === 'transcript_mode' && value === 'summary') {
                 nextScope.full_transcript_warning_override = false;
             }
-            if (field === 'model' && value !== 'z-ai/glm5-20260211' && value !== 'z-ai/glm-5') {
+            if (field === 'model' && !isExpensiveGlm5Model(String(value))) {
                 nextScope.glm5_warning_override = false;
             }
             return {
@@ -202,7 +288,8 @@ export default function AIQualityControlsPanel({
         rawValue: string,
     ) => {
         const parsed = Number.parseInt(rawValue, 10);
-        const value = Number.isNaN(parsed) ? 0 : parsed;
+        const fallback = field === 'max_attempts' ? 1 : 0;
+        const value = Number.isNaN(parsed) ? fallback : parsed;
         setDraft((current) => {
             if (!current) {
                 return current;
@@ -231,7 +318,9 @@ export default function AIQualityControlsPanel({
 
     const updateAllUsdBudgets = (rawUsd: string) => {
         const parsed = Number.parseFloat(rawUsd);
-        const cents = Number.isNaN(parsed) ? 0 : Math.max(0, Math.round(parsed * 100));
+        const cents = Number.isNaN(parsed)
+            ? 0
+            : Math.min(20000, Math.max(0, Math.round(parsed * 100)));
         setDraft((current) => {
             if (!current) {
                 return current;
@@ -264,9 +353,24 @@ export default function AIQualityControlsPanel({
         });
     };
 
+    const scopeLabel = (scope: AIQualityScope): string => {
+        if (scope === 'bot_qa') return t('aiqc.scope.bot_qa.label');
+        if (scope === 'manager_qa') return t('aiqc.scope.manager_qa.label');
+        return t('aiqc.scope.red_flags.label');
+    };
+
     const handleSave = async () => {
         if (!draft) {
             return;
+        }
+        for (const scope of AI_QUALITY_SCOPES) {
+            if (draft[scope].max_calls_per_run > draft[scope].max_calls_per_day) {
+                setStatus({
+                    tone: 'error',
+                    text: `${scopeLabel(scope)}: ${t('aiqc.validation.runExceedsDay')}`,
+                });
+                return;
+            }
         }
         setSaving(true);
         setStatus(null);
@@ -294,12 +398,6 @@ export default function AIQualityControlsPanel({
     const allDisabled =
         draft !== null &&
         AI_QUALITY_SCOPES.every((scope) => draft[scope].mode === 'disabled');
-
-    const scopeLabel = (scope: AIQualityScope): string => {
-        if (scope === 'bot_qa') return t('aiqc.scope.bot_qa.label');
-        if (scope === 'manager_qa') return t('aiqc.scope.manager_qa.label');
-        return t('aiqc.scope.red_flags.label');
-    };
 
     const scopeShortName = (scope: AIQualityScope): string => {
         if (scope === 'bot_qa') return t('aiqc.scope.bot_qa');
@@ -471,7 +569,7 @@ export default function AIQualityControlsPanel({
                                     <input
                                         type="number"
                                         min={0}
-                                        max={50}
+                                        max={200}
                                         step={0.25}
                                         data-aiqc-per-contour-usd=""
                                         value={(draft.bot_qa.daily_budget_cents / 100).toFixed(2)}
@@ -577,11 +675,19 @@ export default function AIQualityControlsPanel({
                                         }
                                         className="admin-input w-full rounded-lg px-2.5 py-1.5 text-xs"
                                     >
-                                        {AI_QUALITY_MODES.map((mode) => (
-                                            <option key={mode} value={mode}>
-                                                {modeLabel(mode)}
-                                            </option>
-                                        ))}
+                                        {allowedModesForScope('red_flags', draft.red_flags.mode).map(
+                                            (option) => (
+                                                <option
+                                                    key={option.value}
+                                                    value={option.value}
+                                                    disabled={option.isLegacyManual}
+                                                >
+                                                    {option.isLegacyManual
+                                                        ? `${modeLabel(option.value)} (${t('aiqc.legacyManualSuffix')})`
+                                                        : modeLabel(option.value)}
+                                                </option>
+                                            ),
+                                        )}
                                     </select>
                                 </label>
                             </div>
@@ -671,6 +777,15 @@ export default function AIQualityControlsPanel({
                                 {AI_QUALITY_SCOPES.map((scope) => {
                                     const scopeConfig = draft[scope];
                                     const criteriaKeys = criteriaKeysFor(scope, scopeConfig.criteria);
+                                    const modelOptions = resolveScopeModelOptions(
+                                        scopeConfig.model,
+                                        controls?.available_models,
+                                        controls?.default_model,
+                                    );
+                                    const scopeModeOptions = allowedModesForScope(
+                                        scope,
+                                        scopeConfig.mode,
+                                    );
                                     return (
                                         <div
                                             key={scope}
@@ -708,6 +823,7 @@ export default function AIQualityControlsPanel({
                                                         <HelpTooltip text={t('aiqc.tooltip.mode')} />
                                                     </span>
                                                     <select
+                                                        data-scope-mode-select={scope}
                                                         value={scopeConfig.mode}
                                                         onChange={(event) =>
                                                             updateScope(
@@ -718,9 +834,15 @@ export default function AIQualityControlsPanel({
                                                         }
                                                         className="admin-input w-full rounded-lg px-3 py-2 text-xs"
                                                     >
-                                                        {AI_QUALITY_MODES.map((mode) => (
-                                                            <option key={mode} value={mode}>
-                                                                {modeLabel(mode)}
+                                                        {scopeModeOptions.map((option) => (
+                                                            <option
+                                                                key={option.value}
+                                                                value={option.value}
+                                                                disabled={option.isLegacyManual}
+                                                            >
+                                                                {option.isLegacyManual
+                                                                    ? `${modeLabel(option.value)} (${t('aiqc.legacyManualSuffix')})`
+                                                                    : modeLabel(option.value)}
                                                             </option>
                                                         ))}
                                                     </select>
@@ -757,6 +879,7 @@ export default function AIQualityControlsPanel({
                                                     <HelpTooltip text={t('aiqc.tooltip.model')} />
                                                 </span>
                                                 <select
+                                                    data-scope-model-select={scope}
                                                     value={scopeConfig.model}
                                                     onChange={(event) =>
                                                         updateScope(
@@ -767,9 +890,14 @@ export default function AIQualityControlsPanel({
                                                     }
                                                     className="admin-input w-full rounded-lg px-3 py-2 text-xs"
                                                 >
-                                                    {AI_QUALITY_MODELS.map((model) => (
-                                                        <option key={model} value={model}>
-                                                            {model}
+                                                    {modelOptions.map((option) => (
+                                                        <option
+                                                            key={option.value}
+                                                            value={option.value}
+                                                        >
+                                                            {option.isCustomCurrent
+                                                                ? `${option.value} (${t('aiqc.currentModelSuffix')})`
+                                                                : option.value}
                                                         </option>
                                                     ))}
                                                 </select>
@@ -784,7 +912,7 @@ export default function AIQualityControlsPanel({
                                                     <input
                                                         type="number"
                                                         min={0}
-                                                        max={5000}
+                                                        max={20000}
                                                         value={scopeConfig.daily_budget_cents}
                                                         onChange={(event) =>
                                                             updateNumberField(
@@ -809,7 +937,7 @@ export default function AIQualityControlsPanel({
                                                     <input
                                                         type="number"
                                                         min={0}
-                                                        max={25}
+                                                        max={100}
                                                         value={scopeConfig.max_calls_per_run}
                                                         onChange={(event) =>
                                                             updateNumberField(
@@ -827,7 +955,7 @@ export default function AIQualityControlsPanel({
                                                     <input
                                                         type="number"
                                                         min={0}
-                                                        max={100}
+                                                        max={500}
                                                         value={scopeConfig.max_calls_per_day}
                                                         onChange={(event) =>
                                                             updateNumberField(
@@ -847,7 +975,7 @@ export default function AIQualityControlsPanel({
                                                     <input
                                                         type="number"
                                                         min={1}
-                                                        max={3}
+                                                        max={2}
                                                         value={scopeConfig.retry.max_attempts}
                                                         onChange={(event) =>
                                                             updateRetry(
@@ -865,7 +993,7 @@ export default function AIQualityControlsPanel({
                                                     <input
                                                         type="number"
                                                         min={0}
-                                                        max={600}
+                                                        max={3600}
                                                         value={scopeConfig.retry.backoff_seconds}
                                                         onChange={(event) =>
                                                             updateRetry(
