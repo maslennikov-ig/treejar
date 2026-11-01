@@ -588,8 +588,74 @@ async def test_bulk_raises_the_first_error_when_nothing_could_be_served() -> Non
     await client.close()
 
 
+@pytest.mark.asyncio
 async def test_bulk_with_only_missing_skus_returns_empty() -> None:
     client = _client(_FakeRedis())
     with patch.object(client, "_live_stock", AsyncMock(return_value=None)):
         assert await client.get_stock_bulk(["A", "B"]) == []
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_stock_snapshot_memo_skips_reparse_until_generation_changes_and_isolates_mutations() -> (
+    None
+):
+    from src.integrations.inventory.stock_state import STATE_KEY, StockState
+    from src.integrations.inventory.zoho_inventory import clear_stock_snapshot_memo
+
+    clear_stock_snapshot_memo()
+    now = time.time()
+    gen1 = StockState(
+        items={
+            "id-A": {"item_id": "id-A", "sku": "CH-100", "stock_on_hand": 7},
+            "id-B": {"item_id": "id-B", "sku": "CH-200", "stock_on_hand": 4},
+        },
+        observed={"id-A": now, "id-B": now},
+        generation="gen-1",
+        coverage=now,
+        full_at=now,
+    )
+    redis = _FakeRedis({STATE_KEY: gen1.to_json()})
+    client = _client(redis)
+
+    with patch(
+        "src.integrations.inventory.zoho_inventory.StockState.from_raw",
+        wraps=StockState.from_raw,
+    ) as spy_from_raw:
+        first = await client.get_stock("CH-100")
+        assert first is not None and first["stock_on_hand"] == 7
+        first["stock_on_hand"] = 999  # caller mutation must not leak into memo
+
+        by_id = await client.get_item("id-A")
+        assert by_id is not None and by_id["stock_on_hand"] == 7
+        by_id["stock_on_hand"] = 888
+
+        bulk = await client.get_stock_bulk(["CH-100", "CH-200"])
+        assert [row["stock_on_hand"] for row in bulk] == [7, 4]
+        assert spy_from_raw.call_count == 1
+
+        # Updating Redis payload to a new generation triggers exactly one fresh parse
+        gen2 = StockState(
+            items={
+                "id-A": {"item_id": "id-A", "sku": "CH-100", "stock_on_hand": 2},
+                "id-B": {"item_id": "id-B", "sku": "CH-200", "stock_on_hand": 4},
+            },
+            observed={"id-A": now, "id-B": now},
+            generation="gen-2",
+            coverage=now,
+            full_at=now,
+        )
+        redis.values[STATE_KEY] = gen2.to_json()
+        updated = await client.get_stock("CH-100")
+        assert updated is not None and updated["stock_on_hand"] == 2
+        assert spy_from_raw.call_count == 2
+
+    # Writers reading via StockStore.read() still get unshared mutable StockState
+    writer_state_a, _ = await client.stock_store.read()
+    writer_state_b, _ = await client.stock_store.read()
+    assert writer_state_a is not None and writer_state_b is not None
+    writer_state_a.items["id-A"]["stock_on_hand"] = 123
+    assert writer_state_b.items["id-A"]["stock_on_hand"] == 2
+
+    clear_stock_snapshot_memo()
     await client.close()

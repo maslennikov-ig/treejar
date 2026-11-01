@@ -150,8 +150,11 @@ class StockStore:
     def __init__(self, redis: Any) -> None:
         self.redis = redis
 
+    async def read_raw(self) -> str:
+        return raw_text(await self.redis.get(STATE_KEY))
+
     async def read(self) -> tuple[StockState | None, str]:
-        raw = raw_text(await self.redis.get(STATE_KEY))
+        raw = await self.read_raw()
         return StockState.from_raw(raw), raw
 
     async def acquire(self) -> str | None:

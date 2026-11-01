@@ -3,11 +3,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import email.utils
+import hashlib
 import json
 import logging
 import math
+import threading
 import time
 import uuid
+from collections import OrderedDict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
@@ -24,6 +27,7 @@ from src.integrations.inventory.stock_state import (
     StockMetrics,
     StockState,
     StockStore,
+    raw_text,
 )
 from src.integrations.zoho_oauth import (
     ZOHO_OAUTH_LOCK_POLL_ATTEMPTS,
@@ -213,6 +217,7 @@ class StockSnapshot:
 
     as_of: float
     items: dict[str, dict[str, Any]]
+    _as_of_iso: str = dataclass_field(init=False, repr=False)
     _by_key: dict[str, list[dict[str, Any]]] = dataclass_field(
         default_factory=dict, init=False, repr=False
     )
@@ -222,6 +227,7 @@ class StockSnapshot:
     )
 
     def __post_init__(self) -> None:
+        self._as_of_iso = datetime.fromtimestamp(self.as_of, UTC).isoformat()
         for item in self.items.values():
             key = _sku_match_key(str(item.get("sku", "")))
             self._by_key.setdefault(key, []).append(item)
@@ -240,20 +246,18 @@ class StockSnapshot:
         item = select_stock_item(sku, candidates)
         if item is None:
             return None
-        item.setdefault(
-            "stock_as_of", datetime.fromtimestamp(self.as_of, UTC).isoformat()
-        )
-        return item
+        result = dict(item)
+        result.setdefault("stock_as_of", self._as_of_iso)
+        return result
 
     def lookup_item_id(self, item_id: str) -> dict[str, Any] | None:
         """The item with a Zoho item_id, stamped with the snapshot time, or None."""
         item = self._by_item_id.get(item_id.strip())
         if item is None:
             return None
-        item.setdefault(
-            "stock_as_of", datetime.fromtimestamp(self.as_of, UTC).isoformat()
-        )
-        return item
+        result = dict(item)
+        result.setdefault("stock_as_of", self._as_of_iso)
+        return result
 
     def to_json(self) -> str:
         return json.dumps({"as_of": self.as_of, "items": self.items})
@@ -287,6 +291,37 @@ class StockSnapshot:
                 if isinstance(item, dict)
             },
         )
+
+
+_STOCK_SNAPSHOT_MEMO_MAX_ENTRIES = 4
+_stock_snapshot_memo: OrderedDict[tuple[bytes, str], StockSnapshot] = OrderedDict()
+_stock_snapshot_memo_lock = threading.Lock()
+
+
+def clear_stock_snapshot_memo() -> None:
+    """Clear the process-local parsed StockSnapshot memo."""
+    with _stock_snapshot_memo_lock:
+        _stock_snapshot_memo.clear()
+
+
+def _get_memoized_stock_snapshot(key: tuple[bytes, str]) -> StockSnapshot | None:
+    with _stock_snapshot_memo_lock:
+        snapshot = _stock_snapshot_memo.get(key)
+        if snapshot is None:
+            return None
+        _stock_snapshot_memo.move_to_end(key)
+        return snapshot
+
+
+def _store_memoized_stock_snapshot(
+    key: tuple[bytes, str],
+    snapshot: StockSnapshot,
+) -> None:
+    with _stock_snapshot_memo_lock:
+        _stock_snapshot_memo[key] = snapshot
+        _stock_snapshot_memo.move_to_end(key)
+        while len(_stock_snapshot_memo) > _STOCK_SNAPSHOT_MEMO_MAX_ENTRIES:
+            _stock_snapshot_memo.popitem(last=False)
 
 
 def contact_lists_only_other_phones(
@@ -916,22 +951,53 @@ class ZohoInventoryClient(InventoryProvider):
             and settings.zoho_stock_coverage_evidence.strip()
         )
 
+    async def _read_v2_stock_snapshot(self) -> tuple[StockSnapshot | None, str]:
+        raw = await self.stock_store.read_raw()
+        if not raw:
+            return None, raw
+        evidence = (
+            settings.zoho_stock_coverage_evidence if self.incremental_eligible() else ""
+        )
+        memo_key = (
+            hashlib.blake2b(raw.encode("utf-8"), digest_size=16).digest(),
+            evidence,
+        )
+        cached = _get_memoized_stock_snapshot(memo_key)
+        if cached is not None:
+            return cached, raw
+        state = StockState.from_raw(raw)
+        if state is None:
+            return None, raw
+        snapshot = StockSnapshot(
+            as_of=state.full_at or 0,
+            items=state.stock_items(evidence),
+        )
+        _store_memoized_stock_snapshot(memo_key, snapshot)
+        return snapshot, raw
+
     async def _read_stock_snapshot(self) -> tuple[StockSnapshot | None, bool]:
         try:
-            state, raw = await self.stock_store.read()
-            if state is not None:
-                evidence = (
-                    settings.zoho_stock_coverage_evidence
-                    if self.incremental_eligible()
-                    else ""
-                )
-                items = state.stock_items(evidence)
-                return StockSnapshot(as_of=state.full_at or 0, items=items), True
+            v2_snapshot, raw = await self._read_v2_stock_snapshot()
+            if v2_snapshot is not None:
+                return v2_snapshot, True
             # Never reinterpret corrupt v2 as a new covered generation. Legacy
             # data is safe only at its original full observation time.
             legacy = await self.redis.get(ZOHO_STOCK_SNAPSHOT_KEY)
-            snapshot = StockSnapshot.from_raw(legacy)
-            return snapshot, not raw and (legacy is None or snapshot is not None)
+            if legacy is None:
+                return None, not raw
+            legacy_raw = raw_text(legacy)
+            if not legacy_raw:
+                return None, False
+            legacy_key = (
+                hashlib.blake2b(legacy_raw.encode("utf-8"), digest_size=16).digest(),
+                "__legacy__",
+            )
+            snapshot = _get_memoized_stock_snapshot(legacy_key)
+            if snapshot is None:
+                snapshot = StockSnapshot.from_raw(legacy_raw)
+                if snapshot is not None:
+                    _store_memoized_stock_snapshot(legacy_key, snapshot)
+            return snapshot, not raw and snapshot is not None
         except Exception:
             logger.warning("Could not read Zoho stock state")
             return None, False
