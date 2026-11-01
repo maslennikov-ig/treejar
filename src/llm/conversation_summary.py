@@ -126,14 +126,6 @@ def _messages_to_summarize(
     return eligible_messages[covered_index + 1 :]
 
 
-def needs_conversation_summary_refresh(
-    messages: list[Message],
-    summary: ConversationSummary | None,
-) -> bool:
-    """Return True when there are older messages not yet covered."""
-    return bool(_messages_to_summarize(messages, summary))
-
-
 def _build_summary_prompt(
     current_summary: str | None,
     messages: list[Message],

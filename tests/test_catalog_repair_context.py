@@ -102,8 +102,6 @@ async def test_catalog_repair_keeps_real_prompt_and_completed_tool_history(monke
 
     model = FunctionModel(model_request)
     turn = _Turn(
-        pending_reference_route=None,
-        order_quote_route=None,
         db=db,
         redis=deps.redis,
         conversation_id=conv.id,

@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from src.core.text_utils import ARABIC_INDIC_DIGITS as _ARABIC_INDIC_DIGITS
 from src.llm.money import BUDGET_AR_CURRENCY_PATTERN
 from src.schemas.common import EscalationType
 
@@ -231,7 +232,6 @@ fume hoods and three workstations in one message -- and pausing the bot would
 leave the workstation half unanswered.
 """
 
-_ARABIC_INDIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
 _BULK_ITEM_EN = (
     r"(?:pcs|pieces|units|seats?|desks?|chairs?|work\s?stations?|tables?|"
     r"cabinets?|lockers?|pods?|sofas?|pedestals?|partitions?)"

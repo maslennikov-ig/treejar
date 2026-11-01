@@ -94,28 +94,6 @@ def integration(fn: object) -> object:
 
 
 @pytest.fixture(autouse=True)
-def prose_rewrite_unavailable() -> Generator[None, None, None]:
-    """No cosmetic rewrite in unit tests unless a test asks for one.
-
-    The verified-prose rewrite runs on its own agent, away from the product
-    system prompt, so patching `sales_agent.run` does not reach it. Left
-    unpatched it would make a real network call from every route test. The
-    default here is that the rewrite is unavailable, which is exactly the
-    fallback the routes are built for: the route's own text ships. Tests that
-    exercise the rewrite patch `prose_agent.run` themselves.
-    """
-
-    from unittest.mock import AsyncMock, patch
-
-    with patch(
-        "src.llm.engine.prose_agent.run",
-        new_callable=AsyncMock,
-        side_effect=TimeoutError,
-    ):
-        yield
-
-
-@pytest.fixture(autouse=True)
 def repair_judge_is_local() -> Generator[None, None, None]:
     """Keep route tests on a local second-vendor stand-in.
 

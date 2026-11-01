@@ -122,7 +122,6 @@ async def _assert_model_receives_turn(previous, message, metadata, *, saved_case
         return {
             "openrouter_model_main": "mock-model",
             "customer_facts_mode": "disabled",
-            "dialogue_kernel_mode": "enforce",
         }.get(key, default)
 
     with (
@@ -133,16 +132,6 @@ async def _assert_model_receives_turn(previous, message, metadata, *, saved_case
         patch.object(
             engine.sales_agent, "run", AsyncMock(return_value=model_result)
         ) as run,
-        patch.object(
-            engine,
-            "run_dialogue_kernel",
-            AsyncMock(side_effect=AssertionError("semantic kernel invoked")),
-        ) as kernel,
-        patch.object(
-            engine,
-            "evaluate_verified_answer_policy",
-            side_effect=AssertionError("lexical policy invoked"),
-        ),
         patch.object(engine, "create_quotation", AsyncMock()) as quote,
         patch.object(engine, "_create_or_reuse_sales_opportunity", AsyncMock()) as deal,
         patch(
@@ -164,7 +153,7 @@ async def _assert_model_receives_turn(previous, message, metadata, *, saved_case
     assert call.kwargs["message_history"] == history
     assert model_text in response.text
     assert response.tokens_in == 12
-    for automatic_action in (kernel, quote, deal, notify):
+    for automatic_action in (quote, deal, notify):
         automatic_action.assert_not_awaited()
     assert conv.escalation_status == "none"
     # Existing order state is context, never authorization to act this turn.

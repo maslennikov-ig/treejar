@@ -35,11 +35,11 @@ async def main() -> None:
 
     # 1. Check config
     print("\n--- 6.1 Configuration ---")
-    model = settings.voxtral_model
+    model = settings.voice_transcription_model
     if model:
-        ok(f"Voxtral model configured: {model}")
+        ok(f"Voice transcription model configured: {model}")
     else:
-        fail("voxtral_model not configured")
+        fail("voice_transcription_model not configured")
 
     api_key = settings.openrouter_api_key
     if api_key and len(api_key) > 10:

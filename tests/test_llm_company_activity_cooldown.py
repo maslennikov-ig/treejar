@@ -74,8 +74,6 @@ def _turn(conversation: Conversation, *, is_first_turn: bool = False) -> _Turn:
 
     deps = _deps(conversation)
     return _Turn(
-        pending_reference_route=UNUSED,
-        order_quote_route=UNUSED,
         db=UNUSED,
         redis=UNUSED,
         conversation_id=uuid4(),

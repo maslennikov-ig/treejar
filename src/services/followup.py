@@ -940,22 +940,6 @@ async def _run_payment_reminders_with_db(
                 )
 
 
-async def run_payment_reminders(ctx: dict[str, Any]) -> None:
-    """Cron/manual entrypoint for accepted payment reminder sends."""
-    async with async_session_factory() as db:
-        now = _naive_utc_now()
-        controls = await _ctx_payment_reminder_controls(db, ctx)
-        trigger: Literal["manual", "scheduled"] = (
-            "scheduled" if ctx.get("trigger") == "scheduled" else "manual"
-        )
-        await _run_payment_reminders_with_db(
-            db,
-            controls=controls,
-            now=now,
-            trigger=trigger,
-        )
-
-
 async def run_automatic_followups(ctx: dict[str, Any]) -> None:
     """Cron job for safe reminder follow-ups.
 

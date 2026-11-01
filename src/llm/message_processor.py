@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -44,9 +44,6 @@ from src.dialogue.order_guards import quotation_claimed_without_call
 from src.dialogue.order_state import (
     QuoteConsent,
     quote_workflow_from_metadata,
-)
-from src.dialogue.runner import (
-    record_legacy_route,
 )
 from src.dialogue.state import DialogueState
 from src.llm.catalog_planning import (
@@ -97,7 +94,6 @@ from src.llm.response_policy import (
     render_reply,
 )
 from src.llm.response_runtime import (
-    PendingReferenceRoute,
     _product_media_is_referenced,
     _referenced_product_media,
     _response_from_rendered_reply,
@@ -138,7 +134,6 @@ if TYPE_CHECKING:
     from pydantic_ai.usage import RunUsage as RunUsageT
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from src.dialogue.runner import DialogueKernelResult as DialogueKernelResultT
     from src.integrations.crm.zoho_crm import ZohoCRMClient
     from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
     from src.integrations.messaging.base import MessagingProvider
@@ -189,10 +184,6 @@ def _is_first_turn(
             assistant_turns += 1
 
     return assistant_turns == 0 and user_turns >= 1
-
-
-def _has_escalation(conversation: ConversationT) -> bool:
-    return is_active_human_handoff(conversation.escalation_status)
 
 
 def _deferred_product_media_for_response(
@@ -371,8 +362,6 @@ class _Turn:
     """
 
     # Fixed for the turn.
-    pending_reference_route: Callable[..., Awaitable[PendingReferenceRoute]]
-    order_quote_route: Callable[..., Awaitable[LLMResponseT | None]]
     db: AsyncSession
     redis: Any
     conversation_id: UUID
@@ -396,8 +385,6 @@ class _Turn:
     masked_text: str
     recent_history: list[str]
     deps: SalesDepsT
-    dialogue_kernel_mode: str = ""
-    dialogue_kernel_result: DialogueKernelResultT | None = None
     opening_anchor_line: str | None = None
     opening_anchor_has_limited_stock: bool = False
     opening_anchor_grounded_amounts: tuple[float, ...] = ()
@@ -519,17 +506,6 @@ class _Turn:
                 response_deps.conversation.language,
             )
         return rendered
-
-    def _record_reply_on_conversation(
-        self, model_name: str, response_text: str
-    ) -> None:
-        if model_name.startswith("dialogue-kernel|"):
-            return
-        record_legacy_route(
-            self.conv,
-            self.dialogue_kernel_result,
-            legacy_route=model_name,
-        )
 
     def build_llm_response(
         self,
@@ -753,7 +729,6 @@ async def _finalize_turn_response(
         if _product_media_is_referenced(item, response.text)
     )
 
-    turn._record_reply_on_conversation(response.model, response.text)
     # tj-uz6j.7. What the next short "yes" answers is the question this reply,
     # as finally worded, closes on -- recorded with the catalog rows it names.
     conversation_metadata = turn.deps.conversation.metadata_
@@ -878,7 +853,6 @@ async def _read_turn_config(turn: _Turn) -> _TurnConfig:
     # freeze the real one before the patch lands.
     from src.core.config import get_system_config
 
-    turn.dialogue_kernel_mode = "disabled"
     return _TurnConfig(
         customer_facts_mode=engine._normalize_customer_facts_mode(
             await get_system_config(
@@ -1098,8 +1072,6 @@ async def _sales_agent_route(
 
 async def _load_turn(
     *,
-    pending_reference_route: Callable[..., Awaitable[PendingReferenceRoute]],
-    order_quote_route: Callable[..., Awaitable[LLMResponseT | None]],
     conversation_id: UUID,
     combined_text: str,
     db: AsyncSession,
@@ -1212,8 +1184,6 @@ async def _load_turn(
         await db.flush()
 
     turn = _Turn(
-        pending_reference_route=pending_reference_route,
-        order_quote_route=order_quote_route,
         db=db,
         redis=redis,
         conversation_id=conversation_id,
@@ -1230,10 +1200,6 @@ async def _load_turn(
         history=history,
         is_first_turn=is_first_turn,
         current_message_quote_customer_details=(current_message_quote_customer_details),
-        # Memoised: the runtime used to be built inside the generation block,
-        # out of reach of every route that runs before it, and
-        # sales-opportunity needs the model to write its sentence (tj-swgu.3).
-        # A turn that never reaches the model still pays nothing.
         model_runtime=_LazyModelRuntime(db),
         combined_text=combined_text,
         masked_text=masked_text,
@@ -1319,8 +1285,6 @@ async def _retrieve_context(turn: _Turn) -> None:
 
 async def process_message_impl(
     *,
-    pending_reference_route: Callable[..., Awaitable[PendingReferenceRoute]],
-    order_quote_route: Callable[..., Awaitable[LLMResponseT | None]],
     conversation_id: UUID,
     combined_text: str,
     db: AsyncSession,
@@ -1335,13 +1299,10 @@ async def process_message_impl(
     """Process an incoming message through the PydanticAI agent.
 
     Load factual context, let the main model choose tools and answer, then check
-    factual claims and delivery constraints. Legacy adapters are accepted only
-    for API compatibility and are never invoked.
+    factual claims and delivery constraints.
     """
 
     turn = await _load_turn(
-        pending_reference_route=pending_reference_route,
-        order_quote_route=order_quote_route,
         conversation_id=conversation_id,
         combined_text=combined_text,
         db=db,

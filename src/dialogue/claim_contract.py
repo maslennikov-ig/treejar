@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Literal
 
+from src.core.text_utils import ARABIC_INDIC_DIGITS as _ARABIC_INDIC_DIGITS
 from src.dialogue.count_words import EN_COUNT_WORD_PATTERN
 from src.llm.money import amount_with_uae_vat
 
@@ -482,7 +483,6 @@ def _with_uae_vat_variants(numbers: set[float]) -> set[float]:
 
 
 _NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)*")
-_ARABIC_INDIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
 
 
 def _numbers_in(text: str) -> set[float]:

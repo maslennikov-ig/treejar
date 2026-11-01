@@ -66,12 +66,7 @@ def test_no_currency_pattern_is_written_anywhere_but_this_module() -> None:
     llm = pathlib.Path(__file__).parents[1] / "src" / "llm"
     currency = re.compile(r"aed|dirhams?|\bdhs\b|درهم|د\\?\.إ", re.IGNORECASE)
 
-    # One pattern names two currency words and is not about money: it lists
-    # the tokens that mean "the number before me was a unit, not a quantity"
-    # -- minutes, cm, aed, usd. Its vocabulary is a third distinct set and it
-    # knows `usd`, which money.py does not. Named here so the exception is
-    # reviewed rather than assumed.
-    not_about_money = {"_SELECTION_MEASUREMENT_SUFFIX_RE"}
+    not_about_money: set[str] = set()
 
     offenders: list[str] = []
     for path in sorted(llm.glob("*.py")):

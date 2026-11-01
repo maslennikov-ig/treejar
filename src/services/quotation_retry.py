@@ -240,7 +240,7 @@ async def retry_pending_quotation(
     """ARQ job: one background attempt at a quotation Zoho refused earlier."""
     from src.core.database import async_session_factory
     from src.llm.engine import _create_quotation
-    from src.llm.order_quote_routes import QuotationItem
+    from src.llm.response_runtime import QuotationItem
     from src.models.conversation import Conversation
 
     redis = ctx["redis"]

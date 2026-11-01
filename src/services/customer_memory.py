@@ -13,7 +13,6 @@ from src.models.customer_memory import (
     CustomerOrderMemory,
     CustomerProfile,
 )
-from src.models.message import Message
 
 FactValue = dict[str, Any] | list[Any] | str | int | float | bool | None
 
@@ -24,14 +23,6 @@ TERMINAL_ORDER_STATUSES = (
     "closed_no_response",
     "superseded",
 )
-
-
-@dataclass(slots=True)
-class FactMergeResult:
-    accepted: list[CustomerFact] = field(default_factory=list)
-    proposed: list[CustomerFact] = field(default_factory=list)
-    conflicts: list[CustomerFact] = field(default_factory=list)
-    confirmation_required: list[CustomerFact] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -209,81 +200,6 @@ async def get_or_create_active_order(
     return order
 
 
-async def apply_extracted_facts(
-    db: Any,
-    *,
-    profile: CustomerProfile,
-    order: CustomerOrderMemory,
-    message: Message | None,
-    facts: list[Any],
-) -> FactMergeResult:
-    result = FactMergeResult()
-
-    for raw_fact in facts:
-        fact_data = _normalize_fact_input(raw_fact, message=message)
-        scope = str(fact_data["scope"])
-        key = str(fact_data["key"])
-        value = fact_data["value"]
-        confidence = str(fact_data["confidence"])
-        needs_confirmation = bool(fact_data["needs_confirmation"])
-
-        scoped_order = order if scope == "current_order" else None
-        existing = await _fetch_accepted_fact(
-            db,
-            profile=profile,
-            order=scoped_order,
-            scope=scope,
-            key=key,
-        )
-        status = _merge_status(
-            existing=existing,
-            key=key,
-            value=value,
-            confidence=confidence,
-            scope=scope,
-            source=str(fact_data["source"]),
-            needs_confirmation=needs_confirmation,
-        )
-
-        saved = CustomerFact(
-            profile=profile,
-            customer_profile_id=profile.id,
-            order_memory=scoped_order,
-            order_memory_id=scoped_order.id if scoped_order else None,
-            conversation_id=fact_data["conversation_id"] or order.conversation_id,
-            scope=scope,
-            key=key,
-            value=value,
-            confidence=confidence,
-            status=status,
-            source=str(fact_data["source"]),
-            source_message_id=fact_data["source_message_id"],
-            source_excerpt=fact_data["source_excerpt"],
-        )
-        db.add(saved)
-
-        if status == "accepted":
-            if existing is not None and _is_replaceable_current_order_fact(
-                scope=scope,
-                key=key,
-            ):
-                existing.status = "superseded"
-                existing.superseded_at = _now()
-            result.accepted.append(saved)
-            _apply_profile_projection(profile, saved)
-        elif status == "conflict":
-            result.conflicts.append(saved)
-        else:
-            result.proposed.append(saved)
-
-        if scope == "past_order_reference" or needs_confirmation:
-            result.confirmation_required.append(saved)
-
-    if facts:
-        await db.flush()
-    return result
-
-
 async def mark_order_quoted(
     db: Any,
     *,
@@ -438,83 +354,6 @@ async def _fetch_past_orders(
         .limit(limit)
     )
     return list(result.scalars().all())
-
-
-def _normalize_fact_input(raw_fact: Any, *, message: Message | None) -> dict[str, Any]:
-    def get(name: str, default: Any = None) -> Any:
-        if isinstance(raw_fact, dict):
-            return raw_fact.get(name, default)
-        return getattr(raw_fact, name, default)
-
-    source_message_id = get("source_message_id")
-    if source_message_id is None and message is not None:
-        source_message_id = str(message.id)
-
-    return {
-        "scope": get("scope"),
-        "key": get("key"),
-        "value": get("value"),
-        "confidence": get("confidence", "low"),
-        "source": get("source", "unknown"),
-        "source_message_id": source_message_id,
-        "source_excerpt": get("source_excerpt", get("evidence")),
-        "conversation_id": get(
-            "conversation_id",
-            getattr(message, "conversation_id", None) if message is not None else None,
-        ),
-        "needs_confirmation": get("needs_confirmation", False),
-    }
-
-
-def _merge_status(
-    *,
-    existing: CustomerFact | None,
-    key: str,
-    value: FactValue,
-    confidence: str,
-    scope: str,
-    source: str,
-    needs_confirmation: bool,
-) -> str:
-    if scope == "past_order_reference" or needs_confirmation:
-        return "proposed"
-    if scope == "current_order" and key == "order.items":
-        if (
-            source == "deterministic"
-            and confidence in {"high", "medium"}
-            and _is_valid_order_items_value(value)
-        ):
-            return "accepted"
-        return "proposed"
-    if existing is not None and existing.value != value:
-        return "conflict"
-    if confidence == "high":
-        return "accepted"
-    if confidence == "medium" and existing is None:
-        return "accepted"
-    return "proposed"
-
-
-def _is_replaceable_current_order_fact(*, scope: str, key: str) -> bool:
-    return scope == "current_order" and key == "order.items"
-
-
-def _is_valid_order_items_value(value: FactValue) -> bool:
-    if not isinstance(value, list) or not value:
-        return False
-    for item in value:
-        if not isinstance(item, dict):
-            return False
-        quantity = item.get("quantity")
-        if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity <= 0:
-            return False
-        catalog_ref = item.get("catalog_ref") or item.get("sku") or item.get("name")
-        if not isinstance(catalog_ref, str) or not catalog_ref.strip():
-            return False
-        source_text = item.get("source_text")
-        if source_text is not None and not isinstance(source_text, str):
-            return False
-    return True
 
 
 def _apply_profile_projection(profile: CustomerProfile, fact: CustomerFact) -> None:

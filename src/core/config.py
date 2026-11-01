@@ -31,8 +31,6 @@ class Settings(BaseSettings):
     app_debug: bool = False
     # Swagger/ReDoc/OpenAPI routes expose the full API map; opt-in only.
     app_docs_enabled: bool = False
-    app_host: str = "0.0.0.0"
-    app_port: int = 8000
     app_log_level: str = "INFO"
     app_secret_key: str = "change-me-in-production"
     # Emergency recovery gate: app accepts only Wazzup inbound and the worker
@@ -64,15 +62,8 @@ class Settings(BaseSettings):
         ),
     )
 
-    # Dialogue kernel rollout
-    dialogue_kernel_mode: str = "enforce"
-    dialogue_kernel_trace_enabled: bool = True
-    dialogue_kernel_enforced_flows: str = ""
-
     # Customer facts memory rollout
     customer_facts_mode: str = "disabled"
-    customer_facts_trace_enabled: bool = True
-    customer_facts_fast_extractor_enabled: bool = True
     customer_facts_max_context_orders: int = 3
 
     # Privacy controls
@@ -160,11 +151,6 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
-
-    @property
-    def voxtral_model(self) -> str:
-        """Deprecated Python alias for voice transcription configuration."""
-        return self.voice_transcription_model
 
     @property
     def migration_database_url(self) -> str:

@@ -19,6 +19,7 @@ import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+from src.core.text_utils import ARABIC_INDIC_DIGITS as _ARABIC_INDIC_DIGITS
 from src.dialogue.count_words import EN_COUNT_WORD_PATTERN, count_value
 from src.llm.money import amount_with_uae_vat, format_money, line_subtotal, round_money
 
@@ -48,7 +49,6 @@ _HOMOGLYPHS = str.maketrans(
         "х": "x",
     }
 )
-_ARABIC_INDIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
 _CODE_TOKEN_RE = re.compile(r"[a-z]*\d[a-z0-9]*(?:[-./][a-z0-9]+)*")
 _WORD_RE = re.compile(r"[a-z0-9]+(?:[-./][a-z0-9]+)*|[^\sa-z0-9]")
 _QTY_RE = re.compile(

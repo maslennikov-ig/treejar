@@ -188,12 +188,6 @@ class OrderIntent(BaseModel):
     quote_details: QuoteDetails = Field(default_factory=QuoteDetails)
     source_text: str = ""
 
-    @property
-    def has_complete_lines(self) -> bool:
-        return bool(self.lines) and all(
-            line.quantity and line.quantity > 0 for line in self.lines
-        )
-
 
 class OrderState(BaseModel):
     version: int = 1
@@ -522,34 +516,6 @@ def pending_question_frame_from_metadata(
     return None
 
 
-def pending_question_frame_to_metadata(
-    metadata: Mapping[str, Any] | None,
-    frame: PendingQuestionFrame,
-) -> dict[str, Any]:
-    updated = dict(metadata or {})
-    runtime = updated.get(ORDER_RUNTIME_METADATA_KEY)
-    runtime_metadata = dict(runtime) if isinstance(runtime, Mapping) else {}
-    runtime_metadata[PENDING_QUESTION_FRAME_METADATA_KEY] = frame.model_dump()
-    updated[ORDER_RUNTIME_METADATA_KEY] = runtime_metadata
-    return updated
-
-
-def pending_question_frame_cleared_metadata(
-    metadata: Mapping[str, Any] | None,
-) -> dict[str, Any]:
-    updated = dict(metadata or {})
-    runtime = updated.get(ORDER_RUNTIME_METADATA_KEY)
-    if not isinstance(runtime, Mapping):
-        return updated
-    runtime_metadata = dict(runtime)
-    runtime_metadata.pop(PENDING_QUESTION_FRAME_METADATA_KEY, None)
-    if runtime_metadata:
-        updated[ORDER_RUNTIME_METADATA_KEY] = runtime_metadata
-    else:
-        updated.pop(ORDER_RUNTIME_METADATA_KEY, None)
-    return updated
-
-
 def quote_frame_from_legacy_metadata(
     metadata: Mapping[str, Any] | None,
 ) -> QuoteFrame | None:
@@ -607,20 +573,6 @@ def quote_frame_is_active(frame: QuoteFrame | None) -> TypeGuard[QuoteFrame]:
         and frame.has_active_payload
         and frame.status in ACTIVE_QUOTE_FRAME_STATUSES
     )
-
-
-def quote_frame_cleared_metadata(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
-    updated = dict(metadata or {})
-    runtime = updated.get(ORDER_RUNTIME_METADATA_KEY)
-    if not isinstance(runtime, Mapping):
-        return updated
-    runtime_metadata = dict(runtime)
-    runtime_metadata.pop(QUOTE_FRAME_METADATA_KEY, None)
-    if runtime_metadata:
-        updated[ORDER_RUNTIME_METADATA_KEY] = runtime_metadata
-    else:
-        updated.pop(ORDER_RUNTIME_METADATA_KEY, None)
-    return updated
 
 
 def _source_text_for_catalog_ref(text: str, ref: Any) -> str:

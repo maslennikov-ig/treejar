@@ -447,60 +447,6 @@ def test_the_substantive_directive_does_noors_own_next_step() -> None:
     assert "a row you verified this turn" in lowered
 
 
-# --- what the customer said, recorded rather than re-parsed --------------------
-
-
-def test_a_product_name_survives_the_display_boundary() -> None:
-    """A real catalog name is words without function words, and must show."""
-
-    from types import SimpleNamespace
-
-    from src.llm.engine import _displayable_product_reference
-
-    line = SimpleNamespace(
-        source_text="SKYLAND NOVO 2400 Meeting Table", catalog_ref="CH-616"
-    )
-    assert _displayable_product_reference(line) == "SKYLAND NOVO 2400 Meeting Table"
-
-
-def test_the_customer_never_gets_their_own_sentence_back_as_a_product() -> None:
-    """2026-08-09, in a live conversation: a budget sentence came back as a
-    product reference. The catalog reference is the thing that is a product."""
-
-    from types import SimpleNamespace
-
-    from src.llm.engine import _displayable_product_reference
-
-    for prose in (
-        "lets say 300 aed max per chair. we need them by end of month",
-        "we need them by end of month",
-        "please send me what you have for the new office",
-    ):
-        line = SimpleNamespace(source_text=prose, catalog_ref="CH-616")
-        assert _displayable_product_reference(line) == "CH-616", prose
-
-
-def test_a_sentence_is_not_a_product_reference_unless_it_names_a_model() -> None:
-    """2026-08-09, live: a budget sentence passed the loose SKU signal on the
-    strength of "300" and came back to the customer as a product name."""
-
-    from src.llm import engine as engine_module
-
-    assert (
-        engine_module._missing_quantity_reference_segments_from_text(
-            "lets say 300 aed max per chair. we need them by end of month"
-        )
-        == ()
-    )
-    # A named model settles it, sentence or not.
-    assert engine_module._missing_quantity_reference_segments_from_text(
-        "I need SKYLAND NOVO 2400 Meeting Table"
-    )
-    assert engine_module._missing_quantity_reference_segments_from_text(
-        "CH 616 NEW black"
-    )
-
-
 # --- what the realistic openings found ---------------------------------------
 
 
@@ -523,7 +469,7 @@ def test_a_sku_typed_without_a_space_still_finds_the_product() -> None:
     """The catalog stores "CH 616"; a customer types "ch616". Before this,
     "hi do u have ch616 in black" got "I don't have live stock information"."""
 
-    from src.llm.engine import _sku_lookup_variants
+    from src.llm.catalog_references import _sku_lookup_variants
 
     variants = _sku_lookup_variants("ch616")
     assert "CH 616" in variants

@@ -72,13 +72,6 @@ def _get_telegram_client() -> TelegramClient:
     )
 
 
-def _mask_phone(phone: str) -> str:
-    """Mask phone number for external channels: +97150***4567."""
-    if len(phone) > 6:
-        return phone[:6] + "***" + phone[-4:]
-    return "***"
-
-
 def _format_bullets(items: list[str], *, fallback: str) -> str:
     cleaned = [item.strip() for item in items if item and item.strip()]
     values = cleaned or [fallback]
@@ -456,52 +449,6 @@ async def notify_catalog_mismatch(
             sku=sku or "",
         )
         logger.exception("Failed to send catalog mismatch notification to Telegram")
-
-
-async def notify_quality_alert(
-    conversation_id: UUID,
-    score: float,
-    rating: str,
-    summary: str,
-    *,
-    criteria: list[Any] | None = None,
-    current_stage: str | None = None,
-    trigger: str | None = "low_score",
-    phone: str | None = None,
-    customer_name: str | None = None,
-    inbound_channel_phone: str | None = None,
-    conversation_created_at: datetime | None = None,
-    last_activity_at: datetime | None = None,
-) -> None:
-    """Send quality alert notification when score is below threshold.
-
-    Safe to call even when Telegram is not configured.
-    """
-    try:
-        client = _get_telegram_client()
-        message = format_quality_alert_message(
-            conversation_id,
-            score,
-            rating,
-            summary,
-            criteria=criteria,
-            current_stage=current_stage,
-            trigger=trigger,
-            phone=phone,
-            customer_name=customer_name,
-            inbound_channel_phone=inbound_channel_phone,
-            conversation_created_at=conversation_created_at,
-            last_activity_at=last_activity_at,
-        )
-        await client.send_message(message)
-    except Exception:
-        logfire.error(
-            "telegram.notify_quality_alert.failed",
-            notification_type="quality_alert",
-            conv_id=str(conversation_id),
-            score=score,
-        )
-        logger.exception("Failed to send quality alert notification to Telegram")
 
 
 async def notify_red_flag_warning(

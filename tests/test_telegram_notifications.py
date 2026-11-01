@@ -799,42 +799,6 @@ async def test_notify_final_quality_review_calls_telegram() -> None:
 
 
 @pytest.mark.asyncio
-async def test_notify_quality_alert_calls_telegram() -> None:
-    """Legacy notify_quality_alert should remain callable for compatibility."""
-    from src.services.notifications import notify_quality_alert
-
-    conv_id = uuid4()
-
-    with patch("src.services.notifications.TelegramClient") as MockTg:
-        mock_instance = AsyncMock()
-        MockTg.return_value = mock_instance
-        mock_instance.send_message = AsyncMock()
-
-        await notify_quality_alert(
-            conv_id,
-            score=8.0,
-            rating="poor",
-            summary="Bad",
-            phone="+971501234567",
-            customer_name="not specified",
-            inbound_channel_phone="+971551220665",
-            conversation_created_at=datetime(2026, 4, 9, 9, 0, tzinfo=UTC),
-            last_activity_at=datetime(2026, 4, 9, 10, 0, tzinfo=UTC),
-        )
-
-        mock_instance.send_message.assert_called_once()
-
-    with patch("src.services.notifications.TelegramClient") as MockTg:
-        mock_instance = AsyncMock()
-        MockTg.return_value = mock_instance
-        mock_instance.send_message = AsyncMock()
-
-        await notify_quality_alert(conv_id, score=8.0, rating="poor", summary="Bad")
-
-        mock_instance.send_message.assert_called_once()
-
-
-@pytest.mark.asyncio
 async def test_notify_daily_summary_formats_metrics() -> None:
     """notify_daily_summary should format dashboard metrics as HTML."""
     from src.services.daily_summary import DailySummaryData

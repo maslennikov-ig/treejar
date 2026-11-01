@@ -149,10 +149,6 @@ def _is_question(text: str) -> bool:
     return "?" in text or "\u061f" in text
 
 
-def _question_lines(lines: list[str]) -> list[int]:
-    return [index for index, line in enumerate(lines) if _is_question(line)]
-
-
 def collapse_question_form(text: str, *, language: str = "en") -> str:
     """One question per reply, whether or not it was punctuated as one.
 

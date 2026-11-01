@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import inspect
 import re
-from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Iterable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 from src.dialogue.count_words import parse_count_word
-from src.dialogue.order_state import QuoteConsent
 from src.llm.response_policy import (
     AskKind,
     RenderedReply,
@@ -42,12 +41,6 @@ class LLMResponse:
     repair_policy_state: ReplyPolicyState | None = None
     repair_trace: RepairJudgeTrace | None = None
     emitted_asks: frozenset[AskKind] = frozenset()
-
-
-@dataclass(frozen=True)
-class CustomerFactsRun:
-    context_text: str | None = None
-    past_order_response: str | None = None
 
 
 @asynccontextmanager
@@ -549,58 +542,10 @@ def _referenced_product_media(
     )
 
 
-@dataclass(frozen=True)
-class ExactQuoteCandidate:
-    quantity: int
-    item_candidate: str
-    sku: str | None
-
-
-@dataclass(frozen=True)
-class PurchaseSelectionItem:
-    quantity: int
-    item_candidate: str
+@dataclass
+class QuotationItem:
     sku: str
-    stated_unit_price: float | None = None
-    stated_currency: str | None = None
-
-
-@dataclass(frozen=True)
-class PurchaseSelection:
-    items: tuple[PurchaseSelectionItem, ...]
-    order_runtime_trace: Mapping[str, Any] | None = None
-
-
-@dataclass(frozen=True)
-class OrderRuntimePurchaseSelection:
-    selection: PurchaseSelection | None
-    block_legacy: bool = False
-
-
-@dataclass(frozen=True)
-class ResolvedPurchaseSelectionItem:
-    requested: PurchaseSelectionItem
-    product: Any
-    availability: int | None
-    unit_price: float | None
-    currency: str
-    availability_source: Literal["zoho", "catalog", "unconfirmed"]
-    source_caption: str | None = None
-
-
-@dataclass(frozen=True)
-class PurchaseSelectionResolution:
-    resolved: tuple[ResolvedPurchaseSelectionItem, ...]
-    unresolved: tuple[PurchaseSelectionItem, ...]
-
-
-@dataclass(frozen=True)
-class SalesOpportunityRequest:
-    amount: float | None
-    currency: str | None
-    quote_consent: QuoteConsent
-    decision_horizon_days: int | None = None
-    decision_horizon_hours: int | None = None
+    quantity: int
 
 
 @dataclass(frozen=True)
@@ -610,13 +555,6 @@ class SalesOpportunityWriteResult:
     stage: str | None = None
     reused: bool = False
     error: str | None = None
-
-
-@dataclass(frozen=True)
-class PendingReferenceRoute:
-    selection: PurchaseSelection | None = None
-    clear_pending_reference_quantity: bool = False
-    clear_pending_question_frame: bool = False
 
 
 @dataclass(frozen=True)
