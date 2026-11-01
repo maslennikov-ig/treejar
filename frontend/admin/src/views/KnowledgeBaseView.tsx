@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     BookOpen,
     CheckCircle2,
@@ -59,8 +59,9 @@ const EMPTY_KB_FORM: AdminKnowledgeBaseWrite = {
     category: 'faq',
 };
 
-const KB_CATEGORIES = [
+export const KB_CATEGORIES = [
     { value: 'faq', labelRu: 'FAQ (Частые вопросы)', labelEn: 'FAQ' },
+    { value: 'products', labelRu: 'Товары и комплектации', labelEn: 'Products & specs' },
     { value: 'delivery', labelRu: 'Доставка и сборка', labelEn: 'Delivery & assembly' },
     { value: 'warranty', labelRu: 'Гарантия и возврат', labelEn: 'Warranty & returns' },
     { value: 'payment', labelRu: 'Оплата и VAT 5%', labelEn: 'Payment & 5% VAT' },
@@ -113,10 +114,12 @@ export default function KnowledgeBaseView({
 
     const [entries, setEntries] = useState<AdminKnowledgeBaseRead[]>([]);
     const [candidates, setCandidates] = useState<AdminKnowledgeBaseCandidate[]>([]);
+    const [candidatesTotal, setCandidatesTotal] = useState(0);
     const [selected, setSelected] = useState<AdminKnowledgeBaseRead | null>(null);
     const [form, setForm] = useState<AdminKnowledgeBaseWrite>(EMPTY_KB_FORM);
     const [preview, setPreview] = useState<AdminKnowledgeBasePreview | null>(null);
     const [search, setSearch] = useState(globalSearch);
+    const [debouncedSearch, setDebouncedSearch] = useState(globalSearch);
     const [categoryFilter, setCategoryFilter] = useState('');
     const [loaded, setLoaded] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -125,16 +128,27 @@ export default function KnowledgeBaseView({
     const [deleteTarget, setDeleteTarget] = useState<AdminKnowledgeBaseRead | null>(null);
     const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
     const [pendingSelectEntry, setPendingSelectEntry] = useState<AdminKnowledgeBaseRead | 'new' | null>(null);
+    const selectedRef = useRef<AdminKnowledgeBaseRead | null>(null);
+    selectedRef.current = selected;
+    const lastRefreshSignalRef = useRef(refreshSignal);
 
     useEffect(() => {
         setSearch(globalSearch);
+        setDebouncedSearch(globalSearch);
     }, [globalSearch]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(search);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [search]);
 
     const isDirty = useMemo(() => isKbFormDirty(form, selected), [form, selected]);
 
     const load = useCallback(async () => {
         const params = new URLSearchParams({ page_size: '50' });
-        if (search.trim()) params.set('search', search.trim());
+        if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
         if (categoryFilter) params.set('category', categoryFilter);
 
         let [entryPayload, candidatePayload] = await Promise.all([
@@ -143,7 +157,7 @@ export default function KnowledgeBaseView({
         ]);
 
         if (
-            !search.trim() &&
+            !debouncedSearch.trim() &&
             !categoryFilter &&
             entryPayload.items.length === 0 &&
             !autoSeededCanonicalKinds.has('knowledge')
@@ -152,17 +166,19 @@ export default function KnowledgeBaseView({
             try {
                 await runCanonicalSync('knowledge', 'safe');
                 entryPayload = await fetchKnowledgeBaseEntries(params);
-            } catch {
-                // Keep empty state visible if background auto-seed fails.
+            } catch (syncErr) {
+                setError(t('kb.autoSeedError', { detail: errorMessage(syncErr, t) }));
             }
         }
 
+        const totalPendingCandidates = candidatePayload.total ?? candidatePayload.items.length;
         setEntries(entryPayload.items);
         setCandidates(candidatePayload.items);
-        onCandidatesCountChange?.(candidatePayload.items.length);
+        setCandidatesTotal(totalPendingCandidates);
+        onCandidatesCountChange?.(totalPendingCandidates);
         setLoaded(true);
 
-        if (!selected && entryPayload.items.length > 0) {
+        if (!selectedRef.current && entryPayload.items.length > 0) {
             const match = externalSelectedId
                 ? entryPayload.items.find((item) => item.id === externalSelectedId) ?? entryPayload.items[0]
                 : entryPayload.items[0];
@@ -171,13 +187,15 @@ export default function KnowledgeBaseView({
                 setForm(entryToForm(match));
             }
         }
-    }, [categoryFilter, externalSelectedId, onCandidatesCountChange, search, selected]);
+    }, [categoryFilter, debouncedSearch, externalSelectedId, onCandidatesCountChange, t]);
 
     useEffect(() => {
         load().catch((err: unknown) => setError(errorMessage(err, t)));
     }, [load, t]);
 
     useEffect(() => {
+        if (refreshSignal === lastRefreshSignalRef.current) return;
+        lastRefreshSignalRef.current = refreshSignal;
         if (!refreshSignal) return;
         load().catch((err: unknown) => setError(errorMessage(err, t)));
     }, [refreshSignal, load, t]);
@@ -328,18 +346,30 @@ export default function KnowledgeBaseView({
         await load();
     }
 
-    function renderSourceBadge(source: string) {
+    function renderSourceBadge(source: string, isCustomized?: boolean) {
+        if (source === 'canonical_treejar_custom' || (source === 'canonical_treejar' && isCustomized)) {
+            return <Badge label={t('kb.source.customized')} tone="amber" />;
+        }
         if (source === 'canonical_treejar') {
             return <Badge label={t('kb.source.canonical')} tone="blue" />;
-        }
-        if (source === 'canonical_treejar_custom') {
-            return <Badge label={t('kb.source.customized')} tone="amber" />;
         }
         if (source === 'auto_faq') {
             return <Badge label="Auto-FAQ" tone="green" />;
         }
         return <Badge label={t('kb.source.manual')} tone="gray" />;
     }
+
+    const categoryOptions = useMemo(() => {
+        const base: Array<{ value: string; label: string }> = KB_CATEGORIES.map((cat) => ({
+            value: cat.value,
+            label: lang === 'ru' ? cat.labelRu : cat.labelEn,
+        }));
+        const currentCategory = form.category || 'faq';
+        if (currentCategory && !base.some((opt) => opt.value === currentCategory)) {
+            base.push({ value: currentCategory, label: currentCategory });
+        }
+        return base;
+    }, [form.category, lang]);
 
     return (
         <>
@@ -355,7 +385,7 @@ export default function KnowledgeBaseView({
                         >
                             <Sparkles size={13} className="text-[var(--accent-primary)]" />
                             <span>
-                                {t('kb.autoFaqButton', { count: candidates.length })}
+                                {t('kb.autoFaqButton', { count: candidatesTotal })}
                             </span>
                         </button>
                         <CanonicalSyncButton kind="knowledge" onSynced={handleCanonicalSynced} />
@@ -450,7 +480,7 @@ export default function KnowledgeBaseView({
                                         {entry.content}
                                     </p>
                                     <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
-                                        {renderSourceBadge(entry.source)}
+                                        {renderSourceBadge(entry.source, entry.is_canonical_customized)}
                                         <span>·</span>
                                         <span className="uppercase font-medium">{entry.language}</span>
                                         <span>·</span>
@@ -477,7 +507,7 @@ export default function KnowledgeBaseView({
                         </div>
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-[var(--text-muted)]">{t('kb.field.source')}:</span>
-                            {renderSourceBadge(selected?.source ?? form.source)}
+                            {renderSourceBadge(selected?.source ?? form.source, selected?.is_canonical_customized)}
                         </div>
                     </div>
 
@@ -498,7 +528,7 @@ export default function KnowledgeBaseView({
                                     className="mt-1 flex h-9 items-center rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-xs font-medium text-[var(--text-secondary)]"
                                     data-kb-source-badge=""
                                 >
-                                    {renderSourceBadge(selected?.source ?? form.source)}
+                                    {renderSourceBadge(selected?.source ?? form.source, selected?.is_canonical_customized)}
                                 </div>
                             </div>
 
@@ -517,10 +547,7 @@ export default function KnowledgeBaseView({
                                 label={t('kb.field.category')}
                                 help={t('kb.help.category')}
                                 value={form.category || 'faq'}
-                                options={KB_CATEGORIES.map((cat) => ({
-                                    value: cat.value,
-                                    label: lang === 'ru' ? cat.labelRu : cat.labelEn,
-                                }))}
+                                options={categoryOptions}
                                 onChange={(value) => setForm({ ...form, category: value || 'faq' })}
                             />
                         </div>

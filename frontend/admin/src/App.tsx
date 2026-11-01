@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import {
     AlertTriangle,
@@ -15,8 +15,8 @@ import {
     Sun,
     X,
 } from 'lucide-react';
+import { fetchKnowledgeBaseCandidates, fetchSystemHealth } from '@/api/crm';
 import { fetchAdminSession } from '@/api/operators';
-import AcceptanceDemo from '@/components/AcceptanceDemo';
 import BrandMark from '@/components/BrandMark';
 import { HelpTooltip } from '@/components/HelpTooltip';
 import { useOnboardingTour } from '@/components/OnboardingTour';
@@ -33,16 +33,18 @@ import { ThemeProvider, useTheme } from '@/theme';
 import type { AdminTheme } from '@/theme';
 import type { Period } from '@/types/metrics';
 import type { AdminSessionInfo } from '@/types/operators';
-import AuditSystemView from '@/views/AuditSystemView';
-import BotRulesView from '@/views/BotRulesView';
-import CatalogView from '@/views/CatalogView';
-import ConversationsView from '@/views/ConversationsView';
-import GuideView from '@/views/GuideView';
-import KnowledgeBaseView from '@/views/KnowledgeBaseView';
-import OverviewView from '@/views/OverviewView';
-import QueuesQualityView from '@/views/QueuesQualityView';
-import ReportsView from '@/views/ReportsView';
-import SettingsView from '@/views/SettingsView';
+
+const AcceptanceDemo = lazy(() => import('@/components/AcceptanceDemo'));
+const AuditSystemView = lazy(() => import('@/views/AuditSystemView'));
+const BotRulesView = lazy(() => import('@/views/BotRulesView'));
+const CatalogView = lazy(() => import('@/views/CatalogView'));
+const ConversationsView = lazy(() => import('@/views/ConversationsView'));
+const GuideView = lazy(() => import('@/views/GuideView'));
+const KnowledgeBaseView = lazy(() => import('@/views/KnowledgeBaseView'));
+const OverviewView = lazy(() => import('@/views/OverviewView'));
+const QueuesQualityView = lazy(() => import('@/views/QueuesQualityView'));
+const ReportsView = lazy(() => import('@/views/ReportsView'));
+const SettingsView = lazy(() => import('@/views/SettingsView'));
 
 export const PERIOD_STORAGE_KEY = 'treejar_admin_period';
 
@@ -99,6 +101,19 @@ const VIEWS_WITH_LOCAL_SEARCH: AdminViewId[] = [
     'botRules',
 ];
 
+function ViewLoadingFallback() {
+    const { t } = useI18n();
+    return (
+        <div
+            className="flex min-h-[240px] items-center justify-center p-8 text-xs font-medium text-[var(--text-muted)]"
+            data-view-loading-fallback=""
+        >
+            <RefreshCw size={15} className="mr-2 animate-spin text-[var(--accent-primary)]" />
+            <span>{t('common.loading')}</span>
+        </div>
+    );
+}
+
 export default function App({
     initialLang,
     initialTheme,
@@ -115,7 +130,9 @@ export default function App({
     if (routeMode === 'acceptance-public') {
         return (
             <ThemeProvider initialTheme={initialTheme}>
-                <PublicAcceptanceApp />
+                <LanguageProvider initialLang={initialLang}>
+                    <PublicAcceptanceApp />
+                </LanguageProvider>
             </ThemeProvider>
         );
     }
@@ -135,6 +152,7 @@ export default function App({
 }
 
 function PublicAcceptanceApp() {
+    const { t } = useI18n();
     return (
         <div className="min-h-screen bg-[var(--bg-app)] px-4 py-6 text-[var(--text-primary)] sm:px-6 lg:px-8">
             <header className="mx-auto mb-8 max-w-7xl">
@@ -145,15 +163,17 @@ function PublicAcceptanceApp() {
                         className="h-9 w-9 shrink-0 rounded-lg"
                     />
                     <h1 className="text-2xl font-bold text-[var(--text-primary)]">
-                        <span className="text-[var(--accent-primary)]">TreeJar</span> Acceptance Demo
+                        {t('acceptance.publicTitle')}
                     </h1>
                 </div>
                 <p className="mt-1 text-sm text-[var(--text-secondary)]">
-                    Прямая self-test страница для клиентской проверки WhatsApp, Telegram и backend-сценариев.
+                    {t('acceptance.publicSubtitle')}
                 </p>
             </header>
             <main className="mx-auto max-w-7xl">
-                <AcceptanceDemo />
+                <Suspense fallback={<ViewLoadingFallback />}>
+                    <AcceptanceDemo />
+                </Suspense>
             </main>
         </div>
     );
@@ -184,13 +204,35 @@ function DashboardApp({
     const [sessionInfo, setSessionInfo] = useState<AdminSessionInfo | null>(null);
     const [accountMenuOpen, setAccountMenuOpen] = useState(false);
     const accountMenuRef = useRef<HTMLDivElement | null>(null);
-    const { data, timeseries, loading, error, refetch } = useMetrics(period);
+    const { data, timeseries, loading, error, refetch } = useMetrics(
+        period,
+        activeView === 'overview',
+    );
 
     const [queueCounts, setQueueCounts] = useState<{
         escalations: number;
         pendingReviews: number;
     }>({ escalations: 0, pendingReviews: 0 });
     const [kbCandidatesCount, setKbCandidatesCount] = useState<number>(0);
+
+    const loadShellCounts = useCallback(async () => {
+        if (typeof window === 'undefined' || typeof globalThis.fetch !== 'function') return;
+        const [healthRes, kbRes] = await Promise.allSettled([
+            fetchSystemHealth(),
+            fetchKnowledgeBaseCandidates(
+                new URLSearchParams({ status: 'needs_confirmation', page_size: '1' }),
+            ),
+        ]);
+        if (healthRes.status === 'fulfilled') {
+            setQueueCounts({
+                escalations: healthRes.value.open_escalations_count ?? 0,
+                pendingReviews: healthRes.value.pending_manager_reviews_count ?? 0,
+            });
+        }
+        if (kbRes.status === 'fulfilled') {
+            setKbCandidatesCount(kbRes.value.total ?? kbRes.value.items.length);
+        }
+    }, []);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -199,7 +241,8 @@ function DashboardApp({
             .catch(() => {
                 // Keep fallback session label when offline or unmounted.
             });
-    }, []);
+        void loadShellCounts();
+    }, [loadShellCounts]);
 
     useEffect(() => {
         if (!accountMenuOpen || typeof document === 'undefined') return;
@@ -234,11 +277,10 @@ function DashboardApp({
         }
     }, [data?.escalation_count, queueCounts.escalations]);
 
+    const openEscalationsBadge = queueCounts.escalations || (data?.escalation_count ?? 0);
     const badges: NavBadgeCounts = {
-        conversations: data?.escalation_count ?? 0,
-        queuesQuality:
-            (queueCounts.escalations || (data?.escalation_count ?? 0)) +
-            queueCounts.pendingReviews,
+        conversations: openEscalationsBadge,
+        queuesQuality: openEscalationsBadge + queueCounts.pendingReviews,
         knowledge: kbCandidatesCount,
     };
 
@@ -266,7 +308,10 @@ function DashboardApp({
               : t('header.authMethod.session');
 
     function handleGlobalRefresh() {
-        void refetch();
+        if (activeView === 'overview') {
+            void refetch();
+        }
+        void loadShellCounts();
         setRefreshSignal((prev) => prev + 1);
     }
 
@@ -536,102 +581,106 @@ function DashboardApp({
                     )}
 
                     <div className="min-h-0 flex-1">
-                        {activeView === 'overview' && (
-                            <div className="p-4">
-                                <OverviewView
-                                    period={period}
-                                    onPeriodChange={handlePeriodChange}
-                                    data={data}
-                                    timeseries={timeseries}
-                                    loading={loading}
-                                    error={error}
-                                    onNavigate={navigate}
-                                    onRefresh={handleGlobalRefresh}
+                        <Suspense fallback={<ViewLoadingFallback />}>
+                            {activeView === 'overview' && (
+                                <div className="p-4">
+                                    <OverviewView
+                                        period={period}
+                                        onPeriodChange={handlePeriodChange}
+                                        data={data}
+                                        timeseries={timeseries}
+                                        loading={loading}
+                                        error={error}
+                                        onNavigate={navigate}
+                                        onRefresh={handleGlobalRefresh}
+                                        refreshSignal={refreshSignal}
+                                    />
+                                </div>
+                            )}
+
+                            {activeView === 'conversations' && (
+                                <ConversationsView
+                                    globalSearch={globalSearchQuery}
+                                    initialId={route.id}
+                                    initialFilter={route.filter}
+                                    initialLanguage={route.language}
+                                    initialStatus={route.status}
+                                    initialStage={route.stage}
+                                    initialEscalation={route.escalation}
+                                    initialDateFrom={route.date_from}
+                                    refreshSignal={refreshSignal}
+                                    onSelectConversationId={(id) => navigate({ id }, true)}
+                                    onClearRouteFilter={() => navigate({ filter: undefined }, true)}
+                                    onClearDateFrom={() => navigate({ date_from: undefined }, true)}
+                                />
+                            )}
+
+                            {activeView === 'queuesQuality' && (
+                                <QueuesQualityView
+                                    globalSearch={globalSearchQuery}
+                                    activeTab={route.tab}
+                                    onTabChange={(tab) => navigate({ tab })}
+                                    onOpenConversation={(conversationId) =>
+                                        navigate({ view: 'conversations', id: conversationId })
+                                    }
+                                    onCountsChange={setQueueCounts}
+                                    refetchMetrics={() => void refetch()}
                                     refreshSignal={refreshSignal}
                                 />
-                            </div>
-                        )}
+                            )}
 
-                        {activeView === 'conversations' && (
-                            <ConversationsView
-                                globalSearch={globalSearchQuery}
-                                initialId={route.id}
-                                initialFilter={route.filter}
-                                initialLanguage={route.language}
-                                initialStatus={route.status}
-                                initialStage={route.stage}
-                                initialEscalation={route.escalation}
-                                refreshSignal={refreshSignal}
-                                onSelectConversationId={(id) => navigate({ id }, true)}
-                                onClearRouteFilter={() => navigate({ filter: undefined }, true)}
-                            />
-                        )}
+                            {activeView === 'knowledge' && (
+                                <KnowledgeBaseView
+                                    globalSearch={globalSearchQuery}
+                                    selectedId={route.id}
+                                    onSelectId={(id) => navigate({ id: id || undefined }, true)}
+                                    onCandidatesCountChange={setKbCandidatesCount}
+                                    refreshSignal={refreshSignal}
+                                />
+                            )}
 
-                        {activeView === 'queuesQuality' && (
-                            <QueuesQualityView
-                                globalSearch={globalSearchQuery}
-                                activeTab={route.tab}
-                                onTabChange={(tab) => navigate({ tab })}
-                                onOpenConversation={(conversationId) =>
-                                    navigate({ view: 'conversations', id: conversationId })
-                                }
-                                onCountsChange={setQueueCounts}
-                                refetchMetrics={() => void refetch()}
-                                refreshSignal={refreshSignal}
-                            />
-                        )}
+                            {activeView === 'botRules' && (
+                                <BotRulesView
+                                    globalSearch={globalSearchQuery}
+                                    selectedId={route.id}
+                                    onSelectId={(id) => navigate({ id: id || undefined }, true)}
+                                    refreshSignal={refreshSignal}
+                                />
+                            )}
 
-                        {activeView === 'knowledge' && (
-                            <KnowledgeBaseView
-                                globalSearch={globalSearchQuery}
-                                selectedId={route.id}
-                                onSelectId={(id) => navigate({ id: id || undefined }, true)}
-                                onCandidatesCountChange={setKbCandidatesCount}
-                                refreshSignal={refreshSignal}
-                            />
-                        )}
+                            {activeView === 'catalog' && <CatalogView refreshSignal={refreshSignal} />}
 
-                        {activeView === 'botRules' && (
-                            <BotRulesView
-                                globalSearch={globalSearchQuery}
-                                selectedId={route.id}
-                                onSelectId={(id) => navigate({ id: id || undefined }, true)}
-                                refreshSignal={refreshSignal}
-                            />
-                        )}
+                            {activeView === 'reports' && <ReportsView refreshSignal={refreshSignal} />}
 
-                        {activeView === 'catalog' && <CatalogView refreshSignal={refreshSignal} />}
+                            {activeView === 'settings' && <SettingsView refreshSignal={refreshSignal} />}
 
-                        {activeView === 'reports' && <ReportsView refreshSignal={refreshSignal} />}
+                            {activeView === 'auditSystem' && (
+                                <AuditSystemView
+                                    globalSearch={globalSearchQuery}
+                                    activeTab={route.tab}
+                                    onTabChange={(tab) => navigate({ tab })}
+                                    onNavigateEntity={(view, id) => navigate({ view, id })}
+                                    refreshSignal={refreshSignal}
+                                />
+                            )}
 
-                        {activeView === 'settings' && <SettingsView refreshSignal={refreshSignal} />}
+                            {activeView === 'guide' && (
+                                <GuideView
+                                    globalSearch={globalSearchQuery}
+                                    activeTab={route.tab}
+                                    onTabChange={(tab) => navigate({ tab })}
+                                    onNavigate={navigate}
+                                    onStartTour={startTour}
+                                    onClearSearch={() => setGlobalSearchQuery('')}
+                                />
+                            )}
 
-                        {activeView === 'auditSystem' && (
-                            <AuditSystemView
-                                globalSearch={globalSearchQuery}
-                                activeTab={route.tab}
-                                onTabChange={(tab) => navigate({ tab })}
-                                onNavigateEntity={(view, id) => navigate({ view, id })}
-                                refreshSignal={refreshSignal}
-                            />
-                        )}
-
-                        {activeView === 'guide' && (
-                            <GuideView
-                                globalSearch={globalSearchQuery}
-                                activeTab={route.tab}
-                                onTabChange={(tab) => navigate({ tab })}
-                                onNavigate={navigate}
-                                onStartTour={startTour}
-                                onClearSearch={() => setGlobalSearchQuery('')}
-                            />
-                        )}
-
-                        {activeView === 'acceptance' && (
-                            <div className="p-5" data-acceptance-view="">
-                                <AcceptanceDemo />
-                            </div>
-                        )}
+                            {activeView === 'acceptance' && (
+                                <div className="p-5" data-acceptance-view="">
+                                    <AcceptanceDemo />
+                                </div>
+                            )}
+                        </Suspense>
                     </div>
                 </main>
             </div>

@@ -128,7 +128,7 @@ try {
     assert.deepEqual(scopesNeedingManualMode(config), ['bot_qa']);
     assert.deepEqual(
         buildEnableManualModePayload({ bot_qa: { mode: 'disabled' }, manager_qa: { mode: 'disabled' }, red_flags: { mode: 'disabled' } }),
-        { bot_qa: { mode: 'manual' }, manager_qa: { mode: 'manual' }, red_flags: { mode: 'manual' } },
+        { bot_qa: { mode: 'manual' }, manager_qa: { mode: 'manual' } },
     );
     assert.deepEqual(buildEnableManualModePayload(null), {});
 

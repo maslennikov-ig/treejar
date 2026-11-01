@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { driver } from 'driver.js';
 import type { DriveStep, Driver } from 'driver.js';
 import type { AdminViewId } from '@/components/Sidebar';
-import { TOUR_TRACKS, pickText } from '@/data/adminGuideData';
 import type { TourTrackId } from '@/data/adminGuideData';
 import type { AdminRouteState } from '@/hooks/useAdminRouter';
 import { useI18n } from '@/i18n';
@@ -79,92 +77,97 @@ export function useOnboardingTour({ navigate }: UseOnboardingTourOptions) {
             stopActiveTour();
             markOnboardingTourSeen();
 
-            const specs = TOUR_TRACKS[trackId] ?? TOUR_TRACKS.full;
-            if (specs.length === 0) return;
+            void Promise.all([
+                import('driver.js'),
+                import('@/data/adminGuideData'),
+            ]).then(([{ driver }, { TOUR_TRACKS, pickText }]) => {
+                const specs = TOUR_TRACKS[trackId] ?? TOUR_TRACKS.full;
+                if (specs.length === 0) return;
 
-            const navigateAndMove = (drv: Driver, targetIndex: number) => {
-                if (targetIndex < 0 || targetIndex >= specs.length) {
-                    drv.destroy();
-                    return;
-                }
-                const targetSpec = specs[targetIndex];
-                if (targetSpec.route) {
-                    navigate(targetSpec.route);
+                const navigateAndMove = (drv: Driver, targetIndex: number) => {
+                    if (targetIndex < 0 || targetIndex >= specs.length) {
+                        drv.destroy();
+                        return;
+                    }
+                    const targetSpec = specs[targetIndex];
+                    if (targetSpec.route) {
+                        navigate(targetSpec.route);
+                        rafRef.current = window.requestAnimationFrame(() => {
+                            rafRef.current = window.requestAnimationFrame(() => {
+                                rafRef.current = null;
+                                if (drv.isActive()) {
+                                    drv.moveTo(targetIndex);
+                                }
+                            });
+                        });
+                    } else {
+                        drv.moveTo(targetIndex);
+                    }
+                };
+
+                const steps: DriveStep[] = specs.map((spec) => ({
+                    ...(spec.selector ? { element: spec.selector } : {}),
+                    popover: {
+                        title: pickText(spec.title, lang),
+                        description: pickText(spec.description, lang),
+                        ...(spec.side ? { side: spec.side } : {}),
+                        ...(spec.align ? { align: spec.align } : {}),
+                    },
+                }));
+
+                const drv = driver({
+                    animate: true,
+                    smoothScroll: true,
+                    allowClose: true,
+                    allowKeyboardControl: true,
+                    overlayOpacity: 0.62,
+                    stagePadding: 8,
+                    stageRadius: 12,
+                    popoverOffset: 12,
+                    waitForElement: 700,
+                    popoverClass: 'noor-tour-popover',
+                    showProgress: true,
+                    progressText: t('tour.progress'),
+                    nextBtnText: t('tour.btnNext'),
+                    prevBtnText: t('tour.btnPrev'),
+                    doneBtnText: t('tour.btnDone'),
+                    closeBtnLabel: t('tour.btnClose'),
+                    steps,
+                    onNextClick: (_el, _step, opts) => {
+                        const current = opts.state.activeIndex ?? 0;
+                        if (current + 1 >= specs.length) {
+                            opts.driver.destroy();
+                            return;
+                        }
+                        navigateAndMove(opts.driver, current + 1);
+                    },
+                    onPrevClick: (_el, _step, opts) => {
+                        const current = opts.state.activeIndex ?? 0;
+                        if (current <= 0) return;
+                        navigateAndMove(opts.driver, current - 1);
+                    },
+                    onDestroyed: () => {
+                        if (driverRef.current === drv) {
+                            driverRef.current = null;
+                        }
+                    },
+                });
+
+                driverRef.current = drv;
+
+                const firstSpec = specs[0];
+                if (firstSpec.route) {
+                    navigate(firstSpec.route);
                     rafRef.current = window.requestAnimationFrame(() => {
                         rafRef.current = window.requestAnimationFrame(() => {
                             rafRef.current = null;
-                            if (drv.isActive()) {
-                                drv.moveTo(targetIndex);
-                            }
+                            drv.drive(0);
                         });
                     });
                 } else {
-                    drv.moveTo(targetIndex);
+                    drv.drive(0);
                 }
-            };
-
-            const steps: DriveStep[] = specs.map((spec) => ({
-                ...(spec.selector ? { element: spec.selector } : {}),
-                popover: {
-                    title: pickText(spec.title, lang),
-                    description: pickText(spec.description, lang),
-                    ...(spec.side ? { side: spec.side } : {}),
-                    ...(spec.align ? { align: spec.align } : {}),
-                },
-            }));
-
-            const drv = driver({
-                animate: true,
-                smoothScroll: true,
-                allowClose: true,
-                allowKeyboardControl: true,
-                overlayOpacity: 0.62,
-                stagePadding: 8,
-                stageRadius: 12,
-                popoverOffset: 12,
-                waitForElement: 700,
-                popoverClass: 'noor-tour-popover',
-                showProgress: true,
-                progressText: t('tour.progress'),
-                nextBtnText: t('tour.btnNext'),
-                prevBtnText: t('tour.btnPrev'),
-                doneBtnText: t('tour.btnDone'),
-                closeBtnLabel: t('tour.btnClose'),
-                steps,
-                onNextClick: (_el, _step, opts) => {
-                    const current = opts.state.activeIndex ?? 0;
-                    if (current + 1 >= specs.length) {
-                        opts.driver.destroy();
-                        return;
-                    }
-                    navigateAndMove(opts.driver, current + 1);
-                },
-                onPrevClick: (_el, _step, opts) => {
-                    const current = opts.state.activeIndex ?? 0;
-                    if (current <= 0) return;
-                    navigateAndMove(opts.driver, current - 1);
-                },
-                onDestroyed: () => {
-                    if (driverRef.current === drv) {
-                        driverRef.current = null;
-                    }
-                },
             });
-
-            driverRef.current = drv;
-
-            const firstSpec = specs[0];
-            if (firstSpec.route) {
-                navigate(firstSpec.route);
-                rafRef.current = window.requestAnimationFrame(() => {
-                    rafRef.current = window.requestAnimationFrame(() => {
-                        rafRef.current = null;
-                        drv.drive(0);
-                    });
-                });
-            } else {
-                drv.drive(0);
-            }
         },
         [lang, navigate, stopActiveTour, t],
     );

@@ -14,12 +14,27 @@ import type {
     PendingManagerReview,
     ProductSyncResponse,
     ProductSyncSource,
-    RecentFeedbackRead,
-    ReferralPolicyResponse,
 } from '@/types/operators';
 
 const API_BASE = '/api/v1/admin';
 const PUBLIC_CLIENT_SELF_TEST_API_BASE = '/api/v1/client-self-test';
+
+function formatValidationDetailItem(item: unknown): string {
+    if (typeof item === 'string') return item;
+    if (item && typeof item === 'object') {
+        const record = item as { loc?: unknown; msg?: unknown };
+        const msg = typeof record.msg === 'string' ? record.msg : '';
+        const loc = Array.isArray(record.loc)
+            ? record.loc
+                  .filter((part) => part !== 'body' && part !== 'query' && part !== 'path')
+                  .map(String)
+                  .join('.')
+            : '';
+        if (loc && msg) return `${loc}: ${msg}`;
+        if (msg) return msg;
+    }
+    return JSON.stringify(item);
+}
 
 async function responseError(response: Response): Promise<Error> {
     const text = await response.text();
@@ -29,7 +44,7 @@ async function responseError(response: Response): Promise<Error> {
             return new Error(payload.detail);
         }
         if (Array.isArray(payload.detail)) {
-            return new Error(payload.detail.map((item) => JSON.stringify(item)).join('; '));
+            return new Error(payload.detail.map(formatValidationDetailItem).join('; '));
         }
     } catch {
         // Keep the raw text below when the server did not return JSON.
@@ -128,14 +143,6 @@ export function generateOperationsReport(): Promise<OperationsReportResponse> {
         method: 'POST',
         body: JSON.stringify({}),
     });
-}
-
-export function fetchRecentFeedback(limit = 5): Promise<RecentFeedbackRead[]> {
-    return requestJson(`/feedback/recent?limit=${limit}`);
-}
-
-export function fetchReferralPolicy(): Promise<ReferralPolicyResponse> {
-    return requestJson('/referrals/policy');
 }
 
 export function fetchAIQualityControls(): Promise<AIQualityControlsResponse> {

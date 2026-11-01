@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchAIQualityControls } from '@/api/operators';
 import { useI18n } from '@/i18n';
 import type { TranslateFn } from '@/i18n';
@@ -10,6 +10,8 @@ import type {
 
 export interface QualityControlBlock {
     blocked: boolean;
+    loading: boolean;
+    loadError: string | null;
     message: string | null;
     reason: string | null;
     config: AIQualityControlsConfig | null;
@@ -49,37 +51,93 @@ export function localizeQualityGateError(message: string, t: TranslateFn): strin
     return message;
 }
 
+export function resolveQualityControlBlockState(params: {
+    config: AIQualityControlsConfig | null;
+    loading: boolean;
+    loadError: string | null;
+    scope: AIQualityScopeKey;
+    labelText: string;
+    t: TranslateFn;
+}): { blocked: boolean; message: string | null } {
+    const { config, loading, loadError, scope, labelText, t } = params;
+    if (loadError) {
+        return {
+            blocked: true,
+            message: t('qcBlock.loadError', { detail: loadError }),
+        };
+    }
+    if (!config) {
+        return {
+            blocked: true,
+            message: loading ? null : t('qcBlock.loadError', { detail: t('common.unknownError') }),
+        };
+    }
+    const message = qualityControlBlockMessage(config[scope], labelText, t);
+    return {
+        blocked: Boolean(message),
+        message,
+    };
+}
+
 export function useAIQualityControlBlock(
     scope: AIQualityScopeKey,
     labelText: string,
 ): QualityControlBlock {
     const { t } = useI18n();
     const [config, setConfig] = useState<AIQualityControlsConfig | null>(null);
+    const [loading, setLoading] = useState<boolean>(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [version, setVersion] = useState(0);
 
     useEffect(() => {
         let mounted = true;
+        setLoading(true);
+        setLoadError(null);
         fetchAIQualityControls()
             .then((response) => {
-                if (mounted) setConfig(response.config);
+                if (!mounted) return;
+                setConfig(response.config);
+                setLoadError(null);
             })
-            .catch(() => {
-                if (mounted) setConfig(null);
+            .catch((err) => {
+                if (!mounted) return;
+                setConfig(null);
+                setLoadError(err instanceof Error ? err.message : t('common.unknownError'));
+            })
+            .finally(() => {
+                if (mounted) setLoading(false);
             });
         return () => {
             mounted = false;
         };
-    }, [version]);
+    }, [version, t]);
 
     const reload = useCallback(() => setVersion((current) => current + 1), []);
-    const message = config ? qualityControlBlockMessage(config[scope], labelText, t) : null;
-    return {
-        blocked: Boolean(message),
-        message,
-        reason: message,
-        config,
-        scope,
-        reload,
-        refresh: reload,
-    };
+    const { blocked, message } = useMemo(
+        () =>
+            resolveQualityControlBlockState({
+                config,
+                loading,
+                loadError,
+                scope,
+                labelText,
+                t,
+            }),
+        [config, loading, loadError, scope, labelText, t],
+    );
+
+    return useMemo(
+        () => ({
+            blocked,
+            loading,
+            loadError,
+            message,
+            reason: message,
+            config,
+            scope,
+            reload,
+            refresh: reload,
+        }),
+        [blocked, loading, loadError, message, config, scope, reload],
+    );
 }

@@ -33,10 +33,72 @@ import { useAIQualityControlBlock } from '@/hooks/useAIQualityControlBlock';
 import { useI18n, type TranslationKey } from '@/i18n';
 import type {
     AdminConversationDetail,
+    AdminConversationUpdate,
     AdminCustomerListItem,
     AdminResetExecuteResult,
     AdminResetPreview,
 } from '@/types/crm';
+
+export const CANONICAL_DEAL_STATUSES = [
+    'pending',
+    'in_progress',
+    'delivered',
+    'cancelled',
+] as const;
+
+export interface ConversationEditDraft {
+    editName: string;
+    editStatus: string;
+    editStage: string;
+    editEscalation: string;
+    editDealStatus: string;
+}
+
+export function buildDirtyConversationPatch(
+    detail: Pick<
+        AdminConversationDetail,
+        'customer_name' | 'status' | 'sales_stage' | 'escalation_status' | 'deal_status'
+    >,
+    edits: ConversationEditDraft,
+): AdminConversationUpdate {
+    const patch: AdminConversationUpdate = {};
+    const normalizedName = edits.editName.trim() || null;
+    const originalName = (detail.customer_name ?? '').trim() || null;
+    if (normalizedName !== originalName) {
+        patch.customer_name = normalizedName;
+    }
+    if (edits.editStatus !== detail.status) {
+        patch.status = edits.editStatus;
+    }
+    if (edits.editStage !== detail.sales_stage) {
+        patch.sales_stage = edits.editStage;
+    }
+    if (edits.editEscalation !== detail.escalation_status) {
+        patch.escalation_status = edits.editEscalation;
+    }
+    const normalizedDealStatus = edits.editDealStatus.trim() || null;
+    const originalDealStatus = (detail.deal_status ?? '').trim() || null;
+    if (normalizedDealStatus !== originalDealStatus) {
+        patch.deal_status = normalizedDealStatus;
+    }
+    return patch;
+}
+
+export function resolveDealStatusOptions(
+    currentValue: string | null | undefined,
+): Array<{ value: string; isLegacy: boolean }> {
+    const options: Array<{ value: string; isLegacy: boolean }> = CANONICAL_DEAL_STATUSES.map(
+        (value) => ({ value, isLegacy: false }),
+    );
+    const trimmed = currentValue?.trim();
+    if (
+        trimmed &&
+        !(CANONICAL_DEAL_STATUSES as readonly string[]).includes(trimmed)
+    ) {
+        options.unshift({ value: trimmed, isLegacy: true });
+    }
+    return options;
+}
 
 export interface ConversationsViewProps {
     globalSearch?: string;
@@ -46,9 +108,11 @@ export interface ConversationsViewProps {
     initialStatus?: string;
     initialStage?: string;
     initialEscalation?: string;
+    initialDateFrom?: string;
     refreshSignal?: number;
     onSelectConversationId?: (id: string | undefined) => void;
     onClearRouteFilter?: () => void;
+    onClearDateFrom?: () => void;
 }
 
 type QuickTab = 'all' | 'waiting' | 'review';
@@ -78,13 +142,16 @@ export default function ConversationsView({
     initialStatus = '',
     initialStage = '',
     initialEscalation = '',
+    initialDateFrom = '',
     refreshSignal = 0,
     onSelectConversationId,
     onClearRouteFilter,
+    onClearDateFrom,
 }: ConversationsViewProps) {
     const { t, label, formatNumber, formatDateTime, formatCurrency } = useI18n();
     const { showToast } = useToast();
     const botQaBlock = useAIQualityControlBlock('bot_qa', 'Bot QA');
+    const botQaBlockRefresh = botQaBlock.refresh;
 
     const [customers, setCustomers] = useState<AdminCustomerListItem[]>([]);
     const [total, setTotal] = useState(0);
@@ -95,6 +162,7 @@ export default function ConversationsView({
     const [debouncedSearch, setDebouncedSearch] = useState(globalSearch);
     const [quickTab, setQuickTab] = useState<QuickTab>('all');
     const [routeFilter, setRouteFilter] = useState(initialFilter);
+    const [dateFrom, setDateFrom] = useState(initialDateFrom);
     const [showFilters, setShowFilters] = useState(
         Boolean(initialLanguage || initialStatus || initialStage || initialEscalation),
     );
@@ -105,11 +173,13 @@ export default function ConversationsView({
 
     const [selectedId, setSelectedId] = useState<string | null>(initialId ?? null);
     const selectedIdRef = useRef<string | null>(initialId ?? null);
+    const lastRefreshSignalRef = useRef<number>(refreshSignal);
     const onSelectConversationIdRef = useRef(onSelectConversationId);
     onSelectConversationIdRef.current = onSelectConversationId;
     const [detail, setDetail] = useState<AdminConversationDetail | null>(null);
     const [loadingList, setLoadingList] = useState(true);
     const [loadingDetail, setLoadingDetail] = useState(false);
+    const [savingCrm, setSavingCrm] = useState(false);
     const [actionMessage, setActionMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
@@ -145,6 +215,7 @@ export default function ConversationsView({
         if (initialStage !== undefined) setStage(initialStage);
         if (initialEscalation !== undefined) setEscalation(initialEscalation);
         setRouteFilter(initialFilter || '');
+        setDateFrom(initialDateFrom || '');
         if (initialLanguage || initialStatus || initialStage || initialEscalation) {
             setShowFilters(true);
         }
@@ -153,11 +224,19 @@ export default function ConversationsView({
             initialLanguage ||
             initialStatus ||
             initialStage ||
-            initialEscalation
+            initialEscalation ||
+            initialDateFrom
         ) {
             setQuickTab('all');
         }
-    }, [initialFilter, initialLanguage, initialStatus, initialStage, initialEscalation]);
+    }, [
+        initialFilter,
+        initialLanguage,
+        initialStatus,
+        initialStage,
+        initialEscalation,
+        initialDateFrom,
+    ]);
 
     const selectCustomerConversation = useCallback((id: string | null) => {
         selectedIdRef.current = id;
@@ -186,6 +265,7 @@ export default function ConversationsView({
             if (stage) params.set('stage', stage);
             if (language) params.set('language', language);
             if (effectiveEscalation) params.set('escalation', effectiveEscalation);
+            if (dateFrom) params.set('date_from', dateFrom);
             if (routeFilter === 'deals') {
                 params.set('has_deal', 'true');
             } else if (routeFilter === 'target') {
@@ -214,10 +294,19 @@ export default function ConversationsView({
         stage,
         language,
         escalation,
+        dateFrom,
         routeFilter,
         selectCustomerConversation,
         t,
     ]);
+
+    const syncDrawerFields = useCallback((next: AdminConversationDetail) => {
+        setEditName(next.customer_name || '');
+        setEditStatus(next.status);
+        setEditStage(next.sales_stage);
+        setEditEscalation(next.escalation_status);
+        setEditDealStatus(next.deal_status || '');
+    }, []);
 
     const loadDetail = useCallback(
         async (conversationId: string) => {
@@ -228,18 +317,14 @@ export default function ConversationsView({
             try {
                 const next = await fetchAdminConversation(conversationId);
                 setDetail(next);
-                setEditName(next.customer_name || '');
-                setEditStatus(next.status);
-                setEditStage(next.sales_stage);
-                setEditEscalation(next.escalation_status);
-                setEditDealStatus(next.deal_status || '');
+                syncDrawerFields(next);
             } catch (err) {
                 setError(err instanceof Error ? err.message : t('conv.error.detail'));
             } finally {
                 setLoadingDetail(false);
             }
         },
-        [t],
+        [syncDrawerFields, t],
     );
 
     useEffect(() => {
@@ -253,31 +338,54 @@ export default function ConversationsView({
     }, [selectedId, loadDetail]);
 
     useEffect(() => {
+        if (refreshSignal === lastRefreshSignalRef.current) return;
+        lastRefreshSignalRef.current = refreshSignal;
         if (!refreshSignal) return;
         void loadCustomers();
+        botQaBlockRefresh();
         if (selectedIdRef.current) {
             void loadDetail(selectedIdRef.current);
         }
-    }, [refreshSignal, loadCustomers, loadDetail]);
+    }, [refreshSignal, loadCustomers, loadDetail, botQaBlockRefresh]);
+
+    const dirtyCrmPatch = detail
+        ? buildDirtyConversationPatch(detail, {
+              editName,
+              editStatus,
+              editStage,
+              editEscalation,
+              editDealStatus,
+          })
+        : {};
+    const isCrmDirty = Object.keys(dirtyCrmPatch).length > 0;
+    const dealStatusOptions = resolveDealStatusOptions(
+        detail ? editDealStatus || detail.deal_status : editDealStatus,
+    );
 
     const handleSaveCrm = async () => {
         if (!detail) return;
+        const patch = buildDirtyConversationPatch(detail, {
+            editName,
+            editStatus,
+            editStage,
+            editEscalation,
+            editDealStatus,
+        });
+        if (Object.keys(patch).length === 0) return;
+        setSavingCrm(true);
         setActionMessage(null);
         setError(null);
         try {
-            const updated = await updateAdminConversation(detail.id, {
-                customer_name: editName.trim() || null,
-                status: editStatus,
-                sales_stage: editStage,
-                escalation_status: editEscalation,
-                deal_status: editDealStatus.trim() || null,
-            });
+            const updated = await updateAdminConversation(detail.id, patch);
             setDetail(updated);
+            syncDrawerFields(updated);
             setActionMessage(t('conv.saved'));
             showToast({ tone: 'success', message: t('conv.saved') });
             void loadCustomers();
         } catch (err) {
             setError(err instanceof Error ? err.message : t('conv.error.save'));
+        } finally {
+            setSavingCrm(false);
         }
     };
 
@@ -347,18 +455,18 @@ export default function ConversationsView({
     };
 
     const handleBotReview = async () => {
-        if (!detail) return;
+        if (!detail || botQaBlock.blocked) return;
         setActionMessage(null);
         setError(null);
         try {
             await runBotQualityReview(detail.id);
             setActionMessage(t('conv.botQaDone'));
             showToast({ tone: 'success', message: t('conv.botQaDone') });
-            botQaBlock.refresh();
+            botQaBlockRefresh();
             await loadDetail(detail.id);
         } catch (err) {
             setError(err instanceof Error ? err.message : t('conv.error.botQa'));
-            botQaBlock.refresh();
+            botQaBlockRefresh();
         }
     };
 
@@ -458,6 +566,30 @@ export default function ConversationsView({
                                         setRouteFilter('');
                                         setPage(1);
                                         onClearRouteFilter?.();
+                                    }}
+                                    aria-label={t('conv.filter.clearAll')}
+                                    className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold hover:bg-blue-100 dark:hover:bg-blue-900/60"
+                                >
+                                    <X className="h-3 w-3" />
+                                    <span>{t('conv.filter.clearAll')}</span>
+                                </button>
+                            </div>
+                        )}
+
+                        {dateFrom && (
+                            <div
+                                data-conv-date-filter={dateFrom}
+                                className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1.5 text-xs text-blue-800 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-200"
+                            >
+                                <span className="truncate font-medium">
+                                    {t('conv.filter.activeChip.dateFrom', { date: dateFrom })}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setDateFrom('');
+                                        setPage(1);
+                                        onClearDateFrom?.();
                                     }}
                                     aria-label={t('conv.filter.clearAll')}
                                     className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold hover:bg-blue-100 dark:hover:bg-blue-900/60"
@@ -763,7 +895,7 @@ export default function ConversationsView({
                                                 <span className="font-semibold uppercase">
                                                     {isUser
                                                         ? t('conv.role.client')
-                                                        : 'Noor / CRM'}
+                                                        : t('conv.assistantFallbackSender')}
                                                 </span>
                                                 <span>
                                                     {formatDateTime(message.created_at)}
@@ -873,20 +1005,30 @@ export default function ConversationsView({
                                     </select>
                                 </FieldLabel>
                                 <FieldLabel label={t('conv.field.dealStatus')}>
-                                    <input
+                                    <select
+                                        data-crm-deal-status-select=""
                                         value={editDealStatus}
                                         onChange={(event) =>
                                             setEditDealStatus(event.target.value)
                                         }
-                                        placeholder="pending / won / delivered"
                                         className="admin-input w-full rounded-lg px-2 py-1.5 text-xs"
-                                    />
+                                    >
+                                        <option value="">{t('conv.dealStatus.none')}</option>
+                                        {dealStatusOptions.map((option) => (
+                                            <option key={option.value} value={option.value}>
+                                                {option.isLegacy
+                                                    ? `${option.value} (${t('conv.dealStatus.legacySuffix')})`
+                                                    : label(option.value)}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </FieldLabel>
                             </div>
                             <button
                                 type="button"
+                                disabled={!isCrmDirty || savingCrm}
                                 onClick={() => void handleSaveCrm()}
-                                className="w-full rounded-lg bg-[#2170e4] px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+                                className="w-full rounded-lg bg-[#2170e4] px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 {t('conv.saveCard')}
                             </button>
@@ -896,8 +1038,12 @@ export default function ConversationsView({
                             <div className="font-semibold text-slate-900 dark:text-slate-100">
                                 {t('conv.inspector.zohoAndOrder')}
                             </div>
-                            <div>Contact ID: {detail.zoho_contact_id || '—'}</div>
-                            <div>Deal ID: {detail.zoho_deal_id || '—'}</div>
+                            <div>
+                                {t('conv.field.zohoContact')}: {detail.zoho_contact_id || '—'}
+                            </div>
+                            <div>
+                                {t('conv.field.zohoDeal')}: {detail.zoho_deal_id || '—'}
+                            </div>
                             <div>
                                 {t('conv.inspector.amount')}:{' '}
                                 {detail.deal_amount
@@ -977,8 +1123,9 @@ export default function ConversationsView({
                                     className="admin-subpanel rounded-lg p-2.5"
                                 >
                                     <div className="font-semibold text-slate-900 dark:text-slate-100">
-                                        Bot QA: {formatNumber(review.total_score, 1)}/
-                                        {review.max_score} ({label(review.rating)})
+                                        {t('conv.qa.botScoreTitle')}:{' '}
+                                        {formatNumber(review.total_score, 1)}/{review.max_score} (
+                                        {label(review.rating)})
                                     </div>
                                     <p className="mt-1 text-slate-600 dark:text-slate-300">
                                         {review.summary}
@@ -991,8 +1138,9 @@ export default function ConversationsView({
                                     className="admin-subpanel rounded-lg p-2.5"
                                 >
                                     <div className="font-semibold text-slate-900 dark:text-slate-100">
-                                        Manager QA: {formatNumber(review.total_score, 1)}/
-                                        {review.max_score} ({label(review.rating)})
+                                        {t('conv.qa.managerScoreTitle')}:{' '}
+                                        {formatNumber(review.total_score, 1)}/{review.max_score} (
+                                        {label(review.rating)})
                                     </div>
                                     <p className="mt-1 text-slate-600 dark:text-slate-300">
                                         {review.summary}

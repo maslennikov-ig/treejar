@@ -9,11 +9,12 @@ import type {
 } from '@/types/operators';
 
 export const AI_QUALITY_SCOPES: AIQualityScopeKey[] = ['bot_qa', 'manager_qa', 'red_flags'];
+export const MANUAL_MODE_SCOPES: AIQualityScopeKey[] = ['bot_qa', 'manager_qa'];
 
-/** Scopes that are currently `disabled` and would move to `manual`. */
+/** Scopes with manual trigger endpoints that are currently `disabled` and can move to `manual`. */
 export function scopesNeedingManualMode(config: AIQualityControlsConfig | null | undefined): AIQualityScopeKey[] {
     if (!config) return [];
-    return AI_QUALITY_SCOPES.filter((scope) => config[scope]?.mode === 'disabled');
+    return MANUAL_MODE_SCOPES.filter((scope) => config[scope]?.mode === 'disabled');
 }
 
 /**

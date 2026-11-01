@@ -42,6 +42,7 @@ export interface ClientSelfTestSubmitResponse {
 export type ProductSyncSource = 'treejar' | 'zoho';
 
 export interface ProductSyncResponse {
+    status?: string;
     synced: number;
     created: number;
     updated: number;
@@ -125,34 +126,6 @@ export interface OperationsReportResponse {
     text: string;
 }
 
-export interface RecentFeedbackRead {
-    conversation_id: string;
-    phone: string;
-    customer_name: string | null;
-    rating_overall: number;
-    rating_delivery: number;
-    recommend: boolean;
-    comment: string | null;
-    created_at: string;
-}
-
-export type ReferralPolicyStatus = 'client_decision_required' | 'excluded' | 'approved';
-
-export interface ReferralPolicyConfig {
-    status: ReferralPolicyStatus;
-    approved: boolean;
-    enabled: boolean;
-    confirmation_required: boolean;
-    decision_note: string;
-    discount_policy: Record<string, unknown>;
-}
-
-export interface ReferralPolicyResponse {
-    config: ReferralPolicyConfig;
-    allows_launch: boolean;
-    message: string;
-}
-
 export type AIQualityScopeKey = 'bot_qa' | 'manager_qa' | 'red_flags';
 
 export type AIQualityMode = 'disabled' | 'manual' | 'daily_sample' | 'scheduled';
@@ -203,6 +176,8 @@ export interface AIQualityControlsResponse {
     config: AIQualityControlsConfig;
     warnings: AIQualityWarning[];
     usage_today?: Partial<Record<AIQualityScopeKey, AIQualityScopeUsage>>;
+    available_models?: string[];
+    default_model?: string;
 }
 
 export interface AIQualityRetryPolicyUpdate {

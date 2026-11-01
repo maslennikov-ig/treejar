@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell, Database, LogOut, RefreshCw, Send, Settings } from 'lucide-react';
 import { fetchNotificationConfig, sendTestNotification } from '@/api/operators';
 import AIQualityControlsPanel from '@/components/AIQualityControlsPanel';
@@ -26,6 +26,7 @@ export default function SettingsView({ refreshSignal = 0 }: { refreshSignal?: nu
     const [sendingTest, setSendingTest] = useState(false);
     const [confirmTestOpen, setConfirmTestOpen] = useState(false);
     const [message, setMessage] = useState<ActionMessage | null>(null);
+    const lastRefreshSignalRef = useRef(refreshSignal);
 
     const loadConfig = useCallback(async () => {
         setLoading(true);
@@ -44,6 +45,8 @@ export default function SettingsView({ refreshSignal = 0 }: { refreshSignal?: nu
     }, [loadConfig]);
 
     useEffect(() => {
+        if (refreshSignal === lastRefreshSignalRef.current) return;
+        lastRefreshSignalRef.current = refreshSignal;
         if (!refreshSignal) return;
         void loadConfig();
     }, [refreshSignal, loadConfig]);

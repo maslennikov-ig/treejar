@@ -7,7 +7,7 @@ import { useI18n } from '@/i18n';
 import type { TranslateFn, TranslationKey } from '@/i18n';
 
 export type BadgeTone = 'slate' | 'gray' | 'blue' | 'emerald' | 'green' | 'amber' | 'red';
-export type StatusTone = 'gray' | 'amber' | 'green' | 'blue';
+export type StatusTone = 'gray' | 'amber' | 'green' | 'blue' | 'red';
 export type ActionMessage = { tone: 'success' | 'error' | 'info'; text: string };
 export type AIQualityControlBlockState = QualityControlBlock;
 
@@ -157,6 +157,7 @@ export function StatusCard({
         amber: 'border-amber-300 bg-amber-50/70 dark:border-amber-800/70 dark:bg-amber-950/35',
         green: 'border-emerald-300 bg-emerald-50/70 dark:border-emerald-800/70 dark:bg-emerald-950/35',
         blue: 'border-blue-300 bg-blue-50/70 dark:border-blue-800/70 dark:bg-blue-950/35',
+        red: 'border-red-300 bg-red-50/70 dark:border-red-800/70 dark:bg-red-950/35',
     };
     return (
         <div className={cx('rounded-xl border p-4', tones[tone])}>
@@ -546,21 +547,29 @@ export function QualityBlockNotice({
 }) {
     const msg = block.message ?? block.reason;
     if (!msg) return null;
-    const canEnable = scopesNeedingManualMode(block.config).length > 0;
+    const isError = Boolean(block.loadError);
+    const canEnable = !isError && scopesNeedingManualMode(block.config).length > 0;
     return (
         <div
             className={cx(
                 className,
-                'flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200',
+                'flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3.5 py-2.5 text-xs',
+                isError
+                    ? 'border-red-300 bg-red-50 text-red-900 dark:border-red-800/60 dark:bg-red-950/40 dark:text-red-200'
+                    : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200',
             )}
             data-quality-block=""
         >
             <span>{msg}</span>
-            {canEnable && (
-                <EnableManualModeButton
-                    config={block.config}
-                    onDone={() => block.reload()}
-                />
+            {isError ? (
+                <RefreshButton loading={block.loading} onClick={() => block.reload()} />
+            ) : (
+                canEnable && (
+                    <EnableManualModeButton
+                        config={block.config}
+                        onDone={() => block.reload()}
+                    />
+                )
             )}
         </div>
     );

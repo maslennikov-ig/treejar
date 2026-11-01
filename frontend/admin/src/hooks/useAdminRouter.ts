@@ -10,6 +10,7 @@ export interface AdminRouteState {
     status?: string;
     stage?: string;
     escalation?: string;
+    date_from?: string;
 }
 
 const VALID_VIEWS: ReadonlySet<AdminViewId> = new Set([
@@ -63,6 +64,7 @@ export function parseAdminRoute(search: string): AdminRouteState {
         status: params.get('status') || undefined,
         stage: params.get('stage') || undefined,
         escalation: params.get('escalation') || undefined,
+        date_from: params.get('date_from') || undefined,
     };
 }
 
@@ -78,6 +80,7 @@ export function buildAdminSearch(state: AdminRouteState): string {
     if (state.status) params.set('status', state.status);
     if (state.stage) params.set('stage', state.stage);
     if (state.escalation) params.set('escalation', state.escalation);
+    if (state.date_from) params.set('date_from', state.date_from);
     const str = params.toString();
     return str ? `?${str}` : '';
 }
@@ -115,6 +118,7 @@ export function useAdminRouter(defaultView: AdminViewId = 'conversations') {
                       status: next.status,
                       stage: next.stage,
                       escalation: next.escalation,
+                      date_from: next.date_from,
                   }
                 : {
                       ...current,

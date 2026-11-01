@@ -301,18 +301,6 @@ export interface AdminCanonicalSyncPreview {
     items: AdminCanonicalSyncPreviewItem[];
 }
 
-export interface AdminCanonicalSyncStatus {
-    kind: 'knowledge' | 'bot_rules';
-    running: boolean;
-    last_mode: string | null;
-    last_synced_at: string | null;
-    last_result: AdminCanonicalSyncResult | null;
-    total_templates: number;
-    active_canonical_count: number;
-    customized_count: number;
-    unindexed_count: number;
-}
-
 export interface AdminEscalationQueueItem {
     id: string;
     conversation_id: string;

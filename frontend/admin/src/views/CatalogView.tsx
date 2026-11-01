@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     CheckCircle2,
     Database,
@@ -25,6 +25,18 @@ import { useI18n } from '@/i18n';
 import type { AdminCatalogStatusResponse } from '@/types/crm';
 import type { ProductSyncResponse, ProductSyncSource } from '@/types/operators';
 
+export function isCatalogSyncQueuedResponse(result: ProductSyncResponse): boolean {
+    if (result.status === 'queued') return true;
+    return (
+        result.synced === 0 &&
+        result.created === 0 &&
+        result.updated === 0 &&
+        result.errors === 0 &&
+        result.deactivated === 0 &&
+        result.embeddings_generated === 0
+    );
+}
+
 export default function CatalogView({ refreshSignal = 0 }: { refreshSignal?: number }) {
     const { t, formatDateTime, formatDuration } = useI18n();
     const { pushToast } = useToast();
@@ -35,24 +47,27 @@ export default function CatalogView({ refreshSignal = 0 }: { refreshSignal?: num
     const [confirmSource, setConfirmSource] = useState<ProductSyncSource | null>(null);
     const [result, setResult] = useState<ProductSyncResponse | null>(null);
     const [message, setMessage] = useState<ActionMessage | null>(null);
+    const lastRefreshSignalRef = useRef(refreshSignal);
 
     const loadStatus = useCallback(async () => {
         setLoadingStatus(true);
         try {
             const payload = await fetchCatalogStatus();
             setCatalogStatus(payload);
-        } catch {
-            // Keep UI operational if status endpoint is temporarily unreachable.
+        } catch (err) {
+            setMessage({ tone: 'error', text: errorMessage(err, t) });
         } finally {
             setLoadingStatus(false);
         }
-    }, []);
+    }, [t]);
 
     useEffect(() => {
         void loadStatus();
     }, [loadStatus]);
 
     useEffect(() => {
+        if (refreshSignal === lastRefreshSignalRef.current) return;
+        lastRefreshSignalRef.current = refreshSignal;
         if (!refreshSignal) return;
         void loadStatus();
     }, [refreshSignal, loadStatus]);
@@ -67,16 +82,21 @@ export default function CatalogView({ refreshSignal = 0 }: { refreshSignal?: num
         try {
             const response = await syncProducts(source);
             setResult(response);
-            const msgText = t('catalog.syncQueued', {
-                source: sourceLabel,
-                errors: response.errors,
-            });
+            const isQueued = isCatalogSyncQueuedResponse(response);
+            const msgText = isQueued
+                ? t('catalog.syncQueuedToast', { source: sourceLabel })
+                : t('catalog.syncQueued', {
+                      source: sourceLabel,
+                      errors: response.errors,
+                  });
+            const tone: ActionMessage['tone'] =
+                isQueued || response.errors > 0 ? 'info' : 'success';
             setMessage({
-                tone: response.errors > 0 ? 'info' : 'success',
+                tone,
                 text: msgText,
             });
             pushToast({
-                tone: response.errors > 0 ? 'info' : 'success',
+                tone,
                 message: msgText,
             });
             await loadStatus();
@@ -100,6 +120,54 @@ export default function CatalogView({ refreshSignal = 0 }: { refreshSignal?: num
         catalogStatus?.sources?.zoho?.last_triggered_at ??
         zohoSnapshot?.updated_at ??
         null;
+    const resultIsQueued = result ? isCatalogSyncQueuedResponse(result) : false;
+
+    const persistedSummaryCard = (
+        <div className="space-y-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
+            <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                    <Database size={16} className="text-[var(--accent-primary)]" />
+                    <p className="text-sm font-semibold text-[var(--text-primary)]">
+                        {t('catalog.persistedStateTitle')}
+                    </p>
+                </div>
+                <Badge
+                    label={
+                        catalogStatus?.active_products_count
+                            ? t('catalog.catalogReadyBadge')
+                            : t('catalog.noResult')
+                    }
+                    tone={catalogStatus?.active_products_count ? 'green' : 'gray'}
+                />
+            </div>
+            <div className="space-y-2 pt-1">
+                <Field
+                    label={t('catalog.activeProductsTitle')}
+                    value={String(catalogStatus?.active_products_count ?? '—')}
+                />
+                <Field
+                    label={t('catalog.indexedRagTitle')}
+                    value={String(catalogStatus?.indexed_products_count ?? '—')}
+                />
+                <Field
+                    label={t('catalog.zohoSnapshotField')}
+                    value={
+                        zohoFresh
+                            ? `${t('overview.zohoFresh')} (${zohoAgeLabel})`
+                            : `${t('overview.zohoStale')} (${zohoAgeLabel})`
+                    }
+                />
+                <Field
+                    label={t('catalog.lastUpdatedTitle')}
+                    value={
+                        treejarSyncAt
+                            ? formatDateTime(treejarSyncAt)
+                            : '—'
+                    }
+                />
+            </div>
+        </div>
+    );
 
     return (
         <>
@@ -186,7 +254,7 @@ export default function CatalogView({ refreshSignal = 0 }: { refreshSignal?: num
                         subtitle={t('catalog.resultSubtitle')}
                         icon={History}
                     >
-                        {result ? (
+                        {result && !resultIsQueued ? (
                             <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
                                 <StatusCard
                                     title={t('catalog.synced')}
@@ -226,49 +294,24 @@ export default function CatalogView({ refreshSignal = 0 }: { refreshSignal?: num
                                 />
                             </div>
                         ) : (
-                            <div className="space-y-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
-                                <div className="flex items-center justify-between gap-2">
-                                    <div className="flex items-center gap-2">
-                                        <Database size={16} className="text-[var(--accent-primary)]" />
-                                        <p className="text-sm font-semibold text-[var(--text-primary)]">
-                                            {t('catalog.persistedStateTitle')}
+                            <div className="space-y-3">
+                                {resultIsQueued && (
+                                    <div
+                                        className="rounded-lg border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-500/30 dark:bg-blue-950/30"
+                                        data-catalog-sync-queued=""
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <RefreshCw size={15} className="text-[var(--accent-primary)]" />
+                                            <p className="text-sm font-semibold text-[var(--text-primary)]">
+                                                {t('catalog.syncQueuedTitle')}
+                                            </p>
+                                        </div>
+                                        <p className="mt-1.5 text-xs leading-5 text-[var(--text-secondary)]">
+                                            {t('catalog.syncQueuedDesc')}
                                         </p>
                                     </div>
-                                    <Badge
-                                        label={
-                                            catalogStatus?.active_products_count
-                                                ? t('catalog.catalogReadyBadge')
-                                                : t('catalog.noResult')
-                                        }
-                                        tone={catalogStatus?.active_products_count ? 'green' : 'gray'}
-                                    />
-                                </div>
-                                <div className="space-y-2 pt-1">
-                                    <Field
-                                        label={t('catalog.activeProductsTitle')}
-                                        value={String(catalogStatus?.active_products_count ?? '—')}
-                                    />
-                                    <Field
-                                        label={t('catalog.indexedRagTitle')}
-                                        value={String(catalogStatus?.indexed_products_count ?? '—')}
-                                    />
-                                    <Field
-                                        label="Zoho Inventory Redis Snapshot"
-                                        value={
-                                            zohoFresh
-                                                ? `${t('overview.zohoFresh')} (${zohoAgeLabel})`
-                                                : `${t('overview.zohoStale')} (${zohoAgeLabel})`
-                                        }
-                                    />
-                                    <Field
-                                        label={t('catalog.lastUpdatedTitle')}
-                                        value={
-                                            treejarSyncAt
-                                                ? formatDateTime(treejarSyncAt)
-                                                : '—'
-                                        }
-                                    />
-                                </div>
+                                )}
+                                {persistedSummaryCard}
                             </div>
                         )}
                     </Panel>
