@@ -60,7 +60,7 @@ async def is_crm_contact_negatively_cached(redis_client: Any, phone: str) -> boo
         payload = json.loads(raw)
     except (TypeError, ValueError):
         return False
-    return payload == CRM_NOT_FOUND_SENTINEL
+    return isinstance(payload, dict) and payload == CRM_NOT_FOUND_SENTINEL
 
 
 async def set_crm_contact_negative_cache(
