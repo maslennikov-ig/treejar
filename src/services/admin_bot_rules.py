@@ -23,6 +23,7 @@ from src.schemas.admin import (
     AdminCanonicalSyncPreview,
     AdminCanonicalSyncResult,
     AdminCanonicalSyncStatus,
+    validate_bot_rule_scope_fields,
 )
 from src.schemas.common import PaginatedResponse
 from src.services.admin_audit import log_admin_action
@@ -254,6 +255,30 @@ async def update_admin_bot_rule(
     update_data = body.model_dump(exclude_unset=True)
     if not update_data:
         return _read(rule)
+
+    effective_scope = (
+        str(_enum_value(update_data["scope"]))
+        if "scope" in update_data and update_data["scope"] is not None
+        else rule.scope
+    )
+    effective_stage = (
+        _optional_str(update_data["stage"]) if "stage" in update_data else rule.stage
+    )
+    effective_language = (
+        _optional_str(update_data["language"])
+        if "language" in update_data
+        else rule.language
+    )
+    effective_segment = update_data.get("segment", rule.segment)
+    try:
+        validate_bot_rule_scope_fields(
+            scope=effective_scope,
+            stage=effective_stage,
+            language=effective_language,
+            segment=effective_segment,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     before = _snapshot(rule)
     for key, value in update_data.items():

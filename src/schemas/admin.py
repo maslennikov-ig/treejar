@@ -260,6 +260,25 @@ class AdminBotRuleRead(UUIDModel):
     archived_at: datetime | None = None
 
 
+def validate_bot_rule_scope_fields(
+    *,
+    scope: str | None,
+    stage: object | None,
+    language: object | None,
+    segment: str | None,
+) -> None:
+    if scope == "conversation":
+        raise ValueError(
+            "scope 'conversation' is not supported because no target conversation field exists"
+        )
+    if scope == "stage" and not stage:
+        raise ValueError("stage is required when scope is 'stage'")
+    if scope == "language" and not language:
+        raise ValueError("language is required when scope is 'language'")
+    if scope == "segment" and not (isinstance(segment, str) and segment.strip()):
+        raise ValueError("segment is required when scope is 'segment'")
+
+
 class AdminBotRuleWrite(BaseModel):
     title: str = Field(min_length=1, max_length=240)
     type: BotRuleType = "playbook"
@@ -271,6 +290,24 @@ class AdminBotRuleWrite(BaseModel):
     segment: str | None = Field(default=None, max_length=120)
     instruction: str = Field(min_length=1, max_length=5000)
     trigger_examples: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("segment", mode="before")
+    @classmethod
+    def normalize_segment(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+    @model_validator(mode="after")
+    def validate_scope_target(self) -> Self:
+        validate_bot_rule_scope_fields(
+            scope=self.scope,
+            stage=self.stage,
+            language=self.language,
+            segment=self.segment,
+        )
+        return self
 
 
 class AdminBotRuleUpdate(BaseModel):
@@ -284,6 +321,40 @@ class AdminBotRuleUpdate(BaseModel):
     segment: str | None = Field(default=None, max_length=120)
     instruction: str | None = Field(default=None, min_length=1, max_length=5000)
     trigger_examples: list[str] | None = Field(default=None, max_length=20)
+
+    @field_validator("segment", mode="before")
+    @classmethod
+    def normalize_segment(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+    @model_validator(mode="after")
+    def validate_explicit_scope_target(self) -> Self:
+        if self.scope == "conversation":
+            raise ValueError(
+                "scope 'conversation' is not supported because no target conversation field exists"
+            )
+        if (
+            self.scope == "stage"
+            and "stage" in self.model_fields_set
+            and not self.stage
+        ):
+            raise ValueError("stage is required when scope is 'stage'")
+        if (
+            self.scope == "language"
+            and "language" in self.model_fields_set
+            and not self.language
+        ):
+            raise ValueError("language is required when scope is 'language'")
+        if (
+            self.scope == "segment"
+            and "segment" in self.model_fields_set
+            and not self.segment
+        ):
+            raise ValueError("segment is required when scope is 'segment'")
+        return self
 
 
 class AdminBotRulePreviewRequest(BaseModel):
