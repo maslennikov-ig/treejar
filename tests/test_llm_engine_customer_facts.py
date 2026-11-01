@@ -149,7 +149,7 @@ async def test_customer_memory_is_data_for_model_not_a_semantic_interceptor(
     db, conv, embedding, zoho, redis, messaging, crm = _unknown_name_deps()
     if pending:
         conv.metadata_ = {
-            engine_module.NAME_GATE_PENDING_REQUEST_KEY: {
+            "name_gate_pending_request": {
                 "text": "Please recommend ergonomic chairs.",
                 "source": "first_turn_name_gate",
             }
@@ -214,8 +214,8 @@ async def test_customer_memory_is_data_for_model_not_a_semantic_interceptor(
     assert "quote_customer_details" not in conv.metadata_
     if pending:
         assert (
-            conv.metadata_[engine_module.NAME_GATE_PENDING_REQUEST_KEY]
-            == original_metadata[engine_module.NAME_GATE_PENDING_REQUEST_KEY]
+            conv.metadata_["name_gate_pending_request"]
+            == original_metadata["name_gate_pending_request"]
         )
     if "lili@example.com" in customer_text:
         assert "lili@example.com" not in deps.user_query

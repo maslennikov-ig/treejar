@@ -132,11 +132,6 @@ async def _assert_model_receives_turn(previous, message, metadata, *, saved_case
         patch.object(
             engine.sales_agent, "run", AsyncMock(return_value=model_result)
         ) as run,
-        patch.object(
-            engine,
-            "evaluate_verified_answer_policy",
-            side_effect=AssertionError("lexical policy invoked"),
-        ),
         patch.object(engine, "create_quotation", AsyncMock()) as quote,
         patch.object(engine, "_create_or_reuse_sales_opportunity", AsyncMock()) as deal,
         patch(

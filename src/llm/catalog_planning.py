@@ -17,7 +17,6 @@ from pydantic_ai import RunContext, ToolReturn
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only
 
 from src.dialogue.claim_contract import (
     AttributeClaim,
@@ -50,15 +49,10 @@ from src.llm.outbound_reply_guard import looks_like_structured_payload
 from src.llm.package_math import PricedLine
 from src.llm.response_policy import AskKind, append_required_tool_disclosure
 from src.llm.response_runtime import ProductMediaPayload
-from src.llm.verified_answers import (
-    VerifiedAnswerDecision,
-    query_names_specific_item,
-)
+from src.llm.verified_answers import query_names_specific_item
 from src.models.conversation import Conversation
-from src.models.product import Product
 from src.rag.embeddings import EmbeddingEngine
 from src.services.customer_language import is_arabic_customer_language
-from src.services.escalation_state import is_active_human_handoff
 from src.services.runtime_execution_evidence import (
     RuntimeToolTrace,
     build_runtime_tool_trace,
@@ -66,8 +60,6 @@ from src.services.runtime_execution_evidence import (
 
 logger = logging.getLogger("src.llm.engine")
 
-_VERIFIED_CATALOG_RECOVERY_MAX_CHARS = 900
-_VERIFIED_CATALOG_FIELD_MAX_CHARS = 256
 _CROSS_SELL_REQUEST_RE = re.compile(r"\bcross(?:-|\s)?sell\b", re.IGNORECASE)
 
 
@@ -93,37 +85,8 @@ def _coerce_inventory_item(
     )
 
 
-def _has_explicit_quote_hold(text: str) -> bool:
-    return cast("bool", _engine_runtime()._has_explicit_quote_hold(text))
-
-
-def _no_verified_cross_sell_disclosure(
-    language: str,
-    *,
-    has_budget: bool = True,
-) -> str:
-    return cast(
-        "str",
-        _engine_runtime()._no_verified_cross_sell_disclosure(
-            language,
-            has_budget=has_budget,
-        ),
-    )
-
-
 def _string_value(value: Any) -> str:
     return cast("str", _engine_runtime()._string_value(value))
-
-
-def _valid_catalog_price(catalog_product: Any | None) -> float | None:
-    return cast(
-        "float | None",
-        _engine_runtime()._valid_catalog_price(catalog_product),
-    )
-
-
-async def recommend_products(*args: Any, **kwargs: Any) -> Any:
-    return await _engine_runtime().recommend_products(*args, **kwargs)
 
 
 # The Treejar catalogue itself is written with Cyrillic lookalikes, so this map
@@ -237,15 +200,6 @@ _GENERIC_OFFICE_OPENING_RE = re.compile(
     re.IGNORECASE,
 )
 _CATALOG_PLANNING_KEY = "catalog_planning_v1"
-_VERIFIED_CATALOG_PLAN_KEY = "verified_catalog_plan_v1"
-_CATALOG_BUDGET_CURRENCY = "AED"
-_CATALOG_DECISION_CANDIDATES_PER_FAMILY = 6
-_CATALOG_CROSS_SELL_SOURCE: dict[CatalogFamily, str] = {
-    "seating": "chair",
-    "workspace": "desk",
-    "storage": "filing_cabinet",
-    "privacy": "acoustic_panel",
-}
 _CATALOG_BUDGET_CAP_RE = re.compile(
     r"(?:\b(?:under|below|within|up\s+to|maximum|max(?:imum)?\s+of)\s+"
     rf"(?:(?P<currency_before>{BUDGET_AED_CURRENCY_PATTERN})\s*)?"
@@ -397,336 +351,12 @@ class VerifiedCatalogLine:
 
 
 @dataclass(frozen=True, slots=True)
-class VerifiedOpeningCatalogLine:
-    """One purchasable catalog row selected before an opening can ask a form."""
-
-    family: CatalogFamily
-    name: str
-    sku: str
-    unit_price: float
-    currency: str
-    stock: int
-
-
-@dataclass(frozen=True, slots=True)
 class StockSnapshot:
     sku: str
     available: int
     source: Literal["zoho", "catalog"]
     as_of: datetime.datetime
     provenance: Literal["authoritative", "unconfirmed"] = "authoritative"
-
-
-@dataclass(frozen=True, slots=True)
-class CatalogCoverageGap:
-    family: str
-    requested: int
-    covered: int
-    resolution: Literal["source_additional_stock", "adjust_quantity"]
-    closing_question: str
-
-
-@dataclass(frozen=True, slots=True)
-class CatalogDecision:
-    requirements: tuple[str, ...]
-    selected_lines: tuple[VerifiedCatalogLine, ...]
-    requested_seats: int | None
-    budget_cap: float | None
-    stock_snapshots: tuple[StockSnapshot, ...]
-    recommendation: str
-    unknown_properties: tuple[str, ...] = ()
-    coverage_gaps: tuple[CatalogCoverageGap, ...] = ()
-
-
-def validate_catalog_decision(decision: CatalogDecision) -> CatalogDecision:
-    """Validate model-independent recommendation facts before materialization."""
-    snapshots: dict[str, StockSnapshot] = {}
-    for snapshot in decision.stock_snapshots:
-        key = snapshot.sku.strip().casefold()
-        if not key or snapshot.available < 0 or snapshot.as_of.tzinfo is None:
-            raise ValueError("invalid stock snapshot")
-        if (snapshot.source, snapshot.provenance) not in {
-            ("zoho", "authoritative"),
-            ("catalog", "unconfirmed"),
-        }:
-            raise ValueError("stock source and provenance disagree")
-        previous = snapshots.get(key)
-        if previous is not None and previous.available != snapshot.available:
-            raise ValueError(f"conflicting stock for SKU {snapshot.sku}")
-        if previous is None or snapshot.source == "zoho":
-            snapshots[key] = snapshot
-
-    total = 0.0
-    coverage_by_family: dict[str, int] = {}
-    sku_count_by_family: dict[str, set[str]] = {}
-    for line in decision.selected_lines:
-        key = line.sku.strip().casefold()
-        stock_snapshot = snapshots.get(key)
-        if stock_snapshot is None or stock_snapshot.source != "zoho":
-            raise ValueError(f"selected SKU {line.sku} lacks Zoho stock")
-        if line.quantity <= 0 or stock_snapshot.available < line.quantity:
-            raise ValueError(f"selected SKU {line.sku} exceeds Zoho stock")
-        if abs(line.total - line.quantity * line.unit_price) > 0.01:
-            raise ValueError(f"selected SKU {line.sku} has inconsistent total")
-        total += line.total
-        coverage_by_family[line.family] = (
-            coverage_by_family.get(line.family, 0) + line.quantity * line.capacity
-        )
-        sku_count_by_family.setdefault(line.family, set()).add(key)
-
-    if decision.budget_cap is not None and round(total, 2) > decision.budget_cap:
-        raise ValueError("selected configuration exceeds budget")
-    gaps_by_family: dict[str, CatalogCoverageGap] = {}
-    question_count = 0
-    for gap in decision.coverage_gaps:
-        if gap.family in gaps_by_family:
-            raise ValueError(f"duplicate coverage gap for family {gap.family}")
-        if gap.requested <= 0 or gap.covered < 0 or gap.covered >= gap.requested:
-            raise ValueError(f"invalid coverage gap for family {gap.family}")
-        question_count += gap.closing_question.count("?") + gap.closing_question.count(
-            "؟"
-        )
-        gaps_by_family[gap.family] = gap
-    if decision.coverage_gaps and question_count != 1:
-        raise ValueError("partial plan requires one closing question")
-
-    if decision.requested_seats is not None:
-        for family in decision.requirements:
-            covered = coverage_by_family.get(family, 0)
-            current_gap = gaps_by_family.get(family)
-            if current_gap is not None:
-                gaps_by_family.pop(family)
-            if covered < decision.requested_seats:
-                if (
-                    current_gap is None
-                    or current_gap.requested != decision.requested_seats
-                    or current_gap.covered != covered
-                ):
-                    raise ValueError(f"incomplete coverage for family {family}")
-            elif current_gap is not None:
-                raise ValueError(f"unexpected coverage gap for family {family}")
-            if len(sku_count_by_family.get(family, set())) > 2:
-                raise ValueError(f"too many SKUs for family {family}")
-    if gaps_by_family:
-        raise ValueError("coverage gap references an unrequested family")
-    return decision
-
-
-def _catalog_decision_runtime_directive(deps: SalesDeps) -> str | None:
-    decision = deps.catalog_decision
-    if decision is None:
-        return None
-    try:
-        validate_catalog_decision(decision)
-    except ValueError:
-        return None
-    payload = {
-        "catalog_decision": {
-            "lines": [
-                {
-                    "sku": line.sku,
-                    "qty": line.quantity,
-                    "unit": line.unit_price,
-                    "total": line.total,
-                    "currency": line.currency,
-                }
-                for line in decision.selected_lines
-            ],
-            "budget": decision.budget_cap,
-            "coverage_gaps": [
-                {
-                    "family": gap.family,
-                    "requested": gap.requested,
-                    "covered": gap.covered,
-                    "uncovered": gap.requested - gap.covered,
-                    "resolution": gap.resolution,
-                    "closing_question": gap.closing_question or None,
-                }
-                for gap in decision.coverage_gaps
-            ],
-            "cross_sell": (
-                {
-                    "name": deps.verified_cross_sell.name,
-                    "sku": deps.verified_cross_sell.sku,
-                    "price": deps.verified_cross_sell.price,
-                    "currency": deps.verified_cross_sell.currency,
-                }
-                if deps.verified_cross_sell is not None
-                else None
-            ),
-            "quote_created": False,
-        }
-    }
-    compact_payload = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    return (
-        "Render one customer-facing recommendation from catalog_decision only. "
-        "Include every SKU, quantity, unit price and line total; preserve the "
-        "customer language and state that no quotation was created. Do not add "
-        f"products or facts. {compact_payload}"
-    )
-
-
-def _catalog_number_in_text(text: str, value: int | float) -> bool:
-    normalized = text.replace(",", "")
-    candidates = {f"{float(value):.2f}", f"{float(value):g}"}
-    return any(
-        re.search(
-            rf"(?<![\d.]){re.escape(candidate)}(?!\d|\.\d)",
-            normalized,
-        )
-        is not None
-        for candidate in candidates
-    )
-
-
-_CATALOG_DECISION_UNUSABLE = "unusable"
-
-
-def _catalog_decision_defects(text: str, deps: SalesDeps) -> tuple[str, ...]:
-    """Name what is wrong with a rendered catalog decision.
-
-    This used to answer only yes or no, and a no threw the reply away for a
-    template. A named defect can be handed back to the model instead, which is
-    what the engine now does: the check was right to fire on S05, but the
-    substitute dropped a whole product family to fix a cross-sell that had one
-    bad number in it.
-
-    ``_CATALOG_DECISION_UNUSABLE`` means there is nothing to repair against —
-    no decision, no text, or a decision that does not validate. Those go
-    straight to the fallback.
-    """
-
-    decision = deps.catalog_decision
-    if decision is None or not isinstance(text, str) or not text.strip():
-        return (_CATALOG_DECISION_UNUSABLE,)
-    try:
-        validate_catalog_decision(decision)
-    except ValueError:
-        return (_CATALOG_DECISION_UNUSABLE,)
-
-    defects: list[str] = []
-    normalized = text.casefold()
-    allowed_skus = {line.sku.strip().casefold() for line in decision.selected_lines}
-    if deps.verified_cross_sell is not None and deps.verified_cross_sell.sku:
-        allowed_skus.add(deps.verified_cross_sell.sku.strip().casefold())
-    mentioned_by_fold: dict[str, str] = {}
-    for match in re.finditer(
-        r"\bsku\s*[:#-]?\s*([a-z0-9][a-z0-9._/-]*)",
-        text,
-        re.IGNORECASE,
-    ):
-        written = match.group(1).strip()
-        mentioned_by_fold.setdefault(written.casefold(), written)
-    mentioned_skus = set(mentioned_by_fold)
-    invented = sorted(mentioned_by_fold[fold] for fold in mentioned_skus - allowed_skus)
-    if invented:
-        defects.append(
-            "these SKUs are not in the verified decision and must not appear: "
-            f"{', '.join(invented)}"
-        )
-    for line in decision.selected_lines:
-        sku = line.sku.strip().casefold()
-        index = normalized.find(sku)
-        if index < 0:
-            defects.append(f"SKU {line.sku} is missing from the reply")
-            continue
-        window = normalized[max(0, index - 100) : index + 260]
-        wrong = [
-            label
-            for label, value in (
-                ("quantity", line.quantity),
-                ("unit price", line.unit_price),
-                ("line total", line.total),
-            )
-            if not _catalog_number_in_text(window, value)
-        ]
-        if wrong:
-            defects.append(
-                f"SKU {line.sku} must state {', '.join(wrong)} exactly as "
-                f"{line.quantity} x {line.unit_price} = {line.total}"
-            )
-    cross_sell = deps.verified_cross_sell
-    if cross_sell is not None and (
-        cross_sell.name.casefold() not in normalized
-        or not _catalog_number_in_text(normalized, cross_sell.price)
-    ):
-        defects.append(
-            f"the verified cross-sell {cross_sell.name} at {cross_sell.price} "
-            "is missing or priced differently"
-        )
-    no_quote_created = re.search(
-        r"(?:\bno\s+(?:formal\s+)?(?:quotation|quote).{0,24}\bcreated\b|"
-        r"\b(?:quotation|quote).{0,24}\bnot\s+created\b|"
-        r"لم\s+يتم\s+إنشاء\s+عرض\s+سعر)",
-        normalized,
-    )
-    if not (_has_explicit_quote_hold(text) or no_quote_created is not None):
-        defects.append("the reply must state that no quotation was created")
-    return tuple(defects)
-
-
-def _catalog_decision_output_is_valid(text: str, deps: SalesDeps) -> bool:
-    return not _catalog_decision_defects(text, deps)
-
-
-def _catalog_decision_repair_directive(defects: tuple[str, ...]) -> str | None:
-    """Hand the defect back instead of replacing the reply.
-
-    The engine already repairs claim-contract failures this way. A rejected
-    catalog decision is the same shape of problem: the facts are settled and
-    only the rendering is wrong, so naming the wrong part costs one run and
-    keeps a person's sentence.
-    """
-
-    if not defects or _CATALOG_DECISION_UNUSABLE in defects:
-        return None
-    numbered = "; ".join(f"({index}) {d}" for index, d in enumerate(defects, start=1))
-    return (
-        "Your previous reply was rejected against catalog_decision. Fix exactly "
-        f"these problems and render the recommendation again: {numbered}. Keep "
-        "the reasoning, the recommendation and the customer's language; change "
-        "nothing else and add no products or facts."
-    )
-
-
-def _catalog_recovery_output_is_valid(text: str, deps: SalesDeps) -> bool:
-    if not isinstance(text, str) or not text.strip():
-        return False
-    selected_by_family = (
-        deps.current_catalog_selections or deps.verified_catalog_selections
-    )
-    selected_lines = tuple(
-        line
-        for family in dict.fromkeys(deps.catalog_planning.families)
-        for line in selected_by_family.get(family, ())
-    )
-    if not selected_lines:
-        return False
-    normalized = text.casefold()
-    for line in selected_lines:
-        sku = line.sku.strip().casefold()
-        index = normalized.find(sku)
-        if index < 0:
-            return False
-        window = normalized[max(0, index - 100) : index + 260]
-        if not all(
-            _catalog_number_in_text(window, value)
-            for value in (line.quantity, line.unit_price, line.total)
-        ):
-            return False
-    cross_sell = deps.verified_cross_sell
-    if cross_sell is not None and (
-        cross_sell.name.casefold() not in normalized
-        or not _catalog_number_in_text(normalized, cross_sell.price)
-    ):
-        return False
-    no_quote_created = re.search(
-        r"(?:\bno\s+(?:formal\s+)?(?:quotation|quote).{0,24}\bcreated\b|"
-        r"\b(?:quotation|quote).{0,24}\bnot\s+created\b|"
-        r"لم\s+يتم\s+إنشاء\s+عرض\s+سعر)",
-        normalized,
-    )
-    return _has_explicit_quote_hold(text) or no_quote_created is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1424,17 +1054,6 @@ def _minimum_catalog_coverage_selection(
     )
 
 
-def _best_catalog_coverage_selection(
-    candidates: Sequence[_CatalogCoverageCandidate],
-    requested_seats: int,
-) -> tuple[VerifiedCatalogLine, ...] | None:
-    return _catalog_coverage_selection(
-        candidates,
-        requested_seats,
-        allow_partial=True,
-    )
-
-
 def _catalog_coverage_selection(
     candidates: Sequence[_CatalogCoverageCandidate],
     requested_seats: int,
@@ -1497,156 +1116,6 @@ def _catalog_coverage_selection(
     return lines or None
 
 
-def _catalog_product_text(product: Any) -> str:
-    return " ".join(
-        str(value).strip()
-        for value in (
-            getattr(product, "name_en", None),
-            getattr(product, "name_ar", None),
-            getattr(product, "description_en", None),
-            getattr(product, "description_ar", None),
-            getattr(product, "category", None),
-            getattr(product, "subcategory", None),
-        )
-        if value
-    )
-
-
-def _catalog_coverage_candidates(
-    planning: CatalogPlanningContext,
-    products: Sequence[Any],
-    *,
-    customer_context: str,
-    segment: str,
-) -> dict[CatalogFamily, list[_CatalogCoverageCandidate]]:
-    from src.core.discounts import apply_discount
-
-    required_families = tuple(dict.fromkeys(planning.families))
-    needs_lumbar = _requests_confirmed_lumbar_support(customer_context)
-    candidates: dict[CatalogFamily, list[_CatalogCoverageCandidate]] = {
-        family: [] for family in required_families
-    }
-    for product in products:
-        product_text = _catalog_product_text(product)
-        family = _catalog_product_family(product_text)
-        if family not in candidates:
-            continue
-        if (
-            family == "seating"
-            and needs_lumbar
-            and not _has_positive_lumbar_support(product_text)
-        ):
-            continue
-        sku = str(getattr(product, "sku", "") or "").strip()
-        name = str(getattr(product, "name_en", "") or "").strip()
-        currency = str(getattr(product, "currency", "") or "").strip().upper()
-        stock = max(int(getattr(product, "stock", 0) or 0), 0)
-        capacity = _catalog_product_capacity(product_text)
-        raw_price = _valid_catalog_price(product)
-        if (
-            not sku
-            or not name
-            or len(sku) > _VERIFIED_CATALOG_FIELD_MAX_CHARS
-            or len(name) > _VERIFIED_CATALOG_FIELD_MAX_CHARS
-            or currency != _CATALOG_BUDGET_CURRENCY
-            or stock <= 0
-            or capacity is None
-            or capacity <= 0
-            or raw_price is None
-        ):
-            continue
-        unit_price = round(float(apply_discount(raw_price, segment)), 2)
-        if unit_price <= 0 or (
-            planning.per_item_cap is not None and unit_price > planning.per_item_cap
-        ):
-            continue
-        candidates[family].append(
-            _CatalogCoverageCandidate(
-                family=family,
-                name=name,
-                sku=sku,
-                capacity=capacity,
-                stock=stock,
-                unit_price=unit_price,
-                currency=currency,
-            )
-        )
-    return candidates
-
-
-def _solve_verified_catalog_selections(
-    planning: CatalogPlanningContext,
-    products: Sequence[Any],
-    *,
-    customer_context: str,
-    segment: str,
-    authoritative_stock_by_sku: Mapping[str, int] | None = None,
-) -> dict[CatalogFamily, tuple[VerifiedCatalogLine, ...]] | None:
-    requested_seats = planning.requested_seats
-    required_families = tuple(dict.fromkeys(planning.families))
-    if (
-        requested_seats is None
-        or requested_seats <= 0
-        or not required_families
-        or not planning.complete_coverage
-    ):
-        return None
-
-    candidates = _catalog_coverage_candidates(
-        planning,
-        products,
-        customer_context=customer_context,
-        segment=segment,
-    )
-
-    selections: dict[CatalogFamily, tuple[VerifiedCatalogLine, ...]] = {}
-    for family in required_families:
-        family_candidates = sorted(
-            candidates[family],
-            key=lambda item: (
-                item.unit_price / item.capacity,
-                item.unit_price,
-                item.name.casefold(),
-                item.sku,
-            ),
-        )
-        if authoritative_stock_by_sku is not None:
-            family_candidates = [
-                replace(
-                    candidate,
-                    stock=max(
-                        authoritative_stock_by_sku.get(
-                            candidate.sku.strip().casefold(), 0
-                        ),
-                        0,
-                    ),
-                )
-                for candidate in family_candidates
-            ]
-        selection = _best_catalog_coverage_selection(
-            family_candidates,
-            requested_seats,
-        )
-        selections[family] = selection or ()
-
-    if not any(selections.values()):
-        return None
-
-    currencies = {
-        line.currency.strip().upper()
-        for family_lines in selections.values()
-        for line in family_lines
-    }
-    selected_total = _catalog_selection_total(selections, required_families)
-    if (
-        len(currencies) != 1
-        or selected_total is None
-        or (planning.budget_cap is not None and selected_total > planning.budget_cap)
-    ):
-        return None
-    return selections
-
-
 def _catalog_selection_total(
     selections: Mapping[CatalogFamily, tuple[VerifiedCatalogLine, ...]],
     families: Sequence[CatalogFamily],
@@ -1658,36 +1127,6 @@ def _catalog_selection_total(
         sum(line.total for family in required_families for line in selections[family]),
         2,
     )
-
-
-def _catalog_coverage_gaps(
-    selections: Mapping[CatalogFamily, tuple[VerifiedCatalogLine, ...]],
-    families: Sequence[CatalogFamily],
-    requested_seats: int,
-) -> tuple[CatalogCoverageGap, ...]:
-    gaps: list[CatalogCoverageGap] = []
-    for family in dict.fromkeys(families):
-        covered = sum(
-            line.quantity * line.capacity for line in selections.get(family, ())
-        )
-        if covered >= requested_seats:
-            continue
-        uncovered = requested_seats - covered
-        gaps.append(
-            CatalogCoverageGap(
-                family=family,
-                requested=requested_seats,
-                covered=covered,
-                resolution="source_additional_stock",
-                closing_question=(
-                    f"Should I source {uncovered} additional {family} unit"
-                    f"{'s' if uncovered != 1 else ''}?"
-                    if not gaps
-                    else ""
-                ),
-            )
-        )
-    return tuple(gaps)
 
 
 def _catalog_remaining_budget(
@@ -1854,11 +1293,6 @@ _FOOTPRINT_PRODUCT_QUERY_RE = re.compile(
     r"(?:space|room))\b",
     re.IGNORECASE,
 )
-_CATALOG_FACT_COMPARISON_CONTEXT_RE = re.compile(
-    r"\b(?:compare|comparison|option|which|recommend|product|model|sku)\b"
-    r"|(?:قارن|مقارنة|الخيار|الخيارات|أي\s+خيار|منتج|طراز)",
-    re.IGNORECASE,
-)
 _DIMENSION_UNIT = r"(?:mm|cm|m|in(?:ches?)?|ft|feet)"
 _DIMENSION_PAIR_RE = re.compile(
     rf"\b\d+(?:\.\d+)?\s*(?:{_DIMENSION_UNIT})?\s*(?:x|×|by)\s*"
@@ -1967,29 +1401,6 @@ def _requested_catalog_fact_domains(
     ):
         domains.append("footprint")
     return tuple(domains)
-
-
-def _is_catalog_fact_comparison_query(customer_text: str) -> bool:
-    return bool(
-        _requested_catalog_fact_domains(customer_text)
-        and (
-            _catalog_product_families(customer_text)
-            or _CATALOG_FACT_COMPARISON_CONTEXT_RE.search(customer_text)
-        )
-    )
-
-
-def _should_override_policy_for_catalog_fact_query(
-    customer_text: str,
-    decision: VerifiedAnswerDecision,
-) -> bool:
-    return bool(
-        _is_catalog_fact_comparison_query(customer_text)
-        and not decision.is_order_status
-        and decision.question_class != "service_high_risk"
-        and not decision.matched_topics
-        and not decision.asks_for_specific_commitment
-    )
 
 
 def _has_footprint_dimension_evidence(product_text: str) -> bool:
@@ -2363,7 +1774,6 @@ class SalesDeps:
     )
     verified_cross_sell: VerifiedCrossSell | None = None
     stock_snapshots: dict[str, StockSnapshot] = field(default_factory=dict)
-    catalog_decision: CatalogDecision | None = None
     executed_tool_names: list[str] = field(default_factory=list)
     recovery_tool_traces: list[RuntimeToolTrace] = field(default_factory=list)
     pending_customer_write_rejections: dict[str, CustomerWriteRejection] = field(
@@ -2881,177 +2291,6 @@ def _product_search_call_limit(deps: SalesDeps) -> int:
     return min(6, max(2, 2 * family_count))
 
 
-def _verified_opening_catalog_lines(
-    products: Sequence[Any],
-    *,
-    families: Sequence[CatalogFamily],
-    language: str,
-) -> tuple[VerifiedOpeningCatalogLine, ...]:
-    """Pick one cheapest purchasable row per requested anchor family.
-
-    Family membership is deliberately the `tj-3jo0` rule used by the price
-    anchor: both the row name and its catalog taxonomy must agree. A generic
-    office opening can therefore gain concrete options without letting a
-    pedestal or workstation chair masquerade as a desk.
-    """
-
-    requested = set(families)
-    cheapest: dict[str, VerifiedOpeningCatalogLine] = {}
-    arabic = is_arabic_customer_language(language)
-    for product in products:
-        name_en = _string_value(getattr(product, "name_en", None))
-        family = anchor_family_of_row(
-            AnchorCatalogRow(
-                name=name_en,
-                category=_string_value(getattr(product, "category", None)) or None,
-                subcategory=(
-                    _string_value(getattr(product, "subcategory", None)) or None
-                ),
-                price=None,
-                stock=None,
-            )
-        )
-        if family is None or family.key not in requested:
-            continue
-        try:
-            price = float(getattr(product, "price", 0) or 0)
-            stock = int(getattr(product, "stock", 0) or 0)
-        except (TypeError, ValueError, OverflowError):
-            continue
-        sku = _string_value(getattr(product, "sku", None))
-        currency = _string_value(getattr(product, "currency", None)).upper()
-        name_ar = _string_value(getattr(product, "name_ar", None))
-        name = name_ar if arabic and name_ar else name_en
-        if not name or not sku or price <= 0 or stock <= 0 or not currency:
-            continue
-        line = VerifiedOpeningCatalogLine(
-            family=cast("CatalogFamily", family.key),
-            name=name,
-            sku=sku,
-            unit_price=price,
-            currency=currency,
-            stock=stock,
-        )
-        previous = cheapest.get(family.key)
-        if previous is None or (line.unit_price, line.name.casefold(), line.sku) < (
-            previous.unit_price,
-            previous.name.casefold(),
-            previous.sku,
-        ):
-            cheapest[family.key] = line
-    return tuple(cheapest[family] for family in families if family in cheapest)
-
-
-def _materialize_verified_opening_catalog_options(
-    lines: Sequence[VerifiedOpeningCatalogLine],
-    *,
-    requested_seats: int,
-    language: str,
-) -> str | None:
-    if not lines:
-        return None
-    if is_arabic_customer_language(language):
-        rendered = [
-            f"هذه خيارات بداية مؤكدة من الكتالوج لمكتب يضم {requested_seats} أشخاص:"
-        ]
-        rendered.extend(
-            f"- {line.name} (SKU {line.sku}) — {line.unit_price:.2f} {line.currency}."
-            for line in lines
-        )
-        rendered.extend(
-            (
-                "هذه خيارات بداية وليست حجزاً للكمية كاملة. يعتمد موعد التسليم "
-                "على المنتجات والكمية المختارة، لذلك سأؤكده مقابل المخزون الحالي "
-                "قبل الالتزام.",
-            )
-        )
-        return "\n".join(rendered)
-
-    rendered = [
-        f"Here are verified catalog starting options for the {requested_seats}-person office:"
-    ]
-    rendered.extend(
-        f"- {line.name} (SKU {line.sku}) — {line.currency} {line.unit_price:.2f}."
-        for line in lines
-    )
-    rendered.extend(
-        (
-            "These are starting options, not a reservation for the full quantity. "
-            "Delivery timing depends on the chosen SKUs and quantity, so I will "
-            "confirm it against current stock before committing.",
-        )
-    )
-    return "\n".join(rendered)
-
-
-async def _try_verified_opening_catalog_options(deps: SalesDeps) -> str | None:
-    """Answer a scoped office opening from catalog state before free generation."""
-
-    planning = deps.catalog_planning
-    current_families = _catalog_product_families(deps.user_query)
-    generic_office = _GENERIC_OFFICE_OPENING_RE.search(deps.user_query) is not None
-    if (
-        planning.requested_seats is None
-        or not planning.families
-        or not (current_families or generic_office)
-        or is_active_human_handoff(deps.conversation.escalation_status)
-    ):
-        return None
-
-    result = await deps.db.execute(
-        select(Product)
-        .options(
-            load_only(
-                Product.sku,
-                Product.name_en,
-                Product.name_ar,
-                Product.category,
-                Product.subcategory,
-                Product.price,
-                Product.currency,
-                Product.stock,
-            )
-        )
-        .where(
-            Product.is_active.is_(True),
-            Product.stock > 0,
-            Product.price > 0,
-        )
-    )
-    lines = _verified_opening_catalog_lines(
-        tuple(result.scalars().all()),
-        families=planning.families,
-        language=str(deps.conversation.language),
-    )
-    response = _materialize_verified_opening_catalog_options(
-        lines,
-        requested_seats=planning.requested_seats,
-        language=str(deps.conversation.language),
-    )
-    if response is None:
-        return None
-
-    captured_at = datetime.datetime.now(datetime.UTC)
-    for line in lines:
-        deps.claim_rows[line.sku] = RetrievedRow(
-            sku=line.sku,
-            fields={
-                "name": line.name,
-                "price": f"{line.unit_price:.2f}",
-                "currency": line.currency,
-            },
-        )
-        deps.stock_snapshots[line.sku.casefold()] = StockSnapshot(
-            sku=line.sku,
-            available=line.stock,
-            source="catalog",
-            as_of=captured_at,
-            provenance="unconfirmed",
-        )
-    deps.product_results_seen = True
-    return response
-
-
 def _append_required_tool_disclosures(text: str, deps: SalesDeps) -> str:
     return append_required_tool_disclosure(
         text,
@@ -3123,733 +2362,6 @@ def _record_recovery_tool_result(
     return result
 
 
-def _catalog_display_name(name: str) -> str:
-    r"""Render a catalog name as a name, not as an escape sequence.
-
-    A supplier packaging note reached a customer as "2 pcs\\1 ctn": the single
-    backslash the catalog holds had been doubled somewhere upstream. Collapsing
-    a run of backslashes back to one is true whichever layer doubled it, and it
-    is the last point before the text is sent (tj-v41l).
-    """
-
-    return re.sub(r"\\{2,}", lambda _match: "\\", name.strip())
-
-
-def _materialize_verified_catalog_recovery(
-    deps: SalesDeps,
-    tool_traces: tuple[RuntimeToolTrace, ...],
-    *,
-    explicit_quote_hold: bool,
-) -> str | None:
-    if deps.catalog_decision is not None:
-        try:
-            validate_catalog_decision(deps.catalog_decision)
-        except ValueError:
-            logger.warning(
-                "Blocked verified catalog materialization after decision validation"
-            )
-            return None
-    planning = deps.catalog_planning
-    coverage_gaps = (
-        {gap.family: gap for gap in deps.catalog_decision.coverage_gaps}
-        if deps.catalog_decision is not None
-        else {}
-    )
-    required_families = tuple(dict.fromkeys(planning.families))
-    current_selections = deps.current_catalog_selections
-    selected_by_family = current_selections or deps.verified_catalog_selections
-    uses_current_selections = bool(current_selections)
-    trace_names = tuple(trace.tool_name for trace in tool_traces)
-    deterministic_plan_trace = trace_names == ("plan_catalog_configuration",)
-    has_cross_sell_evidence = deterministic_plan_trace or (
-        "recommend_products" in trace_names
-        or (
-            deps.verified_cross_sell is not None
-            and trace_names.count("search_products") > len(required_families)
-        )
-    )
-    allowed_tools = {
-        "search_products",
-        "recommend_products",
-        "plan_catalog_configuration",
-    }
-    if (
-        not explicit_quote_hold
-        or deps.quotation_created
-        or is_active_human_handoff(deps.conversation.escalation_status)
-        or not planning.complete_coverage
-        or planning.requested_seats is None
-        or planning.budget_cap is None
-        or not required_families
-        or not tool_traces
-        or any(trace.state != "returned" for trace in tool_traces)
-        or not set(trace_names).issubset(allowed_tools)
-        or tuple(deps.executed_tool_names) != trace_names
-        or (
-            not deterministic_plan_trace
-            and trace_names.count("search_products") < len(required_families)
-        )
-        or not has_cross_sell_evidence
-    ):
-        return None
-
-    selected_lines: list[VerifiedCatalogLine] = []
-    uncovered_families: list[str] = []
-    for family in required_families:
-        family_lines = selected_by_family.get(family, ())
-        if not family_lines and family not in coverage_gaps:
-            return None
-        if not family_lines:
-            # A family with no verified option used to vanish from the list and
-            # reappear only as a coverage gap, so "Workspace coverage gap: 0 of
-            # 12" landed under twelve chairs and read as a contradiction of the
-            # line above it (tj-v41l). Say the family found nothing.
-            uncovered_families.append(family)
-        family_total = 0.0
-        family_coverage = 0
-        for line in family_lines:
-            if (
-                line.family != family
-                or not line.name.strip()
-                or not line.sku.strip()
-                or len(line.name.strip()) > _VERIFIED_CATALOG_FIELD_MAX_CHARS
-                or len(line.sku.strip()) > _VERIFIED_CATALOG_FIELD_MAX_CHARS
-                or line.quantity <= 0
-                or line.unit_price <= 0
-                or line.stock < line.quantity
-                or line.capacity <= 0
-                or abs(line.total - line.quantity * line.unit_price) > 0.01
-            ):
-                return None
-            family_total += line.total
-            family_coverage += line.quantity * line.capacity
-        if family_coverage < planning.requested_seats:
-            gap = coverage_gaps.get(family)
-            if (
-                gap is None
-                or gap.requested != planning.requested_seats
-                or gap.covered != family_coverage
-            ):
-                return None
-        if (
-            not uses_current_selections
-            and abs(family_total - planning.family_totals.get(family, -1.0)) > 0.01
-        ):
-            return None
-        selected_lines.extend(family_lines)
-
-    selected_total = round(sum(line.total for line in selected_lines), 2)
-    if not selected_lines or selected_total > planning.budget_cap:
-        return None
-
-    cross_sell = deps.verified_cross_sell
-    disclosure = _string_value(deps.required_cross_sell_disclosure)
-    if cross_sell is None and not disclosure:
-        return None
-    currencies = {line.currency.strip().upper() for line in selected_lines}
-    if len(currencies) != 1 or "" in currencies:
-        return None
-    currency = currencies.pop()
-    final_total = selected_total
-    if cross_sell is not None:
-        if (
-            not cross_sell.name.strip()
-            or len(cross_sell.name.strip()) > _VERIFIED_CATALOG_FIELD_MAX_CHARS
-            or (
-                cross_sell.sku is not None
-                and len(cross_sell.sku.strip()) > _VERIFIED_CATALOG_FIELD_MAX_CHARS
-            )
-            or cross_sell.price <= 0
-            or cross_sell.stock <= 0
-            or cross_sell.currency.strip().upper() != currency
-        ):
-            return None
-        final_total = round(selected_total + cross_sell.price, 2)
-        if final_total > planning.budget_cap:
-            return None
-
-    remaining = round(planning.budget_cap - final_total, 2)
-    language = str(deps.conversation.language)
-    if language == "ar":
-        heading = (
-            f"تكوين جزئي مؤكد لـ {planning.requested_seats} مقعداً:"
-            if coverage_gaps
-            else f"تكوين مؤكد ضمن الميزانية لـ {planning.requested_seats} مقعداً:"
-        )
-        lines = [heading]
-        lines.extend(
-            (
-                f"- {_catalog_display_name(line.name)} (SKU {line.sku}): "
-                f"{line.quantity} × {line.unit_price:.2f} {currency} = "
-                f"{line.total:.2f} {currency}"
-            )
-            for line in selected_lines
-        )
-        lines.extend(
-            f"- {family}: لا يوجد خيار مؤكد ضمن الميزانية بعد."
-            for family in uncovered_families
-        )
-        lines.append(f"إجمالي التكوين: {selected_total:.2f} {currency}.")
-        if cross_sell is not None:
-            sku = f" (SKU {cross_sell.sku})" if cross_sell.sku else ""
-            lines.append(
-                f"إضافة مؤكدة: {cross_sell.name}{sku} — "
-                f"{cross_sell.price:.2f} {currency}."
-            )
-            lines.append(
-                f"الإجمالي مع الإضافة: {final_total:.2f} {currency}. "
-                f"المتبقي من الميزانية: {remaining:.2f} {currency}."
-            )
-        elif disclosure:
-            lines.append(disclosure)
-        for gap in coverage_gaps.values():
-            lines.append(
-                f"فجوة {gap.family}: تم تغطية {gap.covered} من {gap.requested}؛ "
-                f"المتبقي {gap.requested - gap.covered}."
-            )
-            if gap.closing_question:
-                lines.append(gap.closing_question)
-        lines.append("لم يتم إنشاء عرض سعر.")
-        response_text = "\n".join(lines)
-        if len(response_text) <= _VERIFIED_CATALOG_RECOVERY_MAX_CHARS:
-            return response_text
-        compact_lines = [
-            f"تكوين مؤكد ضمن الميزانية لـ {planning.requested_seats} مقعداً:"
-        ]
-        compact_lines.extend(
-            (
-                f"- {line.family} SKU {line.sku}: {line.quantity} × "
-                f"{line.unit_price:.2f} {currency} = {line.total:.2f} {currency}"
-            )
-            for line in selected_lines
-        )
-        compact_lines.extend(
-            f"- {family}: لا يوجد خيار مؤكد." for family in uncovered_families
-        )
-        compact_lines.extend(lines[1 + len(selected_lines) + len(uncovered_families) :])
-        compact_text = "\n".join(compact_lines)
-        return (
-            compact_text
-            if len(compact_text) <= _VERIFIED_CATALOG_RECOVERY_MAX_CHARS
-            else None
-        )
-
-    heading = (
-        f"Verified partial configuration for {planning.requested_seats} seats:"
-        if coverage_gaps
-        else f"Verified budget-fit configuration for {planning.requested_seats} seats:"
-    )
-    lines = [heading]
-    lines.extend(
-        (
-            f"- {_catalog_display_name(line.name)} (SKU {line.sku}): "
-            f"{line.quantity} × {currency} {line.unit_price:.2f} = "
-            f"{currency} {line.total:.2f}"
-        )
-        for line in selected_lines
-    )
-    lines.extend(
-        f"- {family.title()}: no verified option within budget yet."
-        for family in uncovered_families
-    )
-    lines.append(f"Configuration total: {currency} {selected_total:.2f}.")
-    if cross_sell is not None:
-        sku = f" (SKU {cross_sell.sku})" if cross_sell.sku else ""
-        lines.append(
-            f"Verified cross-sell: {cross_sell.name}{sku} — "
-            f"{currency} {cross_sell.price:.2f}."
-        )
-        lines.append(
-            f"Total with cross-sell: {currency} {final_total:.2f}. "
-            f"Remaining budget: {currency} {remaining:.2f}."
-        )
-    elif disclosure:
-        lines.append(disclosure)
-    for gap in coverage_gaps.values():
-        lines.append(
-            f"{gap.family.title()} coverage gap: {gap.covered} of {gap.requested}; "
-            f"{gap.requested - gap.covered} uncovered."
-        )
-        if gap.closing_question:
-            lines.append(gap.closing_question)
-    lines.append("No quotation was created.")
-    response_text = "\n".join(lines)
-    if len(response_text) <= _VERIFIED_CATALOG_RECOVERY_MAX_CHARS:
-        return response_text
-    compact_lines = [
-        f"Verified budget-fit configuration for {planning.requested_seats} seats:"
-    ]
-    compact_lines.extend(
-        (
-            f"- {line.family} SKU {line.sku}: {line.quantity} × "
-            f"{currency} {line.unit_price:.2f} = {currency} {line.total:.2f}"
-        )
-        for line in selected_lines
-    )
-    compact_lines.extend(
-        f"- {family.title()}: no verified option yet." for family in uncovered_families
-    )
-    compact_lines.extend(lines[1 + len(selected_lines) + len(uncovered_families) :])
-    compact_text = "\n".join(compact_lines)
-    return (
-        compact_text
-        if len(compact_text) <= _VERIFIED_CATALOG_RECOVERY_MAX_CHARS
-        else None
-    )
-
-
-async def _complete_verified_cross_sell_for_recovery(
-    ctx: RunContext[SalesDeps],
-    *,
-    explicit_quote_hold: bool,
-) -> None:
-    deps = ctx.deps
-    planning = deps.catalog_planning
-    required_families = tuple(dict.fromkeys(planning.families))
-    trace_names = tuple(trace.tool_name for trace in deps.recovery_tool_traces)
-    if (
-        not explicit_quote_hold
-        or not _CROSS_SELL_REQUEST_RE.search(deps.user_query)
-        or not planning.complete_coverage
-        or not required_families
-        or deps.verified_cross_sell is not None
-        or deps.required_cross_sell_disclosure is not None
-        or any(trace.state != "returned" for trace in deps.recovery_tool_traces)
-        or set(trace_names) != {"search_products"}
-        or tuple(deps.executed_tool_names) != trace_names
-        or trace_names.count("search_products") < len(required_families)
-        or not all(
-            deps.current_catalog_selections.get(family) for family in required_families
-        )
-    ):
-        return
-
-    primary_terms = {family: terms[0] for family, terms in _CATALOG_PRODUCT_FAMILIES}
-    category = " ".join(
-        primary_terms[family] for family in required_families if family in primary_terms
-    )
-    if not category:
-        return
-
-    try:
-        await recommend_products(
-            ctx,
-            category=category,
-            recommendation_type="cross_sell",
-        )
-    except Exception:
-        logger.warning(
-            "Verified catalog cross-sell recovery could not complete",
-            exc_info=True,
-        )
-
-
-def _verified_catalog_plan_payload(
-    deps: SalesDeps,
-    selections: Mapping[CatalogFamily, tuple[VerifiedCatalogLine, ...]],
-    *,
-    cross_sell_status: Literal["verified", "not_found", "over_budget"],
-) -> dict[str, object]:
-    selected_total = _catalog_selection_total(
-        selections,
-        deps.catalog_planning.families,
-    )
-    cross_sell = deps.verified_cross_sell
-    final_total = (
-        round(selected_total + cross_sell.price, 2)
-        if selected_total is not None and cross_sell is not None
-        else selected_total
-    )
-    remaining_budget = (
-        round(deps.catalog_planning.budget_cap - final_total, 2)
-        if deps.catalog_planning.budget_cap is not None and final_total is not None
-        else None
-    )
-    return {
-        "version": 1,
-        "epoch": deps.catalog_planning.epoch,
-        "requested_seats": deps.catalog_planning.requested_seats,
-        "families": list(deps.catalog_planning.families),
-        "budget_cap": deps.catalog_planning.budget_cap,
-        "currency": _CATALOG_BUDGET_CURRENCY,
-        "selected_total": selected_total,
-        "final_total": final_total,
-        "remaining_budget": remaining_budget,
-        "lines": [
-            {
-                "family": line.family,
-                "name": line.name,
-                "sku": line.sku,
-                "quantity": line.quantity,
-                "unit_price": line.unit_price,
-                "total": line.total,
-                "currency": line.currency,
-                "stock": line.stock,
-                "capacity": line.capacity,
-            }
-            for family in deps.catalog_planning.families
-            for line in selections[family]
-        ],
-        "stock_snapshots": [
-            {
-                "sku": snapshot.sku,
-                "available": snapshot.available,
-                "source": snapshot.source,
-                "provenance": snapshot.provenance,
-                "as_of": snapshot.as_of.isoformat(),
-            }
-            for snapshot in sorted(
-                deps.stock_snapshots.values(), key=lambda item: item.sku.casefold()
-            )
-        ],
-        "coverage_gaps": [
-            {
-                "family": gap.family,
-                "requested": gap.requested,
-                "covered": gap.covered,
-                "uncovered": gap.requested - gap.covered,
-                "resolution": gap.resolution,
-                "closing_question": gap.closing_question or None,
-            }
-            for gap in (
-                deps.catalog_decision.coverage_gaps if deps.catalog_decision else ()
-            )
-        ],
-        "cross_sell": (
-            {
-                "name": cross_sell.name,
-                "sku": cross_sell.sku,
-                "price": cross_sell.price,
-                "currency": cross_sell.currency,
-                "stock": cross_sell.stock,
-            }
-            if cross_sell is not None
-            else None
-        ),
-        "cross_sell_status": cross_sell_status,
-        "quotation_created": False,
-    }
-
-
-async def _store_verified_catalog_plan(
-    deps: SalesDeps,
-    selections: Mapping[CatalogFamily, tuple[VerifiedCatalogLine, ...]],
-    *,
-    cross_sell_status: Literal["verified", "not_found", "over_budget"],
-) -> dict[str, object]:
-    payload = _verified_catalog_plan_payload(
-        deps,
-        selections,
-        cross_sell_status=cross_sell_status,
-    )
-    metadata = dict(deps.conversation.metadata_ or {})
-    metadata[_VERIFIED_CATALOG_PLAN_KEY] = payload
-    deps.conversation.metadata_ = metadata
-    await deps.db.flush()
-    return payload
-
-
-async def _try_verified_catalog_plan(
-    deps: SalesDeps,
-) -> tuple[str, tuple[RuntimeToolTrace, ...]] | None:
-    planning = deps.catalog_planning
-    if (
-        not _has_explicit_quote_hold(deps.user_query)
-        or not _CROSS_SELL_REQUEST_RE.search(deps.user_query)
-        or not planning.complete_coverage
-        or planning.requested_seats is None
-        or planning.budget_cap is None
-        or not planning.families
-        or is_active_human_handoff(deps.conversation.escalation_status)
-    ):
-        return None
-
-    stmt = (
-        select(Product)
-        .options(
-            load_only(
-                Product.sku,
-                Product.name_en,
-                Product.name_ar,
-                Product.description_en,
-                Product.description_ar,
-                Product.category,
-                Product.subcategory,
-                Product.price,
-                Product.currency,
-                Product.stock,
-            )
-        )
-        .where(
-            Product.is_active.is_(True),
-            Product.stock > 0,
-            Product.price > 0,
-        )
-    )
-    result = await deps.db.execute(stmt)
-    products = tuple(result.scalars().all())
-    customer_context = "\n".join(
-        entry.removeprefix("user:").strip()
-        for entry in (*(deps.recent_history or ()), f"user: {deps.user_query}")
-        if entry.startswith("user:")
-    )
-    segment = (
-        str(
-            (deps.crm_context or {}).get("Segment")
-            or (deps.crm_context or {}).get("segment")
-            or "Unknown"
-        )
-        if isinstance(deps.crm_context, Mapping)
-        else "Unknown"
-    )
-    candidate_skus = _bounded_catalog_candidate_skus(
-        planning,
-        products,
-        customer_context=customer_context,
-        segment=segment,
-    )
-    authoritative_stock = await _zoho_stock_for_catalog_candidates(deps, candidate_skus)
-    if authoritative_stock is None:
-        return None
-    stock_by_sku, stock_as_of = authoritative_stock
-    selections = _solve_verified_catalog_selections(
-        planning,
-        products,
-        customer_context=customer_context,
-        segment=segment,
-        authoritative_stock_by_sku=stock_by_sku,
-    )
-    if selections is None:
-        return None
-    coverage_gaps = _catalog_coverage_gaps(
-        selections,
-        planning.families,
-        planning.requested_seats,
-    )
-    selected_stock = {
-        line.sku.strip().casefold(): line
-        for family_lines in selections.values()
-        for line in family_lines
-    }
-    stock_snapshots = tuple(
-        StockSnapshot(
-            sku=line.sku,
-            available=stock_by_sku[key],
-            source="zoho",
-            as_of=stock_as_of,
-        )
-        for key, line in selected_stock.items()
-    )
-    decision = CatalogDecision(
-        requirements=tuple(planning.families),
-        selected_lines=tuple(
-            line for family in planning.families for line in selections[family]
-        ),
-        requested_seats=planning.requested_seats,
-        budget_cap=planning.budget_cap,
-        stock_snapshots=stock_snapshots,
-        recommendation=(
-            "verified_partial_configuration"
-            if coverage_gaps
-            else "verified_complete_configuration"
-        ),
-        coverage_gaps=coverage_gaps,
-    )
-    try:
-        validate_catalog_decision(decision)
-    except ValueError:
-        logger.warning("Verified catalog plan failed authoritative stock validation")
-        return None
-
-    selected_total = _catalog_selection_total(selections, planning.families)
-    if selected_total is None:
-        return None
-    remaining_budget = round(planning.budget_cap - selected_total, 2)
-    selected_names = {
-        line.name.casefold()
-        for family_lines in selections.values()
-        for line in family_lines
-    }
-    cross_sell_candidates: list[VerifiedCrossSell] = []
-    cross_sell_over_budget = False
-    try:
-        from src.services.recommendations import get_cross_sell
-
-        seen_names: set[str] = set()
-        for family in dict.fromkeys(planning.families):
-            source_category = _CATALOG_CROSS_SELL_SOURCE.get(family)
-            if source_category is None:
-                continue
-            for item in await get_cross_sell(
-                deps.db,
-                source_category,
-                limit=3,
-            ):
-                normalized_name = str(item.name).strip().casefold()
-                price = round(float(item.price), 2)
-                stock = int(item.stock)
-                currency = (
-                    str(getattr(item, "currency", _CATALOG_BUDGET_CURRENCY) or "")
-                    .strip()
-                    .upper()
-                )
-                sku = _string_value(getattr(item, "sku", None))
-                if (
-                    not normalized_name
-                    or normalized_name in seen_names
-                    or normalized_name in selected_names
-                    or len(str(item.name).strip()) > _VERIFIED_CATALOG_FIELD_MAX_CHARS
-                    or price <= 0
-                    or stock <= 0
-                    or currency != _CATALOG_BUDGET_CURRENCY
-                ):
-                    continue
-                seen_names.add(normalized_name)
-                if price > remaining_budget:
-                    cross_sell_over_budget = True
-                    continue
-                cross_sell_candidates.append(
-                    VerifiedCrossSell(
-                        name=str(item.name).strip(),
-                        sku=sku,
-                        price=price,
-                        currency=currency,
-                        stock=stock,
-                    )
-                )
-    except Exception:
-        logger.warning(
-            "Configured cross-sell lookup failed during deterministic catalog plan",
-            exc_info=True,
-        )
-        return None
-
-    verified_cross_sell = (
-        min(
-            cross_sell_candidates,
-            key=lambda item: (item.price, item.name.casefold()),
-        )
-        if cross_sell_candidates
-        else None
-    )
-    cross_sell_status: Literal["verified", "not_found", "over_budget"] = (
-        "verified"
-        if verified_cross_sell is not None
-        else ("over_budget" if cross_sell_over_budget else "not_found")
-    )
-    cross_sell_disclosure = (
-        None
-        if verified_cross_sell is not None
-        else _no_verified_cross_sell_disclosure(
-            str(deps.conversation.language),
-            has_budget=cross_sell_status == "over_budget",
-        )
-    )
-    if coverage_gaps:
-        verified_cross_sell = None
-        cross_sell_status = "not_found"
-        cross_sell_disclosure = (
-            "تم تأجيل الإضافة حتى يتم إغلاق فجوة التغطية."
-            if str(deps.conversation.language) == "ar"
-            else "Cross-sell deferred until the coverage gap is closed."
-        )
-    resolved_planning = planning.model_copy(deep=True)
-    resolved_planning.family_totals = {
-        family: round(sum(line.total for line in selections[family]), 2)
-        for family in resolved_planning.families
-    }
-    resolved_deps = replace(
-        deps,
-        catalog_planning=resolved_planning,
-        current_catalog_selections=dict(selections),
-        verified_catalog_selections=dict(selections),
-        verified_cross_sell=verified_cross_sell,
-        required_cross_sell_disclosure=cross_sell_disclosure,
-        stock_snapshots={
-            snapshot.sku.casefold(): snapshot for snapshot in stock_snapshots
-        },
-        catalog_decision=decision,
-        executed_tool_names=[],
-        recovery_tool_traces=[],
-    )
-    payload = _verified_catalog_plan_payload(
-        resolved_deps,
-        selections,
-        cross_sell_status=cross_sell_status,
-    )
-    trace = build_runtime_tool_trace(
-        tool_name="plan_catalog_configuration",
-        arguments={
-            "epoch": resolved_planning.epoch,
-            "requested_seats": resolved_planning.requested_seats,
-            "families": list(resolved_planning.families),
-            "budget_cap": resolved_planning.budget_cap,
-            "budget_currency": _CATALOG_BUDGET_CURRENCY,
-            "per_item_cap": resolved_planning.per_item_cap,
-        },
-        outcome=payload,
-    )
-    resolved_deps.executed_tool_names = [trace.tool_name]
-    resolved_deps.recovery_tool_traces = [trace]
-    response = _engine_runtime()._materialize_verified_catalog_recovery(
-        resolved_deps,
-        (trace,),
-        explicit_quote_hold=True,
-    )
-    if response is None:
-        logger.error("Verified deterministic catalog plan failed materialization")
-        return None
-
-    await _store_catalog_planning(
-        resolved_deps.db,
-        resolved_deps.conversation,
-        resolved_planning,
-    )
-    await _store_verified_catalog_plan(
-        resolved_deps,
-        selections,
-        cross_sell_status=cross_sell_status,
-    )
-    deps.catalog_planning = resolved_planning
-    deps.current_catalog_selections = dict(selections)
-    deps.verified_catalog_selections = dict(selections)
-    deps.verified_cross_sell = verified_cross_sell
-    deps.required_cross_sell_disclosure = cross_sell_disclosure
-    deps.stock_snapshots = dict(resolved_deps.stock_snapshots)
-    deps.catalog_decision = decision
-    deps.executed_tool_names = [trace.tool_name]
-    deps.recovery_tool_traces = [trace]
-    return response, (trace,)
-
-
-def _bounded_catalog_candidate_skus(
-    planning: CatalogPlanningContext,
-    products: Sequence[Any],
-    *,
-    customer_context: str,
-    segment: str,
-) -> list[str]:
-    candidates = _catalog_coverage_candidates(
-        planning,
-        products,
-        customer_context=customer_context,
-        segment=segment,
-    )
-    skus: list[str] = []
-    for family in dict.fromkeys(planning.families):
-        family_candidates = sorted(
-            candidates.get(family, ()),
-            key=lambda item: (
-                item.unit_price / item.capacity,
-                item.unit_price,
-                item.name.casefold(),
-                item.sku,
-            ),
-        )[:_CATALOG_DECISION_CANDIDATES_PER_FAMILY]
-        skus.extend(candidate.sku for candidate in family_candidates)
-    return list(dict.fromkeys(skus))
-
-
 async def _zoho_stock_for_catalog_candidates(
     deps: SalesDeps,
     skus: Sequence[str],
@@ -3888,8 +2400,6 @@ __all__ = (
     "CLAIM_CONTRACT_SCOPE_KEY",
     "CatalogAmount",
     "CatalogBudgetConstraints",
-    "CatalogCoverageGap",
-    "CatalogDecision",
     "CatalogFactDomain",
     "CatalogFamily",
     "CatalogPlanningContext",
@@ -3897,7 +2407,6 @@ __all__ = (
     "StockSnapshot",
     "VerifiedCatalogFactProduct",
     "VerifiedCatalogLine",
-    "VerifiedOpeningCatalogLine",
     "VerifiedCrossSell",
     "_ACOUSTIC_FACT_GAP",
     "_ACOUSTIC_MEASUREMENT_RE",
@@ -3910,14 +2419,9 @@ __all__ = (
     "_ANCHOR_MIN_STOCK",
     "_BUDGET_CLAUSE_BOUNDARY_RE",
     "_CATALOG_BUDGET_CAP_RE",
-    "_CATALOG_BUDGET_CURRENCY",
     "_CATALOG_CAPACITY_RE",
     "_CATALOG_COMPLETE_COVERAGE_TERMS",
     "_CATALOG_CONTINUATION_TERMS",
-    "_CATALOG_CROSS_SELL_SOURCE",
-    "_CATALOG_DECISION_CANDIDATES_PER_FAMILY",
-    "_CATALOG_DECISION_UNUSABLE",
-    "_CATALOG_FACT_COMPARISON_CONTEXT_RE",
     "_CATALOG_OPTION_CONTEXT_RE",
     "_CATALOG_PLANNING_KEY",
     "_CATALOG_PLAN_REFERENCE_RE",
@@ -3930,6 +2434,7 @@ __all__ = (
     "_CLAIM_CONTRACT_VALUE_MAX_CHARS",
     "_COMPACT_NON_PRODUCT_RE",
     "_COMPACT_PRODUCT_QUERY_RE",
+    "_CROSS_SELL_REQUEST_RE",
     "_CatalogCoverageCandidate",
     "_ContractedResult",
     "_DIMENSION_AXIS_RE",
@@ -3954,38 +2459,24 @@ __all__ = (
     "_REPLACE_CATALOG_ACTION_RE",
     "_SKU_HOMOGLYPH_TRANSLATION",
     "_TOTAL_BUDGET_RE",
-    "_VERIFIED_CATALOG_PLAN_KEY",
     "_anchor_line_cache",
     "_append_required_tool_disclosures",
-    "_best_catalog_coverage_selection",
-    "_bounded_catalog_candidate_skus",
     "_budget_clause",
     "_catalog_budget_cap",
     "_catalog_budget_constraints",
-    "_catalog_coverage_candidates",
-    "_catalog_coverage_gaps",
     "_catalog_coverage_selection",
-    "_catalog_decision_defects",
-    "_catalog_decision_output_is_valid",
-    "_catalog_decision_repair_directive",
-    "_catalog_decision_runtime_directive",
-    "_catalog_display_name",
     "_catalog_fact_match_is_negated",
-    "_catalog_number_in_text",
     "_catalog_planning_for_turn",
     "_catalog_planning_from_metadata",
     "_catalog_product_capacity",
     "_catalog_product_families",
     "_catalog_product_family",
-    "_catalog_product_text",
-    "_catalog_recovery_output_is_valid",
     "_catalog_remaining_budget",
     "_catalog_replacement_families",
     "_catalog_search_query_with_constraints",
     "_catalog_selection_total",
     "_claim_contract_directive",
     "_claim_contract_runs_every_catalog_turn",
-    "_complete_verified_cross_sell_for_recovery",
     "_contains_catalog_term",
     "_enforce_claim_contract",
     "_explicit_product_option_cap",
@@ -3993,12 +2484,10 @@ __all__ = (
     "_has_footprint_dimension_evidence",
     "_has_positive_lumbar_support",
     "_has_unnegated_lumbar_term",
-    "_is_catalog_fact_comparison_query",
     "_log_claim_contract",
     "_lumbar_term_is_negated",
     "_materialize_claim_rows",
     "_materialize_verified_catalog_facts",
-    "_materialize_verified_catalog_recovery",
     "_minimum_catalog_coverage_selection",
     "_minimum_catalog_coverage_total",
     "_needs_complete_catalog_coverage",
@@ -4014,17 +2503,11 @@ __all__ = (
     "_requests_confirmed_lumbar_support",
     "_search_budget_fallback_contract",
     "_search_products_limit_message",
-    "_should_override_policy_for_catalog_fact_query",
-    "_solve_verified_catalog_selections",
     "_stock_follow_up_contract",
     "_store_catalog_planning",
-    "_store_verified_catalog_plan",
     "_track_sales_tool",
-    "_try_verified_catalog_plan",
-    "_try_verified_opening_catalog_options",
     "_turn_owes_the_company_question",
     "_turn_saw_catalog_evidence",
-    "_verified_catalog_plan_payload",
     "_verify_volunteered_claims",
     "_zoho_stock_for_catalog_candidates",
     "AnchorCatalogRow",
@@ -4038,5 +2521,4 @@ __all__ = (
     "opening_wants_a_price_anchor",
     "build_runtime_tool_trace",
     "grounded_amounts_for_turn",
-    "validate_catalog_decision",
 )

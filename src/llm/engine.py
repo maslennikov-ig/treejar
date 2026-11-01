@@ -103,7 +103,6 @@ from src.llm.catalog_planning import (
     _stock_follow_up_contract,
     _store_catalog_planning,
     _track_sales_tool,
-    _try_verified_opening_catalog_options,  # noqa: F401 - compatibility export
     _zoho_stock_for_catalog_candidates,
 )
 from src.llm.catalog_planning import (
@@ -116,9 +115,6 @@ from src.llm.catalog_planning import (
     _explicit_product_option_cap as _explicit_product_option_cap,
 )
 from src.llm.catalog_planning import (
-    _materialize_verified_catalog_recovery as _materialize_verified_catalog_recovery,
-)
-from src.llm.catalog_planning import (
     _needs_complete_catalog_coverage as _needs_complete_catalog_coverage,
 )
 from src.llm.catalog_planning import (
@@ -129,9 +125,6 @@ from src.llm.catalog_planning import (
 )
 from src.llm.catalog_planning import (
     _requests_confirmed_lumbar_support as _requests_confirmed_lumbar_support,
-)
-from src.llm.catalog_planning import (
-    _try_verified_catalog_plan as _try_verified_catalog_plan,
 )
 from src.llm.catalog_references import (
     _canonicalize_sku_signal,
@@ -244,9 +237,6 @@ from src.llm.verified_answers import (
     is_requested_product_candidate,
     query_names_specific_item,
 )
-from src.llm.verified_answers import (
-    evaluate_verified_answer_policy as evaluate_verified_answer_policy,
-)
 from src.models.conversation import Conversation
 from src.models.product import Product
 from src.models.product_links import product_canonical_url
@@ -319,10 +309,8 @@ QUOTE_INTENT_FRAME_KEY = "quote_intent_frame"
 SALES_MEMORY_KEY = "sales_memory"
 SALES_OPPORTUNITY_WRITE_KEY = "sales_opportunity_write"
 ORDER_RUNTIME_METADATA_KEY = "order_runtime"
-NAME_GATE_PENDING_REQUEST_KEY = "name_gate_pending_request"
 CUSTOMER_NAME_ASKED_KEY = "customer_name_asked"
 COMPANY_ACTIVITY_ASKED_PREVIOUS_TURN_KEY = "company_activity_asked_previous_turn"
-MAX_NAME_GATE_PENDING_REQUEST_CHARS = 600
 LAST_APPLIED_BOT_RULES_KEY = "last_applied_bot_rules"
 BOT_TEST_MARKER_RE = re.compile(
     r"\s*\[(?:smoke:[^\]]+|e2emarker[^\]]+|tj-[a-z0-9_-]*\d{8,}[a-z0-9_-]*)\]\s*",
@@ -2310,98 +2298,6 @@ def _is_name_only_customer_detail_reply(
         return before_is_social and after_is_social
 
     return False
-
-
-def _is_substantive_name_gate_request(text: str) -> bool:
-    stripped = " ".join(_strip_synthetic_test_marker(text).split())
-    if not stripped:
-        return False
-
-    details = _extract_quote_customer_details(stripped)
-    if _is_name_only_customer_detail_reply(stripped, details):
-        return False
-
-    normalized = _normalize_text(stripped)
-    normalized = re.sub(
-        r"^(?:hi|hello|hey|good morning|good afternoon|good evening|"
-        r"مرحبا|السلام عليكم)[,!\s]*",
-        "",
-        normalized,
-    ).strip()
-    if not normalized:
-        return False
-    return normalized not in {
-        "can you help",
-        "could you help",
-        "please advise",
-        "thanks",
-        "thank you",
-        "ok",
-        "okay",
-        "yes",
-        "no",
-    }
-
-
-async def _store_name_gate_pending_request(
-    db: AsyncSession,
-    conversation: Conversation,
-    text: str,
-) -> None:
-    if not _is_substantive_name_gate_request(text):
-        return
-
-    metadata = dict(conversation.metadata_ or {})
-    identity = {
-        key: value
-        for key, value in _extract_quote_customer_details(text).items()
-        if key in {"name", "company"} and value
-    }
-    metadata[NAME_GATE_PENDING_REQUEST_KEY] = {
-        "version": 2,
-        "text": " ".join(text.split())[:MAX_NAME_GATE_PENDING_REQUEST_CHARS],
-        "source": "first_turn_name_gate",
-        "intent": _classify_name_gate_pending_intent(text),
-        "language": _string_value(getattr(conversation, "language", None)) or "en",
-        "identity": identity,
-    }
-    conversation.metadata_ = metadata
-    # Parking a request on the name is the one place we decide to ask again, so
-    # it is the one place that clears the slot recording that we already asked.
-    # Without this the guard reads "asked once" and removes the gate's own
-    # question, leaving a parked request and nothing on screen to unpark it.
-    _clear_customer_name_asked(conversation)
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to flush name-gate pending request for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-
-
-def _classify_name_gate_pending_intent(text: str) -> str:
-    normalized = _normalize_text(_normalize_sku_homoglyphs(text))
-    if _extract_sales_opportunity_request(text) is not None:
-        return "sales_opportunity"
-    if _has_explicit_quote_hold(text):
-        return "catalog_discovery"
-    if (
-        re.search(r"\b(?:compare|comparison|versus|vs\.?|difference)\b", normalized)
-        or "مقارنة" in normalized
-        or "قارن" in normalized
-    ):
-        return "catalog_comparison"
-    if extract_exact_quote_candidate(text) is not None or is_quote_or_proposal_request(
-        text
-    ):
-        return "exact_quote"
-    if _has_product_or_quote_routing_signal(text):
-        return "catalog_discovery"
-    if evaluate_verified_answer_policy(text, ()).question_class == "product":
-        return "catalog_discovery"
-    return "general_request"
 
 
 def _looks_like_natural_delivery_address(value: str) -> bool:
