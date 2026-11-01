@@ -79,3 +79,38 @@ def test_fk_and_query_indexes_migration_and_orm_alignment() -> None:
     assert ManagerReview.__table__.c.updated_at.type.timezone is True  # type: ignore[attr-defined]
     assert Referral.__table__.c.created_at.type.timezone is True  # type: ignore[attr-defined]
     assert Referral.__table__.c.updated_at.type.timezone is True  # type: ignore[attr-defined]
+
+
+def test_admin_timestamp_indexes_migration_and_single_head() -> None:
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "versions"
+    migration = migrations_dir / "2026_11_01_add_admin_timestamp_indexes.py"
+    text = migration.read_text()
+
+    assert 'revision: str = "2026_11_01_admin_ts_indexes"' in text
+    assert 'down_revision: str | None = "2026_10_13_fk_query_indexes"' in text
+    for index_name in (
+        "ix_messages_created_at",
+        "ix_conversations_created_at",
+        "ix_conversations_updated_at",
+    ):
+        assert index_name in text
+    assert "if_not_exists=True" in text
+    assert "if_exists=True" in text
+
+    down_revisions_re = re.compile(
+        r'down_revision\s*(?::\s*[^=]+)?\s*=\s*(?:"([^"]+)"|None)'
+    )
+    revisions: set[str] = set()
+    referenced_parents: set[str] = set()
+    for migration_file in migrations_dir.glob("*.py"):
+        content = migration_file.read_text()
+        rev_match = REVISION_RE.search(content)
+        down_match = down_revisions_re.search(content)
+        assert rev_match is not None
+        assert down_match is not None
+        revisions.add(rev_match.group(1))
+        if down_match.group(1) is not None:
+            referenced_parents.add(down_match.group(1))
+
+    heads = revisions - referenced_parents
+    assert heads == {"2026_11_01_admin_ts_indexes"}

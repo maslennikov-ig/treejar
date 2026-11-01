@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 import uuid
-from collections import OrderedDict
+from collections.abc import Sequence
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Any
 
 from fastapi import HTTPException
 from pydantic_ai import UnexpectedModelBehavior
-from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy import String, cast, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -273,25 +274,86 @@ def _conversation_filters(
     return filters
 
 
+def _json_dict(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str) and value:
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            return None
+    return None
+
+
+def _first_json_dict(*values: Any) -> dict[str, Any] | None:
+    for value in values:
+        parsed = _json_dict(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+async def _message_summaries(
+    db: AsyncSession,
+    conversation_ids: Sequence[uuid.UUID],
+) -> dict[uuid.UUID, tuple[int, datetime | None, str | None]]:
+    """Fetch message counts and latest message timestamp/preview in one window query."""
+    unique_ids = list(dict.fromkeys(conversation_ids))
+    if not unique_ids:
+        return {}
+
+    rn = (
+        func.row_number()
+        .over(
+            partition_by=Message.conversation_id,
+            order_by=(Message.created_at.desc(), Message.id.desc()),
+        )
+        .label("rn")
+    )
+    msg_count = (
+        func.count(Message.id)
+        .over(partition_by=Message.conversation_id)
+        .label("message_count")
+    )
+    subq = (
+        select(
+            Message.conversation_id.label("conversation_id"),
+            Message.created_at.label("created_at"),
+            Message.content.label("content"),
+            msg_count,
+            rn,
+        )
+        .where(Message.conversation_id.in_(unique_ids))
+        .subquery()
+    )
+    stmt = select(
+        subq.c.conversation_id,
+        subq.c.message_count,
+        subq.c.created_at,
+        subq.c.content,
+    ).where(subq.c.rn == 1)
+
+    rows = (await db.execute(stmt)).all()
+    summaries: dict[uuid.UUID, tuple[int, datetime | None, str | None]] = {
+        cid: (0, None, None) for cid in unique_ids
+    }
+    for row in rows:
+        summaries[row.conversation_id] = (
+            int(row.message_count or 0),
+            row.created_at,
+            _preview(row.content),
+        )
+    return summaries
+
+
 async def _message_summary(
     db: AsyncSession,
     conversation_id: uuid.UUID,
 ) -> tuple[int, datetime | None, str | None]:
-    count_result = await db.execute(
-        select(func.count(Message.id)).where(Message.conversation_id == conversation_id)
-    )
-    last_result = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conversation_id)
-        .order_by(Message.created_at.desc())
-        .limit(1)
-    )
-    last_message = last_result.scalars().first()
-    return (
-        int(count_result.scalar_one()),
-        last_message.created_at if last_message else None,
-        _preview(last_message.content if last_message else None),
-    )
+    summaries = await _message_summaries(db, [conversation_id])
+    return summaries.get(conversation_id, (0, None, None))
 
 
 async def _conversation_list_item(
@@ -358,53 +420,79 @@ async def list_admin_customers(
         date_to=date_to,
         segment=segment,
     )
-    stmt = select(Conversation).order_by(
-        Conversation.updated_at.desc(),
-        Conversation.created_at.desc(),
+    count_stmt = select(func.count(distinct(Conversation.phone))).select_from(
+        Conversation
+    )
+    rn = (
+        func.row_number()
+        .over(
+            partition_by=Conversation.phone,
+            order_by=(
+                Conversation.updated_at.desc(),
+                Conversation.created_at.desc(),
+                Conversation.id.desc(),
+            ),
+        )
+        .label("rn")
+    )
+    conv_count = (
+        func.count(Conversation.id)
+        .over(partition_by=Conversation.phone)
+        .label("conversation_count")
+    )
+    ranked_base = select(
+        Conversation.id.label("id"),
+        Conversation.phone.label("phone"),
+        Conversation.customer_name.label("customer_name"),
+        Conversation.status.label("status"),
+        Conversation.sales_stage.label("sales_stage"),
+        Conversation.language.label("language"),
+        Conversation.escalation_status.label("escalation_status"),
+        Conversation.deal_status.label("deal_status"),
+        Conversation.zoho_contact_id.label("zoho_contact_id"),
+        Conversation.zoho_deal_id.label("zoho_deal_id"),
+        Conversation.updated_at.label("updated_at"),
+        Conversation.created_at.label("created_at"),
+        Conversation.metadata_["segment"].as_string().label("segment"),
+        conv_count,
+        rn,
     )
     if filters:
-        stmt = stmt.where(*filters)
+        count_stmt = count_stmt.where(*filters)
+        ranked_base = ranked_base.where(*filters)
 
-    result = await db.execute(stmt)
-    conversations = list(result.scalars().all())
-    latest_by_phone: OrderedDict[str, Conversation] = OrderedDict()
-    counts_by_phone: dict[str, int] = {}
-    for conversation in conversations:
-        counts_by_phone[conversation.phone] = (
-            counts_by_phone.get(conversation.phone, 0) + 1
-        )
-        latest_by_phone.setdefault(conversation.phone, conversation)
+    total = int((await db.execute(count_stmt)).scalar_one() or 0)
+    ranked = ranked_base.subquery()
+    page_stmt = (
+        select(ranked)
+        .where(ranked.c.rn == 1)
+        .order_by(ranked.c.updated_at.desc(), ranked.c.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    rows = list((await db.execute(page_stmt)).all())
+    summaries = await _message_summaries(db, [row.id for row in rows])
 
-    all_latest = list(latest_by_phone.values())
-    total = len(all_latest)
-    start = (page - 1) * page_size
-    paged = all_latest[start : start + page_size]
-    items: list[AdminCustomerListItem] = []
-    for conversation in paged:
-        metadata = _metadata(conversation)
-        _, last_message_at, last_message_preview = await _message_summary(
-            db,
-            conversation.id,
+    items = [
+        AdminCustomerListItem(
+            phone=row.phone,
+            customer_name=row.customer_name,
+            latest_conversation_id=row.id,
+            latest_message_at=summaries.get(row.id, (0, None, None))[1],
+            latest_message_preview=summaries.get(row.id, (0, None, None))[2],
+            conversation_count=int(row.conversation_count or 1),
+            status=row.status,
+            sales_stage=row.sales_stage,
+            language=row.language,
+            escalation_status=row.escalation_status,
+            deal_status=row.deal_status,
+            zoho_contact_id=row.zoho_contact_id,
+            zoho_deal_id=row.zoho_deal_id,
+            segment=str(row.segment) if row.segment is not None else None,
+            updated_at=row.updated_at,
         )
-        items.append(
-            AdminCustomerListItem(
-                phone=conversation.phone,
-                customer_name=conversation.customer_name,
-                latest_conversation_id=conversation.id,
-                latest_message_at=last_message_at,
-                latest_message_preview=last_message_preview,
-                conversation_count=counts_by_phone[conversation.phone],
-                status=conversation.status,
-                sales_stage=conversation.sales_stage,
-                language=conversation.language,
-                escalation_status=conversation.escalation_status,
-                deal_status=conversation.deal_status,
-                zoho_contact_id=conversation.zoho_contact_id,
-                zoho_deal_id=conversation.zoho_deal_id,
-                segment=_metadata_text(metadata, "segment"),
-                updated_at=conversation.updated_at,
-            )
-        )
+        for row in rows
+    ]
 
     return PaginatedResponse(
         items=items,
@@ -450,7 +538,28 @@ async def list_admin_conversations(
         filters.append(Conversation.phone == phone)
 
     count_stmt = select(func.count()).select_from(Conversation)
-    item_stmt = select(Conversation).order_by(
+    item_stmt = select(
+        Conversation.id.label("id"),
+        Conversation.phone.label("phone"),
+        Conversation.customer_name.label("customer_name"),
+        Conversation.language.label("language"),
+        Conversation.sales_stage.label("sales_stage"),
+        Conversation.status.label("status"),
+        Conversation.escalation_status.label("escalation_status"),
+        Conversation.deal_status.label("deal_status"),
+        Conversation.deal_amount.label("deal_amount"),
+        Conversation.zoho_contact_id.label("zoho_contact_id"),
+        Conversation.zoho_deal_id.label("zoho_deal_id"),
+        Conversation.created_at.label("created_at"),
+        Conversation.updated_at.label("updated_at"),
+        Conversation.metadata_["source"].as_string().label("meta_source"),
+        Conversation.metadata_["segment"].as_string().label("meta_segment"),
+        Conversation.metadata_["utm"].label("meta_utm"),
+        Conversation.metadata_["order"].label("meta_order"),
+        Conversation.metadata_["order_metadata"].label("meta_order_metadata"),
+        Conversation.metadata_["sale_order"].label("meta_sale_order"),
+        Conversation.metadata_["sale_order_metadata"].label("meta_sale_order_metadata"),
+    ).order_by(
         Conversation.updated_at.desc(),
         Conversation.created_at.desc(),
     )
@@ -459,17 +568,52 @@ async def list_admin_conversations(
         item_stmt = item_stmt.where(*filters)
 
     total_result = await db.execute(count_stmt)
-    total = int(total_result.scalar_one())
-    item_result = await db.execute(
-        item_stmt.offset((page - 1) * page_size).limit(page_size)
+    total = int(total_result.scalar_one() or 0)
+    rows = list(
+        (
+            await db.execute(item_stmt.offset((page - 1) * page_size).limit(page_size))
+        ).all()
     )
-    conversations = list(item_result.scalars().all())
+    summaries = await _message_summaries(db, [row.id for row in rows])
+
+    items: list[AdminConversationListItem] = []
+    for row in rows:
+        message_count, last_message_at, last_message_preview = summaries.get(
+            row.id, (0, None, None)
+        )
+        items.append(
+            AdminConversationListItem(
+                id=row.id,
+                phone=row.phone,
+                customer_name=row.customer_name,
+                language=row.language,
+                sales_stage=row.sales_stage,
+                status=row.status,
+                escalation_status=row.escalation_status,
+                deal_status=row.deal_status,
+                deal_amount=_money(row.deal_amount),
+                zoho_contact_id=row.zoho_contact_id,
+                zoho_deal_id=row.zoho_deal_id,
+                message_count=message_count,
+                last_message_at=last_message_at,
+                last_message_preview=last_message_preview,
+                source=str(row.meta_source) if row.meta_source is not None else None,
+                segment=str(row.meta_segment) if row.meta_segment is not None else None,
+                utm=_json_dict(row.meta_utm),
+                order_metadata=_first_json_dict(
+                    row.meta_order,
+                    row.meta_order_metadata,
+                    row.meta_sale_order,
+                    row.meta_sale_order_metadata,
+                ),
+                metadata=None,
+                created_at=row.created_at,
+                updated_at=row.updated_at,
+            )
+        )
 
     return PaginatedResponse(
-        items=[
-            await _conversation_list_item(db, conversation)
-            for conversation in conversations
-        ],
+        items=items,
         total=total,
         page=page,
         page_size=page_size,

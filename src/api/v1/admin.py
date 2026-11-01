@@ -367,34 +367,87 @@ async def get_metrics(
     )
 
 
+_DASHBOARD_CACHE_TTL_SECONDS = 60
+_DASHBOARD_METRICS_CACHE_PREFIX = "admin:dashboard:metrics:v1:"
+_DASHBOARD_TIMESERIES_CACHE_PREFIX = "admin:dashboard:timeseries:v1:"
+
+
 @router.get("/dashboard/metrics/", response_model=DashboardMetricsResponse)
 async def get_dashboard_metrics(
     db: Annotated[AsyncSession, Depends(get_db)],
     period: PeriodType = "all_time",
+    refresh: bool = False,
 ) -> DashboardMetricsResponse:
     """Get the current admin dashboard metrics payload.
 
     Query params:
         period: day | week | month | all_time (default: all_time)
+        refresh: bypass 60-second Redis cache when True
     """
     from src.services.dashboard_metrics import calculate_dashboard_metrics
 
-    return await calculate_dashboard_metrics(db, period)
+    cache_key = f"{_DASHBOARD_METRICS_CACHE_PREFIX}{period}"
+    if not refresh:
+        try:
+            redis = get_redis_client()
+            cached = await redis.get(cache_key)
+            if isinstance(cached, bytes):
+                cached = cached.decode("utf-8")
+            if isinstance(cached, str) and cached:
+                return DashboardMetricsResponse.model_validate_json(cached)
+        except Exception:
+            logger.debug("Dashboard metrics cache miss/error", exc_info=True)
+
+    payload = await calculate_dashboard_metrics(db, period)
+    try:
+        redis = get_redis_client()
+        await redis.set(
+            cache_key,
+            payload.model_dump_json(),
+            ex=_DASHBOARD_CACHE_TTL_SECONDS,
+        )
+    except Exception:
+        logger.debug("Failed to write dashboard metrics cache", exc_info=True)
+    return payload
 
 
 @router.get("/dashboard/timeseries/", response_model=TimeseriesResponse)
 async def get_dashboard_timeseries(
     db: Annotated[AsyncSession, Depends(get_db)],
     period: PeriodType = "all_time",
+    refresh: bool = False,
 ) -> TimeseriesResponse:
     """Get daily new vs returning conversation timeseries.
 
     Query params:
         period: day | week | month | all_time (default: all_time)
+        refresh: bypass 60-second Redis cache when True
     """
     from src.services.dashboard_metrics import calculate_timeseries
 
-    return await calculate_timeseries(db, period)
+    cache_key = f"{_DASHBOARD_TIMESERIES_CACHE_PREFIX}{period}"
+    if not refresh:
+        try:
+            redis = get_redis_client()
+            cached = await redis.get(cache_key)
+            if isinstance(cached, bytes):
+                cached = cached.decode("utf-8")
+            if isinstance(cached, str) and cached:
+                return TimeseriesResponse.model_validate_json(cached)
+        except Exception:
+            logger.debug("Dashboard timeseries cache miss/error", exc_info=True)
+
+    payload = await calculate_timeseries(db, period)
+    try:
+        redis = get_redis_client()
+        await redis.set(
+            cache_key,
+            payload.model_dump_json(),
+            ex=_DASHBOARD_CACHE_TTL_SECONDS,
+        )
+    except Exception:
+        logger.debug("Failed to write dashboard timeseries cache", exc_info=True)
+    return payload
 
 
 @router.get("/feedback/recent", response_model=list[RecentFeedbackRead])

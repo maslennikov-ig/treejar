@@ -1377,3 +1377,131 @@ async def test_admin_controls_and_notifications_write_audit_entries(
     assert len(notif_db.audits) == 1
     assert isinstance(notif_db.audits[0], AdminActionAudit)
     assert notif_db.audits[0].action == "notification.test"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_metrics_and_timeseries_redis_cache_and_refresh(
+    admin_client: AsyncClient,
+) -> None:
+    """Dashboard metrics and timeseries cache per period for 60s, support refresh=true, and fail open (P3-5)."""
+    from src.core.database import get_db
+    from src.schemas.admin import TimeseriesPoint, TimeseriesResponse
+
+    cache_store: dict[str, tuple[str, int | None]] = {}
+
+    class FakeRedis:
+        async def get(self, key: str) -> str | None:
+            item = cache_store.get(key)
+            return item[0] if item else None
+
+        async def set(self, key: str, value: str, ex: int | None = None) -> None:
+            cache_store[key] = (value, ex)
+
+    class DummyDB:
+        pass
+
+    async def override_db():
+        yield DummyDB()
+
+    metrics_calls = 0
+    ts_calls = 0
+
+    async def fake_calc_metrics(_db: object, period: str) -> DashboardMetricsResponse:
+        nonlocal metrics_calls
+        metrics_calls += 1
+        return DashboardMetricsResponse(
+            period=period,
+            total_conversations=10 + metrics_calls,
+        )
+
+    async def fake_calc_ts(_db: object, period: str) -> TimeseriesResponse:
+        nonlocal ts_calls
+        ts_calls += 1
+        return TimeseriesResponse(
+            period=period,
+            points=[TimeseriesPoint(date="2026-05-01", new=ts_calls, returning=1)],
+        )
+
+    fake_redis = FakeRedis()
+    app.dependency_overrides[get_db] = override_db
+    try:
+        with (
+            patch("src.api.v1.admin.get_redis_client", return_value=fake_redis),
+            patch(
+                "src.services.dashboard_metrics.calculate_dashboard_metrics",
+                side_effect=fake_calc_metrics,
+            ),
+            patch(
+                "src.services.dashboard_metrics.calculate_timeseries",
+                side_effect=fake_calc_ts,
+            ),
+        ):
+            # 1. Cold miss populates 60s cache
+            m1 = await admin_client.get("/api/v1/admin/dashboard/metrics/?period=month")
+            assert m1.status_code == 200
+            assert m1.json()["total_conversations"] == 11
+            assert metrics_calls == 1
+            assert cache_store["admin:dashboard:metrics:v1:month"][1] == 60
+
+            # 2. Second request hits cache without recomputing
+            m2 = await admin_client.get("/api/v1/admin/dashboard/metrics/?period=month")
+            assert m2.status_code == 200
+            assert m2.json()["total_conversations"] == 11
+            assert metrics_calls == 1
+
+            # 3. Different period uses a distinct cache key
+            mw = await admin_client.get("/api/v1/admin/dashboard/metrics/?period=week")
+            assert mw.status_code == 200
+            assert mw.json()["period"] == "week"
+            assert metrics_calls == 2
+
+            # 4. refresh=true bypasses cache read and updates cached value
+            m3 = await admin_client.get(
+                "/api/v1/admin/dashboard/metrics/?period=month&refresh=true"
+            )
+            assert m3.status_code == 200
+            assert m3.json()["total_conversations"] == 13
+            assert metrics_calls == 3
+
+            # 5. Timeseries caches with 60s TTL and honours refresh=true
+            t1 = await admin_client.get(
+                "/api/v1/admin/dashboard/timeseries/?period=month"
+            )
+            t2 = await admin_client.get(
+                "/api/v1/admin/dashboard/timeseries/?period=month"
+            )
+            assert t1.status_code == 200 and t2.status_code == 200
+            assert t1.json()["points"][0]["new"] == 1
+            assert t2.json()["points"][0]["new"] == 1
+            assert ts_calls == 1
+            assert cache_store["admin:dashboard:timeseries:v1:month"][1] == 60
+
+            t3 = await admin_client.get(
+                "/api/v1/admin/dashboard/timeseries/?period=month&refresh=true"
+            )
+            assert t3.status_code == 200
+            assert t3.json()["points"][0]["new"] == 2
+            assert ts_calls == 2
+
+        # 6. Redis connection failure fails open cleanly
+        class BrokenRedis:
+            async def get(self, _key: str) -> str | None:
+                raise ConnectionError("redis down")
+
+            async def set(self, _key: str, _val: str, ex: int | None = None) -> None:
+                raise ConnectionError("redis down")
+
+        with (
+            patch("src.api.v1.admin.get_redis_client", return_value=BrokenRedis()),
+            patch(
+                "src.services.dashboard_metrics.calculate_dashboard_metrics",
+                side_effect=fake_calc_metrics,
+            ),
+        ):
+            m_err = await admin_client.get(
+                "/api/v1/admin/dashboard/metrics/?period=day"
+            )
+            assert m_err.status_code == 200
+            assert m_err.json()["period"] == "day"
+    finally:
+        app.dependency_overrides.pop(get_db, None)

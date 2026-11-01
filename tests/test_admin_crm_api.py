@@ -612,3 +612,204 @@ async def test_list_admin_escalations_ignores_all_and_empty_status_filters() -> 
     assert any(
         "'pending', 'in_progress', 'manual_takeover'" in sql for sql in executed_sql
     )
+
+
+@pytest.mark.asyncio
+async def test_list_admin_customers_and_conversations_batch_queries_and_avoid_metadata_blob() -> (
+    None
+):
+    """AD-18 / P2-3: customers and conversations paginate in SQL, batch message summaries in 1 query, and skip full metadata blob."""
+    from decimal import Decimal
+    from types import SimpleNamespace
+
+    from sqlalchemy.dialects import postgresql, sqlite
+
+    from src.services.admin_crm import (
+        list_admin_conversations,
+        list_admin_customers,
+    )
+
+    c1_id = uuid.uuid4()
+    c2_id = uuid.uuid4()
+    now = datetime(2026, 5, 7, 12, 0, 0)
+
+    customer_rows = [
+        SimpleNamespace(
+            id=c1_id,
+            phone="+971500000001",
+            customer_name="Alice",
+            status="active",
+            sales_stage="qualifying",
+            language="en",
+            escalation_status="none",
+            deal_status="in_progress",
+            zoho_contact_id="zc-1",
+            zoho_deal_id="zd-1",
+            updated_at=now,
+            created_at=now,
+            segment="b2b",
+            conversation_count=3,
+            rn=1,
+        ),
+        SimpleNamespace(
+            id=c2_id,
+            phone="+971500000002",
+            customer_name="Bob",
+            status="paused",
+            sales_stage="greeting",
+            language="ar",
+            escalation_status="pending",
+            deal_status=None,
+            zoho_contact_id=None,
+            zoho_deal_id=None,
+            updated_at=now,
+            created_at=now,
+            segment=None,
+            conversation_count=1,
+            rn=1,
+        ),
+    ]
+    summary_rows = [
+        SimpleNamespace(
+            conversation_id=c1_id,
+            message_count=5,
+            created_at=now,
+            content="Looking for 10 executive desks",
+        )
+    ]
+
+    pg_queries: list[str] = []
+
+    class FakeResult:
+        def __init__(
+            self, scalar: int | None = None, rows: list[Any] | None = None
+        ) -> None:
+            self._scalar = scalar
+            self._rows = rows or []
+
+        def scalar_one(self) -> int:
+            assert self._scalar is not None
+            return self._scalar
+
+        def all(self) -> list[Any]:
+            return list(self._rows)
+
+    class FakeCustomerDB:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def execute(self, stmt: object) -> FakeResult:
+            # Must compile cleanly on both PostgreSQL and SQLite
+            pg_sql = str(stmt.compile(dialect=postgresql.dialect()))  # type: ignore[attr-defined]
+            _ = str(stmt.compile(dialect=sqlite.dialect()))  # type: ignore[attr-defined]
+            pg_queries.append(pg_sql)
+            self.calls += 1
+            if self.calls == 1:
+                return FakeResult(scalar=12)
+            if self.calls == 2:
+                return FakeResult(rows=customer_rows)
+            return FakeResult(rows=summary_rows)
+
+    cust_db = FakeCustomerDB()
+    cust_res = await list_admin_customers(
+        db=cust_db,  # type: ignore[arg-type]
+        page=2,
+        page_size=2,
+    )
+
+    assert cust_db.calls == 3  # count + ranked page + 1 batched message summary query
+    assert cust_res.total == 12
+    assert cust_res.pages == 6
+    assert len(cust_res.items) == 2
+    assert cust_res.items[0].conversation_count == 3
+    assert cust_res.items[0].segment == "b2b"
+    assert cust_res.items[0].latest_message_preview == "Looking for 10 executive desks"
+    assert cust_res.items[1].latest_message_preview is None
+    assert "count(DISTINCT conversations.phone)" in pg_queries[0]
+    assert "row_number() OVER (PARTITION BY conversations.phone" in pg_queries[1]
+    assert "LIMIT" in pg_queries[1] and "OFFSET" in pg_queries[1]
+    assert "conversations.metadata AS" not in pg_queries[1]
+    assert "PARTITION BY messages.conversation_id" in pg_queries[2]
+
+    conv_rows = [
+        SimpleNamespace(
+            id=c1_id,
+            phone="+971500000001",
+            customer_name="Alice",
+            language="en",
+            sales_stage="qualifying",
+            status="active",
+            escalation_status="none",
+            deal_status="in_progress",
+            deal_amount=Decimal("4500.50"),
+            zoho_contact_id="zc-1",
+            zoho_deal_id="zd-1",
+            created_at=now,
+            updated_at=now,
+            meta_source="whatsapp",
+            meta_segment="b2b",
+            meta_utm={"campaign": "spring"},
+            meta_order=None,
+            meta_order_metadata={"so_number": "SO-101"},
+            meta_sale_order=None,
+            meta_sale_order_metadata=None,
+        ),
+        SimpleNamespace(
+            id=c2_id,
+            phone="+971500000002",
+            customer_name="Bob",
+            language="ar",
+            sales_stage="greeting",
+            status="paused",
+            escalation_status="pending",
+            deal_status=None,
+            deal_amount=None,
+            zoho_contact_id=None,
+            zoho_deal_id=None,
+            created_at=now,
+            updated_at=now,
+            meta_source=None,
+            meta_segment=None,
+            meta_utm=None,
+            meta_order=None,
+            meta_order_metadata=None,
+            meta_sale_order=None,
+            meta_sale_order_metadata=None,
+        ),
+    ]
+
+    pg_queries.clear()
+
+    class FakeConvDB:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def execute(self, stmt: object) -> FakeResult:
+            pg_sql = str(stmt.compile(dialect=postgresql.dialect()))  # type: ignore[attr-defined]
+            _ = str(stmt.compile(dialect=sqlite.dialect()))  # type: ignore[attr-defined]
+            pg_queries.append(pg_sql)
+            self.calls += 1
+            if self.calls == 1:
+                return FakeResult(scalar=2)
+            if self.calls == 2:
+                return FakeResult(rows=conv_rows)
+            return FakeResult(rows=summary_rows)
+
+    conv_db = FakeConvDB()
+    conv_res = await list_admin_conversations(
+        db=conv_db,  # type: ignore[arg-type]
+        page=1,
+        page_size=20,
+    )
+
+    assert conv_db.calls == 3  # count + page rows + 1 batched message summary query
+    assert len(conv_res.items) == 2
+    assert conv_res.items[0].message_count == 5
+    assert conv_res.items[0].deal_amount == 4500.50
+    assert conv_res.items[0].source == "whatsapp"
+    assert conv_res.items[0].segment == "b2b"
+    assert conv_res.items[0].utm == {"campaign": "spring"}
+    assert conv_res.items[0].order_metadata == {"so_number": "SO-101"}
+    assert conv_res.items[0].metadata is None
+    assert conv_res.items[1].message_count == 0
+    assert "conversations.metadata," not in pg_queries[1]
