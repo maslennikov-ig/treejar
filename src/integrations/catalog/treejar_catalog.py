@@ -107,9 +107,6 @@ class TreejarCatalogClient:
 
         return None
 
-    async def get_stats(self) -> dict[str, Any]:
-        return await self._request_json({"action": "stats"})
-
     async def get_categories(self) -> list[dict[str, Any]]:
         payload = await self._request_json({"action": "categories"})
         return self._normalize_categories(payload.get("categories"))
