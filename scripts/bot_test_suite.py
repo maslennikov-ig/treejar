@@ -33,8 +33,9 @@ import sys
 import traceback
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from unittest.mock import patch
 
 from escalation_guard import maybe_suppress_external_escalation_alerts
 
@@ -77,6 +78,15 @@ class MockMessagingProvider(MessagingProvider):
 
     async def mark_read(self, chat_id: str, message_id: str) -> bool:
         return True
+
+    async def close(self) -> None:
+        return None
+
+    async def __aenter__(self) -> MockMessagingProvider:
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
 
     def last_text(self) -> str:
         return self.sent_texts[-1] if self.sent_texts else ""
@@ -211,14 +221,25 @@ async def get_conversation_state(phone: str) -> dict[str, Any]:
 
 
 async def cleanup_phone(phone: str) -> None:
-    """Delete test conversation and messages."""
-    from sqlalchemy import delete
+    """Delete test conversation and all FK-linked child/profile records."""
+    from sqlalchemy import delete, or_
     from sqlalchemy.future import select
 
     from src.core.database import async_session_factory
     from src.models.conversation import Conversation
+    from src.models.conversation_summary import ConversationSummary
+    from src.models.customer_memory import (
+        CustomerFact,
+        CustomerOrderMemory,
+        CustomerProfile,
+    )
+    from src.models.escalation import Escalation
     from src.models.feedback import Feedback
+    from src.models.manager_review import ManagerReview
     from src.models.message import Message
+    from src.models.outbound_message import OutboundMessageAudit
+    from src.models.quality_review import QualityReview
+    from src.models.referral import Referral
 
     async with async_session_factory() as db:
         stmt = select(Conversation).where(Conversation.phone == phone)
@@ -226,11 +247,62 @@ async def cleanup_phone(phone: str) -> None:
         conv = result.scalar_one_or_none()
         if conv:
             await db.execute(
+                delete(ManagerReview).where(ManagerReview.conversation_id == conv.id)
+            )
+            await db.execute(
+                delete(Escalation).where(Escalation.conversation_id == conv.id)
+            )
+            await db.execute(
+                delete(QualityReview).where(QualityReview.conversation_id == conv.id)
+            )
+            await db.execute(
+                delete(OutboundMessageAudit).where(
+                    OutboundMessageAudit.conversation_id == conv.id
+                )
+            )
+            await db.execute(
+                delete(ConversationSummary).where(
+                    ConversationSummary.conversation_id == conv.id
+                )
+            )
+            await db.execute(
+                delete(CustomerFact).where(CustomerFact.conversation_id == conv.id)
+            )
+            await db.execute(
+                delete(CustomerOrderMemory).where(
+                    CustomerOrderMemory.conversation_id == conv.id
+                )
+            )
+            await db.execute(
                 delete(Feedback).where(Feedback.conversation_id == conv.id)
             )
             await db.execute(delete(Message).where(Message.conversation_id == conv.id))
             await db.execute(delete(Conversation).where(Conversation.id == conv.id))
-            await db.commit()
+        prof_stmt = select(CustomerProfile).where(
+            CustomerProfile.canonical_phone == phone
+        )
+        prof_res = await db.execute(prof_stmt)
+        for prof in prof_res.scalars().all():
+            await db.execute(
+                delete(CustomerFact).where(CustomerFact.customer_profile_id == prof.id)
+            )
+            await db.execute(
+                delete(CustomerOrderMemory).where(
+                    CustomerOrderMemory.customer_profile_id == prof.id
+                )
+            )
+            await db.execute(
+                delete(CustomerProfile).where(CustomerProfile.id == prof.id)
+            )
+        await db.execute(
+            delete(Referral).where(
+                or_(
+                    Referral.referrer_phone == phone,
+                    Referral.referee_phone == phone,
+                )
+            )
+        )
+        await db.commit()
 
 
 # ─── Test Runner ──────────────────────────────────────────────────────────────
@@ -243,11 +315,11 @@ class TestSuite:
         self._phone_counter = 1000
 
     def _phone(self, suffix: str | None = None) -> str:
-        """Generate unique test phone number."""
+        """Generate unique synthetic-tagged test phone number."""
         if suffix:
-            return f"+7TEST{suffix}"
+            return f"+971000000099#test-{suffix}"
         self._phone_counter += 1
-        return f"+7TEST{self._phone_counter}"
+        return f"+971000000099#test-{self._phone_counter}"
 
     def _run(
         self,
@@ -840,19 +912,23 @@ class TestSuite:
     # ─── GROUP 9: Follow-up Cron ──────────────────────────────────────────────
 
     async def test_9_1_followup_sends_for_inactive(self) -> dict:
-        """A follow-up is sent for inactive conversations."""
+        """A follow-up is generated and persisted for an isolated inactive conversation."""
+        from sqlalchemy import select as sel
 
         from src.core.database import async_session_factory
         from src.models.conversation import Conversation
+        from src.models.message import Message
         from src.schemas.common import EscalationStatus, SalesStage
+        from src.services.escalation_state import allows_automatic_followup
+        from src.services.followup import _process_followup_for_conversation
 
         phone = self._phone("9_1")
         await cleanup_phone(phone)
+        mock_messaging = MockMessagingProvider()
 
         try:
-            # Create a conversation that's 25h stale
+            stale_time = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=25)
             async with async_session_factory() as db:
-                stale_time = datetime.utcnow() - timedelta(hours=25)
                 conv = Conversation(
                     phone=phone,
                     sales_stage=SalesStage.SOLUTION.value,
@@ -862,19 +938,29 @@ class TestSuite:
                 )
                 db.add(conv)
                 await db.commit()
+                await db.refresh(conv)
                 conv_id = conv.id
+                db.add(
+                    Message(
+                        wazzup_message_id=f"test_9_1_{uuid.uuid4().hex[:8]}",
+                        conversation_id=conv_id,
+                        role="user",
+                        content="Can you remind me tomorrow about the ergonomic chair quote?",
+                        created_at=stale_time,
+                    )
+                )
+                await db.commit()
 
-            # Run the followup job
-            from src.services.followup import run_automatic_followups
+                assert allows_automatic_followup(conv.escalation_status), (
+                    "Expected inactive un-escalated conversation to allow follow-up"
+                )
+                with patch(
+                    "src.services.followup.WazzupProvider",
+                    return_value=mock_messaging,
+                ):
+                    await _process_followup_for_conversation(db, conv)
 
-            await run_automatic_followups({})
-
-            # Check if a message was added to DB
             async with async_session_factory() as db:
-                from sqlalchemy import select as sel
-
-                from src.models.message import Message
-
                 stmt = sel(Message).where(
                     Message.conversation_id == conv_id,
                     Message.role == "assistant",
@@ -884,42 +970,52 @@ class TestSuite:
                 has_followup = msg is not None
                 followup_content = msg.content[:200] if msg else ""
 
+            assert has_followup, "Expected assistant follow-up message in DB"
+            assert len(mock_messaging.sent_texts) == 1, (
+                f"Expected 1 mocked outbound send, got {len(mock_messaging.sent_texts)}"
+            )
             return {"followup_sent": has_followup, "content": followup_content}
         finally:
             await cleanup_phone(phone)
 
     async def test_9_2_no_followup_when_escalated(self) -> dict:
-        """A follow-up is NOT sent while an escalation is active."""
+        """A follow-up is NOT allowed while an escalation is active."""
+        from sqlalchemy import select as sel
+
         from src.core.database import async_session_factory
         from src.models.conversation import Conversation
+        from src.models.message import Message
         from src.schemas.common import EscalationStatus, SalesStage
+        from src.services.escalation_state import allows_automatic_followup
+        from src.services.followup import _process_followup_for_conversation
 
         phone = self._phone("9_2")
         await cleanup_phone(phone)
+        mock_messaging = MockMessagingProvider()
 
         try:
+            stale_time = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=25)
             async with async_session_factory() as db:
-                stale_time = datetime.utcnow() - timedelta(hours=25)
                 conv = Conversation(
                     phone=phone,
                     sales_stage=SalesStage.SOLUTION.value,
-                    escalation_status=EscalationStatus.PENDING.value,  # escalated!
+                    escalation_status=EscalationStatus.PENDING.value,
                     updated_at=stale_time,
                     created_at=stale_time,
                 )
                 db.add(conv)
                 await db.commit()
+                await db.refresh(conv)
                 conv_id = conv.id
 
-            from src.services.followup import run_automatic_followups
-
-            await run_automatic_followups({})
+                if allows_automatic_followup(conv.escalation_status):
+                    with patch(
+                        "src.services.followup.WazzupProvider",
+                        return_value=mock_messaging,
+                    ):
+                        await _process_followup_for_conversation(db, conv)
 
             async with async_session_factory() as db:
-                from sqlalchemy import select as sel
-
-                from src.models.message import Message
-
                 stmt = sel(Message).where(
                     Message.conversation_id == conv_id,
                     Message.role == "assistant",
@@ -929,6 +1025,7 @@ class TestSuite:
                 has_followup = msg is not None
 
             assert not has_followup, "Follow-up should NOT be sent when escalated"
+            assert len(mock_messaging.sent_texts) == 0
             return {"escalated": True, "followup_sent": has_followup}
         finally:
             await cleanup_phone(phone)
