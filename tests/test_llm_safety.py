@@ -960,3 +960,48 @@ async def test_runtime_keeps_gpt6_luna_medium(monkeypatch: pytest.MonkeyPatch) -
     )
     payload = agent.run.await_args.kwargs["model_settings"]
     assert payload["extra_body"]["reasoning"] == {"effort": "medium"}
+
+
+def test_extract_run_usage_reads_pydantic_ai_property_without_deprecation_warning() -> (
+    None
+):
+    import warnings
+
+    from pydantic_ai._deprecated_callable import _DeprecatedCallableRunUsage
+    from pydantic_ai._warnings import PydanticAIDeprecationWarning
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.catalog_planning import _ContractedResult
+    from src.llm.safety import (
+        PATH_CORE_CHAT,
+        extract_llm_usage_telemetry,
+        extract_run_usage,
+    )
+
+    deprecated_usage = _DeprecatedCallableRunUsage(
+        RunUsage(input_tokens=42, output_tokens=17),
+        "AgentRunResult.usage is no longer a method; access it as a property.",
+    )
+    sdk_result = SimpleNamespace(output="ok", usage=deprecated_usage)
+    contracted = _ContractedResult(sdk_result, "approved")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", PydanticAIDeprecationWarning)
+        extracted_direct = extract_run_usage(sdk_result)
+        extracted_contracted = extract_run_usage(contracted)
+        telemetry = extract_llm_usage_telemetry(
+            path=PATH_CORE_CHAT,
+            model_name="openai/gpt-6.1-sol",
+            result=contracted,
+        )
+
+    assert extracted_direct.input_tokens == 42
+    assert extracted_contracted.output_tokens == 17
+    assert telemetry.prompt_tokens == 42
+    assert telemetry.completion_tokens == 17
+
+    legacy_double = SimpleNamespace(
+        output="ok",
+        usage=lambda: SimpleNamespace(input_tokens=11, output_tokens=7),
+    )
+    assert extract_run_usage(legacy_double).input_tokens == 11

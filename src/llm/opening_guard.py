@@ -70,9 +70,11 @@ _AR_CAPABILITY = (
 _EN_OFFER_TERMS = ("office furniture", "office fit-out", "workspace furniture")
 _AR_OFFER_TERMS = ("أثاث المكاتب", "أثاث مكتبي", "الأثاث المكتبي", "أثاث مكاتب")
 _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
-# The Arabic replies write the persona in Arabic script, so a Latin-only match
-# read them as carrying no introduction at all.
+# The Arabic replies write both the persona and company name in Arabic script,
+# so a Latin-only match read them as carrying no introduction at all and stacked
+# a second greeting on top of `أنا نور من تريجار`.
 _PERSONA_NAMES = ("noor", "siyad", "siyyad", "نور")
+_COMPANY_NAMES = ("treejar", "تريجار", "تريجر")
 
 
 def _is_arabic_language(language: str) -> bool:
@@ -91,7 +93,7 @@ def _has_identity(text: str) -> bool:
     """
 
     visible_text = _URL_RE.sub("", text).casefold()
-    if "treejar" not in visible_text:
+    if not any(company in visible_text for company in _COMPANY_NAMES):
         return False
     return any(persona in visible_text for persona in _PERSONA_NAMES)
 
@@ -158,6 +160,21 @@ def _strip_generic_english_opening(text: str) -> str:
     return body.lstrip()
 
 
+def _strip_generic_arabic_opening(text: str) -> str:
+    body = text.lstrip()
+    body = re.sub(
+        r"\A(?:مرحب(?:ًا|اً|ا)|أهل(?:ًا|اً|ا)(?:\s+وسهل(?:ًا|اً|ا))?)"
+        r"(?:\s+بك)?(?:\s+في\s+(?:Treejar|تريجار|تريجر))?"
+        r"(?=\s|[!،.:؟\n]|[^\w\s\u0600-\u06FF]|\Z)"
+        r"[\s!،.:-]*(?:[^\w\s\u0600-\u06FF]+\s*)?",
+        "",
+        body,
+        count=1,
+        flags=re.I,
+    )
+    return body.lstrip()
+
+
 def _strip_legacy_identity(text: str) -> str:
     body = text.lstrip()
     # `I'm` and `I’m` are the same word, and until 2026-08-10 this pattern knew
@@ -176,10 +193,15 @@ def _strip_legacy_identity(text: str) -> str:
         flags=re.I,
     )
     body = re.sub(
-        r"\Aمرحبًا،\s*أنا\s+(?:Si[y]yad|Noor)\s+من\s+Treejar[\s.،!]*",
+        r"\A(?:(?:مرحب(?:ًا|اً|ا)|أهل(?:ًا|اً|ا)(?:\s+وسهل(?:ًا|اً|ا))?)"
+        r"(?:\s+بك)?[\s!،.:-]*)?"
+        r"أنا\s+(?:Si[y]yad|Noor|نور)\s+من\s+(?:شركة\s+)?"
+        r"(?:Treejar|تريجار|تريجر)"
+        r"[\s.،!:-]*(?:[^\w\s\u0600-\u06FF]+\s*)?",
         "",
         body,
         count=1,
+        flags=re.I,
     )
     return body.lstrip()
 
@@ -319,6 +341,20 @@ def _with_name_question(
     return "\n\n".join(parts)
 
 
+def _strip_redundant_opening(
+    body: str, *, is_arabic: bool, capability: str
+) -> tuple[str, str]:
+    body = _strip_legacy_identity(body) or body
+    if is_arabic:
+        body = _strip_generic_arabic_opening(body) or body
+    else:
+        body = _strip_generic_english_opening(body) or body
+    body = _strip_own_capability(body, capability).strip()
+    before_identity_drop = body
+    body = _drop_identity_sentences(body)
+    return body, before_identity_drop
+
+
 def apply_opening_guard(
     text: str,
     *,
@@ -367,12 +403,9 @@ def apply_opening_guard(
             ask_customer_name=ask_customer_name,
         )
 
-    body = _strip_legacy_identity(body) or body
-    if not is_arabic:
-        body = _strip_generic_english_opening(body) or body
-    body = _strip_own_capability(body, capability).strip()
-    before_identity_drop = body
-    body = _drop_identity_sentences(body)
+    body, before_identity_drop = _strip_redundant_opening(
+        body, is_arabic=is_arabic, capability=capability
+    )
     if _has_identity(before_identity_drop) and not any(
         character.isalnum() for character in body
     ):
@@ -417,13 +450,9 @@ def opening_replacement_covers(text: str, replacement: str) -> bool:
     if identity not in replacement or capability not in replacement:
         return False
 
-    body = text.strip()
-    body = _strip_legacy_identity(body) or body
-    if not is_arabic:
-        body = _strip_generic_english_opening(body) or body
-    body = _strip_own_capability(body, capability).strip()
-    before_identity_drop = body
-    body = _drop_identity_sentences(body)
+    body, before_identity_drop = _strip_redundant_opening(
+        text.strip(), is_arabic=is_arabic, capability=capability
+    )
     if _has_identity(before_identity_drop) and not any(
         character.isalnum() for character in body
     ):

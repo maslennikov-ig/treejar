@@ -50,9 +50,24 @@ for noisy in ("httpx", "httpcore", "sqlalchemy.engine", "pydantic_ai", "openai")
 class MockMessagingProvider(MessagingProvider):
     """Captures outgoing messages instead of sending to WhatsApp."""
 
-    def __init__(self) -> None:
+    def __init__(self, channel_id: str | None = None) -> None:
+        from src.core.config import settings
+
+        self.channel_id = (
+            channel_id
+            if channel_id is not None
+            else (
+                settings.wazzup_outbound_allowed_channel_id
+                or settings.wazzup_channel_id
+                or "mock-test-channel"
+            )
+        )
         self.sent_texts: list[str] = []
         self.sent_media: list[dict] = []
+
+    @staticmethod
+    def outbound_chat_id(chat_id: str) -> str:
+        return chat_id
 
     async def send_text(self, chat_id: str, text: str) -> str:
         self.sent_texts.append(text)
@@ -498,6 +513,9 @@ class TestSuite:
             # Response should contain Arabic characters
             has_arabic = any("\u0600" <= c <= "\u06ff" for c in response)
             assert has_arabic, f"Response not in Arabic: {response[:300]}"
+            assert not (
+                "أنا Noor من Treejar" in response and "أنا نور من تريجار" in response
+            ), f"Duplicate Arabic introduction in response: {response[:300]}"
             state = await get_conversation_state(phone)
             assert state.get("language") == "ar", f"Language not set to ar: {state}"
             return {"response": response, "language": state.get("language")}
@@ -577,16 +595,23 @@ class TestSuite:
                 phone, "Where is my order? What is my order status?"
             )
             assert response, "Empty response"
-            # Should acknowledge no order found
+            # Normalize typographic apostrophes so "couldn’t find" matches cleanly
+            normalized = response.lower().replace("’", "'").replace("ʼ", "'")
             no_order_keywords = any(
-                w in response.lower()
+                w in normalized
                 for w in [
                     "no order",
                     "not found",
+                    "couldn't find",
+                    "could not find",
+                    "can't find",
+                    "cannot find",
                     "don't have",
+                    "do not have",
                     "haven't placed",
-                    "لم يتم",
+                    "no active order",
                     "no confirmed",
+                    "لم يتم",
                 ]
             )
             assert no_order_keywords, (
@@ -687,7 +712,7 @@ class TestSuite:
             await cleanup_phone(phone)
 
     async def test_4_5_sample_request_escalation(self) -> dict:
-        """A product sample request triggers an escalation."""
+        """A product sample request uses the conditional project_samples capability without forced escalation."""
         phone = self._phone("4_5")
         await cleanup_phone(phone)
         try:
@@ -695,9 +720,17 @@ class TestSuite:
                 phone, "Can I get a physical sample of the chair before ordering?"
             )
             state = await get_conversation_state(phone)
+            assert response, "Empty response"
             esc_status = state.get("escalation_status")
-            assert esc_status not in ("none", None), (
-                f"Expected escalation for sample request, got: {esc_status}\n{response[:300]}"
+            assert esc_status in ("none", None), (
+                f"Expected consultative sample guidance without forced escalation, got: {esc_status}\n{response[:300]}"
+            )
+            sample_terms = any(
+                w in response.lower()
+                for w in ["sample", "showroom", "project", "material", "swatch"]
+            )
+            assert sample_terms, (
+                f"Expected conditional sample/showroom guidance, got: {response[:300]}"
             )
             return {"response": response, "escalation_status": esc_status}
         finally:
@@ -913,26 +946,44 @@ class TestSuite:
 
     async def test_9_1_followup_sends_for_inactive(self) -> dict:
         """A follow-up is generated and persisted for an isolated inactive conversation."""
+        from sqlalchemy import delete as sdelete
         from sqlalchemy import select as sel
 
+        from src.core.config import settings
         from src.core.database import async_session_factory
         from src.models.conversation import Conversation
         from src.models.message import Message
+        from src.models.system_config import SystemConfig
         from src.schemas.common import EscalationStatus, SalesStage
         from src.services.escalation_state import allows_automatic_followup
         from src.services.followup import _process_followup_for_conversation
 
         phone = self._phone("9_1")
         await cleanup_phone(phone)
-        mock_messaging = MockMessagingProvider()
+        effective_channel_id = (
+            settings.wazzup_outbound_allowed_channel_id
+            or settings.wazzup_channel_id
+            or "mock-test-channel"
+        )
+        mock_messaging = MockMessagingProvider(channel_id=effective_channel_id)
+        seeded_bot_enabled = False
 
         try:
             stale_time = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=25)
             async with async_session_factory() as db:
+                existing_bot_enabled = await db.scalar(
+                    sel(SystemConfig.value).where(SystemConfig.key == "bot_enabled")
+                )
+                if existing_bot_enabled is None:
+                    db.add(SystemConfig(key="bot_enabled", value=True))
+                    await db.commit()
+                    seeded_bot_enabled = True
+
                 conv = Conversation(
                     phone=phone,
                     sales_stage=SalesStage.SOLUTION.value,
                     escalation_status=EscalationStatus.NONE.value,
+                    metadata_={"inbound_channel_id": effective_channel_id},
                     updated_at=stale_time,
                     created_at=stale_time,
                 )
@@ -954,9 +1005,17 @@ class TestSuite:
                 assert allows_automatic_followup(conv.escalation_status), (
                     "Expected inactive un-escalated conversation to allow follow-up"
                 )
-                with patch(
-                    "src.services.followup.WazzupProvider",
-                    return_value=mock_messaging,
+                with (
+                    patch.object(settings, "wazzup_channel_id", effective_channel_id),
+                    patch.object(
+                        settings,
+                        "wazzup_outbound_allowed_channel_id",
+                        effective_channel_id,
+                    ),
+                    patch(
+                        "src.services.followup.WazzupProvider",
+                        return_value=mock_messaging,
+                    ),
                 ):
                     await _process_followup_for_conversation(db, conv)
 
@@ -976,6 +1035,12 @@ class TestSuite:
             )
             return {"followup_sent": has_followup, "content": followup_content}
         finally:
+            if seeded_bot_enabled:
+                async with async_session_factory() as db:
+                    await db.execute(
+                        sdelete(SystemConfig).where(SystemConfig.key == "bot_enabled")
+                    )
+                    await db.commit()
             await cleanup_phone(phone)
 
     async def test_9_2_no_followup_when_escalated(self) -> dict:
@@ -1107,7 +1172,7 @@ class TestSuite:
             ),
             (
                 "4.5",
-                "Escalation -- product sample",
+                "NO forced escalation -- sample capability",
                 "escalation",
                 self.test_4_5_sample_request_escalation,
             ),

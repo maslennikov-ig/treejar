@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.llm.opening_guard import apply_opening_guard
+from src.llm.opening_guard import apply_opening_guard, opening_replacement_covers
 
 _ANCHOR = "Chairs from AED 139, desks and workstations from AED 1,813."
 
@@ -484,3 +484,74 @@ def test_the_low_stock_warning_rides_the_price_it_qualifies() -> None:
     anchor_paragraphs = [part for part in paragraphs if _ANCHOR in part]
     assert len(anchor_paragraphs) == 1
     assert "limited stock" in anchor_paragraphs[0]
+
+
+def test_arabic_transliterated_intro_is_not_stacked_under_canonical_opening() -> None:
+    """Caught live on 2026-11-01 (`bot_test_suite` 2.3): the model wrote
+    `أهلاً بك، أنا نور من تريجار 🌿` without the office-furniture offer clause,
+    and a Latin-only `"treejar"` check missed `تريجار` and emitted two greetings.
+    """
+
+    raw = (
+        "أهلاً بك، أنا نور من تريجار 🌿\n\n"
+        "لدينا عدة خيارات من الكراسي المكتبية المريحة:\n"
+        "- CH 616 NEW black بسعر 295.00 AED."
+    )
+    guarded = apply_opening_guard(
+        raw,
+        language="ar",
+        is_first_turn=True,
+        customer_name=None,
+    )
+
+    assert guarded.startswith("مرحبًا، أنا Noor من Treejar.")
+    assert "أهلاً بك، أنا نور من تريجار" not in guarded
+    assert "لدينا عدة خيارات من الكراسي المكتبية المريحة" in guarded
+    assert "295.00 AED" in guarded
+    assert opening_replacement_covers(raw, guarded)
+
+
+def test_arabic_transliterated_intro_with_offer_keeps_its_own_words() -> None:
+    raw = (
+        "أهلاً بك، أنا نور من تريجار، نورّد أثاث المكاتب في الإمارات. "
+        "ما عدد الكراسي المطلوبة؟"
+    )
+    guarded = apply_opening_guard(
+        raw,
+        language="ar",
+        is_first_turn=True,
+        customer_name=None,
+    )
+
+    assert guarded.startswith("أهلاً بك، أنا نور من تريجار، نورّد أثاث المكاتب")
+    assert "أنا Noor من Treejar" not in guarded
+    assert "ما عدد الكراسي المطلوبة، وكيف أخاطبك؟" in guarded
+    assert opening_replacement_covers(raw, guarded)
+
+
+def test_a_generic_arabic_greeting_is_replaced_rather_than_stacked() -> None:
+    raw = "مرحباً بك في تريجار! 👋\n\nنعم، لدينا كراسي مريحة في المخزون."
+    guarded = apply_opening_guard(
+        raw,
+        language="ar",
+        is_first_turn=True,
+        customer_name=None,
+    )
+
+    assert guarded.startswith("مرحبًا، أنا Noor من Treejar.")
+    assert "مرحباً بك في تريجار" not in guarded
+    assert "نعم، لدينا كراسي مريحة في المخزون." in guarded
+    assert opening_replacement_covers(raw, guarded)
+
+
+def test_an_arabic_answer_naming_treejar_without_persona_survives() -> None:
+    raw = "تريجار توفّر كراسي مكتبية جديدة، ولا نشتري الأثاث المستعمل."
+    guarded = apply_opening_guard(
+        raw,
+        language="ar",
+        is_first_turn=True,
+        customer_name=None,
+    )
+
+    assert "ولا نشتري الأثاث المستعمل" in guarded
+    assert opening_replacement_covers(raw, guarded)

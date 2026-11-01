@@ -55,6 +55,7 @@ from src.llm.outbound_reply_guard import looks_like_structured_payload
 from src.llm.package_math import PricedLine
 from src.llm.response_policy import AskKind, append_required_tool_disclosure
 from src.llm.response_runtime import ProductMediaPayload
+from src.llm.safety import extract_run_usage
 from src.llm.verified_answers import query_names_specific_item
 from src.models.conversation import Conversation
 from src.rag.embeddings import EmbeddingEngine
@@ -1915,8 +1916,9 @@ class _ContractedResult:
         # pre-repair draft instead; the usage still belongs to the repair call.
         self.fell_back = fell_back
 
+    @property
     def usage(self) -> Any:
-        return self._source.usage()
+        return extract_run_usage(self._source)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._source, name)

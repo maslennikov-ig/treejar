@@ -28,6 +28,7 @@ from pydantic_ai.models.openai import (
     OpenAIChatModel,
     OpenAIChatModelSettings,
 )
+from pydantic_ai.usage import RequestUsage, RunUsage
 
 from src.core.config import settings
 
@@ -832,6 +833,24 @@ def _provider_reported_cost(result: Any) -> float | None:
     return sum(costs) if costs else None
 
 
+def extract_run_usage(result: Any) -> Any:
+    """Read ``result.usage`` as a property without firing deprecation warnings.
+
+    In ``pydantic-ai >= 1.x``, ``AgentRunResult.usage`` is a property returning
+    a ``RunUsage`` subclass that remains callable only to emit a deprecation
+    warning. Unit-test doubles may still expose ``usage`` as a method or lambda,
+    so only invoke ``usage_attr`` when it is not already a usage object.
+    """
+    usage_attr = getattr(result, "usage", None)
+    if usage_attr is None:
+        return None
+    if isinstance(usage_attr, RunUsage | RequestUsage):
+        return usage_attr
+    if callable(usage_attr):
+        return usage_attr()
+    return usage_attr
+
+
 def extract_llm_usage_telemetry(
     *,
     path: str,
@@ -840,7 +859,7 @@ def extract_llm_usage_telemetry(
     result: Any,
 ) -> LLMUsageTelemetry:
     try:
-        usage = result.usage()
+        usage = extract_run_usage(result)
     except Exception:
         usage = None
 

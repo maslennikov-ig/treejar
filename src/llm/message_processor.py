@@ -101,6 +101,7 @@ from src.llm.response_runtime import (
 )
 from src.llm.safety import (
     PATH_CORE_CHAT,
+    extract_run_usage,
     get_llm_usage_telemetry,
     model_name_for_path,
     model_settings_for_path,
@@ -538,7 +539,7 @@ class _Turn:
                 model_name,
                 response_deps.executed_tool_names,
             )
-        usage = result.usage()
+        usage = extract_run_usage(result)
         usage_telemetry = get_llm_usage_telemetry(result)
         return _response_from_rendered_reply(
             rendered,

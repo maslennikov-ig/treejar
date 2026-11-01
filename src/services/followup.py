@@ -1011,6 +1011,7 @@ async def _process_followup_for_conversation(db: Any, conv: Conversation) -> Non
         from src.llm.pii import unmask_pii
         from src.llm.safety import (
             PATH_CORE_FOLLOWUP,
+            extract_run_usage,
             model_name_for_path,
             run_agent_with_safety,
         )
@@ -1053,12 +1054,13 @@ async def _process_followup_for_conversation(db: Any, conv: Conversation) -> Non
         final_text = unmask_pii(result.output, pii_map)
 
         # 3. Save AI message to DB
+        usage = extract_run_usage(result)
         ai_msg = Message(
             conversation_id=conv.id,
             role="assistant",
             content=final_text,
-            tokens_in=result.usage().input_tokens if result.usage() else None,
-            tokens_out=result.usage().output_tokens if result.usage() else None,
+            tokens_in=usage.input_tokens if usage else None,
+            tokens_out=usage.output_tokens if usage else None,
             created_at=message_created_at_now(),
         )
         db.add(ai_msg)

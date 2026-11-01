@@ -32,6 +32,7 @@ from src.llm.safety import (
     DEFAULT_QUALITY_MODEL,
     PATH_RESPONSE_REPAIR_JUDGE,
     OpenRouterTelemetryChatModel,
+    extract_run_usage,
     get_llm_usage_telemetry,
     model_settings_for_path,
     run_agent_with_safety,
@@ -689,7 +690,7 @@ async def run_repair_judge(
         max_attempts_override=1,
         notify_on_failure_override=notify_on_failure,
     )
-    usage = result.usage()
+    usage = extract_run_usage(result)
     telemetry = get_llm_usage_telemetry(result)
     return RepairJudgeProviderResult(
         decision=result.output,
