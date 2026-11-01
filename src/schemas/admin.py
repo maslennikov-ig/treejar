@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.core.config import settings
 from src.llm.safety import (
@@ -24,7 +24,14 @@ from src.quality.config import (
     AIQualityControlsResponse as _BaseAIQualityControlsResponse,
 )
 
-from .common import Language, SalesStage, UUIDModel
+from .common import (
+    ConversationStatus,
+    DealStatus,
+    EscalationStatus,
+    Language,
+    SalesStage,
+    UUIDModel,
+)
 from .manager_review import ManagerLeaderboardEntry
 
 
@@ -429,11 +436,28 @@ class AdminConversationDetail(AdminConversationListItem):
 
 class AdminConversationUpdate(BaseModel):
     customer_name: str | None = Field(default=None, max_length=255)
-    status: str | None = Field(default=None, max_length=80)
-    sales_stage: str | None = Field(default=None, max_length=80)
-    escalation_status: str | None = Field(default=None, max_length=80)
-    deal_status: str | None = Field(default=None, max_length=80)
+    status: ConversationStatus | None = None
+    sales_stage: SalesStage | None = None
+    escalation_status: EscalationStatus | None = None
+    deal_status: DealStatus | None = None
     language: Language | None = None
+
+    @field_validator("deal_status", mode="before")
+    @classmethod
+    def normalize_empty_deal_status(cls, value: Any) -> Any:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @model_validator(mode="after")
+    def reject_explicit_null_non_nullable_fields(self) -> Self:
+        for field_name in ("status", "sales_stage", "escalation_status", "language"):
+            if (
+                field_name in self.model_fields_set
+                and getattr(self, field_name) is None
+            ):
+                raise ValueError(f"{field_name} cannot be null")
+        return self
 
 
 class AdminEscalationWrite(BaseModel):

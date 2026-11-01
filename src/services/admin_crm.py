@@ -580,7 +580,7 @@ async def update_admin_conversation(
 
     before = _conversation_snapshot(conversation)
     for key, value in update_data.items():
-        setattr(conversation, key, value)
+        setattr(conversation, key, value.value if hasattr(value, "value") else value)
     after = _conversation_snapshot(conversation)
 
     await log_admin_action(
@@ -689,13 +689,14 @@ async def list_admin_escalations(
     from src.services.dashboard_metrics import categorize_escalation_reason
 
     filters: list[ColumnElement[bool]] = []
-    if status:
-        if status == "open":
+    normalized_status = status.strip().lower() if status else ""
+    if normalized_status and normalized_status != "all":
+        if normalized_status == "open":
             filters.append(
                 Escalation.status.in_(["pending", "in_progress", "manual_takeover"])
             )
         else:
-            filters.append(Escalation.status == status)
+            filters.append(Escalation.status == normalized_status)
     if search:
         like = f"%{search.strip()}%"
         filters.append(

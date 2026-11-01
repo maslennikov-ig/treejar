@@ -463,3 +463,152 @@ async def test_admin_crm_audit_forwards_actor_and_expands_bot_rule_alias(
         "'bot_behavior_rule', 'bot_rule'" in sql and "telegram:777" in sql
         for sql in executed_sql
     )
+
+
+@pytest.mark.asyncio
+async def test_admin_crm_conversation_patch_validates_enums_and_preserves_omitted_fields(
+    admin_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.models.conversation import Conversation
+    from src.schemas.admin import AdminConversationDetail
+    from src.services import admin_crm
+
+    conversation_id = uuid.uuid4()
+    conversation = Conversation(
+        id=conversation_id,
+        phone="+971555000222",
+        customer_name="Legacy Client",
+        status="active",
+        sales_stage="quoting",
+        escalation_status="none",
+        deal_status="New Lead",
+        language="en",
+    )
+
+    class FakeDB:
+        async def get(self, _model: object, item_id: uuid.UUID) -> Conversation | None:
+            return conversation if item_id == conversation_id else None
+
+        async def commit(self) -> None:
+            return None
+
+        async def refresh(self, _row: object) -> None:
+            return None
+
+    async def fake_get_db():
+        yield FakeDB()
+
+    async def fake_log(*_: object, **__: object) -> None:
+        return None
+
+    async def fake_detail(_db: object, _cid: uuid.UUID) -> AdminConversationDetail:
+        return AdminConversationDetail(
+            id=conversation.id,
+            phone=conversation.phone,
+            customer_name=conversation.customer_name,
+            language=conversation.language,
+            sales_stage=conversation.sales_stage,
+            status=conversation.status,
+            escalation_status=conversation.escalation_status,
+            deal_status=conversation.deal_status,
+            created_at=datetime(2026, 5, 7, 11, 0, 0),
+            updated_at=datetime(2026, 5, 7, 12, 0, 0),
+        )
+
+    from src.core.database import get_db
+    from src.main import app
+
+    monkeypatch.setattr(admin_crm, "log_admin_action", fake_log)
+    monkeypatch.setattr(admin_crm, "get_admin_conversation_detail", fake_detail)
+    app.dependency_overrides[get_db] = fake_get_db
+    try:
+        # 1. Partial PATCH leaves omitted fields (including legacy "New Lead") untouched
+        ok_partial = await admin_client.patch(
+            f"/api/v1/admin/crm/conversations/{conversation_id}",
+            json={"status": "paused"},
+        )
+        assert ok_partial.status_code == 200
+        assert ok_partial.json()["status"] == "paused"
+        assert ok_partial.json()["deal_status"] == "New Lead"
+        assert conversation.status == "paused"
+        assert conversation.deal_status == "New Lead"
+
+        # 2. Invalid enum values on write are rejected with 422
+        for bad_payload in (
+            {"status": "not-a-status"},
+            {"deal_status": "New Lead"},
+            {"deal_status": "arbitrary_garbage"},
+            {"escalation_status": "unknown_escalation"},
+            {"sales_stage": "invalid_stage"},
+            {"status": None},
+        ):
+            bad_resp = await admin_client.patch(
+                f"/api/v1/admin/crm/conversations/{conversation_id}",
+                json=bad_payload,
+            )
+            assert bad_resp.status_code == 422, bad_payload
+
+        # 3. Valid DealStatus and empty string clearing deal_status both succeed
+        ok_deal = await admin_client.patch(
+            f"/api/v1/admin/crm/conversations/{conversation_id}",
+            json={"deal_status": "in_progress", "escalation_status": "pending"},
+        )
+        assert ok_deal.status_code == 200
+        assert conversation.deal_status == "in_progress"
+        assert conversation.escalation_status == "pending"
+
+        clear_deal = await admin_client.patch(
+            f"/api/v1/admin/crm/conversations/{conversation_id}",
+            json={"deal_status": "   "},
+        )
+        assert clear_deal.status_code == 200
+        assert conversation.deal_status is None
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.mark.asyncio
+async def test_list_admin_escalations_ignores_all_and_empty_status_filters() -> None:
+    from sqlalchemy.dialects import postgresql
+
+    from src.services.admin_crm import list_admin_escalations
+
+    executed_sql: list[str] = []
+
+    class FakeResult:
+        def scalar_one(self) -> int:
+            return 0
+
+        def all(self) -> list[object]:
+            return []
+
+    class FakeDB:
+        async def execute(self, stmt: object) -> FakeResult:
+            executed_sql.append(
+                str(
+                    stmt.compile(  # type: ignore[attr-defined]
+                        dialect=postgresql.dialect(),
+                        compile_kwargs={"literal_binds": True},
+                    )
+                )
+            )
+            return FakeResult()
+
+    for noop_status in ("all", "ALL", "", "   ", None):
+        executed_sql.clear()
+        res = await list_admin_escalations(
+            db=FakeDB(),  # type: ignore[arg-type]
+            status=noop_status,
+        )
+        assert res.total == 0
+        assert all("WHERE" not in sql for sql in executed_sql)
+
+    executed_sql.clear()
+    await list_admin_escalations(
+        db=FakeDB(),  # type: ignore[arg-type]
+        status="OPEN",
+    )
+    assert any(
+        "'pending', 'in_progress', 'manual_takeover'" in sql for sql in executed_sql
+    )
