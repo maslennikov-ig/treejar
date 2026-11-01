@@ -3,14 +3,23 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from typing import TYPE_CHECKING, Any
 
-from sentence_transformers import SentenceTransformer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
 from src.models.knowledge_base import KnowledgeBase
 from src.models.product import Product
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer as SentenceTransformerType
+else:
+    SentenceTransformerType = Any
+
+# Kept as a module attribute so patch("src.rag.embeddings.SentenceTransformer")
+# continues to work without importing torch / sentence_transformers on module load.
+SentenceTransformer: Any = None
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +28,7 @@ class EmbeddingEngine:
     """Singleton engine for generating text embeddings."""
 
     _instance: EmbeddingEngine | None = None
-    _model: SentenceTransformer | None = None
+    _model: SentenceTransformerType | None = None
     _lock: threading.Lock = threading.Lock()
 
     def __new__(cls) -> EmbeddingEngine:
@@ -29,7 +38,7 @@ class EmbeddingEngine:
             cls._instance._model = None
         return cls._instance
 
-    def _get_model(self) -> SentenceTransformer:
+    def _get_model(self) -> SentenceTransformerType:
         """Lazy load the embedding model with double-checked locking."""
         if self._model is None:
             with self._lock:
@@ -37,7 +46,14 @@ class EmbeddingEngine:
                     logger.info(
                         "Loading embedding model %s...", settings.embedding_model
                     )
-                    self._model = SentenceTransformer(settings.embedding_model)
+                    st_cls = SentenceTransformer
+                    if st_cls is None:
+                        from sentence_transformers import (
+                            SentenceTransformer as _SentenceTransformer,
+                        )
+
+                        st_cls = _SentenceTransformer
+                    self._model = st_cls(settings.embedding_model)
                     logger.info("Embedding model loaded successfully.")
         return self._model
 

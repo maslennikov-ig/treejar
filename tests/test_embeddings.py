@@ -135,3 +135,26 @@ async def test_index_knowledge_base_embeddings() -> None:
         assert processed == 1
         assert mock_db.commit.called
         assert records[0].embedding == [0.5] * 1024
+
+
+@pytest.mark.unit
+def test_embeddings_module_defers_sentence_transformers_import() -> None:
+    """Importing src.rag.embeddings (and src.main) must not load torch or sentence_transformers."""
+    import subprocess
+    import sys
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys, src.rag.embeddings, src.main; "
+                "assert 'sentence_transformers' not in sys.modules; "
+                "assert 'torch' not in sys.modules"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
