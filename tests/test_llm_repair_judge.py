@@ -294,7 +294,6 @@ def test_response_policy_exposes_the_original_and_a_non_visible_candidate() -> N
 @pytest.mark.asyncio
 async def test_turn_finalizer_is_the_single_async_customer_boundary() -> None:
     requests: list[RepairJudgeRequest] = []
-    recorded: list[tuple[str, str]] = []
     state = ReplyPolicyState(language="en")
     response = LLMResponse(
         text="We can assess your used desks.",
@@ -320,9 +319,6 @@ async def test_turn_finalizer_is_the_single_async_customer_boundary() -> None:
             executed_tool_names=(),
             conversation=SimpleNamespace(metadata_={}),
         ),
-        _record_reply_on_conversation=lambda model, text: recorded.append(
-            (model, text)
-        ),
     )
 
     finalized = await _finalize_turn_response(
@@ -345,9 +341,6 @@ async def test_turn_finalizer_is_the_single_async_customer_boundary() -> None:
     assert finalized.repair_flags == ()
     assert finalized.deferred_product_media == ()
     assert requests[0].evidence.customer_message == "Can you buy my used desks?"
-    assert recorded == [
-        ("openai/gpt-5.6-luna", "I can help you choose replacement desks.")
-    ]
 
 
 @pytest.mark.asyncio
@@ -392,16 +385,12 @@ async def test_turn_finalizer_masks_reply_and_candidate_pii_from_the_judge(
         ),
         repair_policy_state=ReplyPolicyState(language="en"),
     )
-    recorded: list[tuple[str, str]] = []
     turn = SimpleNamespace(
         masked_text="Can you buy my used desks?",
         pii_map={},
         deps=SimpleNamespace(
             executed_tool_names=(),
             conversation=SimpleNamespace(metadata_={}),
-        ),
-        _record_reply_on_conversation=lambda model, text: recorded.append(
-            (model, text)
         ),
     )
 
@@ -410,14 +399,12 @@ async def test_turn_finalizer_masks_reply_and_candidate_pii_from_the_judge(
     assert (
         finalized.text == f"I can help you choose replacement desks. Contact: {email}"
     )
-    assert recorded == [("openai/gpt-5.6-luna", finalized.text)]
     assert len(requests) == 1
 
 
 @pytest.mark.asyncio
 async def test_unflagged_turn_records_once_without_calling_the_judge() -> None:
     calls = 0
-    recorded: list[tuple[str, str]] = []
 
     async def fail_if_called(_request: RepairJudgeRequest) -> RepairJudgeProviderResult:
         nonlocal calls
@@ -438,9 +425,6 @@ async def test_unflagged_turn_records_once_without_calling_the_judge() -> None:
             executed_tool_names=(),
             conversation=SimpleNamespace(metadata_={}),
         ),
-        _record_reply_on_conversation=lambda model, text: recorded.append(
-            (model, text)
-        ),
     )
 
     finalized = await _finalize_turn_response(
@@ -451,7 +435,6 @@ async def test_unflagged_turn_records_once_without_calling_the_judge() -> None:
 
     assert finalized is response
     assert calls == 0
-    assert recorded == [("openai/gpt-5.6-luna", "A safe reply.")]
 
 
 def test_repair_judge_uses_one_bounded_second_vendor_call() -> None:
@@ -527,7 +510,7 @@ def _flagged_response_for_fallback() -> LLMResponse:
 
 
 def _turn_for_fallback(
-    recorded: list[tuple[str, str]],
+    _recorded: list[tuple[str, str]] | None = None,
     *,
     language: str = "en",
     escalation_status: str = "none",
@@ -548,16 +531,12 @@ def _turn_for_fallback(
             executed_tool_names=(),
             recent_history=recent_history or [],
         ),
-        _record_reply_on_conversation=lambda model, text: recorded.append(
-            (model, text)
-        ),
     )
 
 
 @pytest.mark.asyncio
 async def test_sending_the_selected_name_ask_records_the_slot() -> None:
-    recorded: list[tuple[str, str]] = []
-    turn = _turn_for_fallback(recorded)
+    turn = _turn_for_fallback()
     response = LLMResponse(
         text="Hello. And how should I address you?",
         tokens_in=0,
@@ -580,8 +559,7 @@ async def test_sending_the_selected_name_ask_records_the_slot() -> None:
 
 @pytest.mark.asyncio
 async def test_a_folded_away_name_ask_does_not_record_the_slot() -> None:
-    recorded: list[tuple[str, str]] = []
-    turn = _turn_for_fallback(recorded)
+    turn = _turn_for_fallback()
     response = LLMResponse(
         text="Hello. What are you furnishing?",
         tokens_in=0,
@@ -603,7 +581,7 @@ async def test_a_folded_away_name_ask_does_not_record_the_slot() -> None:
 
 @pytest.mark.asyncio
 async def test_selected_company_ask_records_only_the_previous_turn() -> None:
-    turn = _turn_for_fallback([])
+    turn = _turn_for_fallback()
     asked = LLMResponse(
         text="What does your company do day to day?",
         tokens_in=0,
@@ -676,12 +654,11 @@ async def test_repair_fallback_sends_the_substantive_candidate_and_counts(
 
         runner = unavailable
 
-    recorded: list[tuple[str, str]] = []
     response = _flagged_response_for_fallback()
     candidate = response.repair_flags[0].candidate
 
     finalized = await _finalize_turn_response(
-        _turn_for_fallback(recorded),
+        _turn_for_fallback(),
         response,
         runner=runner,
     )
@@ -694,7 +671,6 @@ async def test_repair_fallback_sends_the_substantive_candidate_and_counts(
     assert finalized.repair_trace is not None
     assert finalized.repair_trace.counts.fallbacks == 1
     assert finalized.repair_trace.requires_handoff is False
-    assert recorded == [("openai/gpt-5.6-luna", finalized.text)]
     if outcome == "provider_unavailable":
         # A failing call is retried once before the customer loses the reply,
         # and both attempts are counted because both are paid.

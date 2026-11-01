@@ -64,11 +64,6 @@ class Settings(BaseSettings):
         ),
     )
 
-    # Dialogue kernel rollout
-    dialogue_kernel_mode: str = "enforce"
-    dialogue_kernel_trace_enabled: bool = True
-    dialogue_kernel_enforced_flows: str = ""
-
     # Customer facts memory rollout
     customer_facts_mode: str = "disabled"
     customer_facts_trace_enabled: bool = True

@@ -30,8 +30,7 @@ from src.dialogue.claim_contract import (
     sizing_assumption_directive,
     substantive_reply_directive,
 )
-from src.dialogue.runner import DialogueKernelResult
-from src.dialogue.state import DialogueDecision, DialogueState, QuoteConsent
+from src.dialogue.state import QuoteConsent
 from src.llm import engine as engine_module
 from src.llm.communication_policy import EVIDENCE_GROUNDING_POLICY
 from src.llm.engine import (
@@ -275,129 +274,6 @@ def _active_product_planning_history(
     ]
 
 
-def _product_preference_frame_state() -> dict[str, object]:
-    return {
-        "version": 1,
-        "active_flow": "product_selection",
-        "slots": {"customer_name": "Lili"},
-        "expected_answer_frames": [
-            {
-                "frame_id": "product_preference:test",
-                "flow": "product_selection",
-                "question_kind": "product_preference",
-                "prompt_key": "workspace_luma_novo_preference",
-                "status": "active",
-                "priority": 80,
-                "max_customer_turns": 6,
-                "turns_seen": 0,
-                "expected_slots": [
-                    {
-                        "slot": "workspace_preference",
-                        "accepted_values": ["open", "private"],
-                        "aliases": {
-                            "open": ["more open", "for team", "novo"],
-                            "private": ["private", "more privacy", "luma"],
-                        },
-                    }
-                ],
-                "source_refs": [
-                    {"kind": "product_family", "value": "LUMA", "ordinal": 1},
-                    {
-                        "kind": "product_family",
-                        "value": "SKYLAND NOVO",
-                        "ordinal": 2,
-                    },
-                ],
-            }
-        ],
-    }
-
-
-def test_product_preference_frame_builder_keeps_workspace_preference_canonical() -> (
-    None
-):
-    from src.dialogue.expected_answers import match_expected_answer
-    from src.dialogue.state import DialogueState
-
-    conv = Conversation(
-        id=uuid.uuid4(),
-        phone="+971500000002",
-        customer_name="Lili",
-        sales_stage=SalesStage.GREETING.value,
-        language="en",
-        escalation_status="none",
-    )
-    frame = engine_module._build_product_preference_frame(conv)
-    state = DialogueState(
-        active_flow="product_selection",
-        expected_answer_frames=[frame],
-    )
-
-    first = match_expected_answer(state, "the first option")
-    second = match_expected_answer(state, "the second option")
-
-    assert first.filled_slots == {"workspace_preference": "private"}
-    assert second.filled_slots == {"workspace_preference": "open"}
-
-
-def test_stock_price_option_list_does_not_create_workspace_preference_frame() -> None:
-    conv = Conversation(
-        id=uuid.uuid4(),
-        phone="+971500000002",
-        customer_name="Lili",
-        sales_stage=SalesStage.GREETING.value,
-        language="en",
-        escalation_status="none",
-    )
-
-    frame = engine_module._expected_answer_frame_from_assistant_response(
-        conv,
-        (
-            "I found two CH 616 chair options available:\n\n"
-            "**1. SkyLand Workstation Chair CH 616 Black**\n"
-            "- **SKU:** CH 616 black\n\n"
-            "**2. Skyland Operative Chair CH 616 NEW Black**\n"
-            "- **SKU:** CH 616 NEW black\n\n"
-            "Which of these two would you prefer?"
-        ),
-    )
-
-    assert frame is None
-
-
-def test_last_assistant_asked_product_preference_is_structural_not_brand_specific() -> (
-    None
-):
-    # M-2: preference detection must be structural — a qualitative choice question
-    # that is NOT a numbered SKU option list — rather than hardcoded to the LUMA/NOVO
-    # workspace brands. Narrowing it to those brands silently broke detection for
-    # every other product line.
-    luma_novo = [
-        "assistant: Would you prefer a more private workspace with individual "
-        "drawer pedestals (LUMA), or a more open, collaborative setup with "
-        "privacy panels (NOVO) for your team?"
-    ]
-    other_product = [
-        "assistant: Would you prefer the executive mesh chair or the leather "
-        "managerial chair for your office?"
-    ]
-    numbered_sku_list = [
-        "assistant: I found two CH 616 chair options available:\n\n"
-        "**1. SkyLand Workstation Chair CH 616 Black**\n"
-        "- **SKU:** CH 616 black\n\n"
-        "**2. Skyland Operative Chair CH 616 NEW Black**\n"
-        "- **SKU:** CH 616 NEW black\n\n"
-        "Which of these two would you prefer?"
-    ]
-
-    assert engine_module._last_assistant_asked_product_preference(luma_novo) is True
-    assert engine_module._last_assistant_asked_product_preference(other_product) is True
-    assert (
-        engine_module._last_assistant_asked_product_preference(numbered_sku_list)
-        is False
-    )
-
-
 def test_an_empty_catalog_search_still_carries_a_contract() -> None:
     """tj-b93r: the one turn with no grounding had no instructions either.
 
@@ -438,129 +314,6 @@ def test_product_no_match_contract_forbids_sourcing_escalation(match_kind) -> No
     assert "do not offer sourcing or escalation" in contract
 
 
-@pytest.mark.parametrize(
-    ("response_text", "question_kind", "flow", "slot_names"),
-    [
-        (
-            "I have these product references: CH 140. Please confirm the quantity "
-            "for each item so I can check availability and prepare the next step.",
-            "sku_quantity",
-            "product_selection",
-            ["quantity"],
-        ),
-        (
-            "Before I prepare the quotation, please share: company name, or confirm "
-            "you are buying as an individual; specific delivery address; customer email.",
-            "quote_details",
-            "quote_details",
-            ["company", "customer_type", "delivery_address", "email"],
-        ),
-        (
-            "Quotation SO-1 has been prepared and sent to you. Please let me know "
-            "if the quotation works for you.",
-            "post_quote_approval",
-            "post_quotation_hold",
-            ["quotation_approval"],
-        ),
-        (
-            "Hello, I'm Noor from Treejar. May I know your name so I can address "
-            "you properly?",
-            "name_gate",
-            "name_gate",
-            ["customer_name"],
-        ),
-    ],
-)
-def test_capture_expected_answer_frames_from_customer_facing_questions(
-    response_text: str,
-    question_kind: str,
-    flow: str,
-    slot_names: list[str],
-) -> None:
-    conv = Conversation(
-        id=uuid.uuid4(),
-        phone="12345",
-        customer_name=None,
-        sales_stage=SalesStage.GREETING.value,
-        language="en",
-        escalation_status="none",
-        metadata_={},
-    )
-    if question_kind == "quote_details":
-        conv.metadata_ = {
-            "order_runtime": {
-                "quote_frame": {
-                    "source": "selection_confirmation",
-                    "status": "collecting_details",
-                    "lines": [
-                        {"sku": "CH-616", "quantity": 2},
-                        {"sku": "SKYLAND-NOVO-2400", "quantity": 1},
-                    ],
-                }
-            }
-        }
-
-    engine_module._capture_expected_answer_frames_from_assistant_response(
-        conv,
-        response_text=response_text,
-        dialogue_kernel_mode="shadow",
-    )
-
-    frames = conv.metadata_["dialogue_kernel"]["state"]["expected_answer_frames"]
-    assert len(frames) == 1
-    frame = frames[0]
-    assert frame["status"] == "active"
-    assert frame["question_kind"] == question_kind
-    assert frame["flow"] == flow
-    assert [slot["slot"] for slot in frame["expected_slots"]] == slot_names
-    if question_kind == "quote_details":
-        assert frame["source_refs"] == [
-            {
-                "kind": "quote_line",
-                "sku": "CH-616",
-                "quantity": 2,
-                "quote_frame_id": None,
-                "ordinal": 1,
-            },
-            {
-                "kind": "quote_line",
-                "sku": "SKYLAND-NOVO-2400",
-                "quantity": 1,
-                "quote_frame_id": None,
-                "ordinal": 2,
-            },
-        ]
-
-
-def test_quote_details_expected_frame_requires_durable_quote_items() -> None:
-    conv = Conversation(
-        id=uuid.uuid4(),
-        phone="12345",
-        customer_name="Lilia",
-        sales_stage=SalesStage.GREETING.value,
-        language="en",
-        escalation_status="none",
-        metadata_={},
-    )
-    response_text = (
-        "Before I prepare the quotation, please share: company name, "
-        "specific delivery address, and customer email."
-    )
-
-    engine_module._capture_expected_answer_frames_from_assistant_response(
-        conv,
-        response_text=response_text,
-        dialogue_kernel_mode="shadow",
-    )
-
-    frames = (
-        conv.metadata_.get("dialogue_kernel", {})
-        .get("state", {})
-        .get("expected_answer_frames", [])
-    )
-    assert frames == []
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("consent", "lifecycle"),
@@ -571,13 +324,11 @@ def test_quote_details_expected_frame_requires_durable_quote_items() -> None:
 )
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
-@patch("src.llm.engine.run_dialogue_kernel", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_canonical_quote_consent_wins_over_stale_kernel_grant(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
-    mock_dialogue_kernel: AsyncMock,
     mock_get_system_config: AsyncMock,
     mock_search_knowledge: AsyncMock,
     consent: str,
@@ -595,32 +346,23 @@ async def test_process_message_canonical_quote_consent_wins_over_stale_kernel_gr
                 "consent": consent,
                 "lifecycle": lifecycle,
             }
-        }
+        },
+        "dialogue_kernel": {
+            "state": {
+                "version": 2,
+                "quote_consent": "granted",
+                "quote_lifecycle": "quote_requested",
+            }
+        },
     }
     text = "Please show me chair options."
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelRequest(parts=[UserPromptPart(content=text)]),
     ]
-    mock_dialogue_kernel.return_value = DialogueKernelResult(
-        decision=DialogueDecision(
-            action="collect_quote_details",
-            flow="quote_details",
-            response_text="Please share customer and delivery details.",
-            handled=True,
-        ),
-        state=DialogueState(
-            quote_consent="granted",
-            quote_lifecycle="quote_requested",
-        ),
-        should_use_kernel=True,
-    )
 
     async def config_side_effect(_db: object, key: str, default: str) -> str:
         return {
-            "dialogue_kernel_mode": "shadow",
-            "dialogue_kernel_trace_enabled": "true",
-            "dialogue_kernel_enforced_flows": "product_selection",
             "openrouter_model_main": "mock-model",
         }.get(key, default)
 
@@ -648,13 +390,11 @@ async def test_process_message_canonical_quote_consent_wins_over_stale_kernel_gr
 
 @pytest.mark.asyncio
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
-@patch("src.llm.engine.run_dialogue_kernel", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_strips_synthetic_marker_before_order_runtime_layers(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
-    mock_dialogue_kernel: AsyncMock,
     mock_get_system_config: AsyncMock,
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
@@ -666,21 +406,9 @@ async def test_process_message_strips_synthetic_marker_before_order_runtime_laye
     text = "I need workstation options.\n[tj-gh51-final3-20260609102045-initial]"
     expected_text = "I need workstation options."
     mock_build_history.return_value = _first_turn_history(expected_text)
-    mock_dialogue_kernel.return_value = DialogueKernelResult(
-        decision=DialogueDecision(
-            action="fallback_legacy",
-            flow="legacy_fallback",
-            handled=False,
-        ),
-        state=DialogueState.from_conversation(conv),
-        should_use_kernel=False,
-    )
 
     async def config_side_effect(_db: object, key: str, default: str) -> str:
         return {
-            "dialogue_kernel_mode": "shadow",
-            "dialogue_kernel_trace_enabled": "true",
-            "dialogue_kernel_enforced_flows": "product_selection",
             "openrouter_model_main": "mock_model",
         }.get(key, default)
 
@@ -698,7 +426,6 @@ async def test_process_message_strips_synthetic_marker_before_order_runtime_laye
     )
 
     assert response.model == "mock_model"
-    mock_dialogue_kernel.assert_not_awaited()
     agent_call = mock_run.await_args.kwargs
     assert agent_call["deps"].user_query == expected_text
     assert agent_call["deps"].recent_history[-1] == f"user: {expected_text}"
@@ -726,14 +453,8 @@ async def test_process_message_first_turn_is_not_intercepted_before_the_llm(
         "CH 616 NEW black is 295.00 AED each, 36 in stock now."
     )
 
-    # The old name-gate flow is still named in config on purpose: a stale
-    # allowlist must not resurrect an interception that no longer exists.
     async def config_side_effect(_db: object, key: str, default: str) -> str:
-        return {
-            "dialogue_kernel_mode": "enforce",
-            "dialogue_kernel_trace_enabled": "true",
-            "dialogue_kernel_enforced_flows": "name_gate",
-        }.get(key, default)
+        return default
 
     mock_get_system_config.side_effect = config_side_effect
 
@@ -776,11 +497,7 @@ async def test_process_message_localizes_the_first_turn_to_arabic(
     mock_run.return_value = _FakeAgentResult("لدينا كراسي مكتب مريحة.")
 
     async def config_side_effect(_db: object, key: str, default: str) -> str:
-        return {
-            "dialogue_kernel_mode": "enforce",
-            "dialogue_kernel_trace_enabled": "true",
-            "dialogue_kernel_enforced_flows": "name_gate",
-        }.get(key, default)
+        return default
 
     mock_get_system_config.side_effect = config_side_effect
 
@@ -7904,11 +7621,11 @@ def test_quote_detail_context_requires_request_for_a_customer_field(
     assistant_text: str,
     expected: bool,
 ) -> None:
+    from src.llm.response_policy import last_assistant_asked_quote_customer_details
+
     history = [f"assistant: {assistant_text}"]
 
-    assert (
-        engine_module._last_assistant_asked_quote_customer_details(history) is expected
-    )
+    assert last_assistant_asked_quote_customer_details(history) is expected
 
 
 def test_quote_offer_guard_removes_detail_collection_before_opt_in(

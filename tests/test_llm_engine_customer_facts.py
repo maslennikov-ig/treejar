@@ -85,9 +85,6 @@ async def _config(_db: object, key: str, default: str) -> str:
         "customer_facts_trace_enabled": "true",
         "customer_facts_fast_extractor_enabled": "false",
         "customer_facts_max_context_orders": "2",
-        "dialogue_kernel_mode": "legacy",
-        "dialogue_kernel_trace_enabled": "true",
-        "dialogue_kernel_enforced_flows": "",
         "openrouter_model_main": "mock-model",
     }.get(key, default)
 

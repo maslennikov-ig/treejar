@@ -45,9 +45,6 @@ from src.dialogue.order_state import (
     QuoteConsent,
     quote_workflow_from_metadata,
 )
-from src.dialogue.runner import (
-    record_legacy_route,
-)
 from src.dialogue.state import DialogueState
 from src.llm.catalog_planning import (
     CLAIM_CONTRACT_SCOPE_KEY,
@@ -137,7 +134,6 @@ if TYPE_CHECKING:
     from pydantic_ai.usage import RunUsage as RunUsageT
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from src.dialogue.runner import DialogueKernelResult as DialogueKernelResultT
     from src.integrations.crm.zoho_crm import ZohoCRMClient
     from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
     from src.integrations.messaging.base import MessagingProvider
@@ -393,8 +389,6 @@ class _Turn:
     masked_text: str
     recent_history: list[str]
     deps: SalesDepsT
-    dialogue_kernel_mode: str = ""
-    dialogue_kernel_result: DialogueKernelResultT | None = None
     opening_anchor_line: str | None = None
     opening_anchor_has_limited_stock: bool = False
     opening_anchor_grounded_amounts: tuple[float, ...] = ()
@@ -516,17 +510,6 @@ class _Turn:
                 response_deps.conversation.language,
             )
         return rendered
-
-    def _record_reply_on_conversation(
-        self, model_name: str, response_text: str
-    ) -> None:
-        if model_name.startswith("dialogue-kernel|"):
-            return
-        record_legacy_route(
-            self.conv,
-            self.dialogue_kernel_result,
-            legacy_route=model_name,
-        )
 
     def build_llm_response(
         self,
@@ -750,7 +733,6 @@ async def _finalize_turn_response(
         if _product_media_is_referenced(item, response.text)
     )
 
-    turn._record_reply_on_conversation(response.model, response.text)
     # tj-uz6j.7. What the next short "yes" answers is the question this reply,
     # as finally worded, closes on -- recorded with the catalog rows it names.
     conversation_metadata = turn.deps.conversation.metadata_
@@ -875,7 +857,6 @@ async def _read_turn_config(turn: _Turn) -> _TurnConfig:
     # freeze the real one before the patch lands.
     from src.core.config import get_system_config
 
-    turn.dialogue_kernel_mode = "disabled"
     return _TurnConfig(
         customer_facts_mode=engine._normalize_customer_facts_mode(
             await get_system_config(

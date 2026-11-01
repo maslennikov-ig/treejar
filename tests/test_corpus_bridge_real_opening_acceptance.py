@@ -1335,7 +1335,6 @@ async def test_triggered_harness_reply_matches_the_production_finalizer() -> Non
                 executed_tool_names=(),
                 conversation=SimpleNamespace(metadata_={}),
             ),
-            _record_reply_on_conversation=lambda _model, _text: None,
         ),
         LLMResponse(
             text=rendered.text,
@@ -1361,16 +1360,15 @@ async def test_production_finalizer_enforces_the_selected_language_before_record
     None
 ):
     state = ReplyPolicyState(language="en", is_first_turn=True)
-    recorded: list[str] = []
+    conversation = SimpleNamespace(metadata_={}, language="en")
     production = await _finalize_turn_response(
         SimpleNamespace(
             masked_text="Hi",
             pii_map={},
             deps=SimpleNamespace(
                 executed_tool_names=(),
-                conversation=SimpleNamespace(metadata_={}, language="en"),
+                conversation=conversation,
             ),
-            _record_reply_on_conversation=lambda _model, text: recorded.append(text),
         ),
         LLMResponse(
             text=(
@@ -1387,7 +1385,11 @@ async def test_production_finalizer_enforces_the_selected_language_before_record
 
     assert not any("\u0600" <= character <= "\u06ff" for character in production.text)
     assert production.text.count("?") == 1
-    assert recorded == [production.text]
+    recorded_question = conversation.metadata_["dialogue_kernel"]["state"][
+        "last_proposal"
+    ]["question"]
+    assert recorded_question in production.text
+    assert not any("\u0600" <= character <= "\u06ff" for character in recorded_question)
 
 
 @pytest.mark.asyncio

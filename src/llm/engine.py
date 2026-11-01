@@ -65,19 +65,12 @@ from src.dialogue.order_state import (
     canonical_quote_workflow_metadata_present,
     latest_sent_quotation_effect,
     quote_frame_from_metadata,
-    quote_frame_is_active,
     quote_frame_to_metadata,
     quote_workflow_from_metadata,
     quote_workflow_to_metadata,
 )
-from src.dialogue.reducer import push_expected_answer_frame
-from src.dialogue.runner import (
-    quote_consent_signal,
-)
-from src.dialogue.runner import (
-    run_dialogue_kernel as run_dialogue_kernel,
-)
-from src.dialogue.state import DialogueState, ExpectedAnswerFrame, ExpectedSlot
+from src.dialogue.runner import quote_consent_signal
+from src.dialogue.state import DialogueState
 from src.integrations.crm.zoho_crm import (
     ZohoCRMClient,
     apply_zoho_attribution_mapping,
@@ -152,7 +145,6 @@ from src.llm.catalog_references import (
     _resolve_query_catalog_references,
     find_catalog_product_by_sku,
 )
-from src.llm.closed_question_guard import response_asks_customer_name
 from src.llm.communication_policy import finalize_evidence_grounding_prompt
 from src.llm.context import build_message_history as build_message_history
 from src.llm.customer_intent_tools import (
@@ -233,9 +225,6 @@ from src.llm.response_policy import (
     format_permitted_asks_prompt,
     guard_premature_quote_detail_collection,
     render_reply,
-)
-from src.llm.response_policy import (
-    last_assistant_asked_quote_customer_details as _last_assistant_asked_quote_customer_details,
 )
 from src.llm.response_runtime import (
     CommercialPriceDecision,
@@ -638,13 +627,6 @@ def _turn_runtime_directives(
     return tuple(directives)
 
 
-PRODUCT_PREFERENCE_PROMPT_KEY = "workspace_luma_novo_preference"
-PRODUCT_PREFERENCE_FRAME_TTL_MINUTES = 30
-SKU_QUANTITY_PROMPT_KEY = "product_reference_quantity"
-QUOTE_DETAILS_PROMPT_KEY = "quote_details_required"
-POST_QUOTE_APPROVAL_PROMPT_KEY = "post_quote_approval"
-NAME_GATE_PROMPT_KEY = "customer_name_gate"
-EXPECTED_ANSWER_FRAME_TTL_MINUTES = 30
 _QUOTE_REQUEST_TERMS = (
     "sales order",
     "sale order",
@@ -973,26 +955,6 @@ _EXACT_QUOTE_CLARIFICATION_QUANTITY_RE = re.compile(
     re.IGNORECASE,
 )
 _NUMERIC_HYPHEN_SKU_RE = re.compile(r"\b\d{2,}(?:-\d{1,})+\b")
-_POST_QUOTATION_APPROVAL_PROMPT_CUES = (
-    "let me know if the quotation works",
-    "if the quotation works for you",
-    "whether the quotation works",
-    "does the quotation work",
-    "let me know if the proposal works",
-    "if the proposal works for you",
-    "whether the proposal works",
-    "does the proposal work",
-    "if the offer works",
-    "whether the offer works",
-    "does the offer work",
-    "quotation suits",
-    "proposal suits",
-    "offer suits",
-    "quotation suit",
-    "proposal suit",
-    "offer suit",
-    "هل يناسبك العرض",
-)
 _MIXED_PRODUCT_TERMS = (
     "workstation",
     "work station",
@@ -1423,270 +1385,6 @@ def _last_assistant_message(recent_history: list[str] | None) -> str:
         if entry.startswith("assistant: "):
             return entry.removeprefix("assistant: ").strip()
     return ""
-
-
-def _last_assistant_asked_product_preference(
-    recent_history: list[str] | None,
-) -> bool:
-    last_assistant = _last_assistant_message(recent_history)
-    normalized = _normalize_text(_normalize_sku_homoglyphs(last_assistant))
-    if not normalized or not _asks_customer_facing_question(last_assistant):
-        return False
-    if not _has_product_or_quote_routing_signal(last_assistant):
-        return False
-    # A numbered SKU option list (e.g. "1. CH 616 ...\n- SKU: ...") is a catalog
-    # selection handled by the ordinal/numbered selection path, not a qualitative
-    # preference question. Excluding it structurally — instead of allow-listing
-    # specific product brands (LUMA/NOVO) — keeps preference detection working for
-    # every product line while preventing SKU lists from being mistaken for a
-    # preference question (M-2).
-    if _numbered_sku_options_from_assistant(last_assistant):
-        return False
-    preference_question_terms = (
-        "prefer",
-        "would you like",
-        "which",
-        "option",
-        "better for",
-        "private",
-        "open",
-        "collaborative",
-        "privacy",
-        "luma",
-        "novo",
-    )
-    return any(term in normalized for term in preference_question_terms)
-
-
-def _dialogue_kernel_mode_allows_expected_answer_frames(mode: str) -> bool:
-    return str(mode or "").strip().casefold() in {"shadow", "enforce"}
-
-
-def _build_expected_answer_frame(
-    conversation: Conversation,
-    *,
-    flow: str,
-    question_kind: str,
-    prompt_key: str,
-    expected_slots: list[ExpectedSlot],
-    priority: int,
-    source_refs: list[dict[str, Any]] | None = None,
-    max_customer_turns: int = 6,
-    ttl_minutes: int = EXPECTED_ANSWER_FRAME_TTL_MINUTES,
-) -> ExpectedAnswerFrame:
-    asked_at = datetime.datetime.now(datetime.UTC)
-    expires_at = asked_at + datetime.timedelta(minutes=ttl_minutes)
-    return ExpectedAnswerFrame(
-        frame_id=f"{question_kind}:{conversation.id}:{prompt_key}",
-        flow=flow,
-        question_kind=question_kind,
-        prompt_key=prompt_key,
-        status="active",
-        priority=priority,
-        asked_at=asked_at,
-        expires_at=expires_at,
-        max_customer_turns=max_customer_turns,
-        expected_slots=expected_slots,
-        source_refs=source_refs or [],
-        metadata={"origin": "legacy_bridge"},
-    )
-
-
-def _build_product_preference_frame(conversation: Conversation) -> ExpectedAnswerFrame:
-    return _build_expected_answer_frame(
-        conversation,
-        flow="product_selection",
-        question_kind="product_preference",
-        prompt_key=PRODUCT_PREFERENCE_PROMPT_KEY,
-        priority=80,
-        expected_slots=[
-            ExpectedSlot(
-                slot="workspace_preference",
-                accepted_values=["open", "private"],
-                aliases={
-                    "open": ["more open", "for team", "collaborative", "novo"],
-                    "private": ["private", "more privacy", "luma", "individual"],
-                },
-            )
-        ],
-        source_refs=[
-            {"kind": "product_family", "value": "LUMA", "ordinal": 1},
-            {"kind": "product_family", "value": "SKYLAND NOVO", "ordinal": 2},
-        ],
-        ttl_minutes=PRODUCT_PREFERENCE_FRAME_TTL_MINUTES,
-    )
-
-
-def _build_sku_quantity_frame(
-    conversation: Conversation,
-    response_text: str,
-) -> ExpectedAnswerFrame:
-    source_refs = [
-        {"kind": "product_reference", "value": reference, "ordinal": index}
-        for index, reference in enumerate(
-            _quantity_prompt_references(response_text), start=1
-        )
-    ]
-    return _build_expected_answer_frame(
-        conversation,
-        flow="product_selection",
-        question_kind="sku_quantity",
-        prompt_key=SKU_QUANTITY_PROMPT_KEY,
-        priority=70,
-        expected_slots=[
-            ExpectedSlot(
-                slot="quantity",
-                accepted_values=[str(value) for value in range(1, 101)],
-                validator="positive_integer",
-            )
-        ],
-        source_refs=source_refs,
-    )
-
-
-def _build_quote_details_frame(
-    conversation: Conversation,
-) -> ExpectedAnswerFrame | None:
-    quote_frame = _quote_frame_from_conversation(conversation)
-    if not quote_frame_is_active(quote_frame):
-        return None
-    return _build_expected_answer_frame(
-        conversation,
-        flow="quote_details",
-        question_kind="quote_details",
-        prompt_key=QUOTE_DETAILS_PROMPT_KEY,
-        priority=65,
-        expected_slots=[
-            ExpectedSlot(slot="company", validator="free_text"),
-            ExpectedSlot(
-                slot="customer_type",
-                accepted_values=["individual", "company"],
-                aliases={"individual": ["for myself", "personal", "private customer"]},
-            ),
-            ExpectedSlot(slot="delivery_address", validator="delivery_address"),
-            ExpectedSlot(slot="email", validator="email"),
-        ],
-        source_refs=_quote_frame_source_refs(quote_frame),
-    )
-
-
-def _build_post_quote_approval_frame(conversation: Conversation) -> ExpectedAnswerFrame:
-    return _build_expected_answer_frame(
-        conversation,
-        flow="post_quotation_hold",
-        question_kind="post_quote_approval",
-        prompt_key=POST_QUOTE_APPROVAL_PROMPT_KEY,
-        priority=75,
-        expected_slots=[
-            ExpectedSlot(
-                slot="quotation_approval",
-                accepted_values=["accepted", "rejected", "needs_changes"],
-                aliases={
-                    "accepted": ["yes", "approved", "works", "proceed", "go ahead"],
-                    "rejected": ["no", "reject", "not suitable"],
-                    "needs_changes": ["change", "revise", "different"],
-                },
-            )
-        ],
-    )
-
-
-def _build_name_gate_frame(conversation: Conversation) -> ExpectedAnswerFrame:
-    return _build_expected_answer_frame(
-        conversation,
-        flow="name_gate",
-        question_kind="name_gate",
-        prompt_key=NAME_GATE_PROMPT_KEY,
-        priority=90,
-        expected_slots=[ExpectedSlot(slot="customer_name", validator="person_name")],
-        max_customer_turns=4,
-    )
-
-
-def _expected_answer_frame_from_assistant_response(
-    conversation: Conversation,
-    response_text: str,
-) -> ExpectedAnswerFrame | None:
-    response_history = [f"assistant: {response_text}"]
-    if _last_assistant_asked_product_preference(response_history):
-        return _build_product_preference_frame(conversation)
-    if _response_asks_sku_quantity(response_text):
-        return _build_sku_quantity_frame(conversation, response_text)
-    if _last_assistant_asked_quote_customer_details(
-        response_history,
-        quote_context_active=quote_frame_is_active(
-            _quote_frame_from_conversation(conversation)
-        ),
-    ):
-        return _build_quote_details_frame(conversation)
-    if _response_asks_post_quote_approval(response_text):
-        return _build_post_quote_approval_frame(conversation)
-    if _response_asks_customer_name(response_text):
-        return _build_name_gate_frame(conversation)
-    return None
-
-
-def _response_asks_sku_quantity(response_text: str) -> bool:
-    normalized = _normalize_text(_normalize_sku_homoglyphs(response_text))
-    if not normalized or "quantity" not in normalized:
-        return False
-    return any(
-        phrase in normalized
-        for phrase in (
-            "confirm the quantity",
-            "quantity for each item",
-            "how many",
-        )
-    ) and any(
-        phrase in normalized
-        for phrase in (
-            "product reference",
-            "product references",
-            "these products",
-            "each item",
-        )
-    )
-
-
-def _quantity_prompt_references(response_text: str) -> tuple[str, ...]:
-    match = re.search(
-        r"product references?:\s*(?P<refs>[^.?!]+)",
-        response_text,
-        flags=re.IGNORECASE,
-    )
-    if match is None:
-        return ()
-    refs = [
-        ref.strip(" \t\r\n,;")
-        for ref in re.split(r",|\band\b", match.group("refs"))
-        if ref.strip(" \t\r\n,;")
-    ]
-    return tuple(refs[:8])
-
-
-def _response_asks_post_quote_approval(response_text: str) -> bool:
-    normalized = _normalize_text(response_text)
-    return any(cue in normalized for cue in _POST_QUOTATION_APPROVAL_PROMPT_CUES)
-
-
-def _response_asks_customer_name(response_text: str) -> bool:
-    return response_asks_customer_name(response_text)
-
-
-def _capture_expected_answer_frames_from_assistant_response(
-    conversation: Conversation,
-    *,
-    response_text: str,
-    dialogue_kernel_mode: str,
-) -> None:
-    if not _dialogue_kernel_mode_allows_expected_answer_frames(dialogue_kernel_mode):
-        return
-    frame = _expected_answer_frame_from_assistant_response(conversation, response_text)
-    if frame is None:
-        return
-    state = DialogueState.from_conversation(conversation)
-    state = push_expected_answer_frame(state, frame)
-    conversation.metadata_ = state.to_metadata(conversation.metadata_)
 
 
 def extract_exact_quote_candidate(text: str) -> ExactQuoteCandidate | None:
@@ -2399,20 +2097,6 @@ def _metadata_has_canonical_quote_frame(metadata: Mapping[str, Any]) -> bool:
         runtime.get("quote_frame"),
         Mapping,
     )
-
-
-def _quote_frame_source_refs(frame: QuoteFrame) -> list[dict[str, Any]]:
-    return [
-        {
-            "kind": "quote_line",
-            "sku": line.sku,
-            "quantity": line.quantity,
-            "quote_frame_id": frame.frame_id,
-            "ordinal": index,
-        }
-        for index, line in enumerate(frame.lines, start=1)
-        if line.is_valid
-    ]
 
 
 def _quote_customer_details_from_metadata(
