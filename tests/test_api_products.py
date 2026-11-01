@@ -124,15 +124,26 @@ async def test_sync_products_requires_admin_session() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sync_products_treejar_default(admin_client: AsyncClient) -> None:
+async def test_sync_products_treejar_default(
+    admin_client: AsyncClient, mock_db: AsyncMock
+) -> None:
+    from src.models.admin_action_audit import AdminActionAudit
+
     mock_pool = AsyncMock()
     app.state.arq_pool = mock_pool
 
     response = await admin_client.post("/api/v1/products/sync", json={})
 
     assert response.status_code == 200
-    assert response.json()["synced"] == 0
+    payload = response.json()
+    assert payload["synced"] == 0
+    assert payload["status"] == "queued"
     mock_pool.enqueue_job.assert_awaited_with("sync_products_from_treejar_catalog")
+    mock_db.add.assert_called_once()
+    audit = mock_db.add.call_args.args[0]
+    assert isinstance(audit, AdminActionAudit)
+    assert audit.action == "catalog.sync"
+    assert audit.entity_id == "treejar"
 
     del app.state.arq_pool
 
@@ -146,7 +157,9 @@ async def test_sync_products_zoho(admin_client: AsyncClient) -> None:
     response = await admin_client.post("/api/v1/products/sync", json={"source": "zoho"})
 
     assert response.status_code == 200
-    assert response.json()["synced"] == 0
+    payload = response.json()
+    assert payload["synced"] == 0
+    assert payload["status"] == "queued"
     mock_pool.enqueue_job.assert_awaited_with("sync_products_from_zoho")
 
     # Clean up state to not affect other tests

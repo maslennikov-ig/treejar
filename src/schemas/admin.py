@@ -33,6 +33,7 @@ from .common import (
     UUIDModel,
 )
 from .manager_review import ManagerLeaderboardEntry
+from .product import ProductSyncResponse as _BaseProductSyncResponse
 
 
 class PromptRead(UUIDModel):
@@ -189,17 +190,12 @@ class TimeseriesResponse(BaseModel):
 
 class SettingsRead(BaseModel):
     bot_enabled: bool
-    default_language: Language
     telegram_test_mode_enabled: bool
-    follow_up_enabled: bool
-    max_messages_per_conversation: int
 
 
 class SettingsUpdate(BaseModel):
     bot_enabled: bool | None = None
-    default_language: Language | None = None
     telegram_test_mode_enabled: bool | None = None
-    follow_up_enabled: bool | None = None
 
 
 class AdminActionAuditRead(UUIDModel):
@@ -827,3 +823,7 @@ def build_admin_ai_quality_response(
         default_model=resolve_default_ai_quality_model(),
         available_models=resolve_available_ai_quality_models(config),
     )
+
+
+class AdminProductSyncResponse(_BaseProductSyncResponse):
+    status: str = "queued"

@@ -1,21 +1,23 @@
 """Tests for the auto-FAQ service."""
 
-import uuid
 from collections.abc import Sequence
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.services.auto_faq import review_auto_faq_candidate, save_to_faq
+from src.models.knowledge_base_candidate import KnowledgeBaseCandidate
+from src.services.auto_faq import (
+    _nearest_duplicate_similarity,
+    review_auto_faq_candidate,
+)
 from src.services.auto_faq_types import AutoFAQCandidate
 
 
 @pytest.fixture
 def mock_db() -> AsyncMock:
-    db = AsyncMock(spec=AsyncSession)
-    return db
+    return AsyncMock(spec=AsyncSession)
 
 
 @pytest.fixture
@@ -25,91 +27,81 @@ def mock_embedding_engine() -> MagicMock:
     return engine
 
 
-async def _mock_normalize(question: str, answer: str) -> tuple[str, str]:
-    """Passthrough mock — treats input as already English."""
-    return question, answer
-
-
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_normalize_to_english_passes_expected_llm_safety_kwargs() -> None:
-    from src.services.auto_faq import _normalize_to_english
-
-    translated = "Q: What is delivery time?\nA: Delivery takes 3-5 days."
-    with patch(
-        "src.services.auto_faq._translate_agent.run",
-        new=AsyncMock(return_value=SimpleNamespace(output=translated)),
-    ) as mock_run:
-        question, answer = await _normalize_to_english(
-            "ما هي مدة التوصيل؟",
-            "3-5 أيام",
-        )
-
-    assert question == "What is delivery time?"
-    assert answer == "Delivery takes 3-5 days."
-    call_kwargs = mock_run.await_args.kwargs
-    assert call_kwargs["model_settings"]["max_tokens"] == 700
-    assert call_kwargs["usage_limits"].request_limit == 1
-    assert call_kwargs["usage_limits"].output_tokens_limit == 700
-    assert call_kwargs["usage_limits"].total_tokens_limit == 3000
-
-
-@pytest.mark.asyncio
-@pytest.mark.unit
-@patch("src.services.auto_faq._normalize_to_english", side_effect=_mock_normalize)
-async def test_save_to_faq_success(
-    mock_normalize: AsyncMock, mock_db: AsyncMock, mock_embedding_engine: MagicMock
+async def test_nearest_duplicate_similarity_filters_soft_deleted_kb_rows(
+    mock_db: AsyncMock,
 ) -> None:
-    """Test that a new FAQ entry is created when no duplicate exists."""
-    # Mock: no existing entries (nearest returns None)
+    """Deduplication query must ignore soft-deleted knowledge_base rows (AD-37)."""
     mock_result = MagicMock()
     mock_result.first.return_value = None
     mock_db.execute.return_value = mock_result
 
-    # Mock refresh to set id
-    async def _refresh(obj: object) -> None:
-        obj.id = uuid.uuid4()  # type: ignore[attr-defined]
+    similarity = await _nearest_duplicate_similarity(mock_db, [0.1] * 1024)
 
-    mock_db.refresh = AsyncMock(side_effect=_refresh)
+    assert similarity is None
+    stmt = mock_db.execute.await_args.args[0]
+    compiled_sql = str(stmt.compile(dialect=postgresql.dialect()))
+    assert "knowledge_base.deleted_at IS NULL" in compiled_sql
 
-    result = await save_to_faq(
-        db=mock_db,
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_review_auto_faq_candidate_returns_needs_confirmation_and_persists_when_requested(
+    mock_db: AsyncMock, mock_embedding_engine: MagicMock
+) -> None:
+    """Passing candidate returns needs_confirmation and optionally persists KnowledgeBaseCandidate."""
+    mock_result = MagicMock()
+    mock_result.first.return_value = None
+    mock_db.execute.return_value = mock_result
+
+    candidate = AutoFAQCandidate(
         question="What is the delivery time?",
-        adapted_answer="Delivery takes 3-5 business days within the UAE.",
+        answer="Delivery takes 3-5 business days within the UAE.",
+        confidence=0.9,
+    )
+    result = await review_auto_faq_candidate(
+        mock_db,
+        candidate,
         manager_draft="3-5 days UAE",
+        customer_message="Delivery takes 3-5 business days within the UAE.",
         embedding_engine=mock_embedding_engine,
-        admin_confirmed=True,
+        persist_candidate=True,
+        source_metadata={"escalation_id": "esc-1"},
     )
 
-    assert result.status == "saved"
-    assert result.entry is not None
-    assert result.entry.source == "auto_faq"
-    assert result.entry.language == "en"
-    assert result.entry.is_auto_generated is True
-    assert result.entry.original_question == "What is the delivery time?"
-    assert result.entry.manager_draft == "3-5 days UAE"
+    assert result.status == "needs_confirmation"
+    assert result.candidate == candidate
+    assert result.entry is None
     assert result.guard_reasons == ()
-    assert result.candidate is not None
     mock_db.add.assert_called_once()
+    persisted = mock_db.add.call_args.args[0]
+    assert isinstance(persisted, KnowledgeBaseCandidate)
+    assert persisted.status == "needs_confirmation"
+    assert persisted.metadata_ == {"escalation_id": "esc-1"}
     mock_db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-@patch("src.services.auto_faq._normalize_to_english", side_effect=_mock_normalize)
-async def test_save_to_faq_requires_admin_confirmation_before_save(
-    mock_normalize: AsyncMock, mock_db: AsyncMock, mock_embedding_engine: MagicMock
+async def test_review_auto_faq_candidate_does_not_persist_by_default(
+    mock_db: AsyncMock, mock_embedding_engine: MagicMock
 ) -> None:
-    """Auto-FAQ candidates must not be persisted without admin confirmation."""
+    """Without persist_candidate=True, review_auto_faq_candidate does not write rows."""
     mock_result = MagicMock()
     mock_result.first.return_value = None
     mock_db.execute.return_value = mock_result
 
-    result = await save_to_faq(
-        db=mock_db,
+    candidate = AutoFAQCandidate(
         question="What is the delivery time?",
-        adapted_answer="Delivery takes 3-5 business days within the UAE.",
+        answer="Delivery takes 3-5 business days within the UAE.",
+        confidence=0.9,
+    )
+    result = await review_auto_faq_candidate(
+        mock_db,
+        candidate,
         manager_draft="3-5 days UAE",
+        customer_message="Delivery takes 3-5 business days within the UAE.",
         embedding_engine=mock_embedding_engine,
     )
 
@@ -122,66 +114,63 @@ async def test_save_to_faq_requires_admin_confirmation_before_save(
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-@patch("src.services.auto_faq._normalize_to_english", side_effect=_mock_normalize)
-async def test_save_to_faq_duplicate_rejected(
-    mock_normalize: AsyncMock, mock_db: AsyncMock, mock_embedding_engine: MagicMock
+async def test_review_auto_faq_candidate_duplicate_rejected(
+    mock_db: AsyncMock, mock_embedding_engine: MagicMock
 ) -> None:
-    """Test that duplicates (similarity > 0.92) are rejected."""
-    # Mock: nearest entry with very small distance (high similarity)
+    """Candidates with active KB similarity >= 0.92 are marked duplicate."""
     mock_nearest = MagicMock()
-    mock_nearest.distance = 0.05  # similarity = 1 - 0.05 = 0.95 > 0.92
+    mock_nearest.distance = 0.05  # similarity = 1 - 0.05 = 0.95 >= 0.92
     mock_result = MagicMock()
     mock_result.first.return_value = mock_nearest
     mock_db.execute.return_value = mock_result
 
-    result = await save_to_faq(
-        db=mock_db,
+    candidate = AutoFAQCandidate(
         question="What is delivery time?",
-        adapted_answer="Delivery takes 3-5 business days.",
+        answer="Delivery takes 3-5 business days.",
+        confidence=0.9,
+    )
+    result = await review_auto_faq_candidate(
+        mock_db,
+        candidate,
         manager_draft="3-5 days",
+        customer_message="Delivery takes 3-5 business days.",
         embedding_engine=mock_embedding_engine,
     )
 
     assert result.status == "duplicate"
+    assert result.duplicate_similarity == pytest.approx(0.95)
     assert result.entry is None
     assert result.guard_reasons == ()
     mock_db.add.assert_not_called()
-    mock_db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-@patch("src.services.auto_faq._normalize_to_english", side_effect=_mock_normalize)
-async def test_save_to_faq_similar_but_not_duplicate(
-    mock_normalize: AsyncMock, mock_db: AsyncMock, mock_embedding_engine: MagicMock
+async def test_review_auto_faq_candidate_similar_but_not_duplicate(
+    mock_db: AsyncMock, mock_embedding_engine: MagicMock
 ) -> None:
-    """Test that entries with similarity <= 0.92 are saved."""
-    # Mock: nearest entry with distance indicating low similarity
+    """Candidates with active KB similarity < 0.92 proceed to needs_confirmation."""
     mock_nearest = MagicMock()
     mock_nearest.distance = 0.15  # similarity = 1 - 0.15 = 0.85 < 0.92
     mock_result = MagicMock()
     mock_result.first.return_value = mock_nearest
     mock_db.execute.return_value = mock_result
 
-    async def _refresh(obj: object) -> None:
-        obj.id = uuid.uuid4()  # type: ignore[attr-defined]
-
-    mock_db.refresh = AsyncMock(side_effect=_refresh)
-
-    result = await save_to_faq(
-        db=mock_db,
+    candidate = AutoFAQCandidate(
         question="How do I return a product?",
-        adapted_answer="You can return any product within 14 days.",
+        answer="You can return any product within 14 days.",
+        confidence=0.9,
+    )
+    result = await review_auto_faq_candidate(
+        mock_db,
+        candidate,
         manager_draft="14 days return",
+        customer_message="You can return any product within 14 days.",
         embedding_engine=mock_embedding_engine,
-        admin_confirmed=True,
     )
 
-    assert result.status == "saved"
-    assert result.entry is not None
-    assert result.entry.source == "auto_faq"
-    assert result.entry.language == "en"
-    mock_db.add.assert_called_once()
+    assert result.status == "needs_confirmation"
+    assert result.duplicate_similarity == pytest.approx(0.85)
 
 
 @pytest.mark.asyncio
@@ -259,9 +248,7 @@ async def test_review_auto_faq_candidate_rejects_unsafe_candidate(
         ),
     ],
 )
-@patch("src.services.auto_faq._normalize_to_english", side_effect=_mock_normalize)
-async def test_save_to_faq_blocks_context_specific_global_save(
-    mock_normalize: AsyncMock,
+async def test_review_auto_faq_candidate_blocks_context_specific_global_save(
     mock_db: AsyncMock,
     mock_embedding_engine: MagicMock,
     question: str,
@@ -269,12 +256,17 @@ async def test_save_to_faq_blocks_context_specific_global_save(
     manager_draft: str,
     expected_reasons: Sequence[str],
 ) -> None:
-    """Context-specific manager replies must downgrade faq_global to private-only."""
-    result = await save_to_faq(
-        db=mock_db,
+    """Context-specific manager replies must be blocked from global FAQ candidates."""
+    candidate = AutoFAQCandidate(
         question=question,
-        adapted_answer=adapted_answer,
+        answer=adapted_answer,
+        confidence=0.95,
+    )
+    result = await review_auto_faq_candidate(
+        mock_db,
+        candidate,
         manager_draft=manager_draft,
+        customer_message=adapted_answer,
         embedding_engine=mock_embedding_engine,
     )
 

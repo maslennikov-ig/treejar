@@ -93,10 +93,7 @@ class ProductAdmin(ReadOnlyModelView, model=Product):
     icon = "fa-solid fa-box"
 
 
-class KnowledgeBaseAdmin(ModelView, model=KnowledgeBase):
-    can_create = True
-    can_edit = True
-    can_delete = True
+class KnowledgeBaseAdmin(ReadOnlyModelView, model=KnowledgeBase):
     column_list = [KnowledgeBase.id, KnowledgeBase.created_at]
     column_details_exclude_list = [KnowledgeBase.embedding]
     form_excluded_columns = [KnowledgeBase.embedding]
@@ -129,10 +126,7 @@ class QualityReviewAdmin(ReadOnlyModelView, model=QualityReview):
     icon = "fa-solid fa-star"
 
 
-class EscalationAdmin(ModelView, model=Escalation):
-    can_create = False
-    can_edit = True
-    can_delete = False
+class EscalationAdmin(ReadOnlyModelView, model=Escalation):
     column_list = [
         Escalation.id,
         Escalation.conversation_id,

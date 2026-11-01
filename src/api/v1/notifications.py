@@ -47,7 +47,7 @@ async def get_notification_config() -> dict[str, object]:
     chat_id = settings.telegram_chat_id
 
     return {
-        "telegram_configured": bool(token),
+        "telegram_configured": bool(token and chat_id),
         "telegram_bot_token": f"***{token[-4:]}" if len(token) > 4 else "not set",
         "telegram_chat_id": f"***{chat_id[-4:]}" if len(chat_id) > 4 else "not set",
     }
