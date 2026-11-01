@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,9 +40,22 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from src.models.bot_behavior_rule import BotBehaviorRule
 from src.models.knowledge_base import KnowledgeBase
-from src.rag.embeddings import EmbeddingEngine
 from src.schemas.admin import AdminCanonicalSyncPreview, AdminCanonicalSyncPreviewItem
 from src.services.bot_behavior_rules import rule_embedding_text
+
+if TYPE_CHECKING:
+    from src.rag.embeddings import EmbeddingEngine
+
+
+def _resolve_embedding_engine(
+    embedding_engine: EmbeddingEngine | None,
+) -> EmbeddingEngine:
+    if embedding_engine is not None:
+        return embedding_engine
+    from src.rag.embeddings import EmbeddingEngine as _EmbeddingEngine
+
+    return _EmbeddingEngine()
+
 
 logger = logging.getLogger(__name__)
 
@@ -697,7 +710,7 @@ async def sync_canonical_knowledge_base(
         active_count += 1
 
     if to_embed:
-        engine = embedding_engine or EmbeddingEngine()
+        engine = _resolve_embedding_engine(embedding_engine)
         embeddings = await engine.embed_batch_async([row.content for row in to_embed])
         for row, embedding in zip(to_embed, embeddings, strict=True):
             row.embedding = embedding
@@ -817,7 +830,7 @@ async def sync_canonical_bot_behavior_rules(
         active_count += 1
 
     if to_embed:
-        engine = embedding_engine or EmbeddingEngine()
+        engine = _resolve_embedding_engine(embedding_engine)
         embeddings = await engine.embed_batch_async(
             [rule_embedding_text(row) for row in to_embed]
         )

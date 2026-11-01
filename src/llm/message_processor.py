@@ -1154,11 +1154,14 @@ async def _load_turn(
     # Search intent and constraints come from model tool arguments, not a
     # keyword-derived plan that can silently negate the customer's request.
 
+    from src.rag.cached_embedding import wrap_embedding_engine
+
+    cached_embedding_engine = wrap_embedding_engine(embedding_engine)
     deps = SalesDeps(
         db=db,
         redis=redis,
         conversation=conv,
-        embedding_engine=embedding_engine,
+        embedding_engine=cached_embedding_engine,
         zoho_inventory=zoho_client,
         zoho_crm=crm_client,
         messaging_client=messaging_client,
@@ -1187,7 +1190,7 @@ async def _load_turn(
         db=db,
         redis=redis,
         conversation_id=conversation_id,
-        embedding_engine=embedding_engine,
+        embedding_engine=cached_embedding_engine,
         zoho_client=zoho_client,
         messaging_client=messaging_client,
         crm_client=crm_client,

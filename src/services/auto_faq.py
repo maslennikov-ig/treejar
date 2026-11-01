@@ -9,15 +9,17 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.knowledge_base import KnowledgeBase
 from src.models.knowledge_base_candidate import KnowledgeBaseCandidate
-from src.rag.embeddings import EmbeddingEngine
 from src.services.auto_faq_types import AutoFAQCandidate
+
+if TYPE_CHECKING:
+    from src.rag.embeddings import EmbeddingEngine
 
 logger = logging.getLogger(__name__)
 

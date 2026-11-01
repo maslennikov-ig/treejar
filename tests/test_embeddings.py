@@ -138,8 +138,8 @@ async def test_index_knowledge_base_embeddings() -> None:
 
 
 @pytest.mark.unit
-def test_embeddings_module_defers_sentence_transformers_import() -> None:
-    """Importing src.rag.embeddings (and src.main) must not load torch or sentence_transformers."""
+def test_web_app_startup_defers_sentence_transformers_import() -> None:
+    """Importing src.main must not load torch or sentence_transformers while keeping pinned embeddings.py untouched."""
     import subprocess
     import sys
 
@@ -148,7 +148,7 @@ def test_embeddings_module_defers_sentence_transformers_import() -> None:
             sys.executable,
             "-c",
             (
-                "import sys, src.rag.embeddings, src.main; "
+                "import sys, src.main; "
                 "assert 'sentence_transformers' not in sys.modules; "
                 "assert 'torch' not in sys.modules"
             ),
@@ -162,47 +162,55 @@ def test_embeddings_module_defers_sentence_transformers_import() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_embedding_engine_caches_duplicate_queries_and_returns_defensive_copies(
+async def test_cached_embedding_engine_caches_duplicate_queries_and_returns_defensive_copies(
     mock_embedding_engine: Any,
 ) -> None:
+    from src.rag.cached_embedding import clear_embedding_cache, wrap_embedding_engine
+
+    clear_embedding_cache()
+    cached_engine = wrap_embedding_engine(mock_embedding_engine)
     model = mock_embedding_engine._get_model()
     model.encode.reset_mock()
 
-    first = await mock_embedding_engine.embed_async("executive desk dubai")
+    first = await cached_engine.embed_async("executive desk dubai")
     first[0] = 999.0  # caller mutation must not corrupt cached vector
-    second = await mock_embedding_engine.embed_async("executive desk dubai")
+    second = await cached_engine.embed_async("executive desk dubai")
 
     assert model.encode.call_count == 1
     assert second[0] == 0.1
     assert first is not second
+    clear_embedding_cache()
 
 
 @pytest.mark.unit
-def test_embedding_engine_cache_respects_ttl_and_lru_bound(
+def test_cached_embedding_engine_respects_ttl_and_lru_bound(
     mock_embedding_engine: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import src.rag.embeddings as emb_mod
+    import src.rag.cached_embedding as cache_mod
 
+    cache_mod.clear_embedding_cache()
+    cached_engine = cache_mod.wrap_embedding_engine(mock_embedding_engine)
     model = mock_embedding_engine._get_model()
     model.encode.reset_mock()
 
     clock = [100.0]
-    monkeypatch.setattr(emb_mod.time, "monotonic", lambda: clock[0])
-    monkeypatch.setattr(emb_mod, "EMBEDDING_CACHE_MAX_ENTRIES", 2)
-    monkeypatch.setattr(emb_mod, "EMBEDDING_CACHE_TTL_SECONDS", 10.0)
+    monkeypatch.setattr(cache_mod.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(cache_mod, "EMBEDDING_CACHE_MAX_ENTRIES", 2)
+    monkeypatch.setattr(cache_mod, "EMBEDDING_CACHE_TTL_SECONDS", 10.0)
 
-    mock_embedding_engine.embed("q1")
-    mock_embedding_engine.embed("q2")
-    mock_embedding_engine.embed("q3")  # evicts q1
+    cached_engine.embed("q1")
+    cached_engine.embed("q2")
+    cached_engine.embed("q3")  # evicts q1
     assert model.encode.call_count == 3
 
-    mock_embedding_engine.embed("q2")  # cached
+    cached_engine.embed("q2")  # cached
     assert model.encode.call_count == 3
 
-    mock_embedding_engine.embed("q1")  # evicted -> recomputed
+    cached_engine.embed("q1")  # evicted -> recomputed
     assert model.encode.call_count == 4
 
     clock[0] += 11.0  # expire TTL
-    mock_embedding_engine.embed("q1")
+    cached_engine.embed("q1")
     assert model.encode.call_count == 5
+    cache_mod.clear_embedding_cache()

@@ -20,7 +20,6 @@ from src.models.feedback import Feedback
 from src.models.message import Message
 from src.models.outbound_message import OutboundMessageAudit
 from src.models.system_config import SystemConfig
-from src.rag.embeddings import EmbeddingEngine
 from src.schemas.common import DealStatus, SalesStage
 from src.services.customer_language import is_arabic_customer_language
 from src.services.escalation_state import allows_automatic_followup
@@ -29,6 +28,10 @@ from src.services.outbound_audit import (
     send_wazzup_template_with_audit,
     send_wazzup_text_with_audit,
 )
+
+# Lazy-loaded at call time so importing `src.main` does not load torch; kept as
+# a module attribute so tests patching `src.services.followup.EmbeddingEngine` work.
+EmbeddingEngine: Any = None
 
 logfire = Logfire()
 logger = logging.getLogger(__name__)
@@ -983,7 +986,12 @@ async def _process_followup_for_conversation(db: Any, conv: Conversation) -> Non
     system_instruction = "SYSTEM: The user has been inactive. Draft a polite, short follow-up acknowledging the previous quotes/discussion. Make it a single short paragraph. Do not push, just offer help."
 
     redis = get_redis_client()
-    engine = EmbeddingEngine()
+    embedding_cls = EmbeddingEngine
+    if embedding_cls is None:
+        from src.rag.embeddings import EmbeddingEngine as _EmbeddingEngine
+
+        embedding_cls = _EmbeddingEngine
+    engine = embedding_cls()
     zoho_crm = ZohoCRMClient(redis)
     messaging = WazzupProvider()
     zoho = None

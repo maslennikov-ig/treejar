@@ -14,7 +14,6 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from src.models.knowledge_base import KnowledgeBase
 from src.models.knowledge_base_candidate import KnowledgeBaseCandidate
-from src.rag.embeddings import EmbeddingEngine
 from src.schemas.admin import (
     AdminActionResult,
     AdminCanonicalSyncPreview,
@@ -44,6 +43,19 @@ from src.services.canonical_admin_seed import (
     search_mentions_qa,
     sync_canonical_knowledge_base,
 )
+
+# Lazy-loaded so `src.main` avoids importing torch on web startup; kept as a
+# module attribute so tests monkeypatching `admin_knowledge_base.EmbeddingEngine` work.
+EmbeddingEngine: Any = None
+
+
+def _get_embedding_engine() -> Any:
+    if EmbeddingEngine is not None:
+        return EmbeddingEngine()
+    from src.rag.embeddings import EmbeddingEngine as _EmbeddingEngine
+
+    return _EmbeddingEngine()
+
 
 _LAST_KB_SYNC_STATE: dict[str, Any] = {
     "running": False,
@@ -237,7 +249,7 @@ async def preview_admin_kb_entry(
     content = body.content or ""
     unsafe_reasons = list(_detect_unsafe_reasons(body.title or "", content))
     context_reasons = list(_detect_context_specific_reasons(body.title or "", content))
-    embedding = await EmbeddingEngine().embed_async(content)
+    embedding = await _get_embedding_engine().embed_async(content)
     duplicate_similarity = await _nearest_duplicate_similarity(db, embedding)
     duplicate = (
         duplicate_similarity is not None and duplicate_similarity >= DUPLICATE_THRESHOLD
@@ -265,7 +277,7 @@ async def create_admin_kb_entry(
         content=body.content,
         language=body.language.value,
         category=body.category,
-        embedding=await EmbeddingEngine().embed_async(body.content),
+        embedding=await _get_embedding_engine().embed_async(body.content),
         is_auto_generated=False,
         updated_at=now,
     )
@@ -305,7 +317,7 @@ async def update_admin_kb_entry(
             value = value.value
         setattr(entry, key, value)
     if "content" in update_data:
-        entry.embedding = await EmbeddingEngine().embed_async(entry.content)
+        entry.embedding = await _get_embedding_engine().embed_async(entry.content)
     entry.updated_at = _now()
 
     await log_admin_action(
@@ -362,7 +374,7 @@ async def reindex_admin_kb_entry(
         raise HTTPException(status_code=404, detail="Knowledge-base entry not found")
 
     before = _kb_snapshot(entry)
-    entry.embedding = await EmbeddingEngine().embed_async(entry.content)
+    entry.embedding = await _get_embedding_engine().embed_async(entry.content)
     entry.updated_at = _now()
     await log_admin_action(
         db,
@@ -392,7 +404,7 @@ async def reindex_admin_kb_entries(
     if not entries:
         return AdminActionResult(ok=True, status="noop", detail="No entries to reindex")
 
-    embeddings = await EmbeddingEngine().embed_batch_async(
+    embeddings = await _get_embedding_engine().embed_batch_async(
         [entry.content for entry in entries]
     )
     now = _now()
@@ -528,7 +540,7 @@ async def approve_admin_kb_candidate(
         content=content,
         language=candidate.language,
         category="faq",
-        embedding=await EmbeddingEngine().embed_async(content),
+        embedding=await _get_embedding_engine().embed_async(content),
         is_auto_generated=True,
         original_question=candidate.original_question or candidate.question,
         manager_draft=candidate.manager_draft,

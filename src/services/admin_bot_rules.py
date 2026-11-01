@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from src.models.bot_behavior_rule import BotBehaviorRule
-from src.rag.embeddings import EmbeddingEngine
 from src.schemas.admin import (
     AdminActionResult,
     AdminBotRulePreviewRequest,
@@ -43,6 +42,19 @@ from src.services.canonical_admin_seed import (
     search_mentions_qa,
     sync_canonical_bot_behavior_rules,
 )
+
+# Lazy-loaded so `src.main` avoids importing torch on web startup; kept as a
+# module attribute so tests monkeypatching `admin_bot_rules.EmbeddingEngine` work.
+EmbeddingEngine: Any = None
+
+
+def _get_embedding_engine() -> Any:
+    if EmbeddingEngine is not None:
+        return EmbeddingEngine()
+    from src.rag.embeddings import EmbeddingEngine as _EmbeddingEngine
+
+    return _EmbeddingEngine()
+
 
 _LAST_RULES_SYNC_STATE: dict[str, Any] = {
     "running": False,
@@ -225,7 +237,9 @@ async def create_admin_bot_rule(
         updated_at=now,
         archived_at=now if body.status == "archived" else None,
     )
-    rule.embedding = await EmbeddingEngine().embed_async(rule_embedding_text(rule))
+    rule.embedding = await _get_embedding_engine().embed_async(
+        rule_embedding_text(rule)
+    )
     db.add(rule)
     await log_admin_action(
         db,
@@ -288,7 +302,9 @@ async def update_admin_bot_rule(
     elif update_data.get("status") in {"draft", "active"}:
         rule.archived_at = None
     if {"title", "instruction", "trigger_examples"} & set(update_data):
-        rule.embedding = await EmbeddingEngine().embed_async(rule_embedding_text(rule))
+        rule.embedding = await _get_embedding_engine().embed_async(
+            rule_embedding_text(rule)
+        )
     rule.updated_by = "admin"
     rule.updated_at = _now()
 
@@ -347,7 +363,9 @@ async def reindex_admin_bot_rule(
         raise HTTPException(status_code=404, detail="Bot behavior rule not found")
 
     before = _snapshot(rule)
-    rule.embedding = await EmbeddingEngine().embed_async(rule_embedding_text(rule))
+    rule.embedding = await _get_embedding_engine().embed_async(
+        rule_embedding_text(rule)
+    )
     rule.updated_by = "admin"
     rule.updated_at = _now()
     await log_admin_action(
@@ -373,7 +391,7 @@ async def reindex_admin_bot_rules(
         select(BotBehaviorRule).where(BotBehaviorRule.archived_at.is_(None))
     )
     rules = list(result.scalars().all())
-    engine = EmbeddingEngine()
+    engine = _get_embedding_engine()
     for rule in rules:
         rule.embedding = await engine.embed_async(rule_embedding_text(rule))
         rule.updated_by = "admin"

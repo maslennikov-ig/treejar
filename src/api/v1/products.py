@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -16,8 +17,6 @@ from src.api.v1.admin import (
 from src.core.config import settings
 from src.core.database import get_db
 from src.models.product import Product
-from src.rag.embeddings import EmbeddingEngine
-from src.rag.pipeline import search_products as rag_search_products
 from src.schemas import (
     PaginatedResponse,
     ProductRead,
@@ -26,6 +25,15 @@ from src.schemas import (
     ProductSyncRequest,
 )
 from src.schemas.admin import AdminProductSyncResponse as ProductSyncResponse
+
+if TYPE_CHECKING:
+    from src.rag.embeddings import EmbeddingEngine
+else:
+    EmbeddingEngine = Any
+
+# Lazy-loaded at request time; kept as a module attribute so tests patching
+# `src.api.v1.products.rag_search_products` work without importing torch on startup.
+rag_search_products: Any = None
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -72,7 +80,9 @@ async def list_products(
 
 
 def get_embedding_engine() -> EmbeddingEngine:
-    return EmbeddingEngine()
+    from src.rag.embeddings import EmbeddingEngine as _EmbeddingEngine
+
+    return _EmbeddingEngine()
 
 
 @router.post("/search", response_model=ProductSearchResult)
@@ -83,7 +93,13 @@ async def search_products(
 ) -> ProductSearchResult:
     """Semantic product search (for AI assistant)."""
     try:
-        return await rag_search_products(db, body, embedding_engine)
+        search_fn = rag_search_products
+        if search_fn is None:
+            from src.rag.pipeline import search_products as _rag_search_products
+
+            search_fn = _rag_search_products
+        result: ProductSearchResult = await search_fn(db, body, embedding_engine)
+        return result
     except Exception as e:
         logger.error("Error during product search: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error") from e

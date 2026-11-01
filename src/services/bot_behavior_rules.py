@@ -3,14 +3,16 @@ from __future__ import annotations
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.bot_behavior_rule import BotBehaviorRule
-from src.rag.embeddings import EmbeddingEngine
 from src.schemas.admin import AdminBotRuleApplied
+
+if TYPE_CHECKING:
+    from src.rag.embeddings import EmbeddingEngine
 
 ACTIVE_STATUS = "active"
 HARD_RULE_TYPES = frozenset({"hard_rule", "escalation_rule"})
@@ -99,7 +101,12 @@ async def search_behavior_rules(
 
     soft_rules: list[BotBehaviorRule] = []
     if context.message.strip():
-        engine = embedding_engine or EmbeddingEngine()
+        if embedding_engine is None:
+            from src.rag.embeddings import EmbeddingEngine as _EmbeddingEngine
+
+            engine = _EmbeddingEngine()
+        else:
+            engine = embedding_engine
         query_embedding = await engine.embed_async(context.message)
         soft_stmt = (
             _context_filtered_stmt(context)
