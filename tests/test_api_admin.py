@@ -544,6 +544,36 @@ async def test_admin_dashboard_spa_route_after_login(admin_client: AsyncClient) 
     """Dashboard SPA route should serve the app for authenticated admins."""
     response = await admin_client.get("/dashboard/")
     assert response.status_code == 200
+    assert response.headers.get("cache-control") == "no-cache"
+
+
+@pytest.mark.asyncio
+async def test_spa_routes_set_no_cache_on_index_and_immutable_on_hashed_assets(
+    client: AsyncClient,
+) -> None:
+    """SPA entry HTML must revalidate while hashed Vite assets cache immutably."""
+    from pathlib import Path
+
+    landing_resp = await client.get("/")
+    assert landing_resp.status_code == 200
+    assert landing_resp.headers.get("cache-control") == "no-cache"
+
+    self_test_resp = await client.get("/client-self-test")
+    assert self_test_resp.status_code == 200
+    assert self_test_resp.headers.get("cache-control") == "no-cache"
+
+    probe = Path("frontend/admin/dist/assets/_cache_probe.js")
+    probe.parent.mkdir(parents=True, exist_ok=True)
+    probe.write_text("export default 1;\n", encoding="utf-8")
+    try:
+        asset_resp = await client.get("/dashboard/assets/_cache_probe.js")
+        assert asset_resp.status_code == 200
+        assert (
+            asset_resp.headers.get("cache-control")
+            == "public, max-age=31536000, immutable"
+        )
+    finally:
+        probe.unlink(missing_ok=True)
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import Response
+from starlette.types import Scope
 
 from src.api.admin.auth import (
     build_admin_login_redirect,
@@ -43,6 +44,19 @@ BRAND_ASSET_MEDIA_TYPES: dict[str, str] = {
 }
 
 
+class _ImmutableStaticFiles(StaticFiles):
+    """Serve hashed Vite bundle assets with long-lived immutable cache headers."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers.setdefault(
+                "Cache-Control",
+                "public, max-age=31536000, immutable",
+            )
+        return response
+
+
 def _serve_spa_file(dist_dir: str, full_path: str) -> FileResponse:
     """Serve a file from a built SPA directory, or its index.html.
 
@@ -51,11 +65,19 @@ def _serve_spa_file(dist_dir: str, full_path: str) -> FileResponse:
     the SPA entry page instead of reading an arbitrary file.
     """
     root = os.path.realpath(dist_dir)
+    index_file = os.path.join(root, "index.html")
     if full_path:
         candidate = os.path.realpath(os.path.join(root, full_path))
-        if candidate.startswith(f"{root}{os.sep}") and os.path.isfile(candidate):
-            return FileResponse(candidate)
-    return FileResponse(os.path.join(root, "index.html"))
+        if (
+            candidate.startswith(f"{root}{os.sep}")
+            and os.path.isfile(candidate)
+            and candidate != index_file
+        ):
+            return FileResponse(
+                candidate,
+                headers={"Cache-Control": "public, max-age=3600"},
+            )
+    return FileResponse(index_file, headers={"Cache-Control": "no-cache"})
 
 
 @asynccontextmanager
@@ -88,7 +110,13 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json" if settings.app_docs_enabled else None,
         lifespan=lifespan,
     )
-    app.add_middleware(SessionMiddleware, secret_key=settings.app_secret_key)
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=settings.app_secret_key,
+        max_age=60 * 60 * 24 * 14,
+        same_site="lax",
+        https_only=settings.is_production,
+    )
 
     if settings.app_docs_enabled:
 
@@ -175,7 +203,7 @@ def create_app() -> FastAPI:
 
     app.mount(
         "/dashboard/assets",
-        StaticFiles(directory="frontend/admin/dist/assets"),
+        _ImmutableStaticFiles(directory="frontend/admin/dist/assets"),
         name="admin-assets",
     )
 
@@ -269,7 +297,7 @@ def create_app() -> FastAPI:
 
     app.mount(
         "/assets",
-        StaticFiles(directory="frontend/landing/dist/assets"),
+        _ImmutableStaticFiles(directory="frontend/landing/dist/assets"),
         name="assets",
     )
 
