@@ -16,7 +16,6 @@ from pydantic_ai.usage import RunUsage
 from src.llm import engine as engine_module
 from src.llm.engine import SalesDeps, inject_system_prompt, process_message
 from src.models.conversation import Conversation
-from src.models.customer_memory import CustomerOrderMemory, CustomerProfile
 from src.schemas.common import SalesStage
 
 
@@ -82,8 +81,6 @@ def _unknown_name_deps() -> tuple[
 async def _config(_db: object, key: str, default: str) -> str:
     return {
         "customer_facts_mode": "enforce",
-        "customer_facts_trace_enabled": "true",
-        "customer_facts_fast_extractor_enabled": "false",
         "customer_facts_max_context_orders": "2",
         "openrouter_model_main": "mock-model",
     }.get(key, default)
@@ -192,14 +189,8 @@ async def test_customer_memory_is_data_for_model_not_a_semantic_interceptor(
             AsyncMock(return_value=memory),
         ) as load,
         patch.object(
-            engine_module,
-            "_run_customer_facts_layer",
-            AsyncMock(side_effect=AssertionError("No pre-model extraction")),
-        ) as extract,
-        patch.object(
             engine_module, "get_or_create_customer_profile", AsyncMock()
         ) as create_profile,
-        patch.object(engine_module, "apply_extracted_facts", AsyncMock()) as apply,
     ):
         response = await process_message(
             conversation_id=conv.id,
@@ -215,9 +206,7 @@ async def test_customer_memory_is_data_for_model_not_a_semantic_interceptor(
     assert response.text == "Here is the model's answer."
     run.assert_awaited_once()
     load.assert_awaited_once_with(db, conversation=conv, max_past_orders=2)
-    extract.assert_not_awaited()
     create_profile.assert_not_awaited()
-    apply.assert_not_awaited()
     deps = run.await_args.kwargs["deps"]
     assert deps.customer_facts_context == memory
     assert deps.source_message_id == "msg-source-1"
@@ -231,122 +220,3 @@ async def test_customer_memory_is_data_for_model_not_a_semantic_interceptor(
     if "lili@example.com" in customer_text:
         assert "lili@example.com" not in deps.user_query
         assert "lili@example.com" in deps.pii_map.values()
-
-
-@pytest.mark.asyncio
-async def test_customer_facts_syncs_quote_only_fields_after_canonical_consent() -> None:
-    db, conv, _embedding, _zoho, _redis, _messaging, _crm = _deps()
-    conv.metadata_ = {
-        "order_runtime": {
-            "quote_workflow": {
-                "version": 2,
-                "consent": "granted",
-                "lifecycle": "quote_requested",
-            }
-        }
-    }
-    facts = [
-        SimpleNamespace(scope="persistent_profile", key="customer.name", value="Lili"),
-        SimpleNamespace(
-            scope="persistent_profile",
-            key="customer.email",
-            value="lili@example.com",
-        ),
-        SimpleNamespace(scope="current_order", key="customer.type", value="individual"),
-        SimpleNamespace(scope="current_order", key="delivery.address", value="1 Dubai"),
-    ]
-
-    await engine_module._apply_customer_facts_to_legacy_quote_details(
-        db,
-        conv,
-        facts,
-    )
-
-    assert conv.metadata_["quote_customer_details"] == {
-        "name": "Lili",
-        "email": "lili@example.com",
-        "address": "1 Dubai",
-        "customer_type": "individual",
-    }
-
-
-class _Savepoint:
-    def __init__(self) -> None:
-        self.entered = False
-        self.rolled_back = False
-
-    async def __aenter__(self) -> "_Savepoint":
-        self.entered = True
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: object,
-    ) -> bool:
-        self.rolled_back = exc_type is not None
-        return False
-
-
-class _SavepointDb:
-    def __init__(self) -> None:
-        self.savepoint = _Savepoint()
-        self.flush = AsyncMock()
-
-    def begin_nested(self) -> _Savepoint:
-        return self.savepoint
-
-
-@pytest.mark.asyncio
-async def test_customer_facts_layer_fail_open_rolls_back_savepoint() -> None:
-    conv = Conversation(
-        id=uuid.uuid4(),
-        phone="+971500000001",
-        customer_name="Lili",
-        sales_stage=SalesStage.GREETING.value,
-        language="en",
-        escalation_status="none",
-    )
-    db = _SavepointDb()
-    profile = CustomerProfile(canonical_phone=conv.phone, display_name="Lili")
-    profile.id = uuid.uuid4()
-    order = CustomerOrderMemory(
-        customer_profile_id=profile.id,
-        conversation_id=conv.id,
-        status="active",
-    )
-    order.id = uuid.uuid4()
-
-    with (
-        patch.object(
-            engine_module,
-            "get_or_create_customer_profile",
-            AsyncMock(return_value=profile),
-        ),
-        patch.object(
-            engine_module,
-            "get_or_create_active_order",
-            AsyncMock(return_value=order),
-        ),
-        patch.object(
-            engine_module,
-            "apply_extracted_facts",
-            AsyncMock(side_effect=RuntimeError("flush failed")),
-        ),
-    ):
-        result = await engine_module._run_customer_facts_layer(
-            db,  # type: ignore[arg-type]
-            conversation=conv,
-            text="Lili, individual, 1 Dubai",
-            mode="enforce",
-            trace_enabled=True,
-            fast_extractor_enabled=False,
-            max_context_orders=1,
-        )
-
-    assert result == engine_module.CustomerFactsRun()
-    assert db.savepoint.entered is True
-    assert db.savepoint.rolled_back is True
-    db.flush.assert_not_awaited()
-    assert conv.metadata_ is None

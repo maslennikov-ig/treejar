@@ -522,18 +522,6 @@ def pending_question_frame_from_metadata(
     return None
 
 
-def pending_question_frame_to_metadata(
-    metadata: Mapping[str, Any] | None,
-    frame: PendingQuestionFrame,
-) -> dict[str, Any]:
-    updated = dict(metadata or {})
-    runtime = updated.get(ORDER_RUNTIME_METADATA_KEY)
-    runtime_metadata = dict(runtime) if isinstance(runtime, Mapping) else {}
-    runtime_metadata[PENDING_QUESTION_FRAME_METADATA_KEY] = frame.model_dump()
-    updated[ORDER_RUNTIME_METADATA_KEY] = runtime_metadata
-    return updated
-
-
 def quote_frame_from_legacy_metadata(
     metadata: Mapping[str, Any] | None,
 ) -> QuoteFrame | None:

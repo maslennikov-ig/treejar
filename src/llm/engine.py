@@ -51,10 +51,6 @@ from src.dialogue.decision_state import (
     closed_selection_skus,
     decision_state_directives,
 )
-from src.dialogue.order_guards import (
-    is_order_selection_blocked,
-)
-from src.dialogue.order_runtime import run_order_runtime
 from src.dialogue.order_state import (
     QuoteConsent,
     QuoteDetails,
@@ -181,9 +177,6 @@ from src.llm.escalation_tools import (
     escalate_to_manager as _escalate_to_manager_impl,
 )
 from src.llm.fact_extractor import (
-    CustomerFactExtractionResult,
-    ExtractedCustomerFact,
-    extract_customer_facts,
     extract_delivery_address,
     is_question_clause,
     is_specific_delivery_address,
@@ -228,13 +221,9 @@ from src.llm.response_policy import (
 )
 from src.llm.response_runtime import (
     CommercialPriceDecision,
-    CustomerFactsRun,
     ExactQuoteCandidate,
     LLMResponse,
-    OrderRuntimePurchaseSelection,
     ProductMediaPayload,
-    PurchaseSelection,
-    PurchaseSelectionItem,
     QuotationItem,
     ResolvedPurchaseSelectionItem,
     SalesOpportunityRequest,
@@ -281,11 +270,6 @@ from src.services.customer_language import (
     is_arabic_customer_language,
 )
 from src.services.customer_memory import (
-    CustomerFactsContext,
-    FactMergeResult,
-    apply_extracted_facts,
-    build_customer_facts_context,
-    close_order,
     get_or_create_active_order,
     get_or_create_customer_profile,
     mark_order_quoted,
@@ -334,11 +318,7 @@ QUOTE_CUSTOMER_DETAILS_KEY = "quote_customer_details"
 QUOTE_INTENT_FRAME_KEY = "quote_intent_frame"
 SALES_MEMORY_KEY = "sales_memory"
 SALES_OPPORTUNITY_WRITE_KEY = "sales_opportunity_write"
-CUSTOMER_FACTS_METADATA_KEY = "customer_facts"
-CUSTOMER_FACTS_TRACE_LIMIT = 20
-CUSTOMER_FACTS_TRACE_FACT_LIMIT = 12
 ORDER_RUNTIME_METADATA_KEY = "order_runtime"
-ORDER_RUNTIME_TRACE_LIMIT = 10
 NAME_GATE_PENDING_REQUEST_KEY = "name_gate_pending_request"
 CUSTOMER_NAME_ASKED_KEY = "customer_name_asked"
 COMPANY_ACTIVITY_ASKED_PREVIOUS_TURN_KEY = "company_activity_asked_previous_turn"
@@ -1496,283 +1476,6 @@ def _extract_stated_price(fragment: str) -> tuple[float | None, str | None]:
     return price, currency
 
 
-def _extract_purchase_selection(
-    text: str,
-    *,
-    require_trigger: bool = True,
-) -> PurchaseSelection | None:
-    """Parse explicit customer-selected SKU/quantity lines without product discovery."""
-    text = _strip_synthetic_test_marker(text)
-    normalized = _normalize_text(text)
-    if not normalized:
-        return None
-    if is_order_selection_blocked(text):
-        return None
-    if (
-        require_trigger
-        and not _PURCHASE_SELECTION_TRIGGER_RE.search(text)
-        and not _ORDER_INTENT_SELECTION_CONTEXT_RE.search(text)
-    ):
-        order_intent_selection = _purchase_selection_from_order_runtime(
-            text,
-            require_trigger=require_trigger,
-        )
-        if order_intent_selection.selection is None:
-            return None
-        return order_intent_selection.selection
-
-    order_intent_selection = _purchase_selection_from_order_runtime(
-        text,
-        require_trigger=require_trigger,
-    )
-    trailing_unit_selection = _extract_item_before_unit_count_purchase_selection(text)
-    if order_intent_selection.selection is not None:
-        if _prefer_trailing_unit_selection(
-            trailing_unit_selection,
-            order_intent_selection.selection,
-        ):
-            return trailing_unit_selection
-        return order_intent_selection.selection
-
-    if trailing_unit_selection is not None:
-        return trailing_unit_selection
-    if order_intent_selection.block_legacy:
-        return None
-
-    quantity_matches = [
-        match
-        for match in _SELECTION_QUANTITY_START_RE.finditer(text)
-        if not (
-            _looks_like_model_number_quantity(text, match)
-            or _looks_like_sku_numeric_component(text, match)
-            or _SELECTION_MEASUREMENT_SUFFIX_RE.match(text[match.end() :])
-        )
-    ]
-    if not quantity_matches:
-        return None
-
-    items: list[PurchaseSelectionItem] = []
-    for index, match in enumerate(quantity_matches):
-        start = match.start()
-        end = (
-            quantity_matches[index + 1].start()
-            if index + 1 < len(quantity_matches)
-            else len(text)
-        )
-        fragment = text[start:end].strip(" ,.;:-")
-        sku = _best_selection_sku(fragment)
-        if not sku:
-            continue
-        quantity = int(match.group("quantity"))
-        item_candidate = fragment[len(match.group("quantity")) :].strip(" ,.;:-")
-        item_candidate = re.sub(
-            r"\s+(?:and|or)\s*$",
-            "",
-            item_candidate,
-            flags=re.IGNORECASE,
-        ).strip()
-        stated_unit_price, stated_currency = _extract_stated_price(fragment)
-        items.append(
-            PurchaseSelectionItem(
-                quantity=quantity,
-                item_candidate=item_candidate,
-                sku=sku,
-                stated_unit_price=stated_unit_price,
-                stated_currency=stated_currency,
-            )
-        )
-
-    if not items:
-        return None
-    return PurchaseSelection(items=tuple(items))
-
-
-def _prefer_trailing_unit_selection(
-    trailing_selection: PurchaseSelection | None,
-    order_runtime_selection: PurchaseSelection,
-) -> bool:
-    if trailing_selection is None:
-        return False
-    if len(trailing_selection.items) > len(order_runtime_selection.items):
-        return True
-    if len(trailing_selection.items) != len(order_runtime_selection.items):
-        return False
-
-    trailing_score = 0
-    runtime_score = 0
-    for trailing_item, runtime_item in zip(
-        trailing_selection.items,
-        order_runtime_selection.items,
-        strict=True,
-    ):
-        if (
-            trailing_item.quantity != runtime_item.quantity
-            or trailing_item.sku != runtime_item.sku
-        ):
-            return False
-        trailing_score += len(trailing_item.item_candidate)
-        runtime_score += len(runtime_item.item_candidate)
-    return trailing_score > runtime_score
-
-
-def _clean_item_before_unit_count_candidate(value: str) -> str:
-    cleaned = _PRODUCT_REFERENCE_REQUEST_PREFIX_RE.sub("", value)
-    cleaned = re.sub(
-        r"^\s*(?:only|and|plus|with|please|kindly)\b",
-        "",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        r"\s+(?:and|or|plus|with)\s*$",
-        "",
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    return " ".join(cleaned.strip(" \t\r\n,.;:-").split())
-
-
-def _extract_item_before_unit_count_purchase_selection(
-    text: str,
-) -> PurchaseSelection | None:
-    items: list[PurchaseSelectionItem] = []
-    for match in _ITEM_BEFORE_UNIT_COUNT_RE.finditer(text):
-        quantity = int(match.group("quantity"))
-        if quantity <= 0:
-            continue
-        item_candidate = _clean_item_before_unit_count_candidate(match.group("item"))
-        if not item_candidate:
-            continue
-        sku = _best_selection_sku(item_candidate)
-        if not sku:
-            named_model_match = _NAMED_MODEL_REFERENCE_RE.search(item_candidate)
-            if named_model_match is not None:
-                sku = " ".join(
-                    _normalize_sku_homoglyphs(named_model_match.group(0))
-                    .upper()
-                    .split()
-                )
-        if not sku:
-            continue
-        items.append(
-            PurchaseSelectionItem(
-                quantity=quantity,
-                item_candidate=item_candidate,
-                sku=sku,
-            )
-        )
-
-    if not items:
-        return None
-    return PurchaseSelection(items=tuple(items))
-
-
-def _purchase_selection_from_order_runtime(
-    text: str,
-    *,
-    require_trigger: bool,
-) -> OrderRuntimePurchaseSelection:
-    result = run_order_runtime(text=text, metadata={})
-    if not result.state.lines:
-        return OrderRuntimePurchaseSelection(selection=None)
-    if result.decision.route != "product_selection" or not result.decision.handled:
-        has_resolved_quantity = any(
-            line.quantity and line.quantity > 0 for line in result.state.lines
-        )
-        block_legacy = (
-            "runtime_error" not in result.decision.reason_codes
-            and has_resolved_quantity
-        )
-        return OrderRuntimePurchaseSelection(selection=None, block_legacy=block_legacy)
-    if (
-        require_trigger
-        and not _PURCHASE_SELECTION_TRIGGER_RE.search(text)
-        and not _ORDER_INTENT_SELECTION_CONTEXT_RE.search(text)
-    ):
-        return OrderRuntimePurchaseSelection(selection=None, block_legacy=True)
-
-    items: list[PurchaseSelectionItem] = []
-    for line in result.state.lines:
-        if not line.quantity or line.quantity <= 0:
-            continue
-        sku = line.sku or line.catalog_ref
-        if not sku:
-            continue
-        items.append(
-            PurchaseSelectionItem(
-                quantity=line.quantity,
-                item_candidate=line.source_text,
-                sku=sku,
-            )
-        )
-
-    if not items:
-        return OrderRuntimePurchaseSelection(selection=None, block_legacy=True)
-    if _explicit_selection_quantity_count(text) > len(items):
-        return OrderRuntimePurchaseSelection(selection=None, block_legacy=True)
-    if len(items) < len(result.state.lines):
-        return OrderRuntimePurchaseSelection(selection=None, block_legacy=True)
-    return OrderRuntimePurchaseSelection(
-        selection=PurchaseSelection(
-            items=tuple(items),
-            order_runtime_trace=result.trace.model_dump(),
-        )
-    )
-
-
-def _explicit_selection_quantity_count(text: str) -> int:
-    count = 0
-    for match in _SELECTION_QUANTITY_START_RE.finditer(text):
-        if _looks_like_model_number_quantity(
-            text,
-            match,
-        ) or _looks_like_sku_numeric_component(text, match):
-            continue
-        count += 1
-    return count
-
-
-def _extract_word_quantity_purchase_selection(text: str) -> PurchaseSelection | None:
-    text = _strip_synthetic_test_marker(text)
-    quantity_matches = list(_SELECTION_WORD_QUANTITY_START_RE.finditer(text))
-    if not quantity_matches:
-        return None
-
-    items: list[PurchaseSelectionItem] = []
-    for index, match in enumerate(quantity_matches):
-        if _SELECTION_MEASUREMENT_SUFFIX_RE.match(text[match.end() :]):
-            continue
-        word = match.group("quantity_word").casefold()
-        quantity = _selection_word_quantity(word)
-        if quantity is None:
-            continue
-        start = match.start()
-        end = (
-            quantity_matches[index + 1].start()
-            if index + 1 < len(quantity_matches)
-            else len(text)
-        )
-        fragment = text[start:end].strip(" ,.;:-")
-        sku = _best_selection_sku(fragment)
-        if not sku:
-            continue
-        item_candidate = fragment[len(match.group("quantity_word")) :].strip(" ,.;:-")
-        stated_unit_price, stated_currency = _extract_stated_price(fragment)
-        items.append(
-            PurchaseSelectionItem(
-                quantity=quantity,
-                item_candidate=item_candidate,
-                sku=sku,
-                stated_unit_price=stated_unit_price,
-                stated_currency=stated_currency,
-            )
-        )
-
-    if not items:
-        return None
-    return PurchaseSelection(items=tuple(items))
-
-
 _OPTION_SKU_LINE_RE = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?\*{0,2}\s*SKU\s*:\s*\*{0,2}\s*(?P<sku>[^\r\n]+)"
 )
@@ -2902,8 +2605,6 @@ def _unlabeled_company_or_customer_type(value: str) -> dict[str, str]:
         part_details.get("email")
         or part_details.get("phone")
         or _has_product_or_quote_routing_signal(value)
-        or _extract_purchase_selection(value, require_trigger=False) is not None
-        or _extract_word_quantity_purchase_selection(value) is not None
         or _looks_like_terse_delivery_address(value)
     ):
         return {}
@@ -2923,11 +2624,6 @@ def _looks_like_terse_delivery_address(value: str) -> bool:
     if any(token in BARE_NAME_GATE_REJECT_TOKENS for token in normalized.split()):
         return False
     if _has_product_or_quote_routing_signal(value):
-        return False
-    if (
-        _extract_purchase_selection(value, require_trigger=False) is not None
-        or _extract_word_quantity_purchase_selection(value) is not None
-    ):
         return False
     location_terms = (
         "dubai",
@@ -3282,186 +2978,6 @@ def _has_canonical_quote_workflow(conversation: Conversation) -> bool:
     return True
 
 
-def _fact_value_as_text(value: Any) -> str:
-    if isinstance(value, str):
-        return value.strip()
-    if value is None:
-        return ""
-    return str(value).strip()
-
-
-def _quote_details_from_customer_facts(
-    facts: Iterable[Any],
-) -> dict[str, str]:
-    details: dict[str, str] = {}
-    for fact in facts:
-        scope = str(getattr(fact, "scope", ""))
-        key = str(getattr(fact, "key", ""))
-        value = _fact_value_as_text(getattr(fact, "value", None))
-        if not value:
-            continue
-        if scope == "persistent_profile":
-            if key in {"customer.name", "customer.display_name"}:
-                details["name"] = value
-            elif key in {"customer.email", "customer.primary_email"}:
-                details["email"] = value
-            elif key == "customer.phone":
-                details["phone"] = value
-            elif key == "customer.company":
-                details["company"] = value
-        elif scope == "current_order":
-            if key == "customer.type":
-                details["customer_type"] = value
-            elif key == "delivery.address":
-                details["address"] = value
-    return details
-
-
-async def _apply_customer_facts_to_legacy_quote_details(
-    db: AsyncSession,
-    conversation: Conversation,
-    facts: Iterable[Any],
-) -> None:
-    details = _quote_details_from_customer_facts(facts)
-    canonical_quote_consent_granted = (
-        _has_canonical_quote_workflow(conversation)
-        and quote_workflow_from_metadata(conversation.metadata_).consent
-        is QuoteConsent.GRANTED
-    )
-    if not canonical_quote_consent_granted:
-        details = {
-            key: value for key, value in details.items() if key in {"name", "company"}
-        }
-    if details:
-        await _store_extracted_quote_customer_details(db, conversation, details)
-
-
-def _customer_facts_trace_fact(fact: ExtractedCustomerFact) -> dict[str, Any]:
-    return {
-        "scope": fact.scope,
-        "key": fact.key,
-        "confidence": fact.confidence,
-        "source": fact.source,
-        "needs_confirmation": fact.needs_confirmation,
-    }
-
-
-def _record_customer_facts_trace(
-    conversation: Conversation,
-    *,
-    mode: str,
-    extraction: CustomerFactExtractionResult | None = None,
-    merge_result: FactMergeResult | None = None,
-    context: CustomerFactsContext | None = None,
-    error: str | None = None,
-) -> None:
-    metadata = dict(conversation.metadata_ or {})
-    state = metadata.get(CUSTOMER_FACTS_METADATA_KEY)
-    if not isinstance(state, dict):
-        state = {}
-    traces = state.get("traces")
-    if not isinstance(traces, list):
-        traces = []
-
-    trace: dict[str, Any] = {
-        "mode": mode,
-        "error": _captured_context_value(error) if error else None,
-    }
-    if extraction is not None:
-        trace["deterministic_fact_count"] = extraction.trace.deterministic_fact_count
-        trace["fast_model_called"] = extraction.trace.fast_model_called
-        trace["fast_model_failed"] = extraction.trace.fast_model_failed
-        if extraction.trace.fast_model_model:
-            trace["fast_model_model"] = extraction.trace.fast_model_model
-        if extraction.trace.fast_model_skipped_reason:
-            trace["fast_model_skipped_reason"] = (
-                extraction.trace.fast_model_skipped_reason
-            )
-        trace["facts"] = [
-            _customer_facts_trace_fact(fact)
-            for fact in extraction.facts[:CUSTOMER_FACTS_TRACE_FACT_LIMIT]
-        ]
-    if merge_result is not None:
-        trace["accepted_count"] = len(merge_result.accepted)
-        trace["proposed_count"] = len(merge_result.proposed)
-        trace["conflict_count"] = len(merge_result.conflicts)
-        trace["confirmation_required_count"] = len(merge_result.confirmation_required)
-    if context is not None:
-        trace["context_sections"] = {
-            "profile": bool(context.profile_lines),
-            "current_order": bool(context.current_order_lines),
-            "past_orders": bool(context.past_order_lines),
-            "missing_quote_fields": len(context.missing_quote_fields),
-        }
-
-    state["traces"] = [*traces, trace][-CUSTOMER_FACTS_TRACE_LIMIT:]
-    metadata[CUSTOMER_FACTS_METADATA_KEY] = state
-    conversation.metadata_ = metadata
-
-
-def _customer_facts_has_fact(
-    extraction: CustomerFactExtractionResult,
-    *,
-    scope: str,
-    key: str,
-) -> bool:
-    return any(fact.scope == scope and fact.key == key for fact in extraction.facts)
-
-
-def _customer_facts_past_order_response(
-    context: CustomerFactsContext,
-    *,
-    language: str,
-    reuse_requested: bool,
-) -> str | None:
-    if not context.past_order_lines:
-        if is_arabic_customer_language(language):
-            return (
-                "لا أرى طلباً سابقاً مكتملاً لهذا الرقم. "
-                "أرسل لي المنتجات والكميات المطلوبة وسأساعدك."
-            )
-        return (
-            "I do not see a previous completed order for this number. "
-            "Please send the products and quantities you need, and I’ll help."
-        )
-
-    summary = context.past_order_lines[0].removeprefix("- ").strip()
-    if reuse_requested:
-        if is_arabic_customer_language(language):
-            return (
-                f"آخر طلب سابق لدي هو: {summary}. "
-                "هل تريد استخدام نفس المنتجات والكميات لهذا العرض الجديد؟"
-            )
-        return (
-            f"I found this previous completed order: {summary}. "
-            "Please confirm if you want to use the same items and quantities "
-            "for this new quotation."
-        )
-    if is_arabic_customer_language(language):
-        return f"آخر طلب سابق لدي هو: {summary}."
-    return f"Your latest previous completed order was: {summary}."
-
-
-async def _sync_customer_order_lifecycle_from_facts(
-    db: AsyncSession,
-    *,
-    order: Any,
-    facts: Iterable[Any],
-) -> None:
-    quote_statuses = [
-        _fact_value_as_text(getattr(fact, "value", None)).casefold()
-        for fact in facts
-        if getattr(fact, "scope", None) == "current_order"
-        and getattr(fact, "key", None) == "quote.status"
-    ]
-    if not quote_statuses or getattr(order, "status", None) != "quoted_snapshot":
-        return
-    if "accepted" in quote_statuses:
-        await close_order(db, order=order, status="accepted")
-    elif "refused" in quote_statuses:
-        await close_order(db, order=order, status="closed_refused")
-
-
 async def _mark_customer_order_quoted_if_enabled(
     ctx: RunContext[SalesDeps],
     *,
@@ -3511,112 +3027,6 @@ async def _mark_customer_order_quoted_if_enabled(
             ctx.deps.conversation.id,
             exc_info=True,
         )
-
-
-async def _run_customer_facts_layer(
-    db: AsyncSession,
-    *,
-    conversation: Conversation,
-    text: str,
-    mode: str,
-    trace_enabled: bool,
-    fast_extractor_enabled: bool,
-    max_context_orders: int,
-    source_message_id: str | None = None,
-) -> CustomerFactsRun:
-    normalized_mode = _normalize_customer_facts_mode(mode)
-    if normalized_mode == "disabled":
-        return CustomerFactsRun()
-
-    try:
-        extraction = await extract_customer_facts(
-            text,
-            source_message_id=source_message_id,
-            use_fast_model=fast_extractor_enabled,
-        )
-        if normalized_mode == "shadow":
-            if trace_enabled:
-                async with _customer_facts_write_scope(db):
-                    _record_customer_facts_trace(
-                        conversation,
-                        mode=normalized_mode,
-                        extraction=extraction,
-                    )
-                    await db.flush()
-            return CustomerFactsRun()
-
-        async with _customer_facts_write_scope(db):
-            profile = await get_or_create_customer_profile(
-                db,
-                phone=conversation.phone,
-                conversation=conversation,
-            )
-            order = await get_or_create_active_order(
-                db,
-                profile=profile,
-                conversation=conversation,
-            )
-            merge_result = await apply_extracted_facts(
-                db,
-                profile=profile,
-                order=order,
-                message=None,
-                facts=extraction.facts,
-            )
-            await _apply_customer_facts_to_legacy_quote_details(
-                db,
-                conversation,
-                merge_result.accepted,
-            )
-            await _sync_customer_order_lifecycle_from_facts(
-                db,
-                order=order,
-                facts=merge_result.accepted,
-            )
-            context = await build_customer_facts_context(
-                db,
-                profile=profile,
-                active_order=order,
-                max_past_orders=max_context_orders,
-            )
-            if trace_enabled:
-                _record_customer_facts_trace(
-                    conversation,
-                    mode=normalized_mode,
-                    extraction=extraction,
-                    merge_result=merge_result,
-                    context=context,
-                )
-                await db.flush()
-
-        has_past_query = _customer_facts_has_fact(
-            extraction,
-            scope="past_order_reference",
-            key="past_order.query",
-        )
-        has_reuse_request = _customer_facts_has_fact(
-            extraction,
-            scope="past_order_reference",
-            key="past_order.reuse_request",
-        )
-        past_order_response = None
-        if has_past_query or has_reuse_request:
-            past_order_response = _customer_facts_past_order_response(
-                context,
-                language=str(conversation.language),
-                reuse_requested=has_reuse_request,
-            )
-        return CustomerFactsRun(
-            context_text=context.render(),
-            past_order_response=past_order_response,
-        )
-    except Exception:
-        logger.warning(
-            "Customer facts layer failed for conversation %s; using legacy path",
-            conversation.id,
-            exc_info=True,
-        )
-        return CustomerFactsRun()
 
 
 def _format_captured_sales_context(deps: SalesDeps) -> str:
@@ -3682,8 +3092,6 @@ def _has_product_or_quote_routing_signal(text: str) -> bool:
     if any(term in normalized for term in _MIXED_PRODUCT_TERMS):
         return True
     if extract_exact_quote_candidate(text) is not None:
-        return True
-    if _extract_purchase_selection(text) is not None:
         return True
     if _extract_sales_order_quote_items(text) is not None:
         return True
@@ -3899,76 +3307,6 @@ def _quote_missing_required_details_message(
     return "\n".join(
         ["The quotation will cover:", *quote_lines, "", f"To prepare it, {request}"]
     )
-
-
-async def _store_extracted_quote_customer_details(
-    db: AsyncSession,
-    conversation: Conversation,
-    extracted: Mapping[str, str],
-) -> dict[str, str]:
-    if not extracted:
-        return _quote_customer_details_from_metadata(conversation)
-
-    metadata = dict(conversation.metadata_ or {})
-    existing = _quote_customer_details_from_metadata(conversation)
-    extracted_details = dict(extracted)
-    extracted_company = _string_value(extracted_details.get("company"))
-    if extracted_company and not _is_individual_detail_value(extracted_company):
-        extracted_details.pop("customer_type", None)
-    extracted_address = _string_value(extracted_details.get("address"))
-    if extracted_address and (
-        "?" in extracted_address
-        or not re.search(r"[^\W\d_]", extracted_address)
-        or _looks_like_budget_address_artifact(extracted_address)
-    ):
-        extracted_details.pop("address", None)
-    existing_company = existing.get("company")
-    if (
-        _string_value(existing_company)
-        and not _is_individual_detail_value(existing_company)
-        and _is_individual_detail_value(extracted_details.get("customer_type"))
-        and not _string_value(extracted_details.get("company"))
-    ):
-        extracted_details.pop("customer_type", None)
-    new_address = _string_value(extracted_details.get("address"))
-    confirmed_address = _string_value(metadata.get(QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY))
-    if new_address and confirmed_address and confirmed_address != new_address:
-        metadata.pop(QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY, None)
-    details = {**existing, **extracted_details}
-    metadata[QUOTE_CUSTOMER_DETAILS_KEY] = details
-    if _metadata_has_canonical_quote_frame(metadata):
-        quote_frame = quote_frame_from_metadata(metadata)
-    else:
-        quote_frame = None
-    if quote_frame is not None:
-        metadata = quote_frame_to_metadata(
-            metadata,
-            quote_frame.model_copy(
-                update={"quote_details": QuoteDetails(**details)},
-                deep=True,
-            ),
-        )
-    conversation.metadata_ = metadata
-    if details.get("name") and not _string_value(conversation.customer_name):
-        conversation.customer_name = details["name"]
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to flush quote customer details for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-    return details
-
-
-def _looks_like_budget_address_artifact(value: str) -> bool:
-    normalized = _normalize_text(value)
-    if not normalized:
-        return False
-    if "budget" in normalized or "total" in normalized:
-        return any(char.isdigit() for char in normalized)
-    return normalized.strip(" ,.").isdigit()
 
 
 async def _store_applied_bot_rules(

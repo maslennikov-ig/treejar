@@ -44,12 +44,6 @@ class LLMResponse:
     emitted_asks: frozenset[AskKind] = frozenset()
 
 
-@dataclass(frozen=True)
-class CustomerFactsRun:
-    context_text: str | None = None
-    past_order_response: str | None = None
-
-
 @asynccontextmanager
 async def _customer_facts_write_scope(db: Any) -> AsyncIterator[None]:
     """Isolate optional memory writes so failures do not poison legacy handling."""
@@ -575,12 +569,6 @@ class PurchaseSelectionItem:
 class PurchaseSelection:
     items: tuple[PurchaseSelectionItem, ...]
     order_runtime_trace: Mapping[str, Any] | None = None
-
-
-@dataclass(frozen=True)
-class OrderRuntimePurchaseSelection:
-    selection: PurchaseSelection | None
-    block_legacy: bool = False
 
 
 @dataclass(frozen=True)

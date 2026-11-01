@@ -66,8 +66,6 @@ class Settings(BaseSettings):
 
     # Customer facts memory rollout
     customer_facts_mode: str = "disabled"
-    customer_facts_trace_enabled: bool = True
-    customer_facts_fast_extractor_enabled: bool = True
     customer_facts_max_context_orders: int = 3
 
     # Privacy controls

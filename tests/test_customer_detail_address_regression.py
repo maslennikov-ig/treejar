@@ -1,7 +1,5 @@
 """Customer messages must survive extraction and quotation state unchanged."""
 
-from types import SimpleNamespace
-
 import pytest
 
 from src.llm import engine
@@ -23,21 +21,6 @@ def test_address_district_never_becomes_customer_name(message: str) -> None:
     if "individual" in message:
         assert terse["customer_type"] == "individual"
         assert terse["email"] == "tester@example.com"
-
-
-@pytest.mark.parametrize(
-    ("key", "field", "value"),
-    [
-        ("customer.display_name", "name", "Arina"),
-        ("customer.primary_email", "email", "tester@example.com"),
-    ],
-)
-def test_previously_saved_profile_aliases_remain_readable(
-    key: str, field: str, value: str
-) -> None:
-    assert engine._quote_details_from_customer_facts(
-        [SimpleNamespace(scope="persistent_profile", key=key, value=value)]
-    ) == {field: value}
 
 
 @pytest.mark.parametrize("invalid", ["?", "5", "What cities do you deliver to?"])
