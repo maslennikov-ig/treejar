@@ -520,6 +520,26 @@ async def test_public_client_self_test_spa_route_without_login(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/client-self-test/..%2F..%2F..%2Fpyproject.toml",
+        "/client-self-test/%2E%2E/%2E%2E/%2E%2E/pyproject.toml",
+        "/..%2F..%2F..%2Fpyproject.toml",
+        "/%2E%2E/%2E%2E/%2E%2E/pyproject.toml",
+    ],
+)
+async def test_public_spa_routes_never_read_files_outside_dist(
+    client: AsyncClient,
+    path: str,
+) -> None:
+    """Public SPA catch-alls must not serve files outside their build directory."""
+    response = await client.get(path)
+    assert "[project]" not in response.text
+    assert "dependencies" not in response.text
+
+
+@pytest.mark.asyncio
 async def test_admin_dashboard_spa_route_after_login(admin_client: AsyncClient) -> None:
     """Dashboard SPA route should serve the app for authenticated admins."""
     response = await admin_client.get("/dashboard/")

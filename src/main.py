@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -40,6 +41,21 @@ BRAND_ASSET_MEDIA_TYPES: dict[str, str] = {
     "icon-512.png": "image/png",
     "site.webmanifest": "application/manifest+json",
 }
+
+
+def _serve_spa_file(dist_dir: str, full_path: str) -> FileResponse:
+    """Serve a file from a built SPA directory, or its index.html.
+
+    The requested path is resolved and must stay inside ``dist_dir``; anything
+    that escapes it (``..`` segments, encoded slashes, symlinks) falls back to
+    the SPA entry page instead of reading an arbitrary file.
+    """
+    root = os.path.realpath(dist_dir)
+    if full_path:
+        candidate = os.path.realpath(os.path.join(root, full_path))
+        if candidate.startswith(f"{root}{os.sep}") and os.path.isfile(candidate):
+            return FileResponse(candidate)
+    return FileResponse(os.path.join(root, "index.html"))
 
 
 @asynccontextmanager
@@ -150,9 +166,6 @@ def create_app() -> FastAPI:
             _media_type,
         )
 
-    # --- Landing Page SPA Integration ---
-    import os
-
     # --- Admin Dashboard SPA Integration ---
     os.makedirs("frontend/admin/dist/assets", exist_ok=True)
     admin_index = "frontend/admin/dist/index.html"
@@ -239,23 +252,12 @@ def create_app() -> FastAPI:
     async def serve_admin_spa(request: Request, full_path: str) -> Response:
         if not has_admin_session(request):
             return build_admin_login_redirect(request)
-        dist_dir = os.path.realpath("frontend/admin/dist")
-        if full_path:
-            candidate = os.path.realpath(os.path.join(dist_dir, full_path))
-            if candidate.startswith(f"{dist_dir}{os.sep}") and os.path.isfile(
-                candidate
-            ):
-                return FileResponse(candidate)
-        return FileResponse(os.path.join(dist_dir, "index.html"))
+        return _serve_spa_file("frontend/admin/dist", full_path)
 
     @app.get("/client-self-test", include_in_schema=False)
     @app.get("/client-self-test/{full_path:path}", include_in_schema=False)
     async def serve_client_self_test_spa(full_path: str = "") -> FileResponse:
-        dist_dir = "frontend/admin/dist"
-        file_path = os.path.join(dist_dir, full_path)
-        if full_path and os.path.isfile(file_path):
-            return FileResponse(file_path)
-        return FileResponse(os.path.join(dist_dir, "index.html"))
+        return _serve_spa_file("frontend/admin/dist", full_path)
 
     # --- Landing Page SPA ---
     # Ensure dist and assets directories exist for local development to avoid startup crash
@@ -273,11 +275,7 @@ def create_app() -> FastAPI:
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str) -> FileResponse:
-        dist_dir = "frontend/landing/dist"
-        file_path = os.path.join(dist_dir, full_path)
-        if full_path and os.path.isfile(file_path):
-            return FileResponse(file_path)
-        return FileResponse(os.path.join(dist_dir, "index.html"))
+        return _serve_spa_file("frontend/landing/dist", full_path)
 
     return app
 
