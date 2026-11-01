@@ -1,37 +1,14 @@
 # Orchestrator Handoff
 
+## Epic tj-id6m (2026-11-01): Full project audit & remediation — ready for review on `codex/tj-audit-20261101`
+- Full audit + 16 closed slices (`tj-id6m.1`..`tj-id6m.16`) in `.worktrees/tj-audit-20261101` (`docs/reports/audit-2026-11-01/README.md`). Fixed SPA path traversal (`tj-id6m.1`), 30+ Admin UI/BE wiring bugs (`tj-id6m.2`..`tj-id6m.6`), SQL pagination/indexes + 60s dashboard cache (`tj-id6m.7`), ARQ concurrency `max_jobs=8` + staggered crons + server-side `queue_wait` (`tj-id6m.8`), channel/CRM negative/turn-embedding caches + stock digest memoization (`tj-id6m.9`, `tj-id6m.10`), slim runtime `Dockerfile` + lazy web `torch` startup (`1.21s`) + `React.lazy` SPA splitting (`514 kB` -> `57.3 kB`) (`tj-id6m.11`, `tj-id6m.12`), `-13,154` net `src/` LOC of dead layers/helpers (`tj-id6m.13`..`tj-id6m.15`), and `0` advisories across Python `pip-audit`, `frontend/admin`, and `frontend/landing` (`tj-id6m.16`). Merge/push/deploy awaits owner approval; 10 product/ops choices tracked in `tj-id6m.17`.
+
 ## Stages tj-fsfx, tj-myx7 & tj-p82s (2026-10-26): Admin Dashboard controls/session/filter sweep, Month default period, full 14-step onboarding & v3 client portal guide
-- Combined `codex/tj-myx7-admin-controls` + `codex/tj-p82s-dashboard-period` (`f2d040d`, live via CI `40325698749`) and expanded Viktor's portal guide in `tj-fsfx` (`.codex/stages/tj-fsfx/summary.md`, `.codex/stages/tj-myx7/summary.md`, `.codex/stages/tj-p82s/summary.md`). Added `GET /api/v1/admin/session` account/logout menu with per-admin audit actor attribution, exact deal/target/escalation drilldowns, Overview default `month` period with `localStorage` persistence, 14-step tour + 9-playbook guide, and republished client manual v3 (`https://aidevteam.ru/a/GaZJfnrjnN5VKtU2wLJdu1nFlqJq3xYO`) with all 8 help/training entrypoints and the 22-item recent delivery changelog.
+- Combined `codex/tj-myx7-admin-controls` + `codex/tj-p82s-dashboard-period` (`f2d040d`, live via CI `40325698749`) and expanded Viktor's portal guide in `tj-fsfx` (`.codex/stages/tj-fsfx/summary.md`, `.codex/stages/tj-myx7/summary.md`, `.codex/stages/tj-p82s/summary.md`). Added `GET /api/v1/admin/session` account/logout menu with per-admin audit actor attribution, exact deal/target/escalation drilldowns, Overview default `month` period with `localStorage` persistence, 14-step tour + 9-playbook guide, and republished client manual v3 (`https://aidevteam.ru/a/GaZJfnrjnN5VKtU2wLJdu1nFlqJq3xYO`).
 
-## Stages tj-4kba / tj-j3zg / tj-lk87 / tj-ierv (2026-10-23..26): admin login & dashboard UX — deployed
-- Summaries: `.codex/stages/tj-4kba/summary.md`, `.codex/stages/tj-j3zg/summary.md`, `.codex/stages/tj-lk87/summary.md`, `.codex/stages/tj-ierv/summary.md` (live on `main` / `https://noor.starec.ai`; client manual `https://aidevteam.ru/a/GaZJfnrjnN5VKtU2wLJdu1nFlqJq3xYO`).
-
-## October tester feedback — authorized completion2026-10-14
-- Accepted epic `tj-i2b1`; findings `.1` (false mismatch caveats), `.2` (missing updated summary), `.3` (literal refusal persistence), `.4` (missing photos for structured catalog titles). Delivered sourcea72da15 onmain; approved source4b032c7 plus CI fix6d4663f.
-- Livea72da15/CI4712passed27skips:10:37fresh request saved2LUMA/6000/declined;
-  separate10:43update saved3LUMA/12people, retained6000 and declined quote.
-  Owner confirms photos in first reply and updated summary in second;
-  no quotation effect or quote_sent. Prior527fe1f failure stays in delivery report.
-- Source fixes retain named model/finish/unit constraints, recover explicit
-  multi-unit quantity lost from model search queries, distinguish broad needs
-  from missing exact items, and expose the committed selection/budget to replies.
-  Requested summaries remain model-owned; retained customer budgets now
-  survive output grounding, with old catalog prices still requiring new evidence.
-- Literal evidence accepts one presentation quote pair only when the unchanged
-  excerpt occurs in the current message. No paraphrase/history/permission gate
-  changes. Explicit quote holds must be recorded, not just promised in prose.
-- Media recognizes explicit comma-delimited model codes and a literal finish
-  on the same reply line. Actual CT1065 text retains2photos, not the third variant.
-- Acceptance/delivery details: `docs/reports/2026-10-13-tester-feedback-fixes.md`.
-  Historical local acceptance:1271 tests, Ruff/format/Mypy194 passed. Earlier
-  fixture replay passed with qty3/budget6000/consentdeclined, no real sends.
-  Total smoke costUSD0.04873962; latestcapturescurrenttext,3units/6000/held,
-  budgetstopbeforefinalreply. App/workera72da15 deployed14Oct10:26UTC.
-- Accepted source4b032c7 adds DB tz/index/client fixes (`tj-535g`), LLM/name/
-  quantity consistency, repo/Docker hygiene and `tj-bgwu`; engine11360lines.
-  Independent root4555/20and96CI/metadata checks passed. Canonical CI38526089347
-  passed4584/27,Ruff/Mypy194,semantic gate/deploy; tj-7ize accepted/closed.
-- Authority/preflight/rollback & closeout: `docs/reports/2026-10-14-tester-epic-completion-delivery.md`, `docs/reports/2026-10-13-tester-feedback-closeout.md`. Dirty primary preserved; deployed.env/protectedfingerprint byte-identical; Test0665/guard/restore retained; equivalent CI/catalog worker checkouts removed. docs-reviewed:updated;graph-reviewed:no-change-needed.
+## Stages tj-4kba / tj-j3zg / tj-lk87 / tj-ierv (2026-10-23..26) & October tester feedback `tj-i2b1` (2026-10-14) — deployed
+- Admin login & UX summaries: `.codex/stages/tj-4kba/summary.md`, `.codex/stages/tj-j3zg/summary.md`, `.codex/stages/tj-lk87/summary.md`, `.codex/stages/tj-ierv/summary.md` (live on `main` / `https://noor.starec.ai`).
+- Accepted `tj-i2b1` (`a72da15` / `4b032c7` / `6d4663f`, live): retained named model/finish/unit constraints, multi-unit quantity recovery, literal refusal persistence, and structured catalog photos (`docs/reports/2026-10-13-tester-feedback-fixes.md`, `docs/reports/2026-10-14-tester-epic-completion-delivery.md`).
 
 ## Wazzup webhook protection — deployed 2026-10-13
 
@@ -154,6 +131,7 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 
 ## Explicit defers
 
+- tj-id6m.17: 10 audit product/ops choices await owner decision before changing reply semantics or operator authority (`docs/reports/audit-2026-11-01/README.md`: LLM reasoning effort/retries, in-flight supersession cancel, duplicate current-turn prompt message, CRM `paused`/`closed` reply behavior, manual `escalation_status` editing, `bot_enabled` fail-open vs fail-closed default + UI kill-switch, payment reminder UI/`manual` mode, public `/client-self-test/submit` retirement/rate-limit, KB `language` filter & `target_only` definition, one-off GitHub workflows).
 - tj-r62i: client pilot waits for submitted choices, customer-side durable ownership/final-send coordination, authorized channel/restore-mode plan and fresh delivery evidence. Main Sol release tj-3jcn is complete; it did not activate the pilot.
 
 - tj-i2b1: earlier527fe1f saved budget/hold but failed mixed matching/selection.
@@ -195,5 +173,5 @@ Use $orchestrator-stage for the same authorized tj-uvld boundary.
 Read docs/prompts/2026-10-03-zoho-stock-sync-optimization.md and the current
 report/Beads notes to continue. Preserve the dirty primary checkout.
 
-docs-reviewed: updated - state/entrypoints, provider receipts, rollback and pending gates.
+docs-reviewed: updated - audit reports (`docs/reports/audit-2026-11-01/`) and handoff updated; documentation-decision: dependency-lockfile upgrades preserve public contracts while internal PydanticAI/FastAPI adaptations are covered by strict mypy and full suite.
 graph-reviewed: no-change-needed - no enabled task-owned graph; ordinary code navigation used.

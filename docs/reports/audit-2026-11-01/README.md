@@ -9,6 +9,16 @@
   - `uv run mypy src/` — pass (198 source files)
   - `uv run pytest tests/` — 4,869 passed, 20 skipped (env-gated live tests)
   - `frontend/admin`: `tsc --noEmit` pass, `npm test` 15/15 pass, `vite build` pass (with >500 kB chunk warning)
+- **Post-remediation gates on `codex/tj-audit-20261101` (16/17 tasks closed; `tj-id6m.17` owner decisions open)**:
+  - Net diff vs `origin/main`: **-23,705 lines** overall (`+12,446 / -36,151`), **-13,154 lines in `src/`** (`75,500` -> `62,346` LOC, `-17.4%`)
+  - `uv run ruff check src/ tests/` & `uv run ruff format --check src/ tests/` — pass (438 files)
+  - `uv run mypy src/` — pass (195 source files, 0 errors)
+  - `uv run deptry .` — pass (309 files, 0 issues; unused `langgraph` stack removed)
+  - `uvx pip-audit` on frozen export — **0 known vulnerabilities** (down from 299 across 35 packages)
+  - `uv run pytest tests/` — **4,411 passed, 20 skipped, 0 failed** (including `PINNED_RETRIEVAL_CONTRACT_SHA` and traceability manifests)
+  - Web cold import (`import src.main`): **1.21 s** without loading `torch` or `sentence_transformers` (down from ~7.3 s / +387 MB RSS)
+  - `frontend/admin`: `tsc --noEmit` pass, `npm test` **16/16** pass, `vite build` entry chunk **57.32 kB** (`16.57 kB` gzip, down from `514 kB`, 0 chunk warnings), `npm audit` **0 vulnerabilities**
+  - `frontend/landing`: `npm run lint` pass, `npm run build` pass, `npm audit` **0 vulnerabilities** (down from 22 advisories; 49 packages)
 
 ## Detailed Evidence Reports
 
@@ -22,8 +32,8 @@
 - **Critical path traversal (`AD-01` / `tj-id6m.1`)**: Public routes `/client-self-test/{full_path:path}` and `/{full_path:path}` in `src/main.py` joined raw paths onto `dist_dir` without `os.path.realpath` containment, allowing encoded `..` (`%2F`, `%2E%2E`) to read arbitrary readable files outside `dist`. Fixed in `0afc09f` with `_serve_spa_file` containment + parametrized regression tests.
 - **Dependency vulnerabilities (`tj-id6m.16`)**:
   - `frontend/landing` carried unused AI Studio boilerplate dependencies (`@google/genai`, `better-sqlite3`, `express`, `dotenv`, `tsx`) with 22 npm advisories (2 critical, 10 high). Cleaned to 49 total packages and 0 advisories.
-  - `frontend/admin` `vite` 8.0.16 had 3 high dev-server advisories; upgraded to fixed Vite 8.x.
-  - Python `uv.lock` carried advisories across `urllib3`, `weasyprint`, `cryptography`, `pyjwt`, `starlette`, `requests`, `aiohttp`, `pillow`, `python-multipart`, `authlib`, `transformers`, etc.
+  - `frontend/admin` `vite` 8.0.16 had 3 high dev-server advisories; upgraded to `vite` 8.3.5 (0 advisories).
+  - Python `uv.lock` carried 299 advisories across 35 packages (`urllib3`, `weasyprint`, `cryptography`, `pyjwt`, `starlette`, `requests`, `aiohttp`, `pillow`, `python-multipart`, `authlib`, `transformers`, `setuptools`, `torch`, etc.) plus the unused `langgraph` stack; removed `langgraph` and upgraded `uv.lock` to **0 advisories** and **0 `deptry` issues** (`ed34a91`).
 
 ### 2. Admin Dashboard Wiring (`tj-id6m.2` .. `tj-id6m.7`)
 - **Authentication**: All `/api/v1/admin/*` routers enforce `Depends(require_admin_session)`.
