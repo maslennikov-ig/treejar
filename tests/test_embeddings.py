@@ -158,3 +158,51 @@ def test_embeddings_module_defers_sentence_transformers_import() -> None:
         text=True,
     )
     assert proc.returncode == 0, proc.stderr
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_embedding_engine_caches_duplicate_queries_and_returns_defensive_copies(
+    mock_embedding_engine: Any,
+) -> None:
+    model = mock_embedding_engine._get_model()
+    model.encode.reset_mock()
+
+    first = await mock_embedding_engine.embed_async("executive desk dubai")
+    first[0] = 999.0  # caller mutation must not corrupt cached vector
+    second = await mock_embedding_engine.embed_async("executive desk dubai")
+
+    assert model.encode.call_count == 1
+    assert second[0] == 0.1
+    assert first is not second
+
+
+@pytest.mark.unit
+def test_embedding_engine_cache_respects_ttl_and_lru_bound(
+    mock_embedding_engine: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import src.rag.embeddings as emb_mod
+
+    model = mock_embedding_engine._get_model()
+    model.encode.reset_mock()
+
+    clock = [100.0]
+    monkeypatch.setattr(emb_mod.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(emb_mod, "EMBEDDING_CACHE_MAX_ENTRIES", 2)
+    monkeypatch.setattr(emb_mod, "EMBEDDING_CACHE_TTL_SECONDS", 10.0)
+
+    mock_embedding_engine.embed("q1")
+    mock_embedding_engine.embed("q2")
+    mock_embedding_engine.embed("q3")  # evicts q1
+    assert model.encode.call_count == 3
+
+    mock_embedding_engine.embed("q2")  # cached
+    assert model.encode.call_count == 3
+
+    mock_embedding_engine.embed("q1")  # evicted -> recomputed
+    assert model.encode.call_count == 4
+
+    clock[0] += 11.0  # expire TTL
+    mock_embedding_engine.embed("q1")
+    assert model.encode.call_count == 5

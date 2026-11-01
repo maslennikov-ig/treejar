@@ -7,6 +7,11 @@ from typing import Any
 
 import httpx
 
+from src.core.cache import (
+    invalidate_crm_contact_cache,
+    is_crm_contact_negatively_cached,
+    set_crm_contact_negative_cache,
+)
 from src.core.config import settings
 from src.integrations.crm.base import CRMProvider
 from src.integrations.zoho_oauth import (
@@ -214,19 +219,24 @@ class ZohoCRMClient(CRMProvider):
         raise RuntimeError("Unreachable")
 
     async def find_contact_by_phone(self, phone: str) -> dict[str, Any] | None:
-        """Find a contact by phone number."""
+        """Find a contact by phone number, negative-caching misses for 600s."""
+        if await is_crm_contact_negatively_cached(self.redis, phone):
+            return None
+
         # Zoho CRM v7 search endpoint
         response = await self._request(
             "GET", "/Contacts/search", params={"phone": phone}
         )
 
         if response.status_code == 204:
+            await set_crm_contact_negative_cache(self.redis, phone)
             return None
 
         data = response.json()
         if "data" in data and len(data["data"]) > 0:
             return dict(data["data"][0])
 
+        await set_crm_contact_negative_cache(self.redis, phone)
         return None
 
     async def get_contact(self, contact_id: str) -> dict[str, Any] | None:
@@ -241,10 +251,15 @@ class ZohoCRMClient(CRMProvider):
         return None
 
     async def create_contact(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Create a new contact."""
+        """Create a new contact and invalidate any negative-cached phone miss."""
         # Zoho expects data in the 'data' array payload
         payload = {"data": [data]}
         response = await self._request("POST", "/Contacts", json=payload)
+
+        for field_name in ("Phone", "Mobile", "phone"):
+            raw_phone = data.get(field_name)
+            if isinstance(raw_phone, str) and raw_phone.strip():
+                await invalidate_crm_contact_cache(self.redis, raw_phone)
 
         resp_data = response.json()
         if "data" in resp_data and len(resp_data["data"]) > 0:

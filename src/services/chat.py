@@ -1461,6 +1461,12 @@ async def _process_batch_inner(
 
         # CR-WA-01 fix: pass channel_id from settings to WazzupProvider
         async with WazzupProvider(channel_id=channel_id) as wazzup_provider:
+            if (
+                isinstance(WazzupProvider, type)
+                and isinstance(wazzup_provider, WazzupProvider)
+                and wazzup_provider.redis is None
+            ):
+                wazzup_provider.redis = redis
             if isinstance(channel_id, str):
                 try:
                     resolved_phone = await wazzup_provider.resolve_channel_phone(

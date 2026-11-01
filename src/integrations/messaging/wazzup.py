@@ -5,6 +5,9 @@ import html
 import logging
 import mimetypes
 import re
+import threading
+import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urljoin, urlsplit
@@ -18,6 +21,49 @@ from src.services.inbound_channels import normalize_channel_phone
 from src.services.outbound_safety import require_wazzup_send
 
 logger = logging.getLogger(__name__)
+
+WAZZUP_CHANNEL_PHONE_CACHE_TTL_SECONDS = 600
+WAZZUP_CHANNEL_PHONE_KEY_PREFIX = "wazzup:channel_phone:"
+_CHANNEL_PHONE_CACHE_MAX_ENTRIES = 64
+_channel_phone_cache: OrderedDict[tuple[str, str, str], tuple[str, float]] = (
+    OrderedDict()
+)
+_channel_phone_cache_lock = threading.Lock()
+
+
+def clear_channel_phone_cache() -> None:
+    """Clear the process-local Wazzup channel phone cache."""
+    with _channel_phone_cache_lock:
+        _channel_phone_cache.clear()
+
+
+def _get_cached_channel_phone(key: tuple[str, str, str]) -> str | None:
+    now = time.monotonic()
+    with _channel_phone_cache_lock:
+        entry = _channel_phone_cache.get(key)
+        if entry is None:
+            return None
+        phone, expires_at = entry
+        if now >= expires_at:
+            del _channel_phone_cache[key]
+            return None
+        _channel_phone_cache.move_to_end(key)
+        return phone
+
+
+def _store_cached_channel_phone(
+    key: tuple[str, str, str],
+    phone: str,
+    *,
+    ttl_seconds: float = WAZZUP_CHANNEL_PHONE_CACHE_TTL_SECONDS,
+) -> None:
+    expires_at = time.monotonic() + ttl_seconds
+    with _channel_phone_cache_lock:
+        _channel_phone_cache[key] = (phone, expires_at)
+        _channel_phone_cache.move_to_end(key)
+        while len(_channel_phone_cache) > _CHANNEL_PHONE_CACHE_MAX_ENTRIES:
+            _channel_phone_cache.popitem(last=False)
+
 
 # Temporary file hosting for Wazzup contentUri (files expire after ~1h).
 # Wazzup v3 API requires a *public URL* for media — base64 is NOT supported.
@@ -93,17 +139,24 @@ class WazzupProvider(MessagingProvider):
 
     supports_typing_indicator = False
 
-    def __init__(self, channel_id: str | None = None) -> None:
+    def __init__(
+        self,
+        channel_id: str | None = None,
+        *,
+        redis_client: Any | None = None,
+    ) -> None:
         """Initialize the Wazzup API client.
 
         Args:
             channel_id: Sender channel; omitted uses WAZZUP_CHANNEL_ID.
+            redis_client: Optional Redis client for cross-turn channel metadata cache.
         """
         self.base_url = settings.wazzup_api_url
         self.api_key = settings.wazzup_api_key
         self.channel_id = (
             settings.wazzup_channel_id if channel_id is None else channel_id
         )
+        self.redis = redis_client
 
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
@@ -427,6 +480,30 @@ class WazzupProvider(MessagingProvider):
 
     async def resolve_channel_phone(self, channel_id: str) -> str | None:
         """Resolve a Wazzup channelId into a normalized plainId phone."""
+        cache_key = (
+            str(getattr(self.client, "base_url", "")),
+            str(getattr(self, "api_key", "")),
+            channel_id,
+        )
+        cached_local = _get_cached_channel_phone(cache_key)
+        if cached_local is not None:
+            return cached_local
+
+        redis_client = getattr(self, "redis", None)
+        redis_key = f"{WAZZUP_CHANNEL_PHONE_KEY_PREFIX}{channel_id}"
+        if redis_client is not None:
+            try:
+                cached_raw = await redis_client.get(redis_key)
+                if isinstance(cached_raw, bytes):
+                    cached_raw = cached_raw.decode("utf-8", errors="ignore")
+                if isinstance(cached_raw, str):
+                    normalized_cached = normalize_channel_phone(cached_raw)
+                    if normalized_cached:
+                        _store_cached_channel_phone(cache_key, normalized_cached)
+                        return normalized_cached
+            except Exception:
+                logger.debug("Wazzup channel phone Redis read failed", exc_info=True)
+
         response = await self._request("GET", "/channels")
         payload = response.json()
         channels = payload if isinstance(payload, list) else []
@@ -439,7 +516,22 @@ class WazzupProvider(MessagingProvider):
             plain_id = channel.get("plainId")
             if not isinstance(plain_id, str):
                 return None
-            return normalize_channel_phone(plain_id)
+            normalized = normalize_channel_phone(plain_id)
+            if normalized:
+                _store_cached_channel_phone(cache_key, normalized)
+                if redis_client is not None:
+                    try:
+                        await redis_client.set(
+                            redis_key,
+                            normalized,
+                            ex=WAZZUP_CHANNEL_PHONE_CACHE_TTL_SECONDS,
+                        )
+                    except Exception:
+                        logger.debug(
+                            "Wazzup channel phone Redis write failed",
+                            exc_info=True,
+                        )
+            return normalized
 
         return None
 

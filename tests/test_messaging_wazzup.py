@@ -5,8 +5,11 @@ import pytest
 
 from src.core.config import settings
 from src.integrations.messaging.wazzup import (
+    WAZZUP_CHANNEL_PHONE_CACHE_TTL_SECONDS,
+    WAZZUP_CHANNEL_PHONE_KEY_PREFIX,
     WazzupProvider,
     _resolve_tmpfiles_download_url,
+    clear_channel_phone_cache,
 )
 
 
@@ -16,10 +19,12 @@ def authorized_transport_unit_fixture():
 
     Real audited scope + transport enforcement lives in test_wazzup_outbound_safety.
     """
+    clear_channel_phone_cache()
     with patch(
         "src.integrations.messaging.wazzup.require_wazzup_send", new_callable=AsyncMock
     ):
         yield
+    clear_channel_phone_cache()
 
 
 @pytest.fixture
@@ -570,3 +575,66 @@ async def test_resolve_channel_phone_returns_normalized_plain_id(
     _, kwargs = mock_request.call_args
     assert kwargs["method"] == "GET"
     assert kwargs["url"] == "/channels"
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
+    new_callable=AsyncMock,
+)
+async def test_resolve_channel_phone_caches_in_memory_and_redis_with_fail_open(
+    mock_request: AsyncMock,
+) -> None:
+    from unittest.mock import MagicMock
+
+    settings.wazzup_api_key = "fake-key"
+    settings.wazzup_api_url = "http://fake-url"
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.raise_for_status.return_value = None
+    mock_resp.json.return_value = [
+        {
+            "channelId": "chan-cached",
+            "transport": "whatsapp",
+            "plainId": "971551220665",
+            "state": "active",
+        }
+    ]
+    mock_request.return_value = mock_resp
+
+    redis = AsyncMock()
+    redis.get.return_value = None
+
+    async with WazzupProvider(
+        channel_id="chan-cached", redis_client=redis
+    ) as provider1:
+        assert await provider1.resolve_channel_phone("chan-cached") == "+971551220665"
+        assert await provider1.resolve_channel_phone("chan-cached") == "+971551220665"
+
+    assert mock_request.await_count == 1
+    redis.set.assert_awaited_once_with(
+        f"{WAZZUP_CHANNEL_PHONE_KEY_PREFIX}chan-cached",
+        "+971551220665",
+        ex=WAZZUP_CHANNEL_PHONE_CACHE_TTL_SECONDS,
+    )
+
+    # Clear process cache: second process hits Redis without HTTP
+    clear_channel_phone_cache()
+    redis.get.return_value = b"+971551220665"
+    async with WazzupProvider(
+        channel_id="chan-cached", redis_client=redis
+    ) as provider2:
+        assert await provider2.resolve_channel_phone("chan-cached") == "+971551220665"
+    assert mock_request.await_count == 1
+
+    # Redis error fails open to HTTP /channels
+    clear_channel_phone_cache()
+    failing_redis = AsyncMock()
+    failing_redis.get.side_effect = RuntimeError("redis down")
+    failing_redis.set.side_effect = RuntimeError("redis down")
+    async with WazzupProvider(
+        channel_id="chan-cached", redis_client=failing_redis
+    ) as provider3:
+        assert await provider3.resolve_channel_phone("chan-cached") == "+971551220665"
+    assert mock_request.await_count == 2
