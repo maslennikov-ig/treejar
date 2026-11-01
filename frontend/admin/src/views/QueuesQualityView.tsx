@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     AlertTriangle,
     Award,
@@ -43,6 +43,7 @@ import type { AdminEscalationQueueItem } from '@/types/crm';
 import type { ManagerReviewRead, PendingManagerReview } from '@/types/operators';
 
 export type QueuesQualityTab = 'escalations' | 'manager_deals' | 'ai_rubric';
+export type EscalationQueueFilter = 'open' | 'resolved' | 'all';
 
 interface QueuesQualityViewProps {
     globalSearch?: string;
@@ -54,23 +55,54 @@ interface QueuesQualityViewProps {
     refreshSignal?: number;
 }
 
-const BOT_QA_RUBRIC_ITEMS: Array<{ code: string; maxPoints: number; ru: string; en: string }> = [
-    { code: 'greeting_identity', maxPoints: 2, ru: 'Приветствие и представление Noor (Treejar)', en: 'Greeting and Noor (Treejar) identity' },
-    { code: 'language_match', maxPoints: 2, ru: 'Соблюдение языка клиента (EN / AR / RU)', en: 'Customer language matching (EN / AR / RU)' },
-    { code: 'need_discovery', maxPoints: 3, ru: 'Выявление потребностей (офис, размеры, бюджет, сроки)', en: 'Need discovery (space, dimensions, budget, timeline)' },
-    { code: 'catalog_grounding', maxPoints: 3, ru: 'Точность рекомендаций строго по каталогу Treejar', en: 'Catalog-grounded product recommendations' },
-    { code: 'sku_price_accuracy', maxPoints: 2, ru: 'Точность артикулов (SKU) и цен в AED', en: 'SKU and AED price accuracy' },
-    { code: 'stock_awareness', maxPoints: 2, ru: 'Проверка актуальных остатков Zoho Inventory', en: 'Real-time Zoho Inventory stock check' },
-    { code: 'vat_clarity', maxPoints: 2, ru: 'Прозрачное указание 5% VAT и условий доставки', en: 'Clear 5% UAE VAT and delivery terms' },
-    { code: 'upsell_cross_sell', maxPoints: 2, ru: 'Уместный допродажный подбор (кресла + столы / хранение)', en: 'Relevant B2B cross-sell / upsell suggestions' },
-    { code: 'objection_handling', maxPoints: 2, ru: 'Отработка возражений без давления и выдумок', en: 'Fact-based objection handling without hallucination' },
-    { code: 'quotation_flow', maxPoints: 2, ru: 'Корректный сбор реквизитов для КП (Quotation / TRN)', en: 'Quotation / TRN details collection' },
-    { code: 'escalation_timing', maxPoints: 2, ru: 'Своевременная передача менеджеру при сложном запросе', en: 'Timely escalation to human manager when required' },
-    { code: 'conciseness_formatting', maxPoints: 2, ru: 'Лаконичность и читаемое форматирование для WhatsApp', en: 'Concise WhatsApp-friendly formatting' },
-    { code: 'polite_b2b_tone', maxPoints: 2, ru: 'Деловой тон B2B-консультанта без навязчивости', en: 'Polite consultative B2B tone' },
-    { code: 'next_step_cta', maxPoints: 1, ru: 'Чёткий следующий шаг в конце сообщения', en: 'Clear next step / call to action' },
-    { code: 'safety_guardrails', maxPoints: 1, ru: 'Соблюдение жёстких ограничений (без скрытых скидок)', en: 'Compliance with hard guardrails (no unauthorized discounts)' },
+export type BotQaCriterionGroup =
+    | 'greeting_and_identity'
+    | 'tone_and_language'
+    | 'need_discovery_and_catalog'
+    | 'commercial_vat_and_quotation';
+
+export interface BotQaRubricItem {
+    ruleNumber: number;
+    code: string;
+    group: BotQaCriterionGroup;
+    maxPoints: number;
+    labelKey: TranslationKey;
+}
+
+/**
+ * Exact 15-rule Noor Bot QA rubric matching `src/quality/evaluator.py` and
+ * `BOT_QA_CRITERIA_RULES` in `src/quality/config.py` (15 × 2 pts = 30 max).
+ */
+export const BOT_QA_RUBRIC_ITEMS: BotQaRubricItem[] = [
+    { ruleNumber: 1, code: 'rule_1', group: 'greeting_and_identity', maxPoints: 2, labelKey: 'rubric.rule.1' },
+    { ruleNumber: 2, code: 'rule_2', group: 'greeting_and_identity', maxPoints: 2, labelKey: 'rubric.rule.2' },
+    { ruleNumber: 3, code: 'rule_3', group: 'greeting_and_identity', maxPoints: 2, labelKey: 'rubric.rule.3' },
+    { ruleNumber: 4, code: 'rule_4', group: 'tone_and_language', maxPoints: 2, labelKey: 'rubric.rule.4' },
+    { ruleNumber: 5, code: 'rule_5', group: 'need_discovery_and_catalog', maxPoints: 2, labelKey: 'rubric.rule.5' },
+    { ruleNumber: 6, code: 'rule_6', group: 'tone_and_language', maxPoints: 2, labelKey: 'rubric.rule.6' },
+    { ruleNumber: 7, code: 'rule_7', group: 'commercial_vat_and_quotation', maxPoints: 2, labelKey: 'rubric.rule.7' },
+    { ruleNumber: 8, code: 'rule_8', group: 'need_discovery_and_catalog', maxPoints: 2, labelKey: 'rubric.rule.8' },
+    { ruleNumber: 9, code: 'rule_9', group: 'need_discovery_and_catalog', maxPoints: 2, labelKey: 'rubric.rule.9' },
+    { ruleNumber: 10, code: 'rule_10', group: 'need_discovery_and_catalog', maxPoints: 2, labelKey: 'rubric.rule.10' },
+    { ruleNumber: 11, code: 'rule_11', group: 'commercial_vat_and_quotation', maxPoints: 2, labelKey: 'rubric.rule.11' },
+    { ruleNumber: 12, code: 'rule_12', group: 'commercial_vat_and_quotation', maxPoints: 2, labelKey: 'rubric.rule.12' },
+    { ruleNumber: 13, code: 'rule_13', group: 'need_discovery_and_catalog', maxPoints: 2, labelKey: 'rubric.rule.13' },
+    { ruleNumber: 14, code: 'rule_14', group: 'commercial_vat_and_quotation', maxPoints: 2, labelKey: 'rubric.rule.14' },
+    { ruleNumber: 15, code: 'rule_15', group: 'commercial_vat_and_quotation', maxPoints: 2, labelKey: 'rubric.rule.15' },
 ];
+
+export function buildEscalationsQueueParams(
+    filter: EscalationQueueFilter,
+    pageSize = 50,
+): URLSearchParams {
+    const params = new URLSearchParams({
+        page_size: String(pageSize),
+    });
+    if (filter !== 'all') {
+        params.set('status', filter);
+    }
+    return params;
+}
 
 export default function QueuesQualityView({
     globalSearch = '',
@@ -81,7 +113,7 @@ export default function QueuesQualityView({
     refetchMetrics,
     refreshSignal = 0,
 }: QueuesQualityViewProps) {
-    const { t, lang, label, formatDateTime, formatDuration } = useI18n();
+    const { t, label, formatDateTime, formatDuration } = useI18n();
     const { pushToast } = useToast();
 
     const resolvedTab: QueuesQualityTab =
@@ -104,10 +136,12 @@ export default function QueuesQualityView({
         onTabChange?.(next);
     };
 
-    const [escalationFilter, setEscalationFilter] = useState<'open' | 'resolved' | 'all'>('open');
+    const [escalationFilter, setEscalationFilter] = useState<EscalationQueueFilter>('open');
     const [escalations, setEscalations] = useState<AdminEscalationQueueItem[]>([]);
+    const [escalationsTotal, setEscalationsTotal] = useState<number>(0);
     const [pendingReviews, setPendingReviews] = useState<PendingManagerReview[]>([]);
     const [recentReviews, setRecentReviews] = useState<ManagerReviewRead[]>([]);
+    const [recentReviewsTotal, setRecentReviewsTotal] = useState<number>(0);
     const [loading, setLoading] = useState(true);
     const [closingEscalation, setClosingEscalation] = useState<AdminEscalationQueueItem | null>(null);
     const [closingBusy, setClosingBusy] = useState(false);
@@ -116,28 +150,33 @@ export default function QueuesQualityView({
     const [selectedReview, setSelectedReview] = useState<ManagerReviewRead | null>(null);
     const [rubricOpen, setRubricOpen] = useState(false);
     const [message, setMessage] = useState<ActionMessage | null>(null);
+    const lastRefreshSignalRef = useRef<number>(refreshSignal);
 
     const managerQa = useAIQualityControlBlock('manager_qa', 'Manager QA');
-    const managerQaBlock = managerQa.message;
+    const managerQaRefresh = managerQa.refresh;
 
     const loadAll = useCallback(async () => {
         setLoading(true);
         setMessage(null);
         try {
-            const escParams = new URLSearchParams({
-                page_size: '50',
-                status: escalationFilter,
-            });
-            const [escPayload, pendingResult, recentResult] = await Promise.all([
+            const escParams = buildEscalationsQueueParams(escalationFilter, 50);
+            const openCountPromise =
+                escalationFilter === 'open'
+                    ? Promise.resolve(null)
+                    : fetchEscalationsQueue(buildEscalationsQueueParams('open', 1));
+            const [escPayload, openPayload, pendingResult, recentResult] = await Promise.all([
                 fetchEscalationsQueue(escParams),
-                fetchPendingManagerReviews(25),
+                openCountPromise,
+                fetchPendingManagerReviews(50),
                 fetchRecentManagerReviews(20),
             ]);
             setEscalations(escPayload.items);
+            setEscalationsTotal(escPayload.total);
             setPendingReviews(pendingResult);
             setRecentReviews(recentResult.items);
+            setRecentReviewsTotal(recentResult.total);
             onCountsChange?.({
-                escalations: escPayload.total,
+                escalations: openPayload ? openPayload.total : escPayload.total,
                 pendingReviews: pendingResult.length,
             });
         } catch (err) {
@@ -152,10 +191,12 @@ export default function QueuesQualityView({
     }, [loadAll]);
 
     useEffect(() => {
+        if (refreshSignal === lastRefreshSignalRef.current) return;
+        lastRefreshSignalRef.current = refreshSignal;
         if (!refreshSignal) return;
         void loadAll();
-        managerQa.refresh();
-    }, [refreshSignal, loadAll, managerQa]);
+        managerQaRefresh();
+    }, [refreshSignal, loadAll, managerQaRefresh]);
 
     async function handleConfirmCloseEscalation() {
         if (!closingEscalation) return;
@@ -180,7 +221,7 @@ export default function QueuesQualityView({
     }
 
     async function handleConfirmEvaluateDeal() {
-        if (!evaluatingDeal || managerQaBlock) return;
+        if (!evaluatingDeal || managerQa.blocked) return;
         setEvaluatingBusy(true);
         setMessage(null);
         try {
@@ -273,8 +314,8 @@ export default function QueuesQualityView({
                             <AlertTriangle size={14} />
                             <span>{t('queues.tab.escalations')}</span>
                             <Badge
-                                label={String(escalations.length)}
-                                tone={escalations.length > 0 ? 'amber' : 'gray'}
+                                label={String(escalationsTotal)}
+                                tone={escalationsTotal > 0 ? 'amber' : 'gray'}
                             />
                         </button>
 
@@ -314,7 +355,7 @@ export default function QueuesQualityView({
                         >
                             <ShieldCheck size={14} />
                             <span>{t('queues.tab.aiRubric')}</span>
-                            <Badge label={String(recentReviews.length)} tone="green" />
+                            <Badge label={String(recentReviewsTotal)} tone="green" />
                         </button>
                     </div>
 
@@ -323,7 +364,7 @@ export default function QueuesQualityView({
                             <select
                                 value={escalationFilter}
                                 onChange={(event) =>
-                                    setEscalationFilter(event.target.value as 'open' | 'resolved' | 'all')
+                                    setEscalationFilter(event.target.value as EscalationQueueFilter)
                                 }
                                 aria-label={t('common.status')}
                                 className="h-8 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-card)] px-2.5 text-xs text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
@@ -467,7 +508,7 @@ export default function QueuesQualityView({
                                         )}
                                         <button
                                             type="button"
-                                            disabled={evaluatingBusy || Boolean(managerQaBlock)}
+                                            disabled={evaluatingBusy || managerQa.blocked}
                                             onClick={() => setEvaluatingDeal(item)}
                                             className="inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-primary)] px-3 py-1.5 text-xs font-semibold text-white hover:opacity-95 disabled:opacity-50"
                                             data-evaluate-deal={item.escalation_id}
@@ -500,7 +541,7 @@ export default function QueuesQualityView({
                             <StatusCard
                                 title={t('quality.recentCount')}
                                 help={t('quality.recentHelp')}
-                                value={recentReviews.length}
+                                value={recentReviewsTotal}
                                 note={t('quality.recentNote')}
                             />
                             <StatusCard
@@ -587,7 +628,7 @@ export default function QueuesQualityView({
                             >
                                 <div className="space-y-3">
                                     <StatusCard
-                                        title="Bot QA (30)"
+                                        title={t('rubric.botQaScaleLabel')}
                                         help={t('aiqc.contour.bot_qa')}
                                         value={
                                             managerQa.config
@@ -604,7 +645,7 @@ export default function QueuesQualityView({
                                         }
                                     />
                                     <StatusCard
-                                        title="Manager QA (20)"
+                                        title={t('rubric.managerQaScaleLabel')}
                                         help={t('aiqc.contour.manager_qa')}
                                         value={
                                             managerQa.config
@@ -718,18 +759,23 @@ export default function QueuesQualityView({
                 widthClassName="max-w-xl"
             >
                 <div className="space-y-3" data-bot-qa-rubric-list="">
-                    {BOT_QA_RUBRIC_ITEMS.map((item, idx) => (
+                    {BOT_QA_RUBRIC_ITEMS.map((item) => (
                         <div
                             key={item.code}
                             className="flex items-start justify-between gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3"
                         >
                             <div>
                                 <p className="text-sm font-semibold text-[var(--text-primary)]">
-                                    {idx + 1}. {lang === 'ru' ? item.ru : item.en}
+                                    {item.ruleNumber}. {t(item.labelKey)}
                                 </p>
-                                <p className="mt-0.5 text-xs text-[var(--text-muted)]">{item.code}</p>
+                                <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+                                    {t(`rubric.group.${item.group}` as TranslationKey)}
+                                </p>
                             </div>
-                            <Badge label={`${item.maxPoints} pt`} tone="blue" />
+                            <Badge
+                                label={t('rubric.pointsBadge', { points: item.maxPoints })}
+                                tone="blue"
+                            />
                         </div>
                     ))}
                 </div>

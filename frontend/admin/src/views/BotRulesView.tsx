@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     FlaskConical,
     Plus,
@@ -14,6 +14,7 @@ import {
     fetchBotRules,
     previewBotRules,
     reindexBotRule,
+    testBotRule,
     updateBotRule,
 } from '@/api/crm';
 import CanonicalSyncButton, { runCanonicalSync } from '@/components/CanonicalSyncButton';
@@ -55,16 +56,27 @@ const EMPTY_BOT_RULE_FORM: AdminBotRuleWrite = {
     trigger_examples: [],
 };
 
-const CANONICAL_RULE_TITLES = new Set([
-    'Identity and disclosure: Noor from Treejar',
-    'Strict language matching (EN / AR / RU)',
-    'No fabricated discounts or unverified stock',
-    'UAE 5% VAT and AED currency clarity',
-    'Mandatory escalation triggers',
-    'Consultative B2B qualification before quoting',
-    'Complementary office furniture cross-sell',
-    'Concise WhatsApp-friendly formatting',
-]);
+export type BotRuleSourceKind = 'canonical_customized' | 'canonical' | 'manual';
+
+export function getBotRuleSourceKind(
+    rule:
+        | Pick<AdminBotRuleRead, 'source_type' | 'canonical_key' | 'is_canonical_customized'>
+        | null
+        | undefined,
+): BotRuleSourceKind {
+    if (!rule) return 'manual';
+    const isCanonical =
+        rule.source_type === 'canonical' ||
+        rule.source_type === 'canonical_treejar' ||
+        rule.source_type === 'canonical_treejar_custom' ||
+        Boolean(rule.canonical_key);
+    const isCustomized =
+        Boolean(rule.is_canonical_customized) ||
+        rule.source_type === 'canonical_treejar_custom';
+    if (isCanonical && isCustomized) return 'canonical_customized';
+    if (isCanonical) return 'canonical';
+    return 'manual';
+}
 
 export function ruleToForm(rule: AdminBotRuleRead): AdminBotRuleWrite {
     const scope = (rule.scope as AdminBotRuleWrite['scope']) || 'global';
@@ -123,6 +135,7 @@ export default function BotRulesView({
     const [form, setForm] = useState<AdminBotRuleWrite>(EMPTY_BOT_RULE_FORM);
     const [preview, setPreview] = useState<AdminBotRulePreviewResponse | null>(null);
     const [search, setSearch] = useState(globalSearch);
+    const [debouncedSearch, setDebouncedSearch] = useState(globalSearch);
     const [status, setStatus] = useState('active');
     const [testMessage, setTestMessage] = useState('Customer says: I need 20 chairs for my office');
     const [loaded, setLoaded] = useState(false);
@@ -131,20 +144,31 @@ export default function BotRulesView({
     const [sandboxOpen, setSandboxOpen] = useState(false);
     const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
     const [pendingSelectRule, setPendingSelectRule] = useState<AdminBotRuleRead | 'new' | null>(null);
+    const selectedRef = useRef<AdminBotRuleRead | null>(null);
+    selectedRef.current = selected;
+    const lastRefreshSignalRef = useRef(refreshSignal);
 
     useEffect(() => {
         setSearch(globalSearch);
+        setDebouncedSearch(globalSearch);
     }, [globalSearch]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(search);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [search]);
 
     const isDirty = useMemo(() => isRuleFormDirty(form, selected), [form, selected]);
 
     const load = useCallback(async () => {
         const params = new URLSearchParams({ page_size: '50' });
-        if (search.trim()) params.set('search', search.trim());
+        if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
         if (status) params.set('status', status);
         let payload = await fetchBotRules(params);
         if (
-            !search.trim() &&
+            !debouncedSearch.trim() &&
             status === 'active' &&
             payload.items.length === 0 &&
             !autoSeededCanonicalKinds.has('botRules')
@@ -153,13 +177,13 @@ export default function BotRulesView({
             try {
                 await runCanonicalSync('botRules', 'safe');
                 payload = await fetchBotRules(params);
-            } catch {
-                // Keep empty state visible if background auto-seed fails.
+            } catch (syncErr) {
+                setError(t('botRules.autoSeedError', { detail: errorMessage(syncErr, t) }));
             }
         }
         setRules(payload.items);
         setLoaded(true);
-        if (!selected && payload.items.length > 0) {
+        if (!selectedRef.current && payload.items.length > 0) {
             const match = externalSelectedId
                 ? payload.items.find((item) => item.id === externalSelectedId) ?? payload.items[0]
                 : payload.items[0];
@@ -168,13 +192,15 @@ export default function BotRulesView({
                 setForm(ruleToForm(match));
             }
         }
-    }, [externalSelectedId, search, selected, status]);
+    }, [debouncedSearch, externalSelectedId, status, t]);
 
     useEffect(() => {
         load().catch((err: unknown) => setError(errorMessage(err, t)));
     }, [load, t]);
 
     useEffect(() => {
+        if (refreshSignal === lastRefreshSignalRef.current) return;
+        lastRefreshSignalRef.current = refreshSignal;
         if (!refreshSignal) return;
         load().catch((err: unknown) => setError(errorMessage(err, t)));
     }, [refreshSignal, load, t]);
@@ -223,12 +249,15 @@ export default function BotRulesView({
     async function handlePreview() {
         setBusy(true);
         try {
-            const result = await previewBotRules({
+            const requestPayload = {
                 message: testMessage,
                 stage: form.scope === 'global' ? null : form.stage,
                 language: form.scope === 'global' ? null : form.language,
                 segment: form.scope === 'global' ? null : form.segment,
-            });
+            };
+            const result = selected
+                ? await testBotRule(selected.id, requestPayload)
+                : await previewBotRules(requestPayload);
             setPreview(result);
             setSandboxOpen(true);
         } catch (err) {
@@ -310,8 +339,17 @@ export default function BotRulesView({
         await load();
     }
 
-    function renderRuleSourceBadge(titleText: string) {
-        if (CANONICAL_RULE_TITLES.has(titleText)) {
+    function renderRuleSourceBadge(
+        rule:
+            | Pick<AdminBotRuleRead, 'source_type' | 'canonical_key' | 'is_canonical_customized'>
+            | null
+            | undefined,
+    ) {
+        const sourceKind = getBotRuleSourceKind(rule);
+        if (sourceKind === 'canonical_customized') {
+            return <Badge label={t('kb.source.customized')} tone="amber" />;
+        }
+        if (sourceKind === 'canonical') {
             return <Badge label={t('kb.source.canonical')} tone="blue" />;
         }
         return <Badge label={t('kb.source.manual')} tone="gray" />;
@@ -437,7 +475,7 @@ export default function BotRulesView({
                                         {rule.instruction}
                                     </p>
                                     <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
-                                        {renderRuleSourceBadge(rule.title)}
+                                        {renderRuleSourceBadge(rule)}
                                         <span>·</span>
                                         <span className="font-semibold text-[var(--text-secondary)]">
                                             P{rule.priority}
@@ -468,7 +506,7 @@ export default function BotRulesView({
                         </div>
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-[var(--text-muted)]">{t('kb.field.source')}:</span>
-                            {renderRuleSourceBadge(selected?.title ?? form.title)}
+                            {renderRuleSourceBadge(selected)}
                         </div>
                     </div>
 
@@ -555,8 +593,10 @@ export default function BotRulesView({
                                         { label: t('status.qualifying'), value: 'qualifying' },
                                         { label: t('status.needs_analysis'), value: 'needs_analysis' },
                                         { label: t('status.solution'), value: 'solution' },
+                                        { label: t('status.company_details'), value: 'company_details' },
                                         { label: t('status.quoting'), value: 'quoting' },
                                         { label: t('status.closing'), value: 'closing' },
+                                        { label: t('status.feedback'), value: 'feedback' },
                                     ]}
                                     onChange={(value) => setForm({ ...form, stage: value || null })}
                                 />
@@ -661,6 +701,14 @@ export default function BotRulesView({
             >
                 <div className="space-y-4" data-bot-rules-sandbox-drawer="">
                     <InspectorBlock title={t('botRules.previewTitle')} help={t('botRules.previewHelp')}>
+                        <p
+                            className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-secondary)]"
+                            data-sandbox-mode={selected ? 'rule' : 'global'}
+                        >
+                            {selected
+                                ? t('botRules.sandboxRuleModeNote', { title: selected.title })
+                                : t('botRules.sandboxGlobalModeNote')}
+                        </p>
                         <TextArea
                             label={t('botRules.testMessage')}
                             help={t('botRules.help.testMessage')}
@@ -685,9 +733,14 @@ export default function BotRulesView({
                                 key={rule.id}
                                 className="border-b border-[var(--border-subtle)] py-2"
                             >
-                                <p className="text-sm font-semibold text-[var(--text-primary)]">
-                                    {rule.title}
-                                </p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <p className="text-sm font-semibold text-[var(--text-primary)]">
+                                        {rule.title}
+                                    </p>
+                                    {selected && rule.id === selected.id && selected.status !== 'active' && (
+                                        <Badge label={t('botRules.sandboxInjectedBadge')} tone="amber" />
+                                    )}
+                                </div>
                                 <p className="mt-1 text-xs text-[var(--text-muted)]">
                                     P{rule.priority} · {label(rule.type)}
                                 </p>

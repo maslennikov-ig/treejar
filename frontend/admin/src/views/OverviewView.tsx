@@ -38,6 +38,14 @@ export interface OverviewViewProps {
     refreshSignal?: number;
 }
 
+const DAY_MS = 86_400_000;
+
+export function periodToDateFrom(period: Period, nowMs: number = Date.now()): string | undefined {
+    if (period === 'all_time') return undefined;
+    const days = period === 'day' ? 1 : period === 'week' ? 7 : 30;
+    return new Date(nowMs - days * DAY_MS).toISOString().slice(0, 10);
+}
+
 function computeSeriesDeltaPct(points: TimeseriesResponse['points']): number | null {
     if (!points || points.length < 4) {
         return null;
@@ -64,24 +72,52 @@ export default function OverviewView({
     refreshSignal = 0,
 }: OverviewViewProps) {
     const { t, formatNumber } = useI18n();
-    const [pendingReviewsCount, setPendingReviewsCount] = useState<number>(0);
+    const [pendingReviewsCount, setPendingReviewsCount] = useState<number | null>(null);
     const [catalogStatus, setCatalogStatus] = useState<AdminCatalogStatusResponse | null>(null);
+    const [auxError, setAuxError] = useState<string | null>(null);
 
     useEffect(() => {
-        fetchPendingManagerReviews(20)
-            .then((items) => setPendingReviewsCount(items.length))
-            .catch(() => setPendingReviewsCount(0));
-        fetchCatalogStatus()
-            .then((status) => setCatalogStatus(status))
-            .catch(() => setCatalogStatus(null));
-    }, [period, refreshSignal]);
+        let mounted = true;
+        setAuxError(null);
+        Promise.allSettled([fetchPendingManagerReviews(50), fetchCatalogStatus()]).then(
+            ([reviewsRes, catalogRes]) => {
+                if (!mounted) return;
+                const errors: string[] = [];
+                if (reviewsRes.status === 'fulfilled') {
+                    setPendingReviewsCount(reviewsRes.value.length);
+                } else {
+                    setPendingReviewsCount(null);
+                    errors.push(
+                        reviewsRes.reason instanceof Error
+                            ? reviewsRes.reason.message
+                            : t('common.unknownError'),
+                    );
+                }
+                if (catalogRes.status === 'fulfilled') {
+                    setCatalogStatus(catalogRes.value);
+                } else {
+                    setCatalogStatus(null);
+                    errors.push(
+                        catalogRes.reason instanceof Error
+                            ? catalogRes.reason.message
+                            : t('common.unknownError'),
+                    );
+                }
+                setAuxError(errors.length > 0 ? errors.join('; ') : null);
+            },
+        );
+        return () => {
+            mounted = false;
+        };
+    }, [period, refreshSignal, t]);
 
     const volumeDelta = computeSeriesDeltaPct(timeseries?.points ?? []);
     const escalationRate =
         data && data.total_conversations > 0
             ? (data.escalation_count / data.total_conversations) * 100
             : 0;
-    const zohoState = catalogStatus?.zoho_snapshot?.status ?? 'missing';
+    const zohoState = catalogStatus ? catalogStatus.zoho_snapshot.status : null;
+    const drilldownDateFrom = periodToDateFrom(period);
 
     return (
         <div className="space-y-3" data-overview-bento>
@@ -140,8 +176,18 @@ export default function OverviewView({
                     >
                         <Star className="h-3.5 w-3.5 text-blue-500" />
                         <span>{t('overview.attention.pendingReviews')}</span>
-                        <Badge tone={pendingReviewsCount > 0 ? 'blue' : 'slate'}>
-                            {pendingReviewsCount}
+                        <Badge
+                            tone={
+                                pendingReviewsCount !== null && pendingReviewsCount > 0
+                                    ? 'blue'
+                                    : 'slate'
+                            }
+                        >
+                            {pendingReviewsCount !== null
+                                ? pendingReviewsCount >= 50
+                                    ? '50+'
+                                    : pendingReviewsCount
+                                : '—'}
                         </Badge>
                     </button>
 
@@ -161,11 +207,22 @@ export default function OverviewView({
                                       : 'slate'
                             }
                         >
-                            {t(`catalog.zohoStatus.${zohoState}` as TranslationKey)}
+                            {zohoState
+                                ? t(`catalog.zohoStatus.${zohoState}` as TranslationKey)
+                                : '—'}
                         </Badge>
                     </button>
                 </div>
             </div>
+
+            {auxError && (
+                <div
+                    data-overview-aux-error=""
+                    className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2 text-xs text-amber-800 dark:border-amber-800/70 dark:bg-amber-950/40 dark:text-amber-200"
+                >
+                    {t('overview.auxStatusError', { detail: auxError })}
+                </div>
+            )}
 
             {error && (
                 <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-200">
@@ -200,7 +257,12 @@ export default function OverviewView({
                             }
                             tooltip={t('metric.totalConversations.help')}
                             icon={<MessageCircle className="h-4 w-4 text-blue-500" />}
-                            onClick={() => onNavigate({ view: 'conversations' })}
+                            onClick={() =>
+                                onNavigate({
+                                    view: 'conversations',
+                                    date_from: drilldownDateFrom,
+                                })
+                            }
                         />
                         <KpiCard
                             title={t('metric.conversionRate')}
@@ -214,7 +276,11 @@ export default function OverviewView({
                             tooltip={t('metric.conversionRate.help')}
                             icon={<TrendingUp className="h-4 w-4 text-emerald-500" />}
                             onClick={() =>
-                                onNavigate({ view: 'conversations', filter: 'deals' })
+                                onNavigate({
+                                    view: 'conversations',
+                                    filter: 'deals',
+                                    date_from: drilldownDateFrom,
+                                })
                             }
                         />
                         <KpiCard
@@ -268,7 +334,11 @@ export default function OverviewView({
                                 <FunnelEfficiencyChart
                                     data={data}
                                     onSelectStage={(stage) =>
-                                        onNavigate({ view: 'conversations', stage })
+                                        onNavigate({
+                                            view: 'conversations',
+                                            stage,
+                                            date_from: drilldownDateFrom,
+                                        })
                                     }
                                 />
                             </div>
@@ -286,6 +356,7 @@ export default function OverviewView({
                                         onNavigate({
                                             view: 'conversations',
                                             ...filter,
+                                            date_from: drilldownDateFrom,
                                         })
                                     }
                                 />
@@ -300,6 +371,7 @@ export default function OverviewView({
                                         onNavigate({
                                             view: 'conversations',
                                             ...filter,
+                                            date_from: drilldownDateFrom,
                                         })
                                     }
                                 />
@@ -312,6 +384,7 @@ export default function OverviewView({
                                         onNavigate({
                                             view: 'conversations',
                                             escalation: 'any',
+                                            date_from: drilldownDateFrom,
                                         })
                                     }
                                 />

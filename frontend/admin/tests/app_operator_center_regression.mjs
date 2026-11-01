@@ -5,15 +5,25 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { build } from 'esbuild';
 import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { prerenderToNodeStream } from 'react-dom/static';
+
+async function renderMarkup(element) {
+    const { prelude } = await prerenderToNodeStream(element);
+    const chunks = [];
+    for await (const chunk of prelude) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks).toString('utf8');
+}
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(scriptDir, '..');
 
 const STUBS = new Map([
     ['@/hooks/useMetrics', `
-        export function useMetrics(period) {
+        export function useMetrics(period, enabled = true) {
             globalThis.__lastMetricPeriod = period;
+            globalThis.__lastMetricEnabled = enabled;
             return {
                 data: null,
                 timeseries: null,
@@ -151,7 +161,7 @@ try {
         platform: 'node',
         write: false,
         plugins: [aliasPlugin],
-        external: ['react', 'react-dom', 'react/jsx-runtime', 'react-dom/server'],
+        external: ['react', 'react-dom', 'react/jsx-runtime', 'react-dom/server', 'react-dom/static'],
         tsconfig: path.join(frontendRoot, 'tsconfig.json'),
     });
 
@@ -182,7 +192,8 @@ try {
     };
 
     try {
-        const html = renderToStaticMarkup(React.createElement(App, { initialView: 'conversations' }));
+        const html = await renderMarkup(React.createElement(App, { initialView: 'conversations' }));
+        assert.equal(globalThis.__lastMetricEnabled, false, 'useMetrics must stay disabled when Overview is not active');
 
         // Default language is Russian.
         assert.match(html, /Noor AI/);
@@ -205,7 +216,7 @@ try {
         }
 
         // English render through the language provider.
-        const htmlEn = renderToStaticMarkup(React.createElement(App, { initialLang: 'en', initialView: 'conversations' }));
+        const htmlEn = await renderMarkup(React.createElement(App, { initialLang: 'en', initialView: 'conversations' }));
         assert.match(htmlEn, /Customers &amp; Conversations/);
         assert.match(htmlEn, /Queues &amp; Quality/);
         assert.match(htmlEn, /Catalog &amp; Inventory/);
@@ -217,8 +228,9 @@ try {
         // Overview defaults to "month" on first visit (empty localStorage) and renders attention strip/error gracefully.
         storageMap.clear();
         assert.equal(readStoredPeriod(), 'month');
-        const overviewHtml = renderToStaticMarkup(React.createElement(App, { initialView: 'overview' }));
+        const overviewHtml = await renderMarkup(React.createElement(App, { initialView: 'overview' }));
         assert.equal(globalThis.__lastMetricPeriod, 'month');
+        assert.equal(globalThis.__lastMetricEnabled, true, 'useMetrics must be enabled on Overview');
         assert.match(overviewHtml, /data-overview-attention-bar/);
         assert.match(overviewHtml, /metrics failed/);
         assert.match(overviewHtml, /<button[^>]*aria-pressed="true"[^>]*>Месяц<\/button>/, 'Overview should select Month by default');
@@ -228,7 +240,7 @@ try {
         writeStoredPeriod('all_time');
         assert.equal(storageMap.get(PERIOD_STORAGE_KEY), 'all_time');
         assert.equal(readStoredPeriod(), 'all_time');
-        const overviewStoredHtml = renderToStaticMarkup(React.createElement(App, { initialView: 'overview' }));
+        const overviewStoredHtml = await renderMarkup(React.createElement(App, { initialView: 'overview' }));
         assert.equal(globalThis.__lastMetricPeriod, 'all_time');
         assert.match(overviewStoredHtml, /<button[^>]*aria-pressed="true"[^>]*>Все<\/button>/, 'Overview should restore last stored period');
         assert.match(overviewStoredHtml, /<button[^>]*aria-pressed="false"[^>]*>Месяц<\/button>/);
@@ -236,11 +248,12 @@ try {
         // Invalid stored value safely falls back to month.
         storageMap.set(PERIOD_STORAGE_KEY, 'invalid_period');
         assert.equal(readStoredPeriod(), 'month');
-        const overviewInvalidHtml = renderToStaticMarkup(React.createElement(App, { initialView: 'overview' }));
+        const overviewInvalidHtml = await renderMarkup(React.createElement(App, { initialView: 'overview' }));
         assert.equal(globalThis.__lastMetricPeriod, 'month');
         assert.match(overviewInvalidHtml, /<button[^>]*aria-pressed="true"[^>]*>Месяц<\/button>/);
     } finally {
         delete globalThis.__lastMetricPeriod;
+        delete globalThis.__lastMetricEnabled;
         globalThis.localStorage = originalStorage;
     }
 } finally {

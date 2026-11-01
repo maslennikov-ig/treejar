@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Activity,
     ArrowRight,
@@ -23,6 +23,7 @@ import {
     errorMessage,
     matchesQuery,
 } from '@/components/ui/Primitives';
+import type { StatusTone } from '@/components/ui/Primitives';
 import { useI18n } from '@/i18n';
 import type { TranslateFn } from '@/i18n';
 import type { AdminActionAuditRead, AdminSystemHealthResponse } from '@/types/crm';
@@ -38,6 +39,13 @@ interface AuditSystemViewProps {
     refreshSignal?: number;
 }
 
+export function contourStatusTone(status: string | null | undefined): StatusTone {
+    if (status === 'ok') return 'green';
+    if (status === 'warning') return 'amber';
+    if (status === 'error') return 'red';
+    return 'gray';
+}
+
 export function localizeAuditAction(action: string, t: TranslateFn): string {
     const normalized = action.replace(/^admin\./, '');
     const map: Record<string, string> = {
@@ -46,7 +54,7 @@ export function localizeAuditAction(action: string, t: TranslateFn): string {
         'conversation.reset_preview': t('audit.action.conversationResetPreview'),
         'conversation.reset_execute': t('audit.action.conversationResetExecute'),
         'conversation.reset': t('audit.action.conversationResetExecute'),
-        'escalation.create': t('audit.action.escalationClose'),
+        'escalation.create': t('audit.action.escalationCreate'),
         'escalation.close': t('audit.action.escalationClose'),
         'knowledge_base.create': t('audit.action.kbCreate'),
         'knowledge_base.update': t('audit.action.kbUpdate'),
@@ -66,8 +74,15 @@ export function localizeAuditAction(action: string, t: TranslateFn): string {
         'bot_rule.reindex_all': t('audit.action.botRuleReindex'),
         'bot_rule.sync_canonical': t('audit.action.botRuleSyncCanonical'),
         'quality.bot_review': t('audit.action.qualityBotReview'),
-        'quality.manager_review': t('audit.action.qualityBotReview'),
+        'quality.manager_review': t('audit.action.qualityManagerReview'),
+        'ai_quality_controls.update': t('audit.action.aiQualityControlsUpdate'),
+        'settings.update': t('audit.action.settingsUpdate'),
+        'products.sync': t('audit.action.productsSync'),
+        'notifications.test': t('audit.action.notificationsTest'),
         'admin_login.telegram': t('audit.action.telegramLogin'),
+        'admin_login.password': t('audit.action.passwordLogin'),
+        'payment_reminder_controls.update': t('audit.action.paymentRemindersUpdate'),
+        'prompt.update': t('audit.action.promptUpdate'),
     };
     return map[normalized] ?? map[action] ?? action;
 }
@@ -133,6 +148,8 @@ export default function AuditSystemView({
 
     const [health, setHealth] = useState<AdminSystemHealthResponse | null>(null);
     const [loadingHealth, setLoadingHealth] = useState(false);
+    const [healthError, setHealthError] = useState<string | null>(null);
+    const lastRefreshSignalRef = useRef(refreshSignal);
 
     const loadAudit = useCallback(async () => {
         setLoadingAudit(true);
@@ -162,12 +179,13 @@ export default function AuditSystemView({
         try {
             const payload = await fetchSystemHealth();
             setHealth(payload);
-        } catch {
-            // Keep fallback cards visible if health endpoint fails.
+            setHealthError(null);
+        } catch (err) {
+            setHealthError(errorMessage(err, t));
         } finally {
             setLoadingHealth(false);
         }
-    }, []);
+    }, [t]);
 
     useEffect(() => {
         void loadAudit();
@@ -178,6 +196,8 @@ export default function AuditSystemView({
     }, [loadHealth]);
 
     useEffect(() => {
+        if (refreshSignal === lastRefreshSignalRef.current) return;
+        lastRefreshSignalRef.current = refreshSignal;
         if (!refreshSignal) return;
         void loadAudit();
         void loadHealth();
@@ -281,20 +301,22 @@ export default function AuditSystemView({
                             <span>{t('audit.tab.systemHealth')}</span>
                             <Badge
                                 label={
-                                    health?.overall_status === 'ok'
-                                        ? 'OK'
-                                        : health?.overall_status === 'warning'
-                                            ? 'WARN'
-                                            : health?.overall_status === 'error'
-                                                ? 'ERR'
+                                    healthError || health?.overall_status === 'error'
+                                        ? t('audit.badgeError')
+                                        : health?.overall_status === 'ok'
+                                            ? 'OK'
+                                            : health?.overall_status === 'warning'
+                                                ? 'WARN'
                                                 : 'LIVE'
                                 }
                                 tone={
-                                    health?.overall_status === 'ok'
-                                        ? 'green'
-                                        : health?.overall_status === 'warning' || health?.overall_status === 'error'
-                                            ? 'amber'
-                                            : 'blue'
+                                    healthError || health?.overall_status === 'error'
+                                        ? 'red'
+                                        : health?.overall_status === 'ok'
+                                            ? 'green'
+                                            : health?.overall_status === 'warning'
+                                                ? 'amber'
+                                                : 'blue'
                                 }
                             />
                         </button>
@@ -552,51 +574,27 @@ export default function AuditSystemView({
                                 subtitle={t('support.smokeSubtitle')}
                                 icon={Activity}
                             >
-                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                                    {(health?.contours ?? []).map((contour) => (
-                                        <StatusCard
-                                            key={contour.id}
-                                            title={contour.label}
-                                            value={contour.summary || contour.status.toUpperCase()}
-                                            note={contour.detail || contour.summary}
-                                            tone={
-                                                contour.status === 'ok'
-                                                    ? 'green'
-                                                    : contour.status === 'warning' || contour.status === 'error'
-                                                        ? 'amber'
-                                                        : 'gray'
-                                            }
-                                        />
-                                    ))}
-                                    {!health && (
-                                        <>
+                                {healthError && (
+                                    <StateLine
+                                        text={t('audit.healthLoadError', { detail: healthError })}
+                                        tone="red"
+                                    />
+                                )}
+                                {health ? (
+                                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                        {health.contours.map((contour) => (
                                             <StatusCard
-                                                title="PostgreSQL & pgvector"
-                                                value="OK"
-                                                note={t('support.crmNote')}
-                                                tone="green"
+                                                key={contour.id}
+                                                title={contour.label}
+                                                value={contour.summary || contour.status.toUpperCase()}
+                                                note={contour.detail || contour.summary}
+                                                tone={contourStatusTone(contour.status)}
                                             />
-                                            <StatusCard
-                                                title="Redis Cache & State"
-                                                value="OK"
-                                                note="Redis operational state"
-                                                tone="green"
-                                            />
-                                            <StatusCard
-                                                title="Zoho Inventory Stock"
-                                                value="LIVE"
-                                                note="Redis stock snapshot contour"
-                                                tone="blue"
-                                            />
-                                            <StatusCard
-                                                title="RAG & Canonical Seed"
-                                                value="READY"
-                                                note="Canonical KB & Bot Rules"
-                                                tone="green"
-                                            />
-                                        </>
-                                    )}
-                                </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    !healthError && <StateLine text={t('common.loading')} />
+                                )}
                             </Panel>
 
                             <Panel

@@ -6,6 +6,16 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { prerenderToNodeStream } from 'react-dom/static';
+
+async function renderMarkup(element) {
+    const { prelude } = await prerenderToNodeStream(element);
+    const chunks = [];
+    for await (const chunk of prelude) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks).toString('utf8');
+}
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(scriptDir, '..');
@@ -220,7 +230,7 @@ try {
     assert.equal(resolveTourTrackParam(null), null);
 
     // 3. Full App render on Guide view in RU and EN
-    const htmlRu = renderToStaticMarkup(
+    const htmlRu = await renderMarkup(
         React.createElement(App, { initialView: 'guide', initialLang: 'ru' }),
     );
     assert.match(htmlRu, /data-guide-view=""/);
@@ -238,7 +248,7 @@ try {
     assert.match(htmlRu, /Запустить полный обзор кабинета \(14 шагов\)/);
     assert.doesNotMatch(htmlRu, /\btitle="/);
 
-    const htmlEn = renderToStaticMarkup(
+    const htmlEn = await renderMarkup(
         React.createElement(App, { initialView: 'guide', initialLang: 'en' }),
     );
     assert.match(htmlEn, /Help &amp; Guide/);

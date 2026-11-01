@@ -517,8 +517,8 @@ export const GUIDE_PLAYBOOKS: GuidePlaybookItem[] = [
             },
         ],
         tip: {
-            ru: 'Одна сессия входа действует сразу для /dashboard/ и /admin/, все правки пишутся в аудит с вашим идентификатором (например, telegram:ID), а отметка о прохождении тура хранится индивидуально в браузере каждого сотрудника.',
-            en: 'One login session authenticates both /dashboard/ and /admin/, every action is audited under your identity (e.g. telegram:ID), and tour progress is stored per browser so each teammate gets the tour on their own device.',
+            ru: 'Одна сессия входа действует сразу для /dashboard/ и /admin/: все действия через API /dashboard/ пишутся в журнал аудита с вашим идентификатором (например, telegram:ID; прямые правки таблиц в /admin/ в журнал кабинета не попадают), а отметка о прохождении тура хранится индивидуально в браузере каждого сотрудника.',
+            en: 'One login session authenticates both /dashboard/ and /admin/: every mutation through the /dashboard/ API is audited under your identity (e.g. telegram:ID; direct table edits in /admin/ are not recorded in the dashboard log), and tour progress is stored per browser so each teammate gets the tour on their own device.',
         },
         route: { view: 'overview' },
         tourTrack: 'full',
@@ -760,8 +760,8 @@ export const GUIDE_PLAYBOOKS: GuidePlaybookItem[] = [
         role: { ru: 'Руководитель / Тестировщик', en: 'Owner / QA Reviewer' },
         duration: { ru: '5 мин', en: '5 min' },
         title: {
-            ru: '9. Пошаговая приёмка и самопроверка сценариев (раздел «Приёмка» и /test)',
-            en: '9. Guided end-to-end scenario verification (Self-Test & /test)',
+            ru: '9. Пошаговая приёмка и самопроверка сценариев (раздел «Приёмка» и /client-self-test)',
+            en: '9. Guided end-to-end scenario verification (Self-Test & /client-self-test)',
         },
         goal: {
             ru: 'Проверить работу цепочки WhatsApp → Noor → Zoho → Telegram по готовым контрольным сценариям и сохранить отчёт тестера.',
@@ -769,8 +769,8 @@ export const GUIDE_PLAYBOOKS: GuidePlaybookItem[] = [
         },
         steps: [
             {
-                ru: 'Откройте пункт «Приёмка» в самом низу левого меню (или прямую страницу /test). В каждой карточке уже заготовлена точная фраза покупателя, ожидаемый ответ бота и ожидаемое поведение в Telegram.',
-                en: 'Open Self-Test (Acceptance) at the bottom of the left sidebar (or visit /test directly). Each scenario card provides the exact buyer prompt, expected Noor reply and expected Telegram behavior.',
+                ru: 'Откройте пункт «Приёмка» в самом низу левого меню (или прямую страницу /client-self-test). В каждой карточке уже заготовлена точная фраза покупателя, ожидаемый ответ бота и ожидаемое поведение в Telegram.',
+                en: 'Open Self-Test (Acceptance) at the bottom of the left sidebar (or visit /client-self-test directly). Each scenario card provides the exact buyer prompt, expected Noor reply and expected Telegram behavior.',
             },
             {
                 ru: 'Пройдите сценарии по порядку: подбор мебели из каталога, проверка точного артикула и остатка Zoho, неполный запрос счёта без ложной эскалации, выпуск чернового КП с подтверждением/отклонением в Telegram, ответ менеджера и сброс /reset.',
@@ -958,8 +958,8 @@ export const GUIDE_SECTIONS: GuideSectionCard[] = [
             en: 'Filter audit entries by entity or actor, inspect field-level diffs, jump to the modified record and verify PostgreSQL, Redis and Zoho health.',
         },
         botImpact: {
-            ru: 'Обеспечивает полную подотчётность любых правок в кабинете и быструю диагностику инфраструктуры.',
-            en: 'Provides full accountability for every admin action and instant infrastructure visibility.',
+            ru: 'Обеспечивает полную подотчётность правок, выполненных через API /dashboard/, и быструю диагностику инфраструктуры.',
+            en: 'Provides full accountability for actions performed via the /dashboard/ API and instant infrastructure visibility.',
         },
         route: { view: 'auditSystem', tab: 'audit' },
     },
@@ -968,8 +968,8 @@ export const GUIDE_SECTIONS: GuideSectionCard[] = [
         group: { ru: 'Дополнительно · Проверка и БД', en: 'Additional · Self-Test & DB' },
         title: { ru: 'Самопроверка (Acceptance)', en: 'Self-Test (Acceptance)' },
         purpose: {
-            ru: 'Встроенный интерактивный стенд (также доступен по прямой ссылке /test) для приёмочного прогона сценариев WhatsApp + Telegram по шагам.',
-            en: 'Built-in interactive workbench (also accessible directly at /test) for running structured WhatsApp + Telegram acceptance scenarios.',
+            ru: 'Встроенный интерактивный стенд (также доступен по прямой ссылке /client-self-test) для приёмочного прогона сценариев WhatsApp + Telegram по шагам.',
+            en: 'Built-in interactive workbench (also accessible directly at /client-self-test) for running structured WhatsApp + Telegram acceptance scenarios.',
         },
         keyActions: {
             ru: 'Прогон готовых сценариев (каталог, SKU, КП с кнопками Подтвердить/Отклонить в Telegram, ответ менеджера, /reset), отметки Pass/Fail и отправка отчёта тестера.',

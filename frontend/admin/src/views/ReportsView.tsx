@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Clock, FileText, TrendingUp } from 'lucide-react';
 import { generateOperationsReport } from '@/api/operators';
 import { HelpTooltip } from '@/components/HelpTooltip';
@@ -23,6 +23,7 @@ export default function ReportsView({ refreshSignal = 0 }: { refreshSignal?: num
     const [report, setReport] = useState<OperationsReportResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState<ActionMessage | null>(null);
+    const lastRefreshSignalRef = useRef(refreshSignal);
 
     const loadReport = useCallback(async () => {
         setLoading(true);
@@ -42,6 +43,8 @@ export default function ReportsView({ refreshSignal = 0 }: { refreshSignal?: num
     }, [loadReport]);
 
     useEffect(() => {
+        if (refreshSignal === lastRefreshSignalRef.current) return;
+        lastRefreshSignalRef.current = refreshSignal;
         if (!refreshSignal) return;
         void loadReport();
     }, [refreshSignal, loadReport]);

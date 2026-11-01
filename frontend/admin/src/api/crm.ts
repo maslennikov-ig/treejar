@@ -7,7 +7,6 @@ import type {
     AdminBotRuleWrite,
     AdminCanonicalSyncPreview,
     AdminCanonicalSyncResult,
-    AdminCanonicalSyncStatus,
     AdminCatalogStatusResponse,
     AdminConversationDetail,
     AdminResetExecuteResult,
@@ -28,6 +27,23 @@ import type {
 
 const ADMIN_BASE = '/api/v1/admin';
 
+function formatValidationDetailItem(item: unknown): string {
+    if (typeof item === 'string') return item;
+    if (item && typeof item === 'object') {
+        const record = item as { loc?: unknown; msg?: unknown };
+        const msg = typeof record.msg === 'string' ? record.msg : '';
+        const loc = Array.isArray(record.loc)
+            ? record.loc
+                  .filter((part) => part !== 'body' && part !== 'query' && part !== 'path')
+                  .map(String)
+                  .join('.')
+            : '';
+        if (loc && msg) return `${loc}: ${msg}`;
+        if (msg) return msg;
+    }
+    return JSON.stringify(item);
+}
+
 async function responseError(response: Response): Promise<Error> {
     const text = await response.text();
     try {
@@ -36,7 +52,7 @@ async function responseError(response: Response): Promise<Error> {
             return new Error(payload.detail);
         }
         if (Array.isArray(payload.detail)) {
-            return new Error(payload.detail.map((item) => JSON.stringify(item)).join('; '));
+            return new Error(payload.detail.map(formatValidationDetailItem).join('; '));
         }
     } catch {
         // Keep the raw text below when the server did not return JSON.
@@ -216,6 +232,16 @@ export function previewBotRules(
     });
 }
 
+export function testBotRule(
+    ruleId: string,
+    payload: AdminBotRulePreviewRequest,
+): Promise<AdminBotRulePreviewResponse> {
+    return requestJson(`/bot-rules/rules/${encodeURIComponent(ruleId)}/test`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
 export function createBotRule(payload: AdminBotRuleWrite): Promise<AdminBotRuleRead> {
     return requestJson('/bot-rules/rules', {
         method: 'POST',
@@ -250,10 +276,6 @@ export function fetchCanonicalKnowledgeBasePreview(): Promise<AdminCanonicalSync
     return requestJson('/knowledge-base/sync-canonical/preview');
 }
 
-export function fetchCanonicalKnowledgeBaseStatus(): Promise<AdminCanonicalSyncStatus> {
-    return requestJson('/knowledge-base/sync-canonical/status');
-}
-
 export function syncCanonicalKnowledgeBase(
     mode: CanonicalSyncMode = 'safe',
 ): Promise<AdminCanonicalSyncResult> {
@@ -265,10 +287,6 @@ export function syncCanonicalKnowledgeBase(
 
 export function fetchCanonicalBotRulesPreview(): Promise<AdminCanonicalSyncPreview> {
     return requestJson('/bot-rules/sync-canonical/preview');
-}
-
-export function fetchCanonicalBotRulesStatus(): Promise<AdminCanonicalSyncStatus> {
-    return requestJson('/bot-rules/sync-canonical/status');
 }
 
 export function syncCanonicalBotRules(
