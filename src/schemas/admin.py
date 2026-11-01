@@ -6,6 +6,24 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.core.config import settings
+from src.llm.safety import (
+    _BOUNDED_OPENAI_HELPER_MODELS,
+    _OPENROUTER_REASONING_DISABLED_MODEL_IDS,
+    DEFAULT_QUALITY_MODEL,
+    PATH_QUALITY_FINAL,
+    model_name_for_path,
+)
+from src.quality.config import (
+    _AFFORDABLE_QA_MODEL_VARIANTS,
+    AIQualityControlsConfig,
+    AIQualityScopeUsage,
+    build_ai_quality_response,
+)
+from src.quality.config import (
+    AIQualityControlsResponse as _BaseAIQualityControlsResponse,
+)
+
 from .common import Language, SalesStage, UUIDModel
 from .manager_review import ManagerLeaderboardEntry
 
@@ -651,3 +669,66 @@ class AdminSessionInfoResponse(BaseModel):
     actor: str = "admin"
     logout_url: str = "/admin/logout"
     sqladmin_url: str = "/admin/"
+
+
+def resolve_default_ai_quality_model() -> str:
+    """Return the backend policy default model for AI quality evaluation."""
+    return model_name_for_path(PATH_QUALITY_FINAL).strip() or DEFAULT_QUALITY_MODEL
+
+
+def resolve_available_ai_quality_models(
+    config: AIQualityControlsConfig | None = None,
+) -> list[str]:
+    """Return supported quality evaluation models, deduplicated in policy order."""
+    default_model = resolve_default_ai_quality_model()
+    affordable_variants = [
+        variant if "/" in variant else f"z-ai/{variant}"
+        for variant in sorted(_AFFORDABLE_QA_MODEL_VARIANTS)
+    ]
+    candidates: list[str] = [
+        default_model,
+        *affordable_variants,
+        *sorted(_BOUNDED_OPENAI_HELPER_MODELS),
+        getattr(settings, "openrouter_model_fast", ""),
+        *sorted(_OPENROUTER_REASONING_DISABLED_MODEL_IDS),
+        "z-ai/glm-5",
+    ]
+    if config is not None:
+        candidates.extend(
+            [
+                config.bot_qa.model,
+                config.manager_qa.model,
+                config.red_flags.model,
+            ]
+        )
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for raw in candidates:
+        normalized = str(raw or "").strip()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            ordered.append(normalized)
+    return ordered
+
+
+class AIQualityControlsResponse(_BaseAIQualityControlsResponse):
+    default_model: str = Field(default_factory=resolve_default_ai_quality_model)
+    available_models: list[str] = Field(
+        default_factory=resolve_available_ai_quality_models
+    )
+
+
+def build_admin_ai_quality_response(
+    config: AIQualityControlsConfig,
+    *,
+    usage_today: dict[str, AIQualityScopeUsage] | None = None,
+) -> AIQualityControlsResponse:
+    base = build_ai_quality_response(config)
+    return AIQualityControlsResponse(
+        config=base.config,
+        warnings=base.warnings,
+        usage_today=usage_today if usage_today is not None else base.usage_today,
+        default_model=resolve_default_ai_quality_model(),
+        available_models=resolve_available_ai_quality_models(config),
+    )

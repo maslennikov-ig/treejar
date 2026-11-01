@@ -46,10 +46,8 @@ from src.models.system_config import SystemConfig
 from src.models.system_prompt import SystemPrompt
 from src.quality.config import (
     AIQualityControlsConfig,
-    AIQualityControlsResponse,
     AIQualityControlsUpdate,
     AIQualityScope,
-    build_ai_quality_response,
     get_ai_quality_controls_config,
     get_ai_quality_usage_today,
     merge_ai_quality_controls_update,
@@ -81,7 +79,9 @@ from src.schemas.admin import (
     AdminSystemHealthContour,
     AdminSystemHealthResponse,
     AdminZohoSnapshotStatus,
+    AIQualityControlsResponse,
     RecentFeedbackRead,
+    build_admin_ai_quality_response,
 )
 from src.services.admin_crm import (
     admin_ai_quality_evaluator_kwargs,
@@ -725,9 +725,8 @@ async def get_admin_ai_quality_controls(
 ) -> AIQualityControlsResponse:
     """Read SystemConfig-backed AI Quality Controls plus today's usage."""
     config = await get_ai_quality_controls_config(db)
-    response = build_ai_quality_response(config)
-    response.usage_today = await get_ai_quality_usage_today(config)
-    return response
+    usage_today = await get_ai_quality_usage_today(config)
+    return build_admin_ai_quality_response(config, usage_today=usage_today)
 
 
 @router.put("/ai-quality-controls", response_model=AIQualityControlsResponse)
@@ -737,9 +736,8 @@ async def put_admin_ai_quality_controls(
 ) -> AIQualityControlsResponse:
     """Replace SystemConfig-backed AI Quality Controls."""
     saved = await save_ai_quality_controls_config(db, body)
-    response = build_ai_quality_response(saved)
-    response.usage_today = await get_ai_quality_usage_today(saved)
-    return response
+    usage_today = await get_ai_quality_usage_today(saved)
+    return build_admin_ai_quality_response(saved, usage_today=usage_today)
 
 
 @router.patch("/ai-quality-controls", response_model=AIQualityControlsResponse)
@@ -751,9 +749,8 @@ async def patch_admin_ai_quality_controls(
     current = await get_ai_quality_controls_config(db)
     merged = merge_ai_quality_controls_update(current, body)
     saved = await save_ai_quality_controls_config(db, merged)
-    response = build_ai_quality_response(saved)
-    response.usage_today = await get_ai_quality_usage_today(saved)
-    return response
+    usage_today = await get_ai_quality_usage_today(saved)
+    return build_admin_ai_quality_response(saved, usage_today=usage_today)
 
 
 @router.get(

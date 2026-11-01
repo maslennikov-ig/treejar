@@ -743,7 +743,7 @@ async def test_admin_report_operator_endpoint(admin_client: AsyncClient) -> None
 async def test_admin_ai_quality_controls_default_config(
     admin_client: AsyncClient,
 ) -> None:
-    """AI Quality Controls should default to no automated QA work."""
+    """AI Quality Controls should default to no automated QA work and expose model options."""
     response = await _with_fake_db(
         admin_client,
         _FakeAIQualityConfigDB(),
@@ -763,6 +763,17 @@ async def test_admin_ai_quality_controls_default_config(
     assert config["bot_qa"]["max_calls_per_run"] <= 2
     assert config["bot_qa"]["max_calls_per_day"] <= 10
     assert data["warnings"] == []
+    assert data["default_model"] == "openai/gpt-6.1-terra"
+    assert isinstance(data["available_models"], list)
+    assert data["available_models"][0] == data["default_model"]
+    assert len(data["available_models"]) == len(set(data["available_models"]))
+    assert {
+        "openai/gpt-6.1-terra",
+        "z-ai/glm-5.2",
+        "openai/gpt-6-luna",
+        "deepseek/deepseek-v4-flash",
+        "z-ai/glm-5",
+    } <= set(data["available_models"])
 
 
 @pytest.mark.asyncio
@@ -825,6 +836,8 @@ async def test_admin_ai_quality_controls_accepts_overrides_with_warnings(
     data = response.json()
     warning_codes = {warning["code"] for warning in data["warnings"]}
     assert {"glm5_qa", "full_transcript"} <= warning_codes
+    assert data["default_model"] == "openai/gpt-6.1-terra"
+    assert "z-ai/glm-5" in data["available_models"]
     assert fake_db.committed is True
     assert fake_db.config is not None
     assert fake_db.config.value["bot_qa"]["model"] == "z-ai/glm-5"
@@ -835,10 +848,14 @@ async def test_admin_ai_quality_controls_accepts_overrides_with_warnings(
 async def test_admin_ai_quality_controls_patch_preserves_unspecified_scopes(
     admin_client: AsyncClient,
 ) -> None:
-    """PATCH should merge updates instead of resetting other scopes to defaults."""
+    """PATCH should merge updates and include custom configured models in available_models."""
     fake_db = _FakeAIQualityConfigDB(
         {
-            "bot_qa": {"mode": "scheduled", "max_calls_per_run": 2},
+            "bot_qa": {
+                "mode": "scheduled",
+                "max_calls_per_run": 2,
+                "model": "custom/qa-judge-v1",
+            },
             "manager_qa": {"mode": "disabled"},
             "red_flags": {"mode": "manual"},
         }
@@ -852,12 +869,16 @@ async def test_admin_ai_quality_controls_patch_preserves_unspecified_scopes(
     )
 
     assert response.status_code == 200
-    config = response.json()["config"]
+    payload = response.json()
+    config = payload["config"]
     assert config["bot_qa"]["mode"] == "scheduled"
     assert config["bot_qa"]["max_calls_per_run"] == 2
     assert config["manager_qa"]["mode"] == "manual"
     assert config["manager_qa"]["max_calls_per_run"] == 3
     assert config["red_flags"]["mode"] == "manual"
+    assert payload["default_model"] == "openai/gpt-6.1-terra"
+    assert "custom/qa-judge-v1" in payload["available_models"]
+    assert len(payload["available_models"]) == len(set(payload["available_models"]))
 
 
 @pytest.mark.asyncio
