@@ -19,16 +19,13 @@ COPY frontend/admin/ ./
 RUN npm run build
 
 # ============================================================
-# Stage 1: Base image with system dependencies
+# Stage 1: Slim runtime base with WeasyPrint/Pango runtime libs only
 # ============================================================
 FROM python:3.13-slim AS base
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
     libpango-1.0-0 \
     libpangoft2-1.0-0 \
     fonts-noto \
@@ -37,25 +34,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # ============================================================
-# Stage 2: Install uv
+# Stage 2: Install uv + enable bytecode compilation
 # ============================================================
 FROM base AS uv
 
 COPY --from=ghcr.io/astral-sh/uv@sha256:b1e699368d24c57cda93c338a57a8c5a119009ba809305cc8e86986d4a006754 /uv /uvx /bin/
 
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
+    UV_COMPILE_BYTECODE=1 \
     PATH="/app/.venv/bin:$PATH"
 
 # ============================================================
-# Stage 3: Install Python dependencies
+# Stage 3: Build/install Python dependencies (compilers stay here)
 # ============================================================
 FROM uv AS deps
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml uv.lock README.md ./
 RUN UV_NO_DEV=1 uv sync --locked --no-install-project
 
 # ============================================================
-# Stage 4: Final runtime image
+# Stage 4: Final runtime image (no compilers, only runtime docs)
 # ============================================================
 FROM uv AS runtime
 
@@ -68,13 +71,18 @@ COPY templates/ ./templates/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./
 COPY scripts/entrypoint.sh /entrypoint.sh
-COPY docs/ docs/
+COPY docs/faq.md \
+     docs/04-sales-dialogue-guidelines.md \
+     docs/05-company-values.md \
+     docs/08-manager-evaluation-criteria.md \
+     docs/metrics.md \
+     ./docs/
 
 # Copy built frontend from Node stage
 COPY --from=frontend-builder /app/frontend/landing/dist /app/frontend/landing/dist
 COPY --from=admin-builder /app/frontend/admin/dist /app/frontend/admin/dist
 
-RUN UV_NO_DEV=1 uv sync --locked
+RUN UV_NO_DEV=1 uv sync --locked && python -m compileall -q src
 
 RUN chmod +x /entrypoint.sh
 
@@ -98,6 +106,9 @@ FROM runtime AS test
 
 RUN uv sync --locked --all-extras --dev
 
+COPY docs/ ./docs/
+COPY .github/ ./.github/
+COPY scripts/ ./scripts/
 COPY tests/ ./tests/
 
 CMD ["test"]

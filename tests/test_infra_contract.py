@@ -19,8 +19,14 @@ def test_infra_build_contract_uses_locked_uv_and_cpu_torch() -> None:
     )
     assert "RUN UV_NO_DEV=1 uv sync --locked" in dockerfile
     assert "RUN UV_NO_DEV=1 uv sync --locked --no-install-project" in dockerfile
+    assert "UV_COMPILE_BYTECODE=1" in dockerfile
     assert "COPY templates/ ./templates/" in dockerfile
     assert "pip install --no-cache-dir" not in dockerfile
+
+    runtime_stage = dockerfile.split("FROM uv AS runtime", 1)[1].split("FROM ", 1)[0]
+    assert "COPY docs/ docs/" not in runtime_stage
+    assert "docs/faq.md" in runtime_stage
+    assert "build-essential" not in runtime_stage
 
     assert 'uv pip install --system -e ".[dev]"' not in ci_workflow
     assert 'version: "0.11.6"' in ci_workflow

@@ -13,43 +13,67 @@ case "${1:-web}" in
   web|"")
     echo "Running Alembic migrations..."
 
-    # Pre-flight: fix duplicate alembic_version rows (multiple DB heads)
-    # This can happen if a migration was applied with wrong down_revision
-    HEAD_COUNT=$(python3 -c "
-import sqlalchemy, os
-url = os.environ.get('DATABASE_URL', '')
-if url:
-    engine = sqlalchemy.create_engine(url.replace('+asyncpg', ''))
-    with engine.connect() as conn:
-        result = conn.execute(sqlalchemy.text('SELECT count(*) FROM alembic_version'))
-        print(result.scalar())
-else:
-    print(0)
-" 2>/dev/null || echo 0)
+    # Pre-flight: reconcile duplicate alembic_version rows (multiple DB heads)
+    # using asyncpg via SQLAlchemy's async engine (psycopg2 is not installed).
+    python3 - <<'PY' || echo "⚠️  alembic_version pre-flight skipped (table may not exist yet)"
+import asyncio
+import os
+import sys
+import sqlalchemy
+from sqlalchemy.ext.asyncio import create_async_engine
 
-    if [ "$HEAD_COUNT" -gt 1 ]; then
-      echo "⚠️  Found $HEAD_COUNT rows in alembic_version — fixing to keep only the latest head..."
-      python3 -c "
-import sqlalchemy, os
-url = os.environ.get('DATABASE_URL', '').replace('+asyncpg', '')
-engine = sqlalchemy.create_engine(url)
-with engine.begin() as conn:
-    rows = conn.execute(sqlalchemy.text('SELECT version_num FROM alembic_version')).scalars().all()
-    print(f'  Current versions: {rows}')
-    # Keep only the Alembic-resolved current head
-    from alembic.config import Config
-    from alembic.script import ScriptDirectory
-    cfg = Config('alembic.ini')
-    script = ScriptDirectory.from_config(cfg)
-    head = script.get_current_head()
-    print(f'  Script head: {head}')
-    if head in rows:
-        conn.execute(sqlalchemy.text(\"DELETE FROM alembic_version WHERE version_num != :head\"), {'head': head})
-        print(f'  ✅ Cleaned up, kept only {head}')
-    else:
-        print('  ⚠️  Head not in DB rows, skipping cleanup')
-"
-    fi
+
+def _async_url(raw: str) -> str:
+    if raw.startswith("postgres://"):
+        return "postgresql+asyncpg://" + raw[len("postgres://") :]
+    if raw.startswith("postgresql://"):
+        return "postgresql+asyncpg://" + raw[len("postgresql://") :]
+    return raw
+
+
+async def main() -> None:
+    raw = os.environ.get("DATABASE_URL_DIRECT") or os.environ.get("DATABASE_URL", "")
+    if not raw:
+        return
+    engine = create_async_engine(_async_url(raw))
+    try:
+        async with engine.begin() as conn:
+            rows = (
+                await conn.execute(
+                    sqlalchemy.text("SELECT version_num FROM alembic_version")
+                )
+            ).scalars().all()
+            if len(rows) <= 1:
+                return
+            print(
+                f"⚠️  Found {len(rows)} rows in alembic_version ({list(rows)}) — "
+                "reconciling to current script head...",
+                file=sys.stderr,
+            )
+            from alembic.config import Config
+            from alembic.script import ScriptDirectory
+
+            script = ScriptDirectory.from_config(Config("alembic.ini"))
+            head = script.get_current_head()
+            if head and head in rows:
+                await conn.execute(
+                    sqlalchemy.text(
+                        "DELETE FROM alembic_version WHERE version_num != :head"
+                    ),
+                    {"head": head},
+                )
+                print(f"  ✅ Reconciled alembic_version to {head}", file=sys.stderr)
+            else:
+                print(
+                    f"  ⚠️  Script head {head!r} not in DB rows; leaving untouched",
+                    file=sys.stderr,
+                )
+    finally:
+        await engine.dispose()
+
+
+asyncio.run(main())
+PY
 
     alembic upgrade head
     echo "Starting Uvicorn web server on port ${APP_PORT:-8000}..."
