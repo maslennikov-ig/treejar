@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchDashboardMetrics, fetchTimeseries } from '@/api/metrics';
+import { useI18n } from '@/i18n';
 import type { DashboardMetrics, Period, TimeseriesResponse } from '@/types/metrics';
 
 interface UseMetricsResult {
@@ -10,10 +11,11 @@ interface UseMetricsResult {
     refetch: () => void;
 }
 
-export function useMetrics(period: Period = 'all_time'): UseMetricsResult {
+export function useMetrics(period: Period = 'all_time', enabled = true): UseMetricsResult {
+    const { t } = useI18n();
     const [data, setData] = useState<DashboardMetrics | null>(null);
     const [timeseries, setTimeseries] = useState<TimeseriesResponse | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(enabled);
     const [error, setError] = useState<string | null>(null);
 
     const fetchData = useCallback(async () => {
@@ -27,15 +29,19 @@ export function useMetrics(period: Period = 'all_time'): UseMetricsResult {
             setData(metricsResult);
             setTimeseries(timeseriesResult);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Unknown error');
+            setError(err instanceof Error ? err.message : t('common.unknownError'));
         } finally {
             setLoading(false);
         }
-    }, [period]);
+    }, [period, t]);
 
     useEffect(() => {
-        fetchData();
-    }, [fetchData]);
+        if (!enabled) {
+            setLoading(false);
+            return;
+        }
+        void fetchData();
+    }, [enabled, fetchData]);
 
     return { data, timeseries, loading, error, refetch: fetchData };
 }

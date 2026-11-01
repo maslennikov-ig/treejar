@@ -16,6 +16,9 @@ export default defineConfig({
             output: {
                 manualChunks(id) {
                     const normalizedId = id.replaceAll(path.sep, '/');
+                    if (normalizedId.endsWith('/src/i18n.tsx')) {
+                        return 'i18n';
+                    }
                     if (!normalizedId.includes('/node_modules/')) {
                         return undefined;
                     }
@@ -30,6 +33,12 @@ export default defineConfig({
                     }
                     if (normalizedId.includes('/node_modules/framer-motion/')) {
                         return 'motion';
+                    }
+                    if (normalizedId.includes('/node_modules/lucide-react/')) {
+                        return 'icons';
+                    }
+                    if (normalizedId.includes('/node_modules/driver.js/')) {
+                        return 'tour';
                     }
                     return undefined;
                 },
