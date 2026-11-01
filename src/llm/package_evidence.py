@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from src.core.text_utils import normalize_text as _normalize_text
 from src.dialogue.claim_contract import row_from_catalog_product
 from src.dialogue.count_words import COUNT_PATTERN, count_value
 from src.llm.catalog_planning import (
@@ -31,10 +32,6 @@ from src.llm.package_math import (
 from src.models.product_links import product_canonical_url
 
 _PACK_NOTE_RE = re.compile(r"\b\d+\s*pcs?\b|\bctn\b|\bcarton\b", re.IGNORECASE)
-
-
-def _normalize_text(text: str) -> str:
-    return " ".join(text.casefold().split())
 
 
 _NAME_SEAT_COUNT_RE = re.compile(

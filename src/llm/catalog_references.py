@@ -17,18 +17,16 @@ from pydantic import ValidationError
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.text_utils import (
+    normalize_sku_homoglyphs as _normalize_sku_homoglyphs,
+)
 from src.dialogue.catalog_refs import extract_catalog_references
-from src.llm.catalog_planning import _SKU_HOMOGLYPH_TRANSLATION
 from src.models.product import Product
 from src.schemas.product import ProductRead, ProductSearchResult
 
 logger = logging.getLogger(__name__)
 
 CatalogSkuLookup = Callable[[AsyncSession, str], Awaitable[Any | None]]
-
-
-def _normalize_sku_homoglyphs(text: str) -> str:
-    return text.translate(_SKU_HOMOGLYPH_TRANSLATION)
 
 
 def _canonicalize_sku_signal(value: str) -> str:

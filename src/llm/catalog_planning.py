@@ -18,6 +18,12 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.text_utils import (
+    SKU_HOMOGLYPH_TRANSLATION as _SKU_HOMOGLYPH_TRANSLATION,
+)
+from src.core.text_utils import (
+    normalize_text as _normalize_text,
+)
 from src.dialogue.claim_contract import (
     AttributeClaim,
     ClaimInput,
@@ -67,10 +73,6 @@ def _engine_runtime() -> Any:
     return sys.modules["src.llm.engine"]
 
 
-def _normalize_text(text: str) -> str:
-    return cast("str", _engine_runtime()._normalize_text(text))
-
-
 def _coerce_inventory_item(
     raw_item: Any,
     *,
@@ -88,42 +90,6 @@ def _coerce_inventory_item(
 def _string_value(value: Any) -> str:
     return cast("str", _engine_runtime()._string_value(value))
 
-
-# The Treejar catalogue itself is written with Cyrillic lookalikes, so this map
-# is load-bearing rather than defensive. Measured in production 2026-08-08:
-# 7 of 920 SKUs literally begin with Cyrillic "СН" -- Skyland chairs such as
-# "СН 135 black" -- and 132 product names use Cyrillic "х" as the dimension
-# separator, as in "1000х500х754". A customer typing Latin "CH 135" must still
-# reach the row whose SKU is Cyrillic, and vice versa. Deleting this map silently
-# unmatches those products; tj-4e5j nearly did exactly that.
-_SKU_HOMOGLYPH_TRANSLATION = str.maketrans(
-    {
-        "А": "A",
-        "В": "B",
-        "Е": "E",
-        "К": "K",
-        "М": "M",
-        "Н": "H",
-        "О": "O",
-        "Р": "P",
-        "С": "C",
-        "Т": "T",
-        "Х": "X",
-        "У": "Y",
-        "а": "a",
-        "в": "b",
-        "е": "e",
-        "к": "k",
-        "м": "m",
-        "н": "h",
-        "о": "o",
-        "р": "p",
-        "с": "c",
-        "т": "t",
-        "х": "x",
-        "у": "y",
-    }
-)
 
 _ACTIVE_PRODUCT_MEDIA_AUDIT_STATUSES = (
     "pending",

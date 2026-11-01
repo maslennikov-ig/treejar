@@ -25,6 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.chat_id import base_chat_id
 from src.core.config import settings
+from src.core.text_utils import (
+    normalize_sku_homoglyphs as _normalize_sku_homoglyphs,
+)
+from src.core.text_utils import (
+    normalize_text as _normalize_text,
+)
 from src.dialogue.claim_contract import (
     b2b_handoff_directives,
     comparison_consultation_directive,
@@ -264,6 +270,7 @@ __all__ = [
     "QuoteWorkflowState",
     "ReplyPolicyState",
     "_customer_facts_write_scope",
+    "_normalize_sku_homoglyphs",
     "_product_media_is_referenced",
     "quote_frame_from_metadata",
     "quote_frame_to_metadata",
@@ -561,10 +568,6 @@ ALLOWED_TRANSITIONS = {
     SalesStage.CLOSING: [SalesStage.FEEDBACK],
     SalesStage.FEEDBACK: [],
 }
-
-
-def _normalize_text(text: str) -> str:
-    return " ".join(text.casefold().split())
 
 
 def _normalize_customer_facts_mode(value: str) -> str:

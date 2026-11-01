@@ -19,6 +19,7 @@ from typing import Any, cast
 import httpx
 
 from src.core.chat_id import base_chat_id
+from src.core.text_utils import phone_digits as _phone_digits
 from src.integrations.inventory.zoho_inventory import (
     ZohoContactAddressPayload,
     ZohoContactPersonPayload,
@@ -38,10 +39,6 @@ _PHONE_CUSTOMER_CACHE_TTL_SECONDS = 90 * 24 * 3600
 
 def _string_value(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
-
-
-def _phone_digits(phone: str) -> str:
-    return "".join(ch for ch in phone if ch.isdigit())
 
 
 def _split_contact_name(name: str) -> tuple[str, str]:
