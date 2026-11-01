@@ -18,30 +18,37 @@ export function useMetrics(period: Period = 'all_time', enabled = true): UseMetr
     const [loading, setLoading] = useState(enabled);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchData = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const [metricsResult, timeseriesResult] = await Promise.all([
-                fetchDashboardMetrics(period),
-                fetchTimeseries(period),
-            ]);
-            setData(metricsResult);
-            setTimeseries(timeseriesResult);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : t('common.unknownError'));
-        } finally {
-            setLoading(false);
-        }
-    }, [period, t]);
+    const fetchData = useCallback(
+        async (forceRefresh = false) => {
+            setLoading(true);
+            setError(null);
+            try {
+                const [metricsResult, timeseriesResult] = await Promise.all([
+                    fetchDashboardMetrics(period, forceRefresh),
+                    fetchTimeseries(period, forceRefresh),
+                ]);
+                setData(metricsResult);
+                setTimeseries(timeseriesResult);
+            } catch (err) {
+                setError(err instanceof Error ? err.message : t('common.unknownError'));
+            } finally {
+                setLoading(false);
+            }
+        },
+        [period, t],
+    );
 
     useEffect(() => {
         if (!enabled) {
             setLoading(false);
             return;
         }
-        void fetchData();
+        void fetchData(false);
     }, [enabled, fetchData]);
 
-    return { data, timeseries, loading, error, refetch: fetchData };
+    const refetch = useCallback(() => {
+        void fetchData(true);
+    }, [fetchData]);
+
+    return { data, timeseries, loading, error, refetch };
 }

@@ -438,7 +438,7 @@ export function Select({
     label: string;
     help?: string;
     value: string;
-    options: { label: string; value: string }[];
+    options: { label: string; value: string; disabled?: boolean }[];
     onChange: (value: string) => void;
 }) {
     return (
@@ -450,7 +450,7 @@ export function Select({
                 className="admin-input mt-1 h-9 w-full rounded-lg px-3 text-sm outline-none"
             >
                 {options.map((option) => (
-                    <option key={option.value} value={option.value}>
+                    <option key={option.value} value={option.value} disabled={option.disabled}>
                         {option.label}
                     </option>
                 ))}

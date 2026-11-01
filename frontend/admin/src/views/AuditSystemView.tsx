@@ -76,12 +76,17 @@ export function localizeAuditAction(action: string, t: TranslateFn): string {
         'quality.bot_review': t('audit.action.qualityBotReview'),
         'quality.manager_review': t('audit.action.qualityManagerReview'),
         'ai_quality_controls.update': t('audit.action.aiQualityControlsUpdate'),
+        'ai_quality_controls.replace': t('audit.action.aiQualityControlsUpdate'),
         'settings.update': t('audit.action.settingsUpdate'),
         'products.sync': t('audit.action.productsSync'),
+        'catalog.sync': t('audit.action.productsSync'),
         'notifications.test': t('audit.action.notificationsTest'),
+        'notification.test': t('audit.action.notificationsTest'),
         'admin_login.telegram': t('audit.action.telegramLogin'),
         'admin_login.password': t('audit.action.passwordLogin'),
+        'auth.password_login': t('audit.action.passwordLogin'),
         'payment_reminder_controls.update': t('audit.action.paymentRemindersUpdate'),
+        'payment_reminder_controls.replace': t('audit.action.paymentRemindersUpdate'),
         'prompt.update': t('audit.action.promptUpdate'),
     };
     return map[normalized] ?? map[action] ?? action;

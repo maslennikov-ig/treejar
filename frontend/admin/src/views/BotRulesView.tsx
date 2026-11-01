@@ -569,7 +569,15 @@ export default function BotRulesView({
                                     { label: t('status.stage'), value: 'stage' },
                                     { label: t('status.language'), value: 'language' },
                                     { label: t('status.segment'), value: 'segment' },
-                                    { label: t('status.conversation'), value: 'conversation' },
+                                    ...(form.scope === 'conversation'
+                                        ? [
+                                              {
+                                                  label: `${t('status.conversation')} (legacy)`,
+                                                  value: 'conversation',
+                                                  disabled: true,
+                                              },
+                                          ]
+                                        : []),
                                 ]}
                                 onChange={(value) =>
                                     handleScopeChange(value as AdminBotRuleWrite['scope'])
