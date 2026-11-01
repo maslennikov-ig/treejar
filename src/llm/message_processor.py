@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -97,7 +97,6 @@ from src.llm.response_policy import (
     render_reply,
 )
 from src.llm.response_runtime import (
-    PendingReferenceRoute,
     _product_media_is_referenced,
     _referenced_product_media,
     _response_from_rendered_reply,
@@ -371,8 +370,6 @@ class _Turn:
     """
 
     # Fixed for the turn.
-    pending_reference_route: Callable[..., Awaitable[PendingReferenceRoute]]
-    order_quote_route: Callable[..., Awaitable[LLMResponseT | None]]
     db: AsyncSession
     redis: Any
     conversation_id: UUID
@@ -1098,8 +1095,6 @@ async def _sales_agent_route(
 
 async def _load_turn(
     *,
-    pending_reference_route: Callable[..., Awaitable[PendingReferenceRoute]],
-    order_quote_route: Callable[..., Awaitable[LLMResponseT | None]],
     conversation_id: UUID,
     combined_text: str,
     db: AsyncSession,
@@ -1212,8 +1207,6 @@ async def _load_turn(
         await db.flush()
 
     turn = _Turn(
-        pending_reference_route=pending_reference_route,
-        order_quote_route=order_quote_route,
         db=db,
         redis=redis,
         conversation_id=conversation_id,
@@ -1230,10 +1223,6 @@ async def _load_turn(
         history=history,
         is_first_turn=is_first_turn,
         current_message_quote_customer_details=(current_message_quote_customer_details),
-        # Memoised: the runtime used to be built inside the generation block,
-        # out of reach of every route that runs before it, and
-        # sales-opportunity needs the model to write its sentence (tj-swgu.3).
-        # A turn that never reaches the model still pays nothing.
         model_runtime=_LazyModelRuntime(db),
         combined_text=combined_text,
         masked_text=masked_text,
@@ -1319,8 +1308,6 @@ async def _retrieve_context(turn: _Turn) -> None:
 
 async def process_message_impl(
     *,
-    pending_reference_route: Callable[..., Awaitable[PendingReferenceRoute]],
-    order_quote_route: Callable[..., Awaitable[LLMResponseT | None]],
     conversation_id: UUID,
     combined_text: str,
     db: AsyncSession,
@@ -1335,13 +1322,10 @@ async def process_message_impl(
     """Process an incoming message through the PydanticAI agent.
 
     Load factual context, let the main model choose tools and answer, then check
-    factual claims and delivery constraints. Legacy adapters are accepted only
-    for API compatibility and are never invoked.
+    factual claims and delivery constraints.
     """
 
     turn = await _load_turn(
-        pending_reference_route=pending_reference_route,
-        order_quote_route=order_quote_route,
         conversation_id=conversation_id,
         combined_text=combined_text,
         db=db,

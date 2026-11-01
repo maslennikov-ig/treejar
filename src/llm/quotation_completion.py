@@ -25,7 +25,7 @@ from src.dialogue.order_state import (
     quote_workflow_from_metadata,
 )
 from src.dialogue.state import DialogueState
-from src.llm.order_quote_routes import QuotationItem
+from src.llm.response_runtime import QuotationItem
 from src.services.escalation_state import is_active_human_handoff
 
 _CLOSED_LIFECYCLES = frozenset({QuoteLifecycle.CREATING, QuoteLifecycle.CREATED})

@@ -549,6 +549,12 @@ def _referenced_product_media(
     )
 
 
+@dataclass
+class QuotationItem:
+    sku: str
+    quantity: int
+
+
 @dataclass(frozen=True)
 class ExactQuoteCandidate:
     quantity: int
@@ -589,12 +595,6 @@ class ResolvedPurchaseSelectionItem:
 
 
 @dataclass(frozen=True)
-class PurchaseSelectionResolution:
-    resolved: tuple[ResolvedPurchaseSelectionItem, ...]
-    unresolved: tuple[PurchaseSelectionItem, ...]
-
-
-@dataclass(frozen=True)
 class SalesOpportunityRequest:
     amount: float | None
     currency: str | None
@@ -610,13 +610,6 @@ class SalesOpportunityWriteResult:
     stage: str | None = None
     reused: bool = False
     error: str | None = None
-
-
-@dataclass(frozen=True)
-class PendingReferenceRoute:
-    selection: PurchaseSelection | None = None
-    clear_pending_reference_quantity: bool = False
-    clear_pending_question_frame: bool = False
 
 
 @dataclass(frozen=True)

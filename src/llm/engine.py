@@ -7,12 +7,11 @@ import logging
 import math
 import re
 from collections.abc import (
-    Callable,
     Iterable,
     Mapping,
     Sequence,
 )
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from decimal import Decimal
 from html import escape
 from typing import TYPE_CHECKING, Any, Literal
@@ -20,12 +19,10 @@ from uuid import UUID
 
 import httpx
 from pydantic import ValidationError
-from pydantic_ai import Agent, RunContext, ToolReturn, UnexpectedModelBehavior
-from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai import Agent, RunContext, ToolReturn
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from pydantic_ai.tools import ToolDefinition
-from pydantic_ai.usage import RunUsage
-from sqlalchemy import func, or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.chat_id import base_chat_id
@@ -56,26 +53,17 @@ from src.dialogue.decision_state import (
 )
 from src.dialogue.order_guards import (
     is_order_selection_blocked,
-    quotation_claimed_without_call,
 )
 from src.dialogue.order_runtime import run_order_runtime
 from src.dialogue.order_state import (
-    PendingQuestionFrame,
     QuoteConsent,
     QuoteDetails,
     QuoteFrame,
     QuoteLifecycle,
-    QuoteLine,
-    QuoteUnresolvedLine,
     QuoteWorkflowState,
-    age_pending_question_frame,
     canonical_quote_workflow_from_metadata,
     canonical_quote_workflow_metadata_present,
     latest_sent_quotation_effect,
-    pending_question_frame_cleared_metadata,
-    pending_question_frame_from_metadata,
-    pending_question_frame_to_metadata,
-    quote_frame_cleared_metadata,
     quote_frame_from_metadata,
     quote_frame_is_active,
     quote_frame_to_metadata,
@@ -85,7 +73,6 @@ from src.dialogue.order_state import (
 from src.dialogue.reducer import push_expected_answer_frame
 from src.dialogue.runner import (
     quote_consent_signal,
-    record_legacy_route,
 )
 from src.dialogue.runner import (
     run_dialogue_kernel as run_dialogue_kernel,
@@ -107,7 +94,6 @@ from src.integrations.messaging.base import MessagingProvider
 from src.llm import catalog_planning as _catalog_planning_runtime
 from src.llm.catalog_planning import (
     _ACTIVE_PRODUCT_MEDIA_AUDIT_STATUSES,
-    _CATALOG_OPTION_CONTEXT_RE,
     _CROSS_SELL_REQUEST_RE,
     CatalogFamily,
     SalesDeps,
@@ -118,7 +104,6 @@ from src.llm.catalog_planning import (
     _catalog_product_family,
     _catalog_remaining_budget,
     _CatalogCoverageCandidate,
-    _contains_catalog_term,
     _minimum_catalog_coverage_selection,
     _product_search_call_limit,
     _product_search_response_contract,
@@ -161,12 +146,10 @@ from src.llm.catalog_planning import (
 )
 from src.llm.catalog_references import (
     _canonicalize_sku_signal,
-    _find_catalog_products_by_sku_stem,
     _lead_with_resolved_references,
     _normalize_sku_homoglyphs,
     _product_reads_for_resolved_references,
     _resolve_query_catalog_references,
-    _sku_lookup_variants,
     find_catalog_product_by_sku,
 )
 from src.llm.closed_question_guard import response_asks_customer_name
@@ -216,7 +199,6 @@ from src.llm.fact_extractor import (
 from src.llm.fact_extractor import (
     is_customer_phone_detail as _is_customer_phone_detail,
 )
-from src.llm.grounding_output import GroundingOutputAction
 from src.llm.inventory_customers import (
     _build_inventory_contact_payload as _build_inventory_contact_payload,
 )
@@ -229,7 +211,6 @@ from src.llm.money import (
     canonical_amount,
 )
 from src.llm.opening_guard import canonical_opening
-from src.llm.order_quote_routes import QuotationItem, _order_quote_route_for_turn
 from src.llm.order_status import format_order_status
 from src.llm.package_evidence import (
     _customer_seat_count,
@@ -239,7 +220,7 @@ from src.llm.package_evidence import (
     enrich_stock_answer,
 )
 from src.llm.package_math import line_math_text, unit_price_vat_text
-from src.llm.pii import EMAIL_PATTERN, PHONE_PATTERN, mask_pii, unmask_pii
+from src.llm.pii import EMAIL_PATTERN, PHONE_PATTERN, unmask_pii
 from src.llm.prompts import build_system_prompt
 from src.llm.quotation_deferral import (
     clear_pending_quotation,
@@ -248,9 +229,7 @@ from src.llm.quotation_deferral import (
     run_quotation_with_inventory_deferral,
 )
 from src.llm.response_policy import (
-    RenderedReply,
     ReplyPolicyState,
-    ReplyProvenance,
     format_permitted_asks_prompt,
     guard_premature_quote_detail_collection,
     render_reply,
@@ -264,33 +243,23 @@ from src.llm.response_runtime import (
     ExactQuoteCandidate,
     LLMResponse,
     OrderRuntimePurchaseSelection,
-    PendingReferenceRoute,
     ProductMediaPayload,
     PurchaseSelection,
     PurchaseSelectionItem,
-    PurchaseSelectionResolution,
+    QuotationItem,
     ResolvedPurchaseSelectionItem,
     SalesOpportunityRequest,
     SalesOpportunityWriteResult,
     _customer_facts_write_scope,
     _product_media_is_referenced,
-    _response_from_rendered_reply,
 )
 from src.llm.safety import (
     PATH_CORE_CHAT,
     OpenRouterTelemetryChatModel,
-    get_llm_usage_telemetry,
     model_name_for_path,
     model_settings_for_path,
-    run_agent_with_safety,
 )
 from src.llm.verified_answers import (
-    build_clarification_response,
-    build_quote_or_proposal_clarification_response,
-    build_sales_fallback_response,
-    build_service_handoff_reason,
-    build_service_handoff_response,
-    build_service_runtime_directives,
     classify_product_match,
     is_quote_or_proposal_hold,
     is_quote_or_proposal_request,
@@ -311,20 +280,16 @@ from src.schemas.product import ProductSearchQuery
 if TYPE_CHECKING:
     from src.services.chat_latency import ChatLatencyTrace
 from src.services.bot_behavior_rules import (
-    BehaviorRuleSearchContext,
     format_behavior_rules_prompt,
-    rule_to_applied_dict,
 )
 from src.services.bot_behavior_rules import (
     search_behavior_rules as search_behavior_rules,
 )
 from src.services.customer_identity import (
-    build_bounded_returning_customer_context,
     format_llm_crm_context,
 )
 from src.services.customer_language import (
     is_arabic_customer_language,
-    is_strongly_arabic_customer_text,
 )
 from src.services.customer_memory import (
     CustomerFactsContext,
@@ -339,9 +304,6 @@ from src.services.customer_memory import (
 from src.services.escalation_state import is_active_human_handoff
 from src.services.proposal_followup import record_proposal_sent
 from src.services.public_media import build_signed_product_image_url
-from src.services.runtime_execution_evidence import (
-    extract_runtime_tool_traces,
-)
 
 # Preserve the established patch/import seam while using the telemetry model.
 OpenAIChatModel = OpenRouterTelemetryChatModel
@@ -349,19 +311,23 @@ OpenAIChatModel = OpenRouterTelemetryChatModel
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "DialogueState",
+    "ProductMediaPayload",
+    "QuotationItem",
     "QuoteConsent",
     "QuoteDetails",
     "QuoteLifecycle",
     "QuoteWorkflowState",
+    "ReplyPolicyState",
     "_customer_facts_write_scope",
+    "_product_media_is_referenced",
     "quote_frame_from_metadata",
     "quote_frame_to_metadata",
     "quote_workflow_to_metadata",
+    "rag_search_products",
+    "render_reply",
     "settings",
     "unmask_pii",
-    "DialogueState",
-    "ProductMediaPayload",
-    "rag_search_products",
     *_catalog_planning_runtime.__all__,
 ]
 
@@ -372,51 +338,8 @@ for _catalog_planning_name in _catalog_planning_runtime.__all__:
     )
 del _catalog_planning_name
 
-# The extracted message processor resolves these through this module at call
-# time so the long-standing ``src.llm.engine.*`` test and runtime patch points
-# remain authoritative during the behavior-preserving split.
-_MESSAGE_PROCESSOR_RUNTIME_DEPENDENCIES = (
-    json,
-    UnexpectedModelBehavior,
-    ModelRequest,
-    ModelResponse,
-    TextPart,
-    UserPromptPart,
-    RunUsage,
-    quotation_claimed_without_call,
-    record_legacy_route,
-    run_dialogue_kernel,
-    build_message_history,
-    GroundingOutputAction,
-    _order_quote_route_for_turn,
-    mask_pii,
-    unmask_pii,
-    ReplyPolicyState,
-    ReplyProvenance,
-    RenderedReply,
-    render_reply,
-    _product_media_is_referenced,
-    _response_from_rendered_reply,
-    get_llm_usage_telemetry,
-    run_agent_with_safety,
-    build_clarification_response,
-    build_quote_or_proposal_clarification_response,
-    build_sales_fallback_response,
-    build_service_handoff_reason,
-    build_service_handoff_response,
-    build_service_runtime_directives,
-    BehaviorRuleSearchContext,
-    rule_to_applied_dict,
-    search_behavior_rules,
-    build_bounded_returning_customer_context,
-    is_strongly_arabic_customer_text,
-    extract_runtime_tool_traces,
-)
 MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE = 2
 VERIFIED_POLICY_REPAIR_KEY = "verified_policy_repair"
-PENDING_QUOTE_SELECTION_KEY = "pending_quote_selection"
-PENDING_PRODUCT_REFERENCE_QUANTITY_KEY = "pending_product_reference_quantity"
-PENDING_QUOTE_BRIEF_CONFIRMATION_KEY = "pending_quote_brief_confirmation"
 QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY = "quote_brief_confirmed_address"
 QUOTE_CUSTOMER_DETAILS_KEY = "quote_customer_details"
 QUOTE_INTENT_FRAME_KEY = "quote_intent_frame"
@@ -625,9 +548,6 @@ NATURAL_COMPANY_PATTERNS = (
         re.S,
     ),
 )
-TREEJAR_MAPS_URL = (
-    "https://www.google.com/maps/place/Treejar+Trading/@24.9871463,55.1135981,17z"
-)
 ORDER_HANDOFF_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
 SERVICE_POLICY_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
 SELECTION_CONFIRMATION_ALLOWED_TOOLS = frozenset(
@@ -641,44 +561,6 @@ EXACT_QUOTE_ALLOWED_TOOLS = frozenset(
         "escalate_to_manager",
         "update_language",
     }
-)
-ORDER_HANDOFF_PASS_1_DIRECTIVES = (
-    "this is a concrete order or quotation case",
-    "continue autonomously unless an already prepared quotation has been accepted",
-    "ask only one truly necessary clarification when order evidence is incomplete",
-)
-ORDER_HANDOFF_PASS_2_DIRECTIVES = (
-    "previous pass missed the concrete order or quotation next step",
-    "do not ask qualifying questions",
-    "do not search",
-    "offer or prepare the quotation autonomously; escalate only after the customer accepts an already prepared quotation",
-)
-EXACT_QUOTE_PASS_1_DIRECTIVES = (
-    "the customer is asking for an exact quotation-ready commitment",
-    "create_quotation requires customer name, company or explicit individual status, specific delivery address, and exact item quantities",
-    "if exact sku and quantity are already known, confirm stock via get_stock and then call create_quotation immediately",
-    "Treejar catalog price is the customer-facing commercial truth; Zoho rate is operational and must not replace or invalidate catalog price",
-    "if Zoho cannot confirm the item, state that exact price or availability could not be confirmed and continue with a safe autonomous next step",
-)
-EXACT_QUOTE_PASS_2_DIRECTIVES = (
-    "previous pass stayed consultative on an exact quotation-ready request",
-    "do not call create_quotation until customer name, company or explicit individual status, specific delivery address, and exact item quantities are present",
-    "use Zoho-confirmed stock but keep Treejar catalog price as the customer-facing commercial price",
-    "if exact sku and quantity are already known, call create_quotation immediately after confirmation",
-)
-MIXED_PRODUCT_SERVICE_DIRECTIVES = (
-    "mixed product and service request: answer service facts only from FAQ context, then continue product discovery",
-    "if this is the first assistant reply, keep the required Treejar introduction brief, then help with the stated product need",
-    "do not promise the customer's requested delivery date or timeframe unless FAQ context explicitly confirms it",
-    "use search_products before recommending workstation, desk, drawer, chair, table, or other catalog products",
-    "after product options are clear, ask only for missing details needed for a formal quotation",
-    "do not escalate only because the same message mentions delivery, installation, or assembly",
-)
-PRODUCT_PREFERENCE_ANSWER_DIRECTIVES = (
-    "customer is answering the assistant's product preference question",
-    "treat the reply as product preference context for the current catalog discussion",
-    "continue the product discovery or quotation path and ask only the next missing product or quantity detail",
-    "do not hand off unless the customer explicitly requests a human, accepts an already prepared quotation, or reports an active order/payment/refund/legal/safety incident",
 )
 CROSS_SELL_VERIFICATION_DIRECTIVES = (
     "Use search_products and recommend_products(cross_sell); under 900 characters "
@@ -763,15 +645,6 @@ QUOTE_DETAILS_PROMPT_KEY = "quote_details_required"
 POST_QUOTE_APPROVAL_PROMPT_KEY = "post_quote_approval"
 NAME_GATE_PROMPT_KEY = "customer_name_gate"
 EXPECTED_ANSWER_FRAME_TTL_MINUTES = 30
-SELECTION_CONFIRMATION_DIRECTIVES = (
-    "the customer has selected specific product(s) and quantities",
-    "do not search or recommend alternatives",
-    "do not call search_products",
-    "confirm only the selected items from the customer's message",
-    "use get_stock for each SKU before stating current availability",
-    "do not create a quotation unless the customer explicitly asked for a quotation, proforma invoice, or commercial offer",
-    "ask for the missing details needed for a formal quotation or the next concrete step",
-)
 _QUOTE_REQUEST_TERMS = (
     "sales order",
     "sale order",
@@ -966,40 +839,6 @@ _SKU_FOLLOWING_CURRENCY_RE = re.compile(
     rf"\s*{SKU_FOLLOWING_CURRENCY_PATTERN}\b",
     re.IGNORECASE,
 )
-_ORDER_CONFIRMATION_PRODUCT_RE = re.compile(
-    r"\b(?:"
-    r"acoustic pods?|phone booths?|workstations?|chairs?|desks?|pods?|booths?|"
-    r"tables?|sofas?|furniture|"
-    rf"{_SKU_SIGNAL_PATTERN}"
-    r")\b",
-    re.IGNORECASE,
-)
-_ORDER_CONFIRMATION_EXPLICIT_FULFILLMENT_RE = re.compile(
-    r"\b(?:"
-    r"place the order|confirm the order|finali[sz]e the order|proceed with the order|"
-    r"please deliver|arrange delivery|arrange installation|book delivery|"
-    r"schedule installation|deliver it|ship it|ship to"
-    r")\b",
-    re.IGNORECASE,
-)
-_ORDER_CONFIRMATION_DELIVERY_INSTALL_RE = re.compile(
-    r"\b(?:deliver|delivered|delivery|install|installed|installation|ship|shipping)\b",
-    re.IGNORECASE,
-)
-_ORDER_CONFIRMATION_LOCATION_RE = re.compile(
-    r"\b(?:to|in|at)\s+"
-    r"(?!stock\b|bulk\b|wholesale\b|available\b|availability\b|next\b|this\b|the\b|our\b|your\b)"
-    r"[a-z]+(?:\s+[a-z]+){0,3}\b",
-    re.IGNORECASE,
-)
-_ORDER_CONFIRMATION_TIMEFRAME_RE = re.compile(
-    r"\b(?:"
-    r"by\s+(?:next\s+)?(?:week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
-    r"next\s+(?:week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
-    r"this\s+(?:week|month)|today|tomorrow"
-    r")\b",
-    re.IGNORECASE,
-)
 _QUANTITY_ITEM_SIGNAL_RE = re.compile(
     r"\b(?P<quantity>\d{1,4})\b\s+(?P<item>[^?.!,;\n]+)",
     re.IGNORECASE,
@@ -1134,73 +973,6 @@ _EXACT_QUOTE_CLARIFICATION_QUANTITY_RE = re.compile(
     re.IGNORECASE,
 )
 _NUMERIC_HYPHEN_SKU_RE = re.compile(r"\b\d{2,}(?:-\d{1,})+\b")
-_MIXED_SERVICE_TERMS = (
-    "delivery",
-    "deliver",
-    "delivered",
-    "installation",
-    "install",
-    "installed",
-    "assembly",
-    "assemble",
-    "setup",
-)
-_SHORT_AFFIRMATION_RE = re.compile(
-    r"^\s*(?:yes|yes please|yeah|yep|sure|ok|okay|proceed|go ahead)"
-    r"\s*[.!?]*\s*$",
-    re.IGNORECASE,
-)
-
-
-_POST_QUOTATION_ACCEPTANCE_EXACT = frozenset(
-    {
-        "yes",
-        "y",
-        "ok",
-        "okay",
-        "approved",
-        "approve",
-        "accepted",
-        "accept",
-        "agreed",
-        "works",
-        "fine",
-        "go ahead",
-        "proceed",
-        "please proceed",
-        "you can proceed",
-        "نعم",
-        "موافق",
-        "تمام",
-        "اوكي",
-        "أوافق",
-    }
-)
-_POST_QUOTATION_GENERIC_ACCEPTANCE_EXACT = frozenset(
-    {
-        "yes",
-        "y",
-        "ok",
-        "okay",
-        "works",
-        "fine",
-        "نعم",
-        "تمام",
-        "اوكي",
-    }
-)
-_POST_QUOTATION_ACCEPTANCE_PHRASES = (
-    "quotation works",
-    "proposal works",
-    "offer works",
-    "we accept",
-    "i accept",
-    "please go ahead",
-    "let's proceed",
-    "lets proceed",
-    "العرض مناسب",
-    "نوافق على العرض",
-)
 _POST_QUOTATION_APPROVAL_PROMPT_CUES = (
     "let me know if the quotation works",
     "if the quotation works for you",
@@ -1453,16 +1225,6 @@ def _extract_word_quantity_exact_quote_candidate(
         )
 
     return None
-
-
-def _tokenize_exact_match_text(text: str) -> list[str]:
-    return [
-        token
-        for token in re.split(
-            r"[^a-z0-9]+", _normalize_text(_normalize_sku_homoglyphs(text))
-        )
-        if token and len(token) >= 2
-    ]
 
 
 def _has_exact_commitment_intent(normalized: str) -> bool:
@@ -2260,85 +2022,6 @@ def _purchase_selection_from_order_runtime(
     )
 
 
-async def _resolve_purchase_selection_confirmation(
-    *,
-    db: AsyncSession,
-    conversation: Conversation,
-    deps: SalesDeps,
-    purchase_selection: PurchaseSelection,
-    zoho_client: ZohoInventoryClient,
-    crm_context: dict[str, Any] | None,
-    trace_enabled: bool,
-    clear_pending_reference_quantity: bool = False,
-    clear_pending_question_frame: bool = False,
-    offer_quote: bool = True,
-) -> tuple[SalesDeps, str]:
-    selection_deps = replace(
-        deps,
-        tool_mode="selection_confirmation",
-        runtime_directives=_selection_runtime_directives(purchase_selection),
-    )
-    resolution = await _resolve_purchase_selection(
-        selection_deps.db,
-        conversation_id=UUID(str(conversation.id)),
-        selection=purchase_selection,
-        zoho_client=zoho_client,
-        crm_context=crm_context,
-    )
-    variant_options: tuple[ResolvedPurchaseSelectionItem, ...] = ()
-    if resolution.unresolved and not resolution.resolved:
-        variant_options = await _selection_variant_resolved_options(
-            db=db,
-            zoho_client=zoho_client,
-            crm_context=crm_context,
-            items=resolution.unresolved,
-        )
-    verified_items = variant_options or resolution.resolved
-    selection_deps.product_results_seen = bool(verified_items)
-    selection_deps.inventory_confirmed = any(
-        item.availability is not None for item in verified_items
-    )
-    if variant_options:
-        if clear_pending_reference_quantity:
-            await _clear_pending_product_reference_quantity(db, conversation)
-        if clear_pending_question_frame:
-            await _clear_pending_question_frame(db, conversation)
-        if trace_enabled:
-            _record_order_runtime_trace(
-                conversation,
-                purchase_selection.order_runtime_trace,
-            )
-        await _clear_pending_quote_selection(db, conversation)
-        return (
-            selection_deps,
-            _variant_options_response(
-                variant_options,
-                language=str(conversation.language),
-                offer_quote=offer_quote,
-            ),
-        )
-    if offer_quote:
-        await _store_pending_quote_selection(db, conversation, resolution)
-    else:
-        await _suspend_quote_workflow(db, conversation)
-    if clear_pending_reference_quantity:
-        await _clear_pending_product_reference_quantity(db, conversation)
-    if clear_pending_question_frame:
-        await _clear_pending_question_frame(db, conversation)
-    if trace_enabled:
-        _record_order_runtime_trace(
-            conversation,
-            purchase_selection.order_runtime_trace,
-        )
-    confirmation_text = _build_purchase_selection_confirmation_text(
-        resolution,
-        quote_details=_quote_customer_details_from_metadata(conversation),
-        customer_name=conversation.customer_name,
-        offer_quote=offer_quote,
-    )
-    return selection_deps, confirmation_text
-
-
 def _explicit_selection_quantity_count(text: str) -> int:
     count = 0
     for match in _SELECTION_QUANTITY_START_RE.finditer(text):
@@ -2392,33 +2075,6 @@ def _extract_word_quantity_purchase_selection(text: str) -> PurchaseSelection | 
     return PurchaseSelection(items=tuple(items))
 
 
-def _last_assistant_asked_product_selection(recent_history: list[str] | None) -> bool:
-    last_assistant = _last_assistant_message(recent_history)
-    normalized = _normalize_text(_normalize_sku_homoglyphs(last_assistant))
-    if not normalized:
-        return False
-    has_choice_prompt = "?" in last_assistant or any(
-        phrase in normalized
-        for phrase in (
-            "which",
-            "would you like",
-            "do you prefer",
-            "prefer",
-            "choose",
-            "select",
-            "option",
-            "options",
-        )
-    )
-    if not has_choice_prompt:
-        return False
-    return bool(
-        any(term in normalized for term in _MIXED_PRODUCT_TERMS)
-        or _SKU_SIGNAL_RE.search(normalized)
-        or any(term in normalized for term in ("skyland", "novo", "xten", "trend"))
-    )
-
-
 _OPTION_SKU_LINE_RE = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?\*{0,2}\s*SKU\s*:\s*\*{0,2}\s*(?P<sku>[^\r\n]+)"
 )
@@ -2427,54 +2083,6 @@ _NUMBERED_OPTION_HEADING_RE = re.compile(
     r"(?P<ordinal>\d{1,2})\s*[.):]\s*(?P<heading>.+?)\s*(?:[*_`]+)?\s*$",
     re.IGNORECASE,
 )
-
-
-_ORDINAL_WORD_TO_NUMBER: dict[str, int] = {
-    "first": 1,
-    "second": 2,
-    "third": 3,
-    "fourth": 4,
-    "fifth": 5,
-    "sixth": 6,
-    "seventh": 7,
-    "eighth": 8,
-    "ninth": 9,
-    "tenth": 10,
-}
-_MAX_OPTION_ORDINAL = 10
-
-
-def _ordinal_option_from_reply(text: str) -> int | None:
-    # Option lists can hold more than two entries. Parse ordinals generally up to
-    # ten using word boundaries so "option 10" is not misread as "option 1" (m-3).
-    normalized = _normalize_text(_strip_synthetic_test_marker(text))
-    if not normalized or len(normalized.split()) > 8 or "?" in normalized:
-        return None
-    digit_match = re.search(
-        r"\b(?:option|number)\s*(\d{1,2})\b|\b(\d{1,2})(?:st|nd|rd|th)\b",
-        normalized,
-    )
-    if digit_match:
-        value = int(digit_match.group(1) or digit_match.group(2))
-        return value if 1 <= value <= 10 else None
-    word_match = re.search(r"\b(?:option|number)\s+([a-z]+)\b", normalized)
-    if word_match:
-        cardinal = parse_count_word(word_match.group(1))
-        if cardinal is not None and 1 <= cardinal <= _MAX_OPTION_ORDINAL:
-            return cardinal
-    for word, value in _ORDINAL_WORD_TO_NUMBER.items():
-        if re.search(rf"\b{word}\b", normalized):
-            return value
-    return None
-
-
-def _bare_ordinal_option_from_reply(text: str) -> int | None:
-    normalized = _normalize_text(_strip_synthetic_test_marker(text))
-    match = re.fullmatch(r"\d{1,2}", normalized)
-    if match is None:
-        return None
-    value = int(match.group(0))
-    return value if 1 <= value <= 10 else None
 
 
 def _clean_numbered_option_heading(line: str) -> str:
@@ -2558,64 +2166,6 @@ def _sku_from_numbered_option_text(option_text: str) -> str | None:
     return None
 
 
-def _prior_user_message_before_last_assistant(
-    recent_history: list[str] | None,
-) -> str:
-    if not recent_history:
-        return ""
-    last_assistant_index: int | None = None
-    for index in range(len(recent_history) - 1, -1, -1):
-        if recent_history[index].startswith("assistant: "):
-            last_assistant_index = index
-            break
-    if last_assistant_index is None:
-        return ""
-    for index in range(last_assistant_index - 1, -1, -1):
-        entry = recent_history[index]
-        if entry.startswith("user: "):
-            return entry.removeprefix("user: ").strip()
-    return ""
-
-
-def _quantity_from_prior_product_request(recent_history: list[str] | None) -> int:
-    prior_user = _prior_user_message_before_last_assistant(recent_history)
-    if prior_user:
-        quantities = {
-            ref.quantity
-            for ref in extract_catalog_references(prior_user)
-            if ref.quantity is not None and ref.quantity > 0
-        }
-        if len(quantities) == 1:
-            return next(iter(quantities))
-    assistant_quantity = _quantity_from_last_assistant_option_prompt(recent_history)
-    if assistant_quantity is not None:
-        return assistant_quantity
-    return 1
-
-
-def _quantity_from_last_assistant_option_prompt(
-    recent_history: list[str] | None,
-) -> int | None:
-    last_assistant = _normalize_text(_last_assistant_message(recent_history))
-    if not last_assistant:
-        return None
-    patterns = (
-        r"\bfor\s+your\s+(?P<quantity>\d{1,3})\s+"
-        r"(?:chairs?|tables?|units?|items?|pcs|pieces)\b",
-        r"\bfor\s+(?P<quantity>\d{1,3})\s+"
-        r"(?:chairs?|tables?|units?|items?|pcs|pieces)\b",
-        r"\bquote\s+for\s+(?P<quantity>\d{1,3})\s+units?\b",
-    )
-    for pattern in patterns:
-        match = re.search(pattern, last_assistant)
-        if match is None:
-            continue
-        quantity = int(match.group("quantity"))
-        if quantity > 0:
-            return quantity
-    return None
-
-
 def _numbered_sku_options_from_assistant(
     assistant_text: str,
 ) -> list[tuple[int, str, str]]:
@@ -2650,367 +2200,6 @@ def _numbered_sku_options_from_assistant(
     return options
 
 
-def _extract_ordinal_option_purchase_selection(
-    text: str,
-    recent_history: list[str] | None,
-) -> PurchaseSelection | None:
-    ordinal = _ordinal_option_from_reply(text)
-
-    last_assistant = _last_assistant_message(recent_history)
-    if not last_assistant or not _last_assistant_asked_product_selection(
-        recent_history
-    ):
-        return None
-
-    numbered_options = _numbered_sku_options_from_assistant(last_assistant)
-    if ordinal is None and numbered_options:
-        ordinal = _bare_ordinal_option_from_reply(text)
-    if ordinal is None:
-        return None
-
-    for option_ordinal, sku, heading in numbered_options:
-        if option_ordinal != ordinal:
-            continue
-        quantity = _quantity_from_prior_product_request(recent_history)
-        return PurchaseSelection(
-            items=(
-                PurchaseSelectionItem(
-                    quantity=quantity,
-                    item_candidate=heading,
-                    sku=sku,
-                ),
-            )
-        )
-    return None
-
-
-def _extract_purchase_selection_for_context(
-    text: str,
-    recent_history: list[str] | None,
-) -> PurchaseSelection | None:
-    selection = _extract_purchase_selection(text)
-    if selection is not None:
-        return selection
-    selection = _extract_ordinal_option_purchase_selection(text, recent_history)
-    if selection is not None:
-        return selection
-    if not _last_assistant_asked_product_selection(recent_history):
-        return None
-    return _extract_purchase_selection(
-        text,
-        require_trigger=False,
-    ) or _extract_word_quantity_purchase_selection(text)
-
-
-def _extract_purchase_selection_from_quote_details_reply(
-    text: str,
-) -> PurchaseSelection | None:
-    stripped = _strip_synthetic_test_marker(text)
-    for part in re.split(r"[,;\n/]+", stripped):
-        segment = part.strip(" \t\r\n,.;:-")
-        if not segment:
-            continue
-        selection = _extract_purchase_selection(
-            segment,
-            require_trigger=False,
-        ) or _extract_word_quantity_purchase_selection(segment)
-        if selection is not None:
-            return selection
-    return None
-
-
-def _clean_product_reference_segment(segment: str) -> str:
-    cleaned = BOT_TEST_MARKER_RE.sub("", _normalize_sku_homoglyphs(segment))
-    cleaned = _PRODUCT_REFERENCE_REQUEST_PREFIX_RE.sub("", cleaned)
-    return " ".join(cleaned.split()).strip(" ,.;:-")
-
-
-def _segment_starts_with_explicit_quantity(segment: str) -> bool:
-    numeric_match = _SELECTION_QUANTITY_START_RE.match(segment)
-    if numeric_match is not None and not _looks_like_model_number_quantity(
-        segment,
-        numeric_match,
-    ):
-        return True
-    return _SELECTION_WORD_QUANTITY_START_RE.match(segment) is not None
-
-
-def _has_product_reference_sku_signal(segment: str) -> bool:
-    normalized_segment = _normalize_sku_homoglyphs(segment)
-    for match in _SKU_SIGNAL_RE.finditer(normalized_segment):
-        candidate = match.group(0)
-        if _GENERIC_HYPHENATED_CAPACITY_RE.fullmatch(candidate):
-            continue
-        if not _is_explicit_alpha_hyphen_sku_candidate(normalized_segment, match):
-            continue
-        if _looks_like_price_phrase_sku_match(normalized_segment, match):
-            continue
-        raw = " ".join(match.group(0).split()).strip().upper()
-        compact_match = re.fullmatch(r"([A-Z]{1,4})[-\s]?(\d{2,8})", raw)
-        if (
-            compact_match is not None
-            and compact_match.group(1).casefold()
-            in _PRODUCT_REFERENCE_SKU_PREFIX_STOPWORDS
-        ):
-            continue
-        return True
-    return False
-
-
-def _is_missing_quantity_product_reference(segment: str) -> bool:
-    if not segment or _segment_starts_with_explicit_quantity(segment):
-        return False
-    # A named model settles it, sentence or not: "I need SKYLAND NOVO 2400
-    # Meeting Table" is a product reference wrapped in words.
-    if _NAMED_MODEL_REFERENCE_RE.search(segment) is not None:
-        return True
-    # Without one, a sentence is not a reference however many numbers it
-    # carries. On 2026-08-09 "lets say 300 aed max per chair. we need them by
-    # end of month" passed the loose SKU signal on the strength of "300" and
-    # was read back to the customer as the name of a product they asked for.
-    if _sentence_shaped(segment):
-        return False
-    return _has_product_reference_sku_signal(segment)
-
-
-def _extract_missing_quantity_product_references(text: str) -> tuple[str, ...]:
-    text = _strip_synthetic_test_marker(text)
-    if is_order_selection_blocked(text):
-        return ()
-    normalized = _normalize_text(_normalize_sku_homoglyphs(text))
-    if not normalized:
-        return ()
-    if any(blocker in normalized for blocker in _PRODUCT_QUANTITY_CLARIFY_BLOCKERS):
-        return ()
-    if any(blocker in normalized for blocker in _EXACT_QUOTE_HIGH_RISK_BLOCKERS):
-        return ()
-    if not (
-        _PURCHASE_SELECTION_TRIGGER_RE.search(text)
-        or is_quote_or_proposal_request(text)
-    ):
-        return ()
-    if (
-        _extract_purchase_selection(text) is not None
-        or _extract_sales_order_quote_items(text) is not None
-        or extract_exact_quote_candidate(text) is not None
-    ):
-        return ()
-
-    runtime_references = _missing_quantity_product_references_from_order_runtime(text)
-    if runtime_references:
-        return runtime_references
-
-    return _missing_quantity_reference_segments_from_text(text)
-
-
-def _missing_quantity_reference_segments_from_text(text: str) -> tuple[str, ...]:
-    references: list[str] = []
-    for raw_segment in _PRODUCT_REFERENCE_SPLIT_RE.split(text):
-        segment = _clean_product_reference_segment(raw_segment)
-        if not _is_missing_quantity_product_reference(segment):
-            continue
-        if segment not in references:
-            references.append(segment)
-
-    return tuple(references)
-
-
-def _missing_quantity_product_references_from_order_runtime(
-    text: str,
-) -> tuple[str, ...]:
-    result = _missing_quantity_order_runtime_result(text)
-    if result is None:
-        return ()
-    return _missing_quantity_references_from_order_runtime_result(result)
-
-
-def _missing_quantity_order_runtime_result(text: str) -> Any | None:
-    if not _should_run_missing_quantity_order_runtime(text):
-        return None
-
-    result = run_order_runtime(text=text, metadata={})
-    if result.decision.route != "quantity_clarification" or not result.decision.handled:
-        return None
-    return result
-
-
-def _should_run_missing_quantity_order_runtime(text: str) -> bool:
-    stripped = _strip_synthetic_test_marker(text).strip()
-    normalized = _normalize_text(_normalize_sku_homoglyphs(stripped))
-    if not normalized:
-        return False
-    if any(blocker in normalized for blocker in _PRODUCT_QUANTITY_CLARIFY_BLOCKERS):
-        return False
-    if any(blocker in normalized for blocker in _EXACT_QUOTE_HIGH_RISK_BLOCKERS):
-        return False
-    if (
-        _extract_purchase_selection(stripped) is not None
-        or _extract_sales_order_quote_items(stripped) is not None
-        or extract_exact_quote_candidate(stripped) is not None
-    ):
-        return False
-
-    references = _missing_quantity_reference_segments_from_text(stripped)
-    if not references:
-        return False
-    if _PURCHASE_SELECTION_TRIGGER_RE.search(stripped) or is_quote_or_proposal_request(
-        stripped
-    ):
-        return True
-
-    if len(stripped.split()) > 6:
-        return False
-    if _extract_quote_customer_details(stripped) or _extract_sales_memory_updates(
-        stripped
-    ):
-        return False
-    return not _asks_customer_facing_question(stripped)
-
-
-def _missing_quantity_references_from_order_runtime_result(
-    result: Any,
-) -> tuple[str, ...]:
-    if result.decision.route != "quantity_clarification" or not result.decision.handled:
-        return ()
-
-    references: list[str] = []
-    for line in result.state.lines:
-        if line.status != "needs_quantity":
-            continue
-        reference = _displayable_product_reference(line)
-        if reference and reference not in references:
-            references.append(reference)
-    return tuple(references)
-
-
-_MAX_DISPLAYABLE_REFERENCE_CHARS = 60
-_REFERENCE_SHAPED_RE = re.compile(r"^[\w\s./+-]{1,60}$", re.UNICODE)
-
-
-def _displayable_product_reference(line: Any) -> str:
-    """Name the product, never quote the customer's sentence back at them.
-
-    `source_text` used to win here, and on 2026-08-09 a customer's own line --
-    "lets say 300 aed max per chair. we need them by end of month" -- was read
-    back to them as a product reference. The catalog reference is the thing that
-    is actually a product name; the customer's wording is used only when it is
-    short and reference-shaped, which is where it reads better than the SKU.
-    """
-
-    catalog_ref = " ".join(str(getattr(line, "catalog_ref", "") or "").split()).strip(
-        " ,.;:-"
-    )
-    source_text = " ".join(str(getattr(line, "source_text", "") or "").split()).strip(
-        " ,.;:-"
-    )
-    if (
-        source_text
-        and len(source_text) <= _MAX_DISPLAYABLE_REFERENCE_CHARS
-        and _REFERENCE_SHAPED_RE.match(source_text)
-        and not _sentence_shaped(source_text)
-    ):
-        return source_text
-    return catalog_ref or source_text[:_MAX_DISPLAYABLE_REFERENCE_CHARS]
-
-
-_PROSE_MARKERS = frozenset(
-    {
-        "a",
-        "and",
-        "at",
-        "be",
-        "but",
-        "by",
-        "can",
-        "do",
-        "for",
-        "from",
-        "have",
-        "i",
-        "if",
-        "is",
-        "it",
-        "lets",
-        "max",
-        "me",
-        "my",
-        "need",
-        "of",
-        "on",
-        "or",
-        "our",
-        "per",
-        "please",
-        "say",
-        "should",
-        "so",
-        "that",
-        "the",
-        "them",
-        "then",
-        "they",
-        "this",
-        "to",
-        "want",
-        "we",
-        "will",
-        "with",
-        "you",
-        "your",
-        "من",
-        "في",
-        "على",
-        "نحتاج",
-        "نريد",
-        "لكل",
-        "إلى",
-        "الى",
-    }
-)
-
-
-def _sentence_shaped(text: str) -> bool:
-    """Prose, not a product name.
-
-    A product name is a run of identifiers -- "SKYLAND NOVO 2400 Meeting Table"
-    -- and carries no function words. A sentence cannot avoid them. Counting
-    words or looking for digits both misclassify real catalog names, which is
-    how two tests caught an earlier version of this.
-    """
-
-    words = [word.strip(".,;:!?").casefold() for word in text.split()]
-    return any(word in _PROSE_MARKERS for word in words)
-
-
-def _verified_reference_fact_line(
-    item: ResolvedPurchaseSelectionItem,
-    *,
-    language: str,
-) -> str:
-    """One catalog row, said the way a salesperson would say it.
-
-    Every figure here comes from a row read this turn: the catalog price, and
-    the stock Zoho confirmed. Nothing is inferred and nothing is rounded.
-    """
-
-    name = _product_display_name(item.product)
-    is_arabic = is_arabic_customer_language(language)
-    facts: list[str] = []
-    if item.unit_price is not None:
-        amount = _format_commercial_amount(item.unit_price, item.currency)
-        facts.append(f"{amount} للوحدة" if is_arabic else f"{amount} each")
-    if item.availability is not None and item.availability > 0:
-        facts.append(
-            f"{item.availability} متوفرة الآن"
-            if is_arabic
-            else f"{item.availability} in stock now"
-        )
-    if not facts:
-        return ""
-    joined = "، ".join(facts) if is_arabic else ", ".join(facts)
-    return f"{name}: {joined}."
-
-
 def _verified_quote_line(
     item: ResolvedPurchaseSelectionItem,
     *,
@@ -3037,703 +2226,8 @@ def _verified_quote_line(
     return f"{quantity} x {name} at {unit} each, total {total}."
 
 
-def _missing_quantity_product_references_message(
-    references: tuple[str, ...],
-    language: str,
-    *,
-    verified_items: tuple[ResolvedPurchaseSelectionItem, ...] = (),
-) -> str:
-    """Answer first, then ask for the one thing that is genuinely missing.
-
-    `tj-ja1v`: this route used to hand the whole turn back -- "I have these
-    product references: CH 616 NEW black. Please confirm the quantity" -- while
-    the price and the live stock the customer had just asked for were one
-    catalog row away. A customer who asks whether we have a chair and is asked
-    for a quantity instead has been made to work for an answer we already had,
-    which both research reports of 2026-08-09 name as the cardinal error of
-    this channel.
-
-    The quantity question stays: it is real, and the total depends on it. What
-    changes is that it no longer comes first and no longer comes alone. Where
-    nothing resolved against the catalog the old wording stands, because then
-    there genuinely is nothing to add.
-    """
-
-    is_arabic = is_arabic_customer_language(language)
-    fact_lines = [
-        line
-        for line in (
-            _verified_reference_fact_line(item, language=language)
-            for item in verified_items
-        )
-        if line
-    ]
-    if fact_lines:
-        if is_arabic:
-            closing = (
-                "كم عدد القطع التي تحتاجها؟ سأؤكد لك الإجمالي وموعد التسليم "
-                "لهذه الكمية."
-            )
-        else:
-            closing = (
-                "How many do you need? I will confirm the total and the delivery "
-                "time for that quantity."
-            )
-        return "\n".join([*fact_lines, "", closing])
-
-    item_list = ", ".join(references)
-    if is_arabic:
-        return (
-            f"فهمت المنتجات التالية: {item_list}. يرجى تأكيد الكمية لكل منتج "
-            "حتى أجهز الخطوة التالية."
-        )
-    return (
-        f"I have these product references: {item_list}. Please confirm the quantity "
-        "for each item so I can prepare the next step."
-    )
-
-
-async def _verified_facts_for_selection_items(
-    db: AsyncSession,
-    *,
-    conversation_id: UUID,
-    items: tuple[PurchaseSelectionItem, ...],
-    zoho_client: ZohoInventoryClient,
-    crm_context: dict[str, Any] | None,
-) -> tuple[ResolvedPurchaseSelectionItem, ...]:
-    """Read-only: what the catalog and Zoho say about these items, for prose.
-
-    Nothing here selects, reserves or quotes anything; the result is used to
-    write a sentence. A lookup failure costs the fact, never the turn, which is
-    why the whole call is wrapped: a route that could not read a price still
-    has a question worth asking.
-    """
-
-    if not items:
-        return ()
-    try:
-        resolution = await _resolve_purchase_selection(
-            db,
-            conversation_id=conversation_id,
-            selection=PurchaseSelection(items=items),
-            zoho_client=zoho_client,
-            crm_context=crm_context,
-        )
-    except Exception:
-        logger.warning(
-            "Verified fact lookup failed for %s; asking without the facts",
-            [item.sku for item in items],
-            exc_info=True,
-        )
-        return ()
-    return resolution.resolved
-
-
-async def _verified_facts_for_product_references(
-    db: AsyncSession,
-    *,
-    conversation_id: UUID,
-    references: tuple[str, ...],
-    zoho_client: ZohoInventoryClient,
-    crm_context: dict[str, Any] | None,
-) -> tuple[ResolvedPurchaseSelectionItem, ...]:
-    """The catalog rows behind references the customer named without a quantity.
-
-    Quantity is one only because the resolver needs a number, and nothing in
-    this path reads it back.
-    """
-
-    return await _verified_facts_for_selection_items(
-        db,
-        conversation_id=conversation_id,
-        items=tuple(
-            PurchaseSelectionItem(quantity=1, item_candidate=reference, sku=reference)
-            for reference in references
-        ),
-        zoho_client=zoho_client,
-        crm_context=crm_context,
-    )
-
-
-async def _verified_facts_for_quotation_items(
-    db: AsyncSession,
-    *,
-    conversation_id: UUID,
-    items: Sequence[QuotationItem],
-    zoho_client: ZohoInventoryClient,
-    crm_context: dict[str, Any] | None,
-) -> tuple[ResolvedPurchaseSelectionItem, ...]:
-    """The catalog rows behind a quotation that cannot be issued yet."""
-
-    return await _verified_facts_for_selection_items(
-        db,
-        conversation_id=conversation_id,
-        items=tuple(
-            PurchaseSelectionItem(
-                quantity=item.quantity,
-                item_candidate=item.sku,
-                sku=item.sku,
-            )
-            for item in items
-            if item.quantity > 0
-        ),
-        zoho_client=zoho_client,
-        crm_context=crm_context,
-    )
-
-
-def _pending_product_reference_quantity_from_metadata(
-    conversation: Conversation,
-) -> tuple[str, ...]:
-    metadata = (
-        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
-    )
-    raw_pending = metadata.get(PENDING_PRODUCT_REFERENCE_QUANTITY_KEY)
-    if not isinstance(raw_pending, Mapping):
-        return ()
-    raw_references = raw_pending.get("references")
-    if not isinstance(raw_references, list):
-        return ()
-    references = [
-        reference.strip()
-        for reference in raw_references
-        if isinstance(reference, str) and reference.strip()
-    ]
-    return tuple(references)
-
-
-def _last_assistant_asked_pending_product_reference_quantity(
-    recent_history: list[str] | None,
-    references: tuple[str, ...],
-) -> bool:
-    if not references:
-        return False
-    last_assistant = _last_assistant_message(recent_history)
-    normalized_last = _normalize_text(_normalize_sku_homoglyphs(last_assistant))
-    if not normalized_last or "quantity" not in normalized_last:
-        return False
-    if not any(
-        phrase in normalized_last
-        for phrase in (
-            "please confirm",
-            "confirm the quantity",
-            "confirm quantity",
-            "how many",
-        )
-    ):
-        return False
-
-    for reference in references:
-        normalized_reference = _normalize_text(_normalize_sku_homoglyphs(reference))
-        sku = _extract_sku_signal(reference)
-        normalized_sku = _normalize_text(sku or "")
-        if normalized_reference and normalized_reference in normalized_last:
-            return True
-        if normalized_sku and normalized_sku in normalized_last:
-            return True
-    return False
-
-
-async def _clear_pending_product_reference_quantity(
-    db: AsyncSession,
-    conversation: Conversation,
-) -> None:
-    metadata = dict(conversation.metadata_ or {})
-    if PENDING_PRODUCT_REFERENCE_QUANTITY_KEY not in metadata:
-        return
-    metadata.pop(PENDING_PRODUCT_REFERENCE_QUANTITY_KEY, None)
-    conversation.metadata_ = metadata
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to clear pending product reference quantity for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-
-
-async def _store_pending_question_frame(
-    db: AsyncSession,
-    conversation: Conversation,
-    frame: PendingQuestionFrame,
-) -> None:
-    conversation.metadata_ = pending_question_frame_to_metadata(
-        conversation.metadata_,
-        frame,
-    )
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to flush pending order runtime question frame for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-
-
-async def _clear_pending_question_frame(
-    db: AsyncSession,
-    conversation: Conversation,
-) -> None:
-    metadata = pending_question_frame_cleared_metadata(conversation.metadata_)
-    if metadata == (conversation.metadata_ or {}):
-        return
-    conversation.metadata_ = metadata
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to clear pending order runtime question frame for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-
-
-async def _age_pending_question_frame_for_turn(
-    db: AsyncSession,
-    conversation: Conversation,
-    frame: PendingQuestionFrame | None,
-) -> None:
-    if frame is None or frame.status != "active":
-        return
-    await _store_pending_question_frame(
-        db,
-        conversation,
-        age_pending_question_frame(frame),
-    )
-
-
-def _pending_question_frame_from_conversation(
-    conversation: Conversation,
-) -> PendingQuestionFrame | None:
-    metadata = (
-        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
-    )
-    return pending_question_frame_from_metadata(metadata)
-
-
-def _purchase_selection_from_pending_question_frame(
-    frame: PendingQuestionFrame | None,
-    quantity: int,
-) -> PurchaseSelection | None:
-    if frame is None or not frame.is_active or quantity <= 0:
-        return None
-    items: list[PurchaseSelectionItem] = []
-    if frame.order_lines_snapshot:
-        for line in frame.order_lines_snapshot:
-            line_quantity = (
-                quantity if line.status == "needs_quantity" else line.quantity
-            )
-            if line_quantity is None or line_quantity <= 0:
-                continue
-            sku = line.sku or _best_selection_sku(line.source_text) or line.catalog_ref
-            if not sku:
-                continue
-            items.append(
-                PurchaseSelectionItem(
-                    quantity=line_quantity,
-                    item_candidate=line.source_text,
-                    sku=sku,
-                )
-            )
-        if items:
-            return PurchaseSelection(items=tuple(items))
-
-    for ref in frame.source_refs:
-        sku = ref.sku or _best_selection_sku(ref.source_text) or ref.catalog_ref
-        if not sku:
-            continue
-        items.append(
-            PurchaseSelectionItem(
-                quantity=quantity,
-                item_candidate=ref.source_text,
-                sku=sku,
-            )
-        )
-    if not items:
-        return None
-    return PurchaseSelection(items=tuple(items))
-
-
-def _purchase_selection_from_pending_question_frame_followup(
-    frame: PendingQuestionFrame | None,
-    text: str,
-) -> PurchaseSelection | None:
-    if frame is None or not frame.is_active:
-        return None
-    selection = _extract_purchase_selection(
-        text,
-        require_trigger=False,
-    ) or _extract_word_quantity_purchase_selection(text)
-    if selection is None or len(selection.items) != len(frame.source_refs):
-        return None
-
-    resolved_ref_items: list[PurchaseSelectionItem] = []
-    for ref, item in zip(frame.source_refs, selection.items, strict=True):
-        if not _pending_product_reference_matches_selection(ref.source_text, item):
-            return None
-        sku = item.sku or ref.sku or _best_selection_sku(ref.source_text)
-        if not sku:
-            return None
-        resolved_ref_items.append(
-            PurchaseSelectionItem(
-                quantity=item.quantity,
-                item_candidate=ref.source_text,
-                sku=sku,
-            )
-        )
-    items: list[PurchaseSelectionItem] = []
-    if frame.order_lines_snapshot:
-        resolved_by_source = {
-            item.item_candidate.casefold(): item for item in resolved_ref_items
-        }
-        for line in frame.order_lines_snapshot:
-            if line.status == "needs_quantity":
-                resolved_item = resolved_by_source.get(line.source_text.casefold())
-                if resolved_item is None:
-                    return None
-                items.append(resolved_item)
-                continue
-            if line.quantity is None or line.quantity <= 0:
-                continue
-            sku = line.sku or _best_selection_sku(line.source_text) or line.catalog_ref
-            if not sku:
-                return None
-            items.append(
-                PurchaseSelectionItem(
-                    quantity=line.quantity,
-                    item_candidate=line.source_text,
-                    sku=sku,
-                )
-            )
-    else:
-        items = resolved_ref_items
-    if not items:
-        return None
-    return PurchaseSelection(items=tuple(items))
-
-
-def _pending_question_frame_from_references(
-    references: tuple[str, ...],
-) -> PendingQuestionFrame | None:
-    source_refs = []
-    for index, reference in enumerate(references, start=1):
-        sku = _best_selection_sku(reference) or _extract_sku_signal(reference)
-        source_refs.append(
-            {
-                "kind": "order_line",
-                "catalog_ref": sku or reference,
-                "source_text": reference,
-                "sku": sku or reference,
-                "ordinal": index,
-            }
-        )
-    if not source_refs:
-        return None
-    return PendingQuestionFrame.model_validate(
-        {
-            "frame_id": "quantity:"
-            + ":".join(str(ref["catalog_ref"]) for ref in source_refs),
-            "question_kind": "quantity",
-            "status": "active",
-            "prompt_key": "ask_quantity_for_sku",
-            "max_customer_turns": 2,
-            "turns_seen": 0,
-            "source_refs": source_refs,
-        }
-    )
-
-
-def _extract_bare_quantity_reply(text: str) -> int | None:
-    stripped = " ".join(
-        _strip_synthetic_test_marker(text).strip(" \t\r\n.,;:!?").split()
-    )
-    if not stripped:
-        return None
-    if re.fullmatch(r"\d{1,4}", stripped):
-        quantity = int(stripped)
-        return quantity if quantity > 0 else None
-    normalized = _normalize_text(stripped)
-    word_quantity = _selection_word_quantity(normalized)
-    return word_quantity if word_quantity and word_quantity > 0 else None
-
-
-def _purchase_selection_from_pending_product_references(
-    references: tuple[str, ...],
-    quantity: int,
-) -> PurchaseSelection | None:
-    if quantity <= 0:
-        return None
-    items: list[PurchaseSelectionItem] = []
-    for reference in references:
-        sku = _best_selection_sku(reference) or _extract_sku_signal(reference)
-        if not sku:
-            continue
-        items.append(
-            PurchaseSelectionItem(
-                quantity=quantity,
-                item_candidate=reference,
-                sku=sku,
-            )
-        )
-    if not items:
-        return None
-    return PurchaseSelection(items=tuple(items))
-
-
-def _first_selection_over_texts(
-    resolve: Callable[[str], PurchaseSelection | None],
-    *texts: str,
-) -> PurchaseSelection | None:
-    # Resolve a purchase selection from the first text that yields one, trying the
-    # original then the PII-masked variant. Deduplicates identical texts so the
-    # resolver runs once when masking is a no-op (m-4).
-    seen: set[str] = set()
-    for text in texts:
-        if text in seen:
-            continue
-        seen.add(text)
-        result = resolve(text)
-        if result is not None:
-            return result
-    return None
-
-
-def _purchase_selection_from_pending_product_reference_followup(
-    text: str,
-    references: tuple[str, ...],
-) -> PurchaseSelection | None:
-    if not references:
-        return None
-
-    selection = _extract_purchase_selection(
-        text,
-        require_trigger=False,
-    ) or _extract_word_quantity_purchase_selection(text)
-    if selection is None or len(selection.items) != len(references):
-        return None
-
-    items: list[PurchaseSelectionItem] = []
-    for reference, item in zip(references, selection.items, strict=True):
-        if not _pending_product_reference_matches_selection(reference, item):
-            return None
-        sku = (
-            item.sku or _best_selection_sku(reference) or _extract_sku_signal(reference)
-        )
-        if not sku:
-            return None
-        items.append(
-            PurchaseSelectionItem(
-                quantity=item.quantity,
-                item_candidate=reference,
-                sku=sku,
-            )
-        )
-
-    if not items:
-        return None
-    return PurchaseSelection(items=tuple(items))
-
-
-def _pending_product_reference_matches_selection(
-    reference: str,
-    item: PurchaseSelectionItem,
-) -> bool:
-    # SKU equality is the strongest signal — check it first.
-    reference_sku = _best_selection_sku(reference) or _extract_sku_signal(reference)
-    normalized_reference_sku = _normalize_text(
-        _normalize_sku_homoglyphs(reference_sku or "")
-    )
-    normalized_item_sku = _normalize_text(_normalize_sku_homoglyphs(item.sku))
-    if (
-        normalized_reference_sku
-        and normalized_item_sku
-        and normalized_reference_sku == normalized_item_sku
-    ):
-        return True
-
-    normalized_reference = _normalize_text(_normalize_sku_homoglyphs(reference))
-    normalized_candidate = _normalize_text(
-        _normalize_sku_homoglyphs(item.item_candidate)
-    )
-    if not normalized_candidate or not normalized_reference:
-        return False
-    # A name-only match must be substantial: a single generic word (e.g. "Meeting")
-    # must not pair a selection item with a longer product reference (n-2).
-    shorter = min(normalized_candidate, normalized_reference, key=len)
-    if len(shorter.split()) < 2:
-        return False
-    return (
-        normalized_candidate in normalized_reference
-        or normalized_reference in normalized_candidate
-    )
-
-
-async def _pending_reference_route_for_turn(
-    *,
-    db: AsyncSession,
-    conversation: Conversation,
-    recent_history: list[str] | None,
-    combined_text: str,
-    masked_text: str,
-) -> PendingReferenceRoute:
-    pending_reference_quantity = _extract_bare_quantity_reply(combined_text)
-    if pending_reference_quantity is None:
-        pending_reference_quantity = _extract_bare_quantity_reply(masked_text)
-
-    pending_question_frame = _pending_question_frame_from_conversation(conversation)
-    pending_question_selection = (
-        _purchase_selection_from_pending_question_frame(
-            pending_question_frame,
-            pending_reference_quantity,
-        )
-        if pending_reference_quantity is not None
-        else None
-    )
-    if pending_question_selection is None:
-        pending_question_selection = (
-            _purchase_selection_from_pending_question_frame_followup(
-                pending_question_frame,
-                combined_text,
-            )
-            or _purchase_selection_from_pending_question_frame_followup(
-                pending_question_frame,
-                masked_text,
-            )
-        )
-    if pending_question_selection is not None:
-        return PendingReferenceRoute(
-            selection=pending_question_selection,
-            clear_pending_reference_quantity=True,
-            clear_pending_question_frame=True,
-        )
-
-    if pending_question_frame is not None:
-        await _age_pending_question_frame_for_turn(
-            db,
-            conversation,
-            pending_question_frame,
-        )
-
-    pending_reference_quantity_refs = _pending_product_reference_quantity_from_metadata(
-        conversation
-    )
-    if pending_question_frame is not None and pending_reference_quantity_refs:
-        await _clear_pending_product_reference_quantity(db, conversation)
-        pending_reference_quantity_refs = ()
-
-    pending_reference_context_active = bool(
-        pending_reference_quantity_refs
-    ) and _last_assistant_asked_pending_product_reference_quantity(
-        recent_history,
-        pending_reference_quantity_refs,
-    )
-    if pending_reference_context_active:
-        if pending_reference_quantity is not None:
-            selection = _purchase_selection_from_pending_product_references(
-                pending_reference_quantity_refs,
-                pending_reference_quantity,
-            )
-        else:
-            selection = _first_selection_over_texts(
-                lambda text: (
-                    _purchase_selection_from_pending_product_reference_followup(
-                        text,
-                        pending_reference_quantity_refs,
-                    )
-                ),
-                combined_text,
-                masked_text,
-            )
-        if selection is not None:
-            return PendingReferenceRoute(
-                selection=selection,
-                clear_pending_reference_quantity=True,
-            )
-        return PendingReferenceRoute()
-
-    if pending_reference_quantity is not None and pending_reference_quantity_refs:
-        await _clear_pending_product_reference_quantity(db, conversation)
-
-    return PendingReferenceRoute()
-
-
-def _selection_runtime_directives(
-    selection: PurchaseSelection,
-) -> tuple[str, ...]:
-    selected_items = ", ".join(
-        f"{item.quantity} x {item.sku}" for item in selection.items
-    )
-    return SELECTION_CONFIRMATION_DIRECTIVES + (
-        f"selected items from customer message: {selected_items}",
-    )
-
-
-def _catalog_product_match_text(product: Any) -> str:
-    attributes = getattr(product, "attributes", None) or {}
-    return " ".join(
-        part
-        for part in (
-            str(getattr(product, "sku", "") or ""),
-            str(getattr(product, "name_en", "") or ""),
-            str(getattr(product, "description_en", "") or ""),
-            str(attributes.get("treejar_slug") or ""),
-        )
-        if part
-    )
-
-
-def _catalog_product_contains_numeric_hyphen_anchor(
-    product: Any,
-    anchor: str,
-) -> bool:
-    if not anchor:
-        return False
-    product_text = _normalize_sku_homoglyphs(_catalog_product_match_text(product))
-    return anchor.casefold() in product_text.casefold()
-
-
 async def _find_catalog_product_by_sku(db: AsyncSession, sku: str) -> Any | None:
     return await find_catalog_product_by_sku(db, sku)
-
-
-def _select_exact_quote_product_by_candidate_text(
-    candidate_item: str,
-    products: list[Any],
-) -> Any | None:
-    candidate_token_set = set(_tokenize_exact_match_text(candidate_item))
-    if len(candidate_token_set) < 2:
-        return None
-
-    best_product: Any | None = None
-    best_score = (-1, -1, -1)
-    second_best_score = (-1, -1, -1)
-    for product in products:
-        product_tokens = set(
-            _tokenize_exact_match_text(_catalog_product_match_text(product))
-        )
-        overlap = candidate_token_set & product_tokens
-        digit_overlap = sum(1 for token in overlap if any(ch.isdigit() for ch in token))
-        long_overlap = sum(1 for token in overlap if len(token) >= 4)
-        score = (digit_overlap, long_overlap, len(overlap))
-        if score > best_score:
-            second_best_score = best_score
-            best_score = score
-            best_product = product
-        elif score > second_best_score:
-            second_best_score = score
-
-    if best_product is None:
-        return None
-
-    min_overlap = 3 if len(candidate_token_set) >= 4 else 2
-    if best_score[2] < min_overlap:
-        return None
-    if best_score == second_best_score:
-        return None
-
-    return best_product
 
 
 async def _download_catalog_image(
@@ -3767,147 +2261,6 @@ async def _download_catalog_image(
         return None
 
     return response.content, content_type
-
-
-async def _resolve_exact_quote_candidate_sku(
-    db: AsyncSession,
-    candidate: ExactQuoteCandidate,
-) -> str | None:
-    candidate_item = _normalize_sku_homoglyphs(candidate.item_candidate).strip()
-    candidate_sku = (
-        _normalize_sku_homoglyphs(candidate.sku).strip().upper()
-        if candidate.sku
-        else None
-    )
-    if candidate_sku:
-        exact_sku_product = await _find_catalog_product_by_sku(db, candidate_sku)
-        if exact_sku_product is not None:
-            return str(exact_sku_product.sku)
-        suffix_sku_products = await _find_catalog_products_by_sku_stem(
-            db, candidate_sku
-        )
-        if len(suffix_sku_products) == 1:
-            return str(suffix_sku_products[0].sku)
-        if len(suffix_sku_products) > 1:
-            suffix_product = _select_exact_quote_product_by_candidate_text(
-                candidate_item,
-                suffix_sku_products,
-            )
-            if suffix_product is not None:
-                return str(suffix_product.sku)
-            return None
-        if (
-            _normalize_text(candidate_item) == _normalize_text(candidate_sku)
-            or _canonicalize_sku_signal(candidate_item) == candidate_sku
-        ):
-            return candidate_sku
-
-    candidate_tokens = _tokenize_exact_match_text(candidate_item)
-    if len(candidate_tokens) < 2:
-        return None
-
-    anchor_terms = [token for token in candidate_tokens if len(token) >= 4]
-    if not anchor_terms:
-        anchor_terms = candidate_tokens
-    anchor = max(
-        anchor_terms, key=lambda token: (any(ch.isdigit() for ch in token), len(token))
-    )
-
-    result = await db.execute(
-        select(Product).where(
-            Product.is_active.is_(True),
-            or_(
-                func.lower(Product.name_en).contains(anchor),
-                func.lower(func.coalesce(Product.description_en, "")).contains(anchor),
-                func.lower(Product.sku).contains(anchor),
-            ),
-        )
-    )
-    products = list(result.scalars().all())
-    if not products:
-        return None
-
-    strict_numeric_anchor = (
-        candidate_sku
-        if candidate_sku and _NUMERIC_HYPHEN_SKU_RE.fullmatch(candidate_sku)
-        else None
-    )
-    if strict_numeric_anchor:
-        strict_products = [
-            product
-            for product in products
-            if _catalog_product_contains_numeric_hyphen_anchor(
-                product,
-                strict_numeric_anchor,
-            )
-        ]
-        if len(strict_products) == 1:
-            return str(strict_products[0].sku)
-        return None
-
-    best_product = _select_exact_quote_product_by_candidate_text(
-        candidate_item,
-        products,
-    )
-    if best_product is None:
-        return None
-
-    return str(best_product.sku)
-
-
-def _extract_product_key_from_media_caption(
-    row: Any,
-    conversation_id: UUID,
-) -> str | None:
-    crm_message_id = getattr(row, "crm_message_id", None)
-    if not isinstance(crm_message_id, str) or not crm_message_id.strip():
-        return None
-
-    prefix = f"product:{conversation_id}:"
-    suffix = ":caption"
-    if not crm_message_id.startswith(prefix) or not crm_message_id.endswith(suffix):
-        return None
-
-    product_key = crm_message_id[len(prefix) : -len(suffix)]
-    return product_key.strip() or None
-
-
-async def _find_catalog_product_by_product_key(
-    db: AsyncSession,
-    product_key: str,
-) -> Any | None:
-
-    try:
-        product_id = UUID(product_key)
-    except ValueError:
-        product_id = None
-
-    if product_id is not None:
-        product = await db.get(Product, product_id)
-        if product is not None and getattr(product, "is_active", True) is not False:
-            return product
-
-    return await _find_catalog_product_by_sku(db, product_key)
-
-
-async def _load_product_media_caption_rows(
-    db: AsyncSession,
-    conversation_id: UUID,
-) -> list[Any]:
-    from src.models.outbound_message import OutboundMessageAudit
-
-    result = await db.execute(
-        select(OutboundMessageAudit)
-        .where(
-            OutboundMessageAudit.conversation_id == conversation_id,
-            OutboundMessageAudit.source == "product_media",
-            OutboundMessageAudit.message_type == "caption",
-            OutboundMessageAudit.status.in_(_ACTIVE_PRODUCT_MEDIA_AUDIT_STATUSES),
-        )
-        .order_by(OutboundMessageAudit.created_at.desc())
-        .limit(25)
-    )
-    return list(result.scalars().all())
 
 
 async def _load_sent_product_media_keys(
@@ -4021,277 +2374,6 @@ def _earlier_offer_note(products: Sequence[Any]) -> str:
     )
 
 
-def _text_price_matches(expected: float | None, text: str) -> bool:
-    if expected is None:
-        return False
-    for match in _PRICE_SIGNAL_RE.finditer(text):
-        try:
-            candidate = float(match.group("amount").replace(",", ""))
-        except ValueError:
-            continue
-        if abs(candidate - expected) <= 0.01:
-            return True
-    return False
-
-
-def _purchase_caption_match_score(
-    item: PurchaseSelectionItem,
-    caption: str,
-) -> tuple[int, int, int] | None:
-    caption_norm = _normalize_text(caption)
-    item_norm = _normalize_text(item.item_candidate)
-    sku_norm = _normalize_text(item.sku)
-    caption_tokens = set(_tokenize_exact_match_text(caption))
-    item_tokens = set(_tokenize_exact_match_text(item.item_candidate))
-    sku_tokens = set(_tokenize_exact_match_text(item.sku))
-    sku_variant_norms = {
-        _normalize_text(variant)
-        for variant in _sku_lookup_variants(item.sku)
-        if _normalize_text(variant)
-    }
-
-    has_sku_match = bool(
-        sku_norm
-        and (
-            sku_norm in caption_norm
-            or any(variant in caption_norm for variant in sku_variant_norms)
-            or (sku_tokens and sku_tokens <= caption_tokens)
-        )
-    )
-    if not has_sku_match:
-        return None
-
-    overlap = item_tokens & caption_tokens
-    if len(overlap) < 3 and not (sku_tokens and sku_tokens <= caption_tokens):
-        return None
-
-    exact_text_match = int(bool(item_norm and item_norm in caption_norm))
-    price_match = int(_text_price_matches(item.stated_unit_price, caption))
-    digit_overlap = sum(1 for token in overlap if any(char.isdigit() for char in token))
-    return (
-        100 * exact_text_match + 50 * price_match + 10 * digit_overlap,
-        len(overlap),
-        len(caption_norm),
-    )
-
-
-async def _resolve_purchase_selection_item_from_captions(
-    db: AsyncSession,
-    conversation_id: UUID,
-    item: PurchaseSelectionItem,
-    caption_rows: list[Any],
-) -> tuple[Any, str] | None:
-    best_row: Any | None = None
-    best_score: tuple[int, int, int] | None = None
-    second_best_score: tuple[int, int, int] | None = None
-
-    for row in caption_rows:
-        caption = getattr(row, "caption", None) or getattr(row, "content", None)
-        if not isinstance(caption, str) or not caption.strip():
-            continue
-        score = _purchase_caption_match_score(item, caption)
-        if score is None:
-            continue
-        if best_score is None or score > best_score:
-            second_best_score = best_score
-            best_score = score
-            best_row = row
-        elif second_best_score is None or score > second_best_score:
-            second_best_score = score
-
-    if best_row is None or best_score is None:
-        return None
-    if second_best_score is not None and best_score == second_best_score:
-        return None
-
-    product_key = _extract_product_key_from_media_caption(best_row, conversation_id)
-    if not product_key:
-        return None
-
-    product = await _find_catalog_product_by_product_key(db, product_key)
-    if product is None:
-        return None
-
-    caption = getattr(best_row, "caption", None) or getattr(best_row, "content", None)
-    return product, str(caption or "")
-
-
-async def _resolve_purchase_selection_item_from_catalog_text(
-    db: AsyncSession,
-    item: PurchaseSelectionItem,
-) -> Any | None:
-
-    candidate_tokens = _tokenize_exact_match_text(item.item_candidate)
-    sku_tokens = set(_tokenize_exact_match_text(item.sku))
-    if not candidate_tokens or not sku_tokens:
-        return None
-
-    anchor_terms = [token for token in candidate_tokens if token in sku_tokens]
-    if not anchor_terms:
-        anchor_terms = [
-            token
-            for token in candidate_tokens
-            if len(token) >= 3 and any(char.isdigit() for char in token)
-        ]
-    if not anchor_terms:
-        return None
-    anchor = max(
-        anchor_terms, key=lambda token: (any(ch.isdigit() for ch in token), len(token))
-    )
-
-    result = await db.execute(
-        select(Product).where(
-            Product.is_active.is_(True),
-            or_(
-                func.lower(Product.name_en).contains(anchor),
-                func.lower(func.coalesce(Product.description_en, "")).contains(anchor),
-                func.lower(Product.sku).contains(anchor),
-            ),
-        )
-    )
-    products = list(result.scalars().all())
-    if not products:
-        return None
-
-    candidate_token_set = set(candidate_tokens)
-    best_product: Any | None = None
-    best_score = (-1, -1, -1)
-    second_best_score = (-1, -1, -1)
-    for product in products:
-        product_text = _catalog_product_match_text(product)
-        score = _purchase_caption_match_score(item, product_text)
-        if score is None:
-            continue
-        product_tokens = set(_tokenize_exact_match_text(product_text))
-        overlap = candidate_token_set & product_tokens
-        score_with_overlap = (score[0], score[1], len(overlap))
-        if score_with_overlap > best_score:
-            second_best_score = best_score
-            best_score = score_with_overlap
-            best_product = product
-        elif score_with_overlap > second_best_score:
-            second_best_score = score_with_overlap
-
-    if best_product is None or best_score == second_best_score:
-        return None
-    return best_product
-
-
-async def _resolve_purchase_selection_inventory(
-    zoho_client: ZohoInventoryClient,
-    product: Any,
-) -> tuple[dict[str, Any] | None, Literal["zoho", "catalog", "unconfirmed"]]:
-    zoho_item: dict[str, Any] | None = None
-    zoho_item_id = getattr(product, "zoho_item_id", None)
-    if isinstance(zoho_item_id, str) and zoho_item_id.strip():
-        raw_item = await zoho_client.get_item(zoho_item_id)
-        zoho_item = _coerce_inventory_item(raw_item, require_item_id=False)
-
-    if zoho_item is None:
-        sku = getattr(product, "sku", None)
-        if isinstance(sku, str) and sku.strip():
-            raw_item = await zoho_client.get_stock(sku)
-            zoho_item = _coerce_inventory_item(raw_item, require_item_id=False)
-
-    if zoho_item is not None:
-        return zoho_item, "zoho"
-
-    catalog_stock = getattr(product, "stock", None)
-    if catalog_stock is None:
-        return None, "unconfirmed"
-    try:
-        catalog_stock_int = int(catalog_stock)
-    except (TypeError, ValueError):
-        return None, "unconfirmed"
-
-    return (
-        {
-            "sku": str(getattr(product, "sku", "") or "catalog"),
-            "stock_on_hand": catalog_stock_int,
-            "rate": _valid_catalog_price(product) or 0.0,
-            "currency_code": getattr(product, "currency", None) or "AED",
-        },
-        "catalog",
-    )
-
-
-async def _resolve_purchase_selection(
-    db: AsyncSession,
-    *,
-    conversation_id: UUID,
-    selection: PurchaseSelection,
-    zoho_client: ZohoInventoryClient,
-    crm_context: dict[str, Any] | None,
-) -> PurchaseSelectionResolution:
-    caption_rows = await _load_product_media_caption_rows(db, conversation_id)
-    segment = crm_context.get("Segment", "Unknown") if crm_context else "Unknown"
-
-    resolved: list[ResolvedPurchaseSelectionItem] = []
-    unresolved: list[PurchaseSelectionItem] = []
-
-    for item in selection.items:
-        product = await _find_catalog_product_by_sku(db, item.sku)
-        source_caption: str | None = None
-        if product is None:
-            caption_match = await _resolve_purchase_selection_item_from_captions(
-                db,
-                conversation_id,
-                item,
-                caption_rows,
-            )
-            if caption_match is not None:
-                product, source_caption = caption_match
-        if product is None:
-            product = await _resolve_purchase_selection_item_from_catalog_text(db, item)
-        if product is None:
-            unresolved.append(item)
-            continue
-
-        (
-            inventory_item,
-            availability_source,
-        ) = await _resolve_purchase_selection_inventory(
-            zoho_client,
-            product,
-        )
-        price_decision = _commercial_price_decision(
-            catalog_product=product,
-            zoho_item=inventory_item or {},
-            segment=str(segment),
-        )
-        availability: int | None = None
-        if inventory_item is not None:
-            stock_on_hand = inventory_item.get("stock_on_hand")
-            if stock_on_hand is None:
-                availability = None
-            else:
-                try:
-                    availability = int(stock_on_hand)
-                except (TypeError, ValueError):
-                    availability = None
-
-        resolved.append(
-            ResolvedPurchaseSelectionItem(
-                requested=item,
-                product=product,
-                availability=availability,
-                unit_price=(
-                    price_decision.unit_price
-                    if price_decision.source != "unavailable"
-                    else None
-                ),
-                currency=price_decision.currency,
-                availability_source=availability_source,
-                source_caption=source_caption,
-            )
-        )
-
-    return PurchaseSelectionResolution(
-        resolved=tuple(resolved),
-        unresolved=tuple(unresolved),
-    )
-
-
 def _format_commercial_amount(amount: float, currency: str) -> str:
     return f"{amount:,.2f} {currency}"
 
@@ -4304,391 +2386,6 @@ def _product_display_name(product: Any) -> str:
     return str(sku or "Selected item")
 
 
-async def _resolved_catalog_options_from_products(
-    *,
-    products: Iterable[Any],
-    quantity: int,
-    zoho_client: ZohoInventoryClient,
-    segment: str,
-    seen_skus: set[str],
-) -> list[ResolvedPurchaseSelectionItem]:
-    resolved: list[ResolvedPurchaseSelectionItem] = []
-    for product in products:
-        product_sku = str(getattr(product, "sku", "") or "").strip()
-        if not product_sku or product_sku in seen_skus:
-            continue
-        seen_skus.add(product_sku)
-        (
-            inventory_item,
-            availability_source,
-        ) = await _resolve_purchase_selection_inventory(zoho_client, product)
-        price_decision = _commercial_price_decision(
-            catalog_product=product,
-            zoho_item=inventory_item or {},
-            segment=segment,
-        )
-        availability: int | None = None
-        if inventory_item is not None:
-            stock_on_hand = inventory_item.get("stock_on_hand")
-            try:
-                availability = int(stock_on_hand) if stock_on_hand is not None else None
-            except (TypeError, ValueError):
-                availability = None
-        resolved.append(
-            ResolvedPurchaseSelectionItem(
-                requested=PurchaseSelectionItem(
-                    quantity=quantity,
-                    item_candidate=_product_display_name(product),
-                    sku=product_sku,
-                ),
-                product=product,
-                availability=availability,
-                unit_price=(
-                    price_decision.unit_price
-                    if price_decision.source != "unavailable"
-                    else None
-                ),
-                currency=price_decision.currency,
-                availability_source=availability_source,
-            )
-        )
-    return resolved
-
-
-async def _selection_variant_resolved_options(
-    *,
-    db: AsyncSession,
-    zoho_client: ZohoInventoryClient,
-    crm_context: Mapping[str, Any] | None,
-    items: Iterable[PurchaseSelectionItem],
-) -> tuple[ResolvedPurchaseSelectionItem, ...]:
-    segment = crm_context.get("Segment", "Unknown") if crm_context else "Unknown"
-    resolved: list[ResolvedPurchaseSelectionItem] = []
-    seen_skus: set[str] = set()
-
-    for item in items:
-        products = await _find_catalog_products_by_sku_stem(
-            db,
-            item.sku or item.item_candidate,
-        )
-        if len(products) < 2:
-            continue
-        resolved.extend(
-            await _resolved_catalog_options_from_products(
-                products=products[:5],
-                quantity=item.quantity,
-                zoho_client=zoho_client,
-                segment=str(segment),
-                seen_skus=seen_skus,
-            )
-        )
-    return tuple(resolved)
-
-
-_PRODUCT_NOUN_LABELS: tuple[str, ...] = (
-    "chair",
-    "desk",
-    "table",
-    "workstation",
-    "sofa",
-    "cabinet",
-    "pedestal",
-    "locker",
-    "pod",
-    "booth",
-)
-
-
-def _options_item_label(options: tuple[ResolvedPurchaseSelectionItem, ...]) -> str:
-    # Derive the EN count noun from the products' category/name instead of
-    # hardcoding "chair". Falls back to a neutral label when no known product noun
-    # is present, so non-chair catalogs (desks, tables, ...) read correctly (m-1).
-    haystack = _normalize_text(
-        " ".join(
-            f"{getattr(option.product, 'category', '') or ''} "
-            f"{getattr(option.product, 'subcategory', '') or ''} "
-            f"{_product_display_name(option.product)}"
-            for option in options
-        )
-    )
-    for noun in _PRODUCT_NOUN_LABELS:
-        if noun in haystack:
-            return noun
-    return "item"
-
-
-def _variant_options_response(
-    options: tuple[ResolvedPurchaseSelectionItem, ...],
-    *,
-    language: str,
-    offer_quote: bool = True,
-) -> str:
-    """Render the variants behind one ambiguous selection.
-
-    This used to serve the retired stock-price route as well (tj-swgu.1). Its
-    only caller now is the selection path, which reaches it when a requested
-    item resolves to more than one catalog variant and the customer has to pick.
-    """
-
-    if not options:
-        return ""
-
-    arabic = is_arabic_customer_language(language)
-    requested_quantity = options[0].requested.quantity
-    item_label = _options_item_label(options)
-    plural = "" if requested_quantity == 1 else "s"
-
-    intro = (
-        "هناك عدة خيارات متاحة لاختيارك. إليك الخيارات:"
-        if arabic
-        else (
-            "There are several variants for your "
-            f"{requested_quantity} {item_label}{plural}. Here are the options:"
-        )
-    )
-
-    lines = [intro, ""]
-    for index, option in enumerate(options, start=1):
-        product_name = _product_display_name(option.product)
-        sku = getattr(option.product, "sku", option.requested.sku)
-        price_text = (
-            _format_commercial_amount(option.unit_price, option.currency)
-            if option.unit_price is not None
-            else None
-        )
-        if arabic:
-            lines.append(f"الخيار {index}: {product_name}")
-            lines.append(f"- رمز المنتج: {sku}")
-            lines.append(
-                "- السعر: غير مؤكد حالياً"
-                if price_text is None
-                else f"- السعر: {price_text} للقطعة"
-            )
-            lines.append(
-                "- المخزون: غير مؤكد حالياً"
-                if option.availability is None
-                else f"- المخزون: {option.availability} متوفر"
-            )
-        else:
-            lines.append(f"Option {index}: {product_name}")
-            lines.append(f"- SKU: {sku}")
-            lines.append(
-                "- Price: not currently verified"
-                if price_text is None
-                else f"- Price: {price_text} each"
-            )
-            lines.append(
-                "- Stock: not currently verified"
-                if option.availability is None
-                else f"- Stock: {option.availability} available"
-            )
-        lines.append("")
-
-    if not offer_quote:
-        first = options[0]
-        enough_stock = (
-            first.availability is not None
-            and first.availability >= first.requested.quantity
-        )
-        if arabic:
-            lines.append(
-                "الكمية المطلوبة متوفرة بالسعر المؤكد."
-                if enough_stock
-                else "المخزون الحالي أقل من الكمية المطلوبة؛ اذكر العدد المتوفر فقط."
-            )
-        else:
-            lines.append(
-                "The requested quantity is available at the confirmed unit price."
-                if enough_stock
-                else "Current stock is below the requested quantity."
-            )
-    elif arabic:
-        lines.append("أي خيار تفضل؟ أستطيع بعدها تجهيز عرض سعر رسمي.")
-    else:
-        lines.append(
-            "Which option would you prefer? I can prepare a formal quotation after that."
-        )
-    return "\n".join(lines).strip()
-
-
-def _missing_quote_details_for_selection_confirmation(
-    quote_details: Mapping[str, str] | None,
-    *,
-    customer_name: str | None,
-) -> list[str]:
-    details = dict(quote_details or {})
-    name = details.get("name") or _string_value(customer_name)
-    missing: list[str] = []
-    if not _string_value(name):
-        missing.append("full name")
-    if not _string_value(
-        details.get("company")
-    ) and not _is_explicit_individual_customer(details):
-        missing.append("company name, or confirm you are buying as an individual")
-    if not _string_value(details.get("email")):
-        missing.append("email")
-    if not _is_specific_delivery_address(details.get("address")):
-        missing.append("specific delivery address")
-    return missing
-
-
-def _selection_confirmation_quote_prompt(
-    *,
-    quote_details: Mapping[str, str] | None,
-    customer_name: str | None,
-) -> str:
-    missing = _missing_quote_details_for_selection_confirmation(
-        quote_details,
-        customer_name=customer_name,
-    )
-    if not missing:
-        return (
-            "Would you like me to prepare a formal quotation for these selected "
-            "items using the details you already shared?"
-        )
-    return (
-        "Would you like me to prepare a formal quotation for these selected "
-        "items? If so, I will collect the remaining PDF details next."
-    )
-
-
-def _purchase_selection_unresolved_items_message(
-    items: tuple[PurchaseSelectionItem, ...],
-) -> str:
-    item_list = ", ".join(
-        f"{item.quantity} x {item.item_candidate or item.sku}" for item in items
-    )
-    return (
-        "Before I prepare the quotation, please confirm the exact catalog item "
-        f"or SKU for: {item_list}. I will use that to prepare the quotation "
-        "accurately."
-    )
-
-
-def _build_purchase_selection_confirmation_text(
-    resolution: PurchaseSelectionResolution,
-    *,
-    quote_details: Mapping[str, str] | None = None,
-    customer_name: str | None = None,
-    offer_quote: bool = True,
-) -> str:
-    lines: list[str] = []
-    total = 0.0
-    has_total = bool(resolution.resolved)
-    has_limited_stock = False
-
-    if resolution.resolved:
-        lines.append("Great, I can confirm the selected items from our catalog:")
-        lines.append("")
-
-    for index, item in enumerate(resolution.resolved, start=1):
-        product_name = _product_display_name(item.product)
-        quantity = item.requested.quantity
-        lines.append(f"{index}. {product_name}")
-        lines.append(f"   Quantity: {quantity}")
-
-        if item.availability is None:
-            has_total = False
-            lines.append("   Availability: not currently verified")
-        else:
-            availability_label = (
-                "Zoho-confirmed" if item.availability_source == "zoho" else "Catalog"
-            )
-            lines.append(
-                f"   Availability: {item.availability} available ({availability_label})"
-            )
-            if item.availability < quantity:
-                has_limited_stock = True
-
-        if item.unit_price is None:
-            has_total = False
-            lines.append("   Unit price: not currently verified")
-        else:
-            line_total = item.unit_price * quantity
-            total += line_total
-            lines.append(
-                f"   Unit price: {_format_commercial_amount(item.unit_price, item.currency)}"
-            )
-            lines.append(
-                f"   Line total: {_format_commercial_amount(line_total, item.currency)}"
-            )
-        lines.append("")
-
-    if has_total:
-        currency = resolution.resolved[0].currency
-        lines.append(f"Total: {_format_commercial_amount(total, currency)}")
-        lines.append("")
-
-    if resolution.unresolved:
-        lines.append("These selected items still need an exact catalog or SKU match:")
-        for unresolved_item in resolution.unresolved:
-            lines.append(
-                f"- {unresolved_item.quantity} x "
-                f"{unresolved_item.item_candidate or unresolved_item.sku}"
-            )
-        lines.append("")
-
-    if has_limited_stock:
-        lines.append(
-            "Some requested quantities are above the confirmed available stock. "
-            "Please confirm whether to adjust the quantities or wait for a verified "
-            "restock update."
-        )
-    elif resolution.unresolved:
-        if offer_quote:
-            lines.append(
-                _purchase_selection_unresolved_items_message(resolution.unresolved)
-            )
-        else:
-            item_list = ", ".join(
-                f"{item.quantity} x {item.item_candidate or item.sku}"
-                for item in resolution.unresolved
-            )
-            lines.append(
-                "Please confirm the exact catalog item or SKU for "
-                f"{item_list} so I can verify availability and price accurately."
-            )
-    elif resolution.resolved:
-        if offer_quote:
-            lines.append(
-                _selection_confirmation_quote_prompt(
-                    quote_details=quote_details,
-                    customer_name=customer_name,
-                )
-            )
-        else:
-            lines.append(
-                "The requested quantity is available at the confirmed unit price. "
-                "No quotation will be prepared unless you ask for one."
-            )
-    else:
-        lines.append(
-            "I have captured the selected items, but I still need an exact catalog "
-            "item or SKU before confirming price and availability."
-        )
-
-    return "\n".join(lines).strip()
-
-
-def _pending_quote_item_from_resolved(
-    item: ResolvedPurchaseSelectionItem,
-) -> dict[str, Any]:
-    product = item.product
-    product_id = getattr(product, "id", None)
-    return {
-        "sku": str(getattr(product, "sku", "") or item.requested.sku).strip(),
-        "quantity": item.requested.quantity,
-        "product_id": str(product_id) if product_id else None,
-        "display_name": _product_display_name(product),
-        "unit_price": item.unit_price,
-        "currency": item.currency,
-    }
-
-
-def _quote_details_model_from_metadata(conversation: Conversation) -> QuoteDetails:
-    return QuoteDetails(**_quote_customer_details_from_metadata(conversation))
-
-
 def _quote_frame_from_conversation(conversation: Conversation) -> QuoteFrame | None:
     metadata = (
         conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
@@ -4696,191 +2393,11 @@ def _quote_frame_from_conversation(conversation: Conversation) -> QuoteFrame | N
     return quote_frame_from_metadata(metadata)
 
 
-def _conversation_has_canonical_quote_frame(conversation: Conversation) -> bool:
-    metadata = (
-        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
-    )
-    return _metadata_has_canonical_quote_frame(metadata)
-
-
 def _metadata_has_canonical_quote_frame(metadata: Mapping[str, Any]) -> bool:
     runtime = metadata.get(ORDER_RUNTIME_METADATA_KEY)
     return isinstance(runtime, Mapping) and isinstance(
         runtime.get("quote_frame"),
         Mapping,
-    )
-
-
-def _active_pending_quote_selection_from_conversation(
-    conversation: Conversation,
-) -> Mapping[str, Any] | None:
-    legacy_selection = _pending_quote_selection_from_metadata(conversation)
-    if _conversation_has_canonical_quote_frame(conversation):
-        quote_frame = _quote_frame_from_conversation(conversation)
-        if quote_frame_is_active(quote_frame):
-            return _pending_quote_selection_from_quote_frame(
-                quote_frame,
-                legacy_selection=legacy_selection,
-            )
-        return None
-    return legacy_selection
-
-
-def _quote_line_from_resolved_selection(
-    item: ResolvedPurchaseSelectionItem,
-) -> QuoteLine | None:
-    pending_item = _pending_quote_item_from_resolved(item)
-    sku = pending_item.get("sku")
-    quantity = pending_item.get("quantity")
-    if not isinstance(sku, str) or not sku.strip():
-        return None
-    if quantity is None:
-        return None
-    try:
-        quantity_int = int(quantity)
-    except (TypeError, ValueError):
-        return None
-    if quantity_int <= 0:
-        return None
-    return QuoteLine(
-        sku=sku.strip(),
-        quantity=quantity_int,
-        product_id=(
-            str(pending_item["product_id"]) if pending_item.get("product_id") else None
-        ),
-        display_name=(
-            str(pending_item["display_name"])
-            if pending_item.get("display_name")
-            else None
-        ),
-        unit_price=(
-            float(pending_item["unit_price"])
-            if pending_item.get("unit_price") is not None
-            else None
-        ),
-        currency=(
-            str(pending_item["currency"]) if pending_item.get("currency") else None
-        ),
-        item_candidate=item.requested.item_candidate or item.requested.sku,
-    )
-
-
-def _quote_line_from_quotation_item(
-    item: QuotationItem,
-    *,
-    item_candidate: str | None = None,
-) -> QuoteLine | None:
-    sku = item.sku.strip()
-    if not sku or item.quantity <= 0:
-        return None
-    return QuoteLine(
-        sku=sku,
-        quantity=item.quantity,
-        item_candidate=item_candidate or sku,
-    )
-
-
-def _quote_unresolved_line_from_purchase_selection_item(
-    item: PurchaseSelectionItem,
-) -> QuoteUnresolvedLine | None:
-    item_candidate = item.item_candidate.strip()
-    if item.quantity <= 0 or not item_candidate:
-        return None
-    return QuoteUnresolvedLine(
-        sku=item.sku.strip() if item.sku else None,
-        quantity=item.quantity,
-        item_candidate=item_candidate,
-    )
-
-
-def _quote_unresolved_line_from_exact_candidate(
-    item: ExactQuoteCandidate,
-) -> QuoteUnresolvedLine | None:
-    item_candidate = item.item_candidate.strip()
-    if item.quantity <= 0 or not item_candidate:
-        return None
-    return QuoteUnresolvedLine(
-        sku=item.sku.strip() if item.sku else None,
-        quantity=item.quantity,
-        item_candidate=item_candidate,
-    )
-
-
-def _build_quote_frame(
-    *,
-    conversation: Conversation,
-    source: str,
-    lines: Iterable[QuoteLine | None],
-    unresolved_items: Iterable[QuoteUnresolvedLine | None] = (),
-    has_unresolved_items: bool = False,
-) -> QuoteFrame | None:
-    valid_lines = [line for line in lines if line is not None and line.is_valid]
-    valid_unresolved_items = [
-        item for item in unresolved_items if item is not None and item.is_valid
-    ]
-    has_unresolved = has_unresolved_items or bool(valid_unresolved_items)
-    if not valid_lines and not valid_unresolved_items:
-        return None
-    return QuoteFrame(
-        frame_id=_quote_frame_id(
-            conversation=conversation,
-            source=source,
-            lines=valid_lines,
-            unresolved_items=valid_unresolved_items,
-        ),
-        source=source,
-        status="repair_required" if has_unresolved else "collecting_details",
-        lines=valid_lines,
-        unresolved_items=valid_unresolved_items,
-        quote_details=_quote_details_model_from_metadata(conversation),
-        missing_quote_fields=["items and quantities"] if has_unresolved else [],
-    )
-
-
-def _quote_frame_id(
-    *,
-    conversation: Conversation,
-    source: str,
-    lines: Iterable[QuoteLine],
-    unresolved_items: Iterable[QuoteUnresolvedLine],
-) -> str:
-    line_parts = [
-        f"{line.sku.strip()}:{line.quantity}" for line in lines if line.is_valid
-    ]
-    unresolved_parts = [
-        f"{item.sku or ''}:{item.quantity}:{item.item_candidate.strip()}"
-        for item in unresolved_items
-        if item.is_valid
-    ]
-    digest_input = "|".join(
-        [
-            str(conversation.id),
-            source,
-            *line_parts,
-            *unresolved_parts,
-        ]
-    )
-    digest = hashlib.sha256(digest_input.encode("utf-8")).hexdigest()[:16]
-    return f"qf-{digest}"
-
-
-def _store_quote_frame_metadata(
-    conversation: Conversation,
-    frame: QuoteFrame | None,
-) -> None:
-    if frame is None:
-        conversation.metadata_ = quote_frame_cleared_metadata(conversation.metadata_)
-        return
-    conversation.metadata_ = quote_frame_to_metadata(conversation.metadata_, frame)
-
-
-def _quote_items_from_frame(frame: QuoteFrame | None) -> tuple[QuotationItem, ...]:
-    if not quote_frame_is_active(frame):
-        return ()
-    return tuple(
-        QuotationItem(sku=line.sku.strip(), quantity=line.quantity)
-        for line in frame.lines
-        if line.is_valid
     )
 
 
@@ -4896,187 +2413,6 @@ def _quote_frame_source_refs(frame: QuoteFrame) -> list[dict[str, Any]]:
         for index, line in enumerate(frame.lines, start=1)
         if line.is_valid
     ]
-
-
-async def _store_pending_quote_selection(
-    db: AsyncSession,
-    conversation: Conversation,
-    resolution: PurchaseSelectionResolution,
-) -> None:
-    metadata = dict(conversation.metadata_ or {})
-    if not resolution.resolved and not resolution.unresolved:
-        metadata.pop(PENDING_QUOTE_SELECTION_KEY, None)
-        conversation.metadata_ = metadata
-        _store_quote_frame_metadata(conversation, None)
-        try:
-            await db.flush()
-        except Exception:
-            logger.warning(
-                "Failed to flush cleared pending quote selection for conversation %s",
-                conversation.id,
-                exc_info=True,
-            )
-        return
-
-    metadata[PENDING_QUOTE_SELECTION_KEY] = {
-        "source": "selection_confirmation",
-        "items": [
-            item
-            for item in (
-                _pending_quote_item_from_resolved(resolved_item)
-                for resolved_item in resolution.resolved
-            )
-            if item["sku"] and item["quantity"] > 0
-        ],
-        "unresolved_items": [
-            {
-                "sku": item.sku,
-                "quantity": item.quantity,
-                "item_candidate": item.item_candidate,
-            }
-            for item in resolution.unresolved
-        ],
-    }
-    workflow = quote_workflow_from_metadata(metadata)
-    if workflow.consent is not QuoteConsent.GRANTED:
-        metadata = quote_workflow_to_metadata(
-            metadata,
-            QuoteWorkflowState(
-                consent=workflow.consent,
-                lifecycle=QuoteLifecycle.QUOTE_OFFERED,
-            ),
-        )
-    conversation.metadata_ = metadata
-    _store_quote_frame_metadata(
-        conversation,
-        _build_quote_frame(
-            conversation=conversation,
-            source="selection_confirmation",
-            lines=(
-                _quote_line_from_resolved_selection(resolved_item)
-                for resolved_item in resolution.resolved
-            ),
-            unresolved_items=(
-                _quote_unresolved_line_from_purchase_selection_item(unresolved_item)
-                for unresolved_item in resolution.unresolved
-            ),
-            has_unresolved_items=bool(resolution.unresolved),
-        ),
-    )
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to flush pending quote selection for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-
-
-async def _store_pending_sales_order_quote(
-    db: AsyncSession,
-    conversation: Conversation,
-    *,
-    resolved_items: list[QuotationItem],
-    unresolved_items: tuple[ExactQuoteCandidate, ...],
-    source: str = "sales_order_quote",
-    item_candidates_by_sku: Mapping[str, str] | None = None,
-) -> None:
-    metadata = dict(conversation.metadata_ or {})
-    metadata[PENDING_QUOTE_SELECTION_KEY] = {
-        "source": source,
-        "items": [
-            {"sku": item.sku, "quantity": item.quantity}
-            for item in resolved_items
-            if item.sku and item.quantity > 0
-        ],
-        "unresolved_items": [
-            {
-                "sku": item.sku,
-                "quantity": item.quantity,
-                "item_candidate": item.item_candidate,
-            }
-            for item in unresolved_items
-            if item.quantity > 0 and item.item_candidate
-        ],
-    }
-    conversation.metadata_ = metadata
-    candidates_by_sku = dict(item_candidates_by_sku or {})
-    _store_quote_frame_metadata(
-        conversation,
-        _build_quote_frame(
-            conversation=conversation,
-            source=source,
-            lines=(
-                _quote_line_from_quotation_item(
-                    item,
-                    item_candidate=candidates_by_sku.get(item.sku.strip()),
-                )
-                for item in resolved_items
-            ),
-            unresolved_items=(
-                _quote_unresolved_line_from_exact_candidate(item)
-                for item in unresolved_items
-            ),
-            has_unresolved_items=bool(unresolved_items),
-        ),
-    )
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to flush pending sales order quote for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-
-
-async def _store_pending_exact_quote(
-    db: AsyncSession,
-    conversation: Conversation,
-    items: list[QuotationItem],
-    unresolved_items: tuple[ExactQuoteCandidate, ...] = (),
-) -> None:
-    metadata = dict(conversation.metadata_ or {})
-    metadata[PENDING_QUOTE_SELECTION_KEY] = {
-        "source": "exact_quote",
-        "items": [
-            {"sku": item.sku.strip(), "quantity": item.quantity}
-            for item in items
-            if item.sku.strip() and item.quantity > 0
-        ],
-        "unresolved_items": [
-            {
-                "sku": item.sku,
-                "quantity": item.quantity,
-                "item_candidate": item.item_candidate,
-            }
-            for item in unresolved_items
-            if item.quantity > 0 and item.item_candidate
-        ],
-    }
-    conversation.metadata_ = metadata
-    _store_quote_frame_metadata(
-        conversation,
-        _build_quote_frame(
-            conversation=conversation,
-            source="exact_quote",
-            lines=(_quote_line_from_quotation_item(item) for item in items),
-            unresolved_items=(
-                _quote_unresolved_line_from_exact_candidate(item)
-                for item in unresolved_items
-            ),
-            has_unresolved_items=bool(unresolved_items),
-        ),
-    )
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to flush pending exact quote for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
 
 
 def _quote_customer_details_from_metadata(
@@ -5894,46 +3230,6 @@ def _unlabeled_company_or_customer_type(value: str) -> dict[str, str]:
     return {"company": value}
 
 
-def _quote_brief_confirmation_message(details: Mapping[str, str]) -> str:
-    lines = ["Please confirm I understood correctly:"]
-    if details.get("name"):
-        lines.append(f"Name: {details['name']}")
-    if details.get("company"):
-        lines.append(f"Company: {details['company']}")
-    elif details.get("customer_type"):
-        lines.append("Company: Individual")
-    if details.get("email"):
-        lines.append(f"Email: {details['email']}")
-    if details.get("address"):
-        lines.append(f"Address: {details['address']}")
-    lines.append("Reply yes to use these details, or send the corrected details.")
-    return "\n".join(lines)
-
-
-async def _store_pending_quote_brief_confirmation(
-    db: AsyncSession,
-    conversation: Conversation,
-    details: Mapping[str, str],
-) -> None:
-    metadata = dict(conversation.metadata_ or {})
-    metadata[PENDING_QUOTE_BRIEF_CONFIRMATION_KEY] = {
-        key: value.strip()
-        for key, value in details.items()
-        if key in {"name", "company", "customer_type", "email", "phone", "address"}
-        and isinstance(value, str)
-        and value.strip()
-    }
-    conversation.metadata_ = metadata
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to flush quote brief confirmation for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-
-
 def _looks_like_terse_delivery_address(value: str) -> bool:
     normalized = _normalize_text(value)
     if not normalized or len(normalized) > 160:
@@ -6114,39 +3410,6 @@ def _is_product_memory_note(text: str) -> bool:
     return has_update_signal or (
         has_named_product and bool(_QUANTITY_SIGNAL_RE.search(normalized))
     )
-
-
-def _extract_sales_memory_updates(text: str) -> dict[str, str]:
-    stripped = " ".join(_strip_synthetic_test_marker(text).split())
-    normalized = _normalize_text(stripped)
-    if not normalized:
-        return {}
-
-    updates: dict[str, str] = {}
-    if _is_product_memory_note(stripped):
-        updates["latest_product_note"] = stripped[:500]
-
-    delivery_timing_match = re.search(
-        r"\b(?:(?:fast|quick|urgent)\s+)?delivery\s+"
-        r"(?:within|in|by)\s+"
-        r"(?P<timing>\d{1,2}\s*(?:-|to)\s*\d{1,2}\s*days?|\d{1,2}\s*days?|"
-        r"tomorrow|today|next\s+week)\b",
-        normalized,
-    )
-    if delivery_timing_match:
-        updates["delivery_timing"] = delivery_timing_match.group("timing")
-
-    if re.search(
-        r"\b(?:assembly|installation|setup)\s+(?:is\s+)?required\b",
-        normalized,
-    ) or re.search(
-        r"\b(?:need|needs|include|includes|require|requires|with|add)\s+"
-        r"(?:assembly|installation|setup)\b",
-        normalized,
-    ):
-        updates["assembly_required"] = "yes"
-
-    return updates
 
 
 _SALES_OPPORTUNITY_REQUEST_RE = re.compile(
@@ -6449,58 +3712,6 @@ def _record_customer_facts_trace(
 
     state["traces"] = [*traces, trace][-CUSTOMER_FACTS_TRACE_LIMIT:]
     metadata[CUSTOMER_FACTS_METADATA_KEY] = state
-    conversation.metadata_ = metadata
-
-
-def _bounded_order_runtime_trace(
-    trace: Mapping[str, Any] | None,
-) -> dict[str, Any] | None:
-    if not isinstance(trace, Mapping):
-        return None
-    phase_ms_raw = trace.get("phase_ms")
-    phase_ms: dict[str, float] = {}
-    if isinstance(phase_ms_raw, Mapping):
-        for phase in ("load_state", "extract_intent", "apply_reducer", "decide"):
-            value = phase_ms_raw.get(phase)
-            if isinstance(value, (int, float)):
-                phase_ms[phase] = round(max(float(value), 0.0), 3)
-    payload: dict[str, Any] = {
-        "route": str(trace.get("route") or "legacy_fallback")[:64],
-        "handled": bool(trace.get("handled")),
-        "source": str(trace.get("source") or "unknown")[:64],
-        "frame_id": str(trace.get("frame_id") or "")[:128] or None,
-        "frame_status": str(trace.get("frame_status") or "")[:32] or None,
-        "resolved_line_count": int(trace.get("resolved_line_count") or 0),
-        "unresolved_line_count": int(trace.get("unresolved_line_count") or 0),
-        "legacy_migration_read": bool(trace.get("legacy_migration_read")),
-        "line_count": int(trace.get("line_count") or 0),
-        "total_ms": round(max(float(trace.get("total_ms") or 0.0), 0.0), 3),
-        "phase_ms": phase_ms,
-    }
-    reason_codes = trace.get("reason_codes")
-    if isinstance(reason_codes, list):
-        payload["reason_codes"] = [str(code)[:64] for code in reason_codes[:5]]
-    else:
-        payload["reason_codes"] = []
-    return payload
-
-
-def _record_order_runtime_trace(
-    conversation: Conversation,
-    trace: Mapping[str, Any] | None,
-) -> None:
-    payload = _bounded_order_runtime_trace(trace)
-    if payload is None:
-        return
-    metadata = dict(conversation.metadata_ or {})
-    state = metadata.get(ORDER_RUNTIME_METADATA_KEY)
-    if not isinstance(state, dict):
-        state = {}
-    traces = state.get("traces")
-    if not isinstance(traces, list):
-        traces = []
-    state["traces"] = [*traces, payload][-ORDER_RUNTIME_TRACE_LIMIT:]
-    metadata[ORDER_RUNTIME_METADATA_KEY] = state
     conversation.metadata_ = metadata
 
 
@@ -7076,54 +4287,6 @@ def _looks_like_budget_address_artifact(value: str) -> bool:
     return normalized.strip(" ,.").isdigit()
 
 
-def _exact_quote_candidate_from_frame(
-    frame: Mapping[str, Any] | None,
-) -> ExactQuoteCandidate | None:
-    if frame is None:
-        return None
-    raw_items = frame.get("items")
-    if not isinstance(raw_items, list) or len(raw_items) != 1:
-        return None
-    raw_item = raw_items[0]
-    if not isinstance(raw_item, Mapping):
-        return None
-    quantity = raw_item.get("quantity")
-    item_candidate = raw_item.get("item_candidate")
-    if quantity is None or not isinstance(item_candidate, str):
-        return None
-    try:
-        quantity_int = int(quantity)
-    except (TypeError, ValueError):
-        return None
-    if quantity_int <= 0 or not item_candidate.strip():
-        return None
-    sku = raw_item.get("sku")
-    return ExactQuoteCandidate(
-        quantity=quantity_int,
-        item_candidate=item_candidate.strip(),
-        sku=sku.strip() if isinstance(sku, str) and sku.strip() else None,
-    )
-
-
-async def _clear_quote_intent_frame(
-    db: AsyncSession,
-    conversation: Conversation,
-) -> None:
-    metadata = dict(conversation.metadata_ or {})
-    if QUOTE_INTENT_FRAME_KEY not in metadata:
-        return
-    metadata.pop(QUOTE_INTENT_FRAME_KEY, None)
-    conversation.metadata_ = metadata
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to clear quote intent frame for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-
-
 async def _store_applied_bot_rules(
     db: AsyncSession,
     conversation: Conversation,
@@ -7505,241 +4668,6 @@ def _last_assistant_offered_single_stock_price_quote_option(
     )
 
 
-async def _store_pending_quote_from_last_assistant_selection(
-    db: AsyncSession,
-    conversation: Conversation,
-    recent_history: list[str] | None,
-    *,
-    require_single: bool = False,
-) -> Mapping[str, Any] | None:
-    candidates = _quote_candidates_from_last_assistant_selection(recent_history)
-    if not candidates:
-        return None
-    if require_single and len(candidates) != 1:
-        return None
-
-    resolved_items: list[QuotationItem] = []
-    unresolved_items: list[ExactQuoteCandidate] = []
-    item_candidates_by_sku: dict[str, str] = {}
-    for candidate in candidates:
-        resolved_sku = await _resolve_exact_quote_candidate_sku(db, candidate)
-        if resolved_sku:
-            resolved_items.append(
-                QuotationItem(sku=resolved_sku, quantity=candidate.quantity)
-            )
-            item_candidates_by_sku[resolved_sku] = candidate.item_candidate
-        else:
-            unresolved_items.append(candidate)
-
-    if not resolved_items and not unresolved_items:
-        return None
-
-    await _store_pending_sales_order_quote(
-        db,
-        conversation,
-        resolved_items=resolved_items,
-        unresolved_items=tuple(unresolved_items),
-        source="assistant_prose_repair",
-        item_candidates_by_sku=item_candidates_by_sku,
-    )
-    return _pending_quote_selection_from_metadata(conversation)
-
-
-def _pending_quote_selection_from_metadata(
-    conversation: Conversation,
-) -> Mapping[str, Any] | None:
-    metadata = (
-        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
-    )
-    selection = metadata.get(PENDING_QUOTE_SELECTION_KEY)
-    return selection if isinstance(selection, Mapping) else None
-
-
-def _pending_quote_selection_from_quote_frame(
-    frame: QuoteFrame | None,
-    *,
-    legacy_selection: Mapping[str, Any] | None = None,
-) -> Mapping[str, Any] | None:
-    if not quote_frame_is_active(frame):
-        return None
-    unresolved_items = [
-        {
-            "sku": line.sku,
-            "quantity": line.quantity,
-            "item_candidate": line.item_candidate,
-        }
-        for line in frame.unresolved_items
-        if line.is_valid
-    ]
-    if not unresolved_items and _quote_frame_has_unresolved_items(frame):
-        unresolved_items = _pending_quote_unresolved_items_from_metadata(
-            legacy_selection
-        )
-    if not unresolved_items and _quote_frame_has_unresolved_items(frame):
-        unresolved_items = [{"item_candidate": "canonical quote frame repair required"}]
-    return {
-        "source": frame.source,
-        "items": [
-            {"sku": line.sku, "quantity": line.quantity}
-            for line in frame.lines
-            if line.is_valid
-        ],
-        "unresolved_items": unresolved_items,
-    }
-
-
-def _quote_frame_has_unresolved_items(frame: QuoteFrame | None) -> bool:
-    if not quote_frame_is_active(frame):
-        return False
-    return (
-        any(item.is_valid for item in frame.unresolved_items)
-        or frame.status == "repair_required"
-        or "items and quantities"
-        in {item.casefold() for item in frame.missing_quote_fields}
-    )
-
-
-def _active_quote_items(
-    conversation: Conversation,
-    selection: Mapping[str, Any] | None,
-) -> tuple[QuotationItem, ...]:
-    frame = _quote_frame_from_conversation(conversation)
-    if quote_frame_is_active(frame):
-        return _quote_items_from_frame(frame)
-    if frame is not None or _conversation_has_canonical_quote_frame(conversation):
-        return ()
-    if selection is None:
-        return ()
-    return _pending_quote_items_from_metadata(selection)
-
-
-def _active_quote_has_unresolved_items(
-    conversation: Conversation,
-    selection: Mapping[str, Any] | None,
-) -> bool:
-    frame = _quote_frame_from_conversation(conversation)
-    if quote_frame_is_active(frame):
-        return _quote_frame_has_unresolved_items(frame)
-    if frame is not None or _conversation_has_canonical_quote_frame(conversation):
-        return False
-    return selection is not None and _pending_quote_has_unresolved_items(selection)
-
-
-def _pending_quote_items_from_metadata(
-    selection: Mapping[str, Any],
-) -> tuple[QuotationItem, ...]:
-    raw_items = selection.get("items")
-    if not isinstance(raw_items, list):
-        return ()
-
-    items: list[QuotationItem] = []
-    for raw_item in raw_items:
-        if not isinstance(raw_item, Mapping):
-            continue
-        sku = raw_item.get("sku")
-        quantity = raw_item.get("quantity")
-        if not isinstance(sku, str) or not sku.strip():
-            continue
-        if quantity is None:
-            continue
-        try:
-            quantity_int = int(quantity)
-        except (TypeError, ValueError):
-            continue
-        if quantity_int <= 0:
-            continue
-        items.append(QuotationItem(sku=sku.strip(), quantity=quantity_int))
-
-    return tuple(items)
-
-
-def _pending_quote_has_unresolved_items(selection: Mapping[str, Any]) -> bool:
-    raw_items = selection.get("unresolved_items")
-    return isinstance(raw_items, list) and len(raw_items) > 0
-
-
-def _pending_quote_unresolved_items_from_metadata(
-    selection: Mapping[str, Any] | None,
-) -> list[dict[str, Any]]:
-    if selection is None:
-        return []
-    raw_items = selection.get("unresolved_items")
-    if not isinstance(raw_items, list):
-        return []
-
-    unresolved_items: list[dict[str, Any]] = []
-    for raw_item in raw_items:
-        if not isinstance(raw_item, Mapping):
-            continue
-        item_candidate = raw_item.get("item_candidate")
-        quantity = raw_item.get("quantity")
-        if not isinstance(item_candidate, str) or not item_candidate.strip():
-            continue
-        if quantity is None:
-            continue
-        try:
-            quantity_int = int(quantity)
-        except (TypeError, ValueError):
-            continue
-        if quantity_int <= 0:
-            continue
-        raw_sku = raw_item.get("sku")
-        unresolved_items.append(
-            {
-                "sku": raw_sku.strip() if isinstance(raw_sku, str) else None,
-                "quantity": quantity_int,
-                "item_candidate": item_candidate.strip(),
-            }
-        )
-    return unresolved_items
-
-
-def _is_pending_sales_order_quote(selection: Mapping[str, Any]) -> bool:
-    return selection.get("source") == "sales_order_quote"
-
-
-def _accepts_exact_item_quote_followup(selection: Mapping[str, Any]) -> bool:
-    return selection.get("source") in {"exact_quote", "selection_confirmation"}
-
-
-def _sales_order_unresolved_candidates_from_metadata(
-    selection: Mapping[str, Any],
-) -> tuple[ExactQuoteCandidate, ...]:
-    raw_items = selection.get("unresolved_items")
-    if not isinstance(raw_items, list):
-        return ()
-
-    candidates: list[ExactQuoteCandidate] = []
-    for raw_item in raw_items:
-        if not isinstance(raw_item, Mapping):
-            continue
-        item_candidate = raw_item.get("item_candidate")
-        if not isinstance(item_candidate, str) or not item_candidate.strip():
-            continue
-        quantity = raw_item.get("quantity")
-        if quantity is None:
-            continue
-        try:
-            quantity_int = int(quantity)
-        except (TypeError, ValueError):
-            continue
-        if quantity_int <= 0:
-            continue
-        sku = raw_item.get("sku")
-        candidates.append(
-            ExactQuoteCandidate(
-                quantity=quantity_int,
-                item_candidate=_clean_sales_order_item_candidate(item_candidate),
-                sku=(
-                    _normalize_sku_homoglyphs(sku).strip().upper()
-                    if isinstance(sku, str) and sku.strip()
-                    else None
-                ),
-            )
-        )
-    return tuple(candidates)
-
-
 def _exact_quote_unresolved_candidates_from_metadata(
     selection: Mapping[str, Any],
 ) -> tuple[ExactQuoteCandidate, ...]:
@@ -7776,38 +4704,6 @@ def _exact_quote_unresolved_candidates_from_metadata(
             )
         )
     return tuple(candidates)
-
-
-def _sales_order_followup_candidates(
-    *,
-    selection: Mapping[str, Any],
-    combined_text: str,
-    masked_text: str,
-) -> tuple[ExactQuoteCandidate, ...]:
-    explicit_items = _extract_sales_order_quote_items(masked_text)
-    if explicit_items is None:
-        explicit_items = _extract_sales_order_quote_items(combined_text)
-    if explicit_items:
-        return explicit_items
-
-    unresolved_items = _sales_order_unresolved_candidates_from_metadata(selection)
-    if len(unresolved_items) != 1:
-        return ()
-
-    item_candidate = _clean_sales_order_item_candidate(combined_text)
-    if not _looks_like_exact_item_candidate(item_candidate):
-        item_candidate = _clean_sales_order_item_candidate(masked_text)
-    if not _looks_like_exact_item_candidate(item_candidate):
-        return ()
-
-    sku = _extract_sku_signal(item_candidate)
-    return (
-        ExactQuoteCandidate(
-            quantity=unresolved_items[0].quantity,
-            item_candidate=item_candidate,
-            sku=sku,
-        ),
-    )
 
 
 def _extract_exact_quote_clarification_candidate(
@@ -7862,207 +4758,6 @@ def _exact_quote_followup_candidates(
             return (candidate,)
 
     return ()
-
-
-def _has_quote_resume_consultative_priority(text: str) -> bool:
-    normalized = _normalize_text(_normalize_sku_homoglyphs(text))
-    if not normalized:
-        return False
-    if _has_explicit_quote_hold(normalized):
-        return True
-
-    for raw_clause in _QUOTE_RESUME_CLAUSE_SPLIT_RE.split(normalized):
-        clause = _QUOTE_RESUME_DETAIL_REVISION_RE.sub(" ", raw_clause).strip()
-        if not clause:
-            continue
-        if _QUOTE_RESUME_PRICE_OBJECTION_RE.search(clause):
-            return True
-        has_product_target = bool(
-            any(_contains_catalog_term(clause, term) for term in _MIXED_PRODUCT_TERMS)
-            or _SKU_SIGNAL_RE.search(clause)
-            or _CATALOG_OPTION_CONTEXT_RE.search(clause)
-        )
-        has_product_refusal = _QUOTE_RESUME_PRODUCT_REFUSAL_RE.search(clause)
-        if has_product_refusal and (
-            has_product_target or _QUOTE_RESUME_ANAPHORIC_PRODUCT_RE.search(clause)
-        ):
-            return True
-        if has_product_target and (
-            _QUOTE_RESUME_PRODUCT_REVISION_ACTION_RE.search(clause)
-            or _QUOTE_RESUME_PRODUCT_REVISION_MODIFIER_RE.search(clause)
-        ):
-            return True
-    return False
-
-
-def _has_affirmative_quote_resume_intent(text: str) -> bool:
-    normalized = _normalize_text(text)
-    if not normalized or _has_quote_resume_consultative_priority(normalized):
-        return False
-    return any(
-        re.search(
-            rf"(?<!\w){re.escape(phrase)}(?!\w)",
-            normalized,
-            flags=re.UNICODE,
-        )
-        is not None
-        for phrase in (
-            "yes",
-            "ok",
-            "okay",
-            "proceed",
-            "go ahead",
-            "please send",
-            "send it",
-            "send quotation",
-            "prepare quotation",
-            "prepare the quotation",
-            "نعم",
-            "حسنا",
-            "حسنًا",
-            "موافق",
-            "تابع",
-            "أرسلها",
-            "ارسلها",
-        )
-    )
-
-
-def _should_resume_pending_quote_selection(
-    *,
-    combined_text: str,
-    masked_text: str,
-    customer_details: Mapping[str, str],
-) -> bool:
-    return (
-        bool(customer_details)
-        or is_quote_or_proposal_request(combined_text)
-        or is_quote_or_proposal_request(masked_text)
-        or _has_affirmative_quote_resume_intent(combined_text)
-    )
-
-
-def _pending_quote_missing_items_message(language: str) -> str:
-    if is_arabic_customer_language(language):
-        return (
-            "وصلتني بياناتك، لكنني ما زلت بحاجة إلى تحديد المنتجات والكميات "
-            "لكل منتج قبل تجهيز عرض السعر."
-        )
-    return (
-        "I have your details, but I still need the exact item(s) and quantity "
-        "for each item before I can prepare the quotation."
-    )
-
-
-def _quote_frame_repair_required_message(language: str) -> str:
-    if is_arabic_customer_language(language):
-        return (
-            "وصلتني بيانات العميل، لكنني لا أرى إطار عرض سعر محفوظًا للمنتجات "
-            "السابقة. يرجى تأكيد المنتجات والكميات من الملخص السابق كي لا أجهز "
-            "عرض سعر خاطئ."
-        )
-    return (
-        "I received the customer details, but I do not have a saved quote frame "
-        "for the previous items. Please confirm the products and quantities from "
-        "the summary so I do not prepare the wrong quotation."
-    )
-
-
-async def _clear_pending_quote_selection(
-    db: AsyncSession,
-    conversation: Conversation,
-) -> None:
-    metadata = dict(conversation.metadata_ or {})
-    has_pending_selection = PENDING_QUOTE_SELECTION_KEY in metadata
-    metadata.pop(PENDING_QUOTE_SELECTION_KEY, None)
-    quote_frame = quote_frame_from_metadata(metadata)
-    if quote_frame is not None:
-        metadata = quote_frame_to_metadata(
-            metadata,
-            quote_frame.model_copy(update={"status": "quoted"}, deep=True),
-        )
-    if not has_pending_selection and quote_frame is None:
-        return
-    conversation.metadata_ = metadata
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to clear pending quote selection for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
-
-
-async def _suspend_quote_workflow(
-    db: AsyncSession,
-    conversation: Conversation,
-    *,
-    consent: QuoteConsent | None = None,
-) -> None:
-    """Clear quote-only routing state after an explicit customer hold."""
-    metadata = dict(conversation.metadata_ or {})
-    metadata.pop(PENDING_QUOTE_SELECTION_KEY, None)
-    metadata.pop(QUOTE_INTENT_FRAME_KEY, None)
-    metadata.pop(PENDING_QUOTE_BRIEF_CONFIRMATION_KEY, None)
-    metadata.pop(QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY, None)
-    metadata = quote_frame_cleared_metadata(metadata)
-    current_workflow = quote_workflow_from_metadata(metadata)
-    resolved_consent = consent or current_workflow.consent
-    metadata = quote_workflow_to_metadata(
-        metadata,
-        QuoteWorkflowState(
-            consent=resolved_consent,
-            lifecycle=(
-                QuoteLifecycle.QUOTE_OFFERED
-                if resolved_consent is QuoteConsent.DEFERRED
-                else QuoteLifecycle.CONSULTATION
-            ),
-        ),
-    )
-    dialogue_state = DialogueState.load(metadata)
-    quote_details_frames = [
-        frame.model_copy(update={"status": "interrupted"}, deep=True)
-        if frame.flow == "quote_details" and frame.status == "active"
-        else frame
-        for frame in dialogue_state.expected_answer_frames
-    ]
-    if (
-        dialogue_state.active_flow == "quote_details"
-        or dialogue_state.slots.selected_items
-        or quote_details_frames != dialogue_state.expected_answer_frames
-    ):
-        dialogue_state = dialogue_state.model_copy(
-            update={
-                "active_flow": (
-                    "product_selection"
-                    if dialogue_state.active_flow in {None, "quote_details"}
-                    else dialogue_state.active_flow
-                ),
-                "slots": dialogue_state.slots.model_copy(
-                    update={"selected_items": []},
-                    deep=True,
-                ),
-                "last_question": (
-                    None
-                    if dialogue_state.last_question is not None
-                    and dialogue_state.last_question.flow == "quote_details"
-                    else dialogue_state.last_question
-                ),
-                "expected_answer_frames": quote_details_frames,
-            },
-            deep=True,
-        )
-        metadata = dialogue_state.to_metadata(metadata)
-    conversation.metadata_ = metadata
-    try:
-        await db.flush()
-    except Exception:
-        logger.warning(
-            "Failed to suspend quote workflow for conversation %s",
-            conversation.id,
-            exc_info=True,
-        )
 
 
 def _catalog_mismatch_customer_message() -> str:
@@ -8255,28 +4950,6 @@ def _exact_quote_fail_closed_message(*, manager_notified: bool = False) -> str:
         "I couldn't finalize the exact quotation automatically, and I haven't "
         "made any unverified price or availability commitment. Please try again "
         "in a moment or continue with the verified options already discussed."
-    )
-
-
-def _sales_order_unresolved_items_message(
-    items: tuple[ExactQuoteCandidate, ...],
-) -> str:
-    item_list = ", ".join(f"{item.quantity} x {item.item_candidate}" for item in items)
-    return (
-        "I can prepare a sales order, but I need to confirm the exact catalog "
-        f"item(s) for: {item_list}. Please share the SKU or choose the exact "
-        "catalog option for each unresolved item."
-    )
-
-
-def _exact_quote_unresolved_items_message(
-    items: tuple[ExactQuoteCandidate, ...],
-) -> str:
-    item_list = ", ".join(f"{item.quantity} x {item.item_candidate}" for item in items)
-    return (
-        "Before I prepare the quotation, please confirm the exact catalog item "
-        f"or SKU for: {item_list}. I will use that to prepare the quotation "
-        "accurately."
     )
 
 
@@ -8886,30 +5559,6 @@ sales_agent = Agent(
     ),
 )
 sales_agent.output_validator(validate_customer_writes)
-
-
-# The prose rewrite is a text transformation, not a sales turn, and it gets its
-# own agent because the product agent's prompt drowns it out. Measured on
-# 2026-08-07: given only the rewrite directive this model carries every
-# placeholder through untouched, and given the same directive underneath the
-# product system prompt it ignores them entirely and writes the figures out --
-# which is then discarded, so the customer gets the template. No tools, no
-# catalog, no persona: nothing here can reach a side effect.
-async def _no_tools(
-    ctx: RunContext[SalesDeps], tool_defs: list[ToolDefinition]
-) -> list[ToolDefinition]:
-    return []
-
-
-prose_agent = Agent(
-    model=model,
-    deps_type=SalesDeps,
-    prepare_tools=_no_tools,
-    retries=0,
-    model_settings=model_settings_for_path(
-        PATH_CORE_CHAT, model_name=CORE_CHAT_MODEL_NAME
-    ),
-)
 
 
 @sales_agent.instructions
@@ -11381,21 +8030,7 @@ async def process_message(
 
     from src.llm.message_processor import process_message_impl
 
-    # Both routes are adapter-owned, and two AST tests hold them to being
-    # selected here rather than re-inlined. `tj-rt7w.6` moved the orchestration
-    # sequence out to `message_processor` and kept these calls alive with
-    # `*args: Any` wrappers, which is the only reason those tests still pass.
-    # They are typed now; `tj-rt7w.10` removes them by putting the orchestration
-    # back where the tests say it lives.
-    async def pending_reference_route(**kwargs: Any) -> PendingReferenceRoute:
-        return await _pending_reference_route_for_turn(**kwargs)
-
-    async def order_quote_route(**kwargs: Any) -> LLMResponse | None:
-        return await _order_quote_route_for_turn(**kwargs)
-
     return await process_message_impl(
-        pending_reference_route=pending_reference_route,
-        order_quote_route=order_quote_route,
         conversation_id=conversation_id,
         combined_text=combined_text,
         db=db,

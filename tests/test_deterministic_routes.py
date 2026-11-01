@@ -22,10 +22,8 @@ from src.llm.deterministic_routes import (
     ROUTES_THAT_ONLY_ASK,
 )
 
-_ROUTE_SOURCES = ("src/llm/engine.py", "src/llm/order_quote_routes.py")
-_RESPONSE_BUILDERS = frozenset(
-    {"_build_static_response", "build_static_response", "_verified_prose_response"}
-)
+_ROUTE_SOURCES = ("src/llm/engine.py", "src/llm/message_processor.py")
+_RESPONSE_BUILDERS = frozenset({"_build_static_response", "build_static_response"})
 
 
 def _literal_route_label(node: ast.expr) -> str | None:
@@ -63,11 +61,6 @@ def _labels_in_source() -> dict[str, tuple[str, int]]:
                     (kw.value for kw in node.keywords if kw.arg == "model_name"),
                     node.args[1] if len(node.args) > 1 else None,
                 )
-            elif name == "OrderQuoteSideEffectPlan":
-                argument = next(
-                    (kw.value for kw in node.keywords if kw.arg == "model_suffix"),
-                    None,
-                )
             if argument is None:
                 continue
             label = _literal_route_label(argument)
@@ -95,14 +88,7 @@ def test_the_registry_does_not_describe_routes_that_no_longer_exist() -> None:
     """A retired route must leave the registry with it, or the record lies."""
 
     in_source = set(_labels_in_source())
-    # Labels built from a variable are invisible to the scan above.
-    assembled_at_runtime = {
-        "sales-opportunity",
-        "sales-opportunity-unverified",
-        "verified-policy",
-        "verified-catalog-plan",
-    }
-    stale = set(DETERMINISTIC_CUSTOMER_ROUTES) - in_source - assembled_at_runtime
+    stale = set(DETERMINISTIC_CUSTOMER_ROUTES) - in_source
 
     assert not stale, f"registry describes routes that are gone: {sorted(stale)}"
 
@@ -149,15 +135,7 @@ def test_every_route_that_carries_a_write_is_marked_as_one() -> None:
         if route.carries_write
     }
 
-    assert writers == {
-        "selection-confirmation",
-        "exact-quote-deterministic",
-        "quote-resume",
-        "sales-order-quote",
-        "sales-order-quote-resume",
-        "sales-opportunity",
-        "sales-opportunity-unverified",
-    }
+    assert writers == {"quotation-completion"}
 
 
 @pytest.mark.parametrize("label", sorted(DETERMINISTIC_CUSTOMER_ROUTES))

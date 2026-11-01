@@ -5,9 +5,9 @@ import json
 import logging
 import re
 import sys
-from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from functools import wraps
 from time import monotonic
 from typing import Annotated, Any, Literal, cast
@@ -49,7 +49,7 @@ from src.llm.money import (
 from src.llm.outbound_reply_guard import looks_like_structured_payload
 from src.llm.package_math import PricedLine
 from src.llm.response_policy import AskKind, append_required_tool_disclosure
-from src.llm.response_runtime import LLMResponse, ProductMediaPayload
+from src.llm.response_runtime import ProductMediaPayload
 from src.llm.verified_answers import (
     VerifiedAnswerDecision,
     query_names_specific_item,
@@ -3123,299 +3123,6 @@ def _record_recovery_tool_result(
     return result
 
 
-_VERIFIED_PROSE_NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
-
-
-_VERIFIED_PROSE_LIST_MARKER_RE = re.compile(r"^[ \t]*\d+[.)][ \t]", re.MULTILINE)
-
-
-def _verified_prose_numbers(text: str) -> set[Decimal]:
-    # "1." at the start of a line is a list marker, not a quantity. The
-    # selection-confirmation template numbers its items that way, so counting
-    # markers as facts would have failed every multi-item rewrite and quietly
-    # sent the template every time.
-    text = _VERIFIED_PROSE_LIST_MARKER_RE.sub("", text)
-    values: set[Decimal] = set()
-    for match in _VERIFIED_PROSE_NUMBER_RE.finditer(text):
-        try:
-            values.add(Decimal(match.group(0).replace(",", "")))
-        except InvalidOperation:  # pragma: no cover - regex admits only numerals
-            continue
-    return values
-
-
-_VERIFIED_PROSE_PROTECTED_RE = re.compile(
-    r"(?<![\w.])"
-    r"(?:[A-Za-z]+[A-Za-z0-9]*\d[A-Za-z0-9]*(?:[-_/][A-Za-z0-9]+)*"
-    r"|\d[\d,]*(?:\.\d+)?)"
-    r"(?![\w.]*[A-Za-z0-9])"
-)
-_VERIFIED_PROSE_SLOT_RE = re.compile(r"\{\{f(\d+)\}\}")
-
-
-def _verified_prose_mask(verified_text: str) -> tuple[str, tuple[str, ...]]:
-    """Replace every protected figure with a numbered slot.
-
-    The model is never asked to copy a number. It is given the route's own
-    sentence with each figure already replaced by ``{{f1}}``, ``{{f2}}`` and so
-    on, and it rewrites the words around those tokens; the values are put back
-    by code afterwards.
-
-    This is the standard answer to the problem and the reason for the rewrite
-    of this module. Asking a model to reproduce figures and checking them
-    afterwards -- which is what this did first -- fails in a way that is well
-    documented: on the 2026-08-07 acceptance the model dropped a unit price,
-    a stock figure or a quotation number on nearly every attempt, so the guard
-    was correct every time and the customer got the template every time.
-    Emitting placeholders and substituting them makes a wrong or missing figure
-    a structural impossibility rather than something to detect. ASPIRO
-    (Vejvar & Fujimoto, EMNLP Findings 2023) measures the same effect on
-    entity-agnostic templates.
-    """
-
-    marker_spans = [
-        match.span() for match in _VERIFIED_PROSE_LIST_MARKER_RE.finditer(verified_text)
-    ]
-    values: list[str] = []
-    slot_of: dict[str, int] = {}
-
-    def _swap(match: re.Match[str]) -> str:
-        start, end = match.span()
-        if any(start >= low and end <= high for low, high in marker_spans):
-            # "1." opening a list line is formatting, not a figure.
-            return match.group(0)
-        written = match.group(0)
-        # One slot per distinct figure: a total stated twice is one fact, and
-        # asking for it twice would only be another way to fail.
-        slot = slot_of.setdefault(written, len(values) + 1)
-        if slot == len(values) + 1:
-            values.append(written)
-        return f"{{{{f{slot}}}}}"
-
-    masked = _VERIFIED_PROSE_PROTECTED_RE.sub(_swap, verified_text)
-    return masked, tuple(values)
-
-
-_VERIFIED_PROSE_MIN_OVERLAP = 0.3
-_VERIFIED_PROSE_WORD_RE = re.compile(r"[^\W\d_]{4,}", re.UNICODE)
-
-
-def _verified_prose_content_words(text: str) -> set[str]:
-    return {
-        match.group(0).casefold() for match in _VERIFIED_PROSE_WORD_RE.finditer(text)
-    }
-
-
-def _verified_prose_render(
-    candidate: str,
-    values: tuple[str, ...],
-    *,
-    verified_text: str,
-    customer_text: str,
-    already_said: str,
-) -> tuple[str | None, str | None]:
-    """Substitute the verified figures back, or say why the rewrite failed.
-
-    Three checks, in the order the sources that describe this pattern put them:
-    every slot is present, no slot was invented, and no bare figure escaped the
-    slots. Only the last needs a judgement call -- a figure the customer or an
-    earlier turn already used is theirs to restate.
-    """
-
-    if not candidate.strip():
-        return None, "empty"
-
-    if not values:
-        # No figure to anchor on, so the only question left is whether this is
-        # a restatement at all. A reply on a different subject shares almost no
-        # content words with the one it claims to be rewriting.
-        anchor = _verified_prose_content_words(verified_text)
-        if anchor:
-            shared = anchor & _verified_prose_content_words(candidate)
-            if len(shared) / len(anchor) < _VERIFIED_PROSE_MIN_OVERLAP:
-                return None, f"shares only {len(shared)} of {len(anchor)} words"
-        return candidate, None
-
-    used = {int(m.group(1)) for m in _VERIFIED_PROSE_SLOT_RE.finditer(candidate)}
-    expected = set(range(1, len(values) + 1))
-    if missing := expected - used:
-        return None, f"dropped slots {sorted(missing)}"
-    if invented := used - expected:
-        return None, f"invented slots {sorted(invented)}"
-
-    stripped = _VERIFIED_PROSE_SLOT_RE.sub(" ", candidate)
-    stripped = _VERIFIED_PROSE_LIST_MARKER_RE.sub("", stripped)
-    said = _verified_prose_numbers(customer_text) | _verified_prose_numbers(
-        already_said
-    )
-    if loose := _verified_prose_numbers(stripped) - said:
-        return None, f"figures outside a slot {sorted(map(str, loose))}"
-
-    rendered = _VERIFIED_PROSE_SLOT_RE.sub(
-        lambda m: values[int(m.group(1)) - 1], candidate
-    )
-    return rendered, None
-
-
-_VERIFIED_PROSE_EXAMPLE = (
-    "Worked example. Given verified_reply: 'Confirmed: {{f1}} x LUMA {{f2}}, "
-    "{{f3}} AED each.' a correct answer is: 'All {{f1}} of the LUMA {{f2}} are "
-    "confirmed for you, Sara, at {{f3}} AED each -- shall I hold them?' Note "
-    "that every token came through untouched and no digit was written."
-)
-
-
-def _verified_prose_directive(
-    masked_text: str,
-    slot_count: int,
-    retry: bool,
-    *,
-    customer_name: str = "",
-    customer_text: str = "",
-) -> str:
-    slots = ", ".join(f"{{{{f{index}}}}}" for index in range(1, slot_count + 1))
-    rule = ""
-    if slot_count:
-        rule = (
-            f" {slots} are not placeholders for you to fill in. They are "
-            "verified figures already in their final form, and the system "
-            "substitutes them after you answer. Copy each token through into "
-            "your reply character for character, in the place its figure "
-            "belongs, and use every one at least once. Do not write any digit "
-            "yourself: no price, quantity, stock level or reference code. A "
-            f"reply that spells a figure out instead of using its token is "
-            f"discarded. {_VERIFIED_PROSE_EXAMPLE}"
-        )
-    insist = (
-        " Your previous attempt spelled figures out instead of using the "
-        "tokens and was discarded. Use the tokens this time."
-        if retry
-        else ""
-    )
-    # Enough of the turn to write to a person rather than into the air. The
-    # agent has no history of its own, and without this it cannot use a name or
-    # answer what was actually asked.
-    context = ""
-    if customer_name:
-        context += f" The customer is {customer_name}."
-    if customer_text:
-        context += f' Their message was: "{customer_text.strip()[:400]}"'
-    return (
-        "verified_reply below is already correct and its facts are final. Send "
-        "the same message in your own words, as Noor speaking to this customer: "
-        "acknowledge what they asked for, say briefly why this fits their "
-        "stated need, and close on the next step verified_reply names."
-        f"{context}{rule}{insist} Keep the customer's language, do not greet "
-        "them again, and claim nothing beyond verified_reply. "
-        f"verified_reply: {masked_text}"
-    )
-
-
-async def _verified_prose_response(
-    *,
-    verified_text: str,
-    deps: SalesDeps,
-    model_name: str,
-    customer_text: str,
-    build_static_response: Callable[..., LLMResponse],
-    build_llm_response: Callable[..., LLMResponse] | None = None,
-    run_agent: Callable[[SalesDeps], Awaitable[Any]] | None = None,
-    run_prose_agent: Callable[[str, SalesDeps], Awaitable[Any]] | None = None,
-) -> LLMResponse:
-    """Let the model write the sentence over facts a route already verified.
-
-    The route's write has happened by the time this is called and nothing here
-    can undo it: the rewrite runs with no tools at all. If the model is
-    unavailable, fails, or changes a number, the route's own text ships exactly
-    as it does today. The route label is kept either way, so the turn is still
-    attributable; what changes is text_provenance.
-    """
-
-    if run_prose_agent is None or build_llm_response is None:
-        logger.info(
-            "Verified-prose rewrite skipped for %s: no model runner on this path",
-            model_name,
-        )
-        return build_static_response(
-            verified_text, model_name, response_deps=deps, allow_product_media=False
-        )
-    masked_text, values = _verified_prose_mask(verified_text)
-
-    prose_deps = replace(deps, tool_mode="catalog_materialization")
-
-    async def _attempt(retry: bool) -> Any:
-        return await run_prose_agent(
-            _verified_prose_directive(
-                masked_text,
-                len(values),
-                retry,
-                customer_name=_string_value(deps.conversation.customer_name),
-                customer_text=customer_text,
-            ),
-            prose_deps,
-        )
-
-    try:
-        result = await _attempt(False)
-    except Exception:
-        # Deliberately broad. By this point the quotation exists, the CRM row is
-        # written or the selection is persisted, and the route's own reply is
-        # already correct. A cosmetic rewrite must never turn that into an
-        # error, so any failure ships the route text and is logged instead.
-        logger.warning(
-            "Verified-prose rewrite failed for %s; sending route text",
-            model_name,
-            exc_info=True,
-        )
-        return build_static_response(
-            verified_text, model_name, response_deps=deps, allow_product_media=False
-        )
-    candidate = str(getattr(result, "output", "") or "")
-    rendered, rejection = _verified_prose_render(
-        candidate,
-        values,
-        verified_text=verified_text,
-        customer_text=customer_text,
-        already_said="\n".join(deps.recent_history or ()),
-    )
-    if rendered is None and rejection is not None and rejection.startswith("dropped"):
-        # One reprompt naming the failure, which is what the parse-error loop in
-        # ASPIRO does and what the model needs when it has ignored the tokens.
-        try:
-            result = await _attempt(True)
-        except Exception:
-            logger.warning(
-                "Verified-prose retry failed for %s; sending route text", model_name
-            )
-            return build_static_response(
-                verified_text, model_name, response_deps=deps, allow_product_media=False
-            )
-        rendered, rejection = _verified_prose_render(
-            str(getattr(result, "output", "") or ""),
-            values,
-            verified_text=verified_text,
-            customer_text=customer_text,
-            already_said="\n".join(deps.recent_history or ()),
-        )
-    if rendered is None:
-        logger.warning(
-            "Verified-prose rewrite rejected for %s (%s); sending route text",
-            model_name,
-            rejection,
-        )
-        return build_static_response(
-            verified_text, model_name, response_deps=deps, allow_product_media=False
-        )
-    return build_llm_response(
-        # The verified figures are put back here, by code. Usage and telemetry
-        # stay attached to the call that actually happened.
-        _ContractedResult(result, rendered),
-        model_name,
-        response_deps=deps,
-        allow_product_media=False,
-    )
-
-
 def _catalog_display_name(name: str) -> str:
     r"""Render a catalog name as a name, not as an escape sequence.
 
@@ -4248,13 +3955,6 @@ __all__ = (
     "_SKU_HOMOGLYPH_TRANSLATION",
     "_TOTAL_BUDGET_RE",
     "_VERIFIED_CATALOG_PLAN_KEY",
-    "_VERIFIED_PROSE_EXAMPLE",
-    "_VERIFIED_PROSE_LIST_MARKER_RE",
-    "_VERIFIED_PROSE_MIN_OVERLAP",
-    "_VERIFIED_PROSE_NUMBER_RE",
-    "_VERIFIED_PROSE_PROTECTED_RE",
-    "_VERIFIED_PROSE_SLOT_RE",
-    "_VERIFIED_PROSE_WORD_RE",
     "_anchor_line_cache",
     "_append_required_tool_disclosures",
     "_best_catalog_coverage_selection",
@@ -4325,12 +4025,6 @@ __all__ = (
     "_turn_owes_the_company_question",
     "_turn_saw_catalog_evidence",
     "_verified_catalog_plan_payload",
-    "_verified_prose_content_words",
-    "_verified_prose_directive",
-    "_verified_prose_mask",
-    "_verified_prose_numbers",
-    "_verified_prose_render",
-    "_verified_prose_response",
     "_verify_volunteered_claims",
     "_zoho_stock_for_catalog_candidates",
     "AnchorCatalogRow",

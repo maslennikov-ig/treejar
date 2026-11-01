@@ -278,8 +278,6 @@ async def test_catalog_repair_route_sends_the_draft_when_the_repair_is_cut(
 
     model = FunctionModel(model_request)
     turn = _Turn(
-        pending_reference_route=None,
-        order_quote_route=None,
         db=deps.db,
         redis=deps.redis,
         conversation_id=conv.id,
