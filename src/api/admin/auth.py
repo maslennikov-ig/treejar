@@ -133,8 +133,37 @@ def build_admin_login_redirect(
     return RedirectResponse(url=login_url, status_code=status_code)
 
 
+async def _record_password_login_audit(
+    *,
+    request: Request,
+    username: str,
+    actor: str,
+) -> None:
+    try:
+        from src.core.database import async_session_factory
+        from src.services.admin_audit import log_admin_action
+
+        async with async_session_factory() as db:
+            await log_admin_action(
+                db,
+                action="admin_login.password",
+                entity_type="admin_session",
+                actor=actor,
+                after={"auth_method": "password", "username": username},
+                request=request,
+            )
+            await db.commit()
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Failed to record admin password login audit", exc_info=True
+        )
+
+
 class AdminAuth(AuthenticationBackend):
     def __init__(self, secret_key: str) -> None:
+        super().__init__(secret_key=secret_key)
         # The root FastAPI app owns the shared session boundary for
         # /admin, /dashboard, and /api/v1/admin.
         self.middlewares = []
@@ -148,14 +177,20 @@ class AdminAuth(AuthenticationBackend):
         is_valid_pass = secrets.compare_digest(password, settings.admin_password)
 
         if is_valid_user and is_valid_pass:
+            actor = username or "admin"
             request.session.update(
                 {
                     "token": "admin_session",
                     "auth_method": "password",
                     "admin_display_name": username,
                     "admin_username": username,
-                    "admin_actor": username or "admin",
+                    "admin_actor": actor,
                 }
+            )
+            await _record_password_login_audit(
+                request=request,
+                username=username,
+                actor=actor,
             )
             return True
         return False

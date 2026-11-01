@@ -8,7 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.admin import require_admin_session
+from src.api.v1.admin import (
+    record_best_effort_admin_audit,
+    record_catalog_sync_status,
+    require_admin_session,
+)
 from src.core.config import settings
 from src.core.database import get_db
 from src.models.product import Product
@@ -20,8 +24,8 @@ from src.schemas import (
     ProductSearchQuery,
     ProductSearchResult,
     ProductSyncRequest,
-    ProductSyncResponse,
 )
+from src.schemas.admin import AdminProductSyncResponse as ProductSyncResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -85,13 +89,11 @@ async def search_products(
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
-@router.post("/sync", response_model=ProductSyncResponse)
-async def sync_products(
+async def enqueue_product_sync(
     body: ProductSyncRequest,
     request: Request,
-    _: None = Depends(require_admin_session),
-) -> ProductSyncResponse:
-    """Queue product sync, defaulting to the canonical Treejar catalog path."""
+) -> tuple[ProductSyncResponse, str, str]:
+    """Validate sync source and enqueue the ARQ catalog sync job."""
     source = body.source.strip().lower()
     job_name = SYNC_JOB_BY_SOURCE.get(source)
     if job_name is None:
@@ -107,11 +109,45 @@ async def sync_products(
     try:
         pool = request.app.state.arq_pool
         await pool.enqueue_job(job_name)
-
-        return ProductSyncResponse(synced=0, created=0, updated=0, errors=0)
     except Exception as e:
         logger.error("Error triggering sync: %s", e)
         raise HTTPException(status_code=500, detail="Could not enqueue sync job") from e
+
+    source_key = "zoho" if source == "zoho" else "treejar"
+    response = ProductSyncResponse(
+        synced=0,
+        created=0,
+        updated=0,
+        errors=0,
+        status="queued",
+    )
+    return response, source_key, job_name
+
+
+@router.post("/sync", response_model=ProductSyncResponse)
+async def sync_products(
+    body: ProductSyncRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin_session),
+) -> ProductSyncResponse:
+    """Queue product sync, defaulting to the canonical Treejar catalog path."""
+    response, source_key, job_name = await enqueue_product_sync(body, request)
+    await record_catalog_sync_status(
+        source_key=source_key,
+        last_status="queued",
+        job_name=job_name,
+        detail=f"Queued {source_key} sync job",
+    )
+    await record_best_effort_admin_audit(
+        db,
+        action="catalog.sync",
+        entity_type="product_sync",
+        entity_id=source_key,
+        after={"source": source_key, "job_name": job_name, "status": "queued"},
+        request=request,
+    )
+    return response
 
 
 @router.get("/{product_id}/similar")

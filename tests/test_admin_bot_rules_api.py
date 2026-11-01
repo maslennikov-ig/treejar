@@ -228,3 +228,133 @@ async def test_update_admin_bot_rule_can_unarchive_rule(
     assert updated.status == "active"
     assert updated.archived_at is None
     assert archived_rule.archived_at is None
+
+
+@pytest.mark.asyncio
+async def test_bot_rule_create_and_update_validate_scope_conditions_and_reject_conversation(
+    admin_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.core.database import get_db
+    from src.main import app
+    from src.models.bot_behavior_rule import BotBehaviorRule
+    from src.services import admin_bot_rules
+
+    # 1. Create rejects conversation scope and missing scope targets with 422
+    base_payload = {
+        "title": "Scoped rule",
+        "type": "playbook",
+        "status": "draft",
+        "priority": 100,
+        "instruction": "Follow scoped guidance.",
+    }
+    for invalid_create in (
+        {**base_payload, "scope": "conversation"},
+        {**base_payload, "scope": "stage"},
+        {**base_payload, "scope": "language"},
+        {**base_payload, "scope": "segment"},
+        {**base_payload, "scope": "segment", "segment": "   "},
+    ):
+        resp = await admin_client.post(
+            "/api/v1/admin/bot-rules/rules",
+            json=invalid_create,
+        )
+        assert resp.status_code == 422, invalid_create
+
+    conv_resp = await admin_client.post(
+        "/api/v1/admin/bot-rules/rules",
+        json={**base_payload, "scope": "conversation"},
+    )
+    assert "conversation" in conv_resp.text.lower()
+
+    # 2. Existing legacy DB rule with scope="conversation" still loads cleanly on GET,
+    # while partial PATCH validates merged scope + required target fields.
+    legacy_id = uuid.uuid4()
+    staged_id = uuid.uuid4()
+    legacy_rule = BotBehaviorRule(
+        id=legacy_id,
+        title="Legacy conversation rule",
+        type="playbook",
+        status="active",
+        priority=50,
+        scope="conversation",
+        stage=None,
+        language=None,
+        segment=None,
+        instruction="Legacy instruction.",
+        trigger_examples=[],
+        created_by="admin",
+        updated_by="admin",
+        created_at=datetime(2026, 5, 8, 12, 0, 0),
+    )
+    staged_rule = BotBehaviorRule(
+        id=staged_id,
+        title="Stage rule",
+        type="playbook",
+        status="active",
+        priority=50,
+        scope="stage",
+        stage="quoting",
+        language=None,
+        segment=None,
+        instruction="Stage instruction.",
+        trigger_examples=[],
+        created_by="admin",
+        updated_by="admin",
+        created_at=datetime(2026, 5, 8, 12, 0, 0),
+    )
+    rules_by_id = {legacy_id: legacy_rule, staged_id: staged_rule}
+
+    class FakeDB:
+        async def get(self, _model: object, key: uuid.UUID) -> BotBehaviorRule | None:
+            return rules_by_id.get(key)
+
+        async def commit(self) -> None:
+            return None
+
+        async def refresh(self, _row: object) -> None:
+            return None
+
+    async def fake_get_db():
+        yield FakeDB()
+
+    monkeypatch.setattr(admin_bot_rules, "log_admin_action", AsyncMock())
+    app.dependency_overrides[get_db] = fake_get_db
+    try:
+        get_legacy = await admin_client.get(
+            f"/api/v1/admin/bot-rules/rules/{legacy_id}"
+        )
+        assert get_legacy.status_code == 200
+        assert get_legacy.json()["scope"] == "conversation"
+
+        # Switching a rule to scope="segment" without segment fails 422
+        bad_switch = await admin_client.patch(
+            f"/api/v1/admin/bot-rules/rules/{staged_id}",
+            json={"scope": "segment"},
+        )
+        assert bad_switch.status_code == 422
+
+        # Clearing stage while scope remains "stage" fails 422
+        bad_clear = await admin_client.patch(
+            f"/api/v1/admin/bot-rules/rules/{staged_id}",
+            json={"stage": None},
+        )
+        assert bad_clear.status_code == 422
+
+        # Updating scope="conversation" fails 422
+        bad_conv = await admin_client.patch(
+            f"/api/v1/admin/bot-rules/rules/{staged_id}",
+            json={"scope": "conversation"},
+        )
+        assert bad_conv.status_code == 422
+
+        # Valid transition to segment with non-empty segment succeeds
+        good_switch = await admin_client.patch(
+            f"/api/v1/admin/bot-rules/rules/{staged_id}",
+            json={"scope": "segment", "segment": "  Wholesale  "},
+        )
+        assert good_switch.status_code == 200
+        assert good_switch.json()["scope"] == "segment"
+        assert good_switch.json()["segment"] == "Wholesale"
+    finally:
+        app.dependency_overrides.pop(get_db, None)

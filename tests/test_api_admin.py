@@ -16,12 +16,27 @@ from src.services.reports import ReportData
 from tests.conftest import integration
 
 
+class _FakeScalars:
+    def __init__(self, rows: list[object]) -> None:
+        self._rows = rows
+
+    def all(self) -> list[object]:
+        return list(self._rows)
+
+    def first(self) -> object | None:
+        return self._rows[0] if self._rows else None
+
+
 class _FakeScalarResult:
-    def __init__(self, value: object) -> None:
+    def __init__(self, value: object, rows: list[object] | None = None) -> None:
         self._value = value
+        self._rows = rows if rows is not None else ([] if value is None else [value])
 
     def scalar_one_or_none(self) -> object:
         return self._value
+
+    def scalars(self) -> _FakeScalars:
+        return _FakeScalars(self._rows)
 
 
 class _FakeAIQualityConfigDB:
@@ -32,6 +47,7 @@ class _FakeAIQualityConfigDB:
 
             self.config = SystemConfig(key="ai_quality_controls", value=value)
         self.added: list[object] = []
+        self.audits: list[object] = []
         self.committed = False
 
     async def execute(self, _stmt: object) -> _FakeScalarResult:
@@ -39,7 +55,13 @@ class _FakeAIQualityConfigDB:
 
     def add(self, obj: object) -> None:
         self.added.append(obj)
-        self.config = obj
+        if hasattr(obj, "key"):
+            self.config = obj
+        else:
+            self.audits.append(obj)
+
+    async def flush(self) -> None:
+        return None
 
     async def commit(self) -> None:
         self.committed = True
@@ -54,10 +76,13 @@ class _FakeSystemConfigDB:
             for key, value in (values or {}).items()
         }
         self.added: list[object] = []
+        self.audits: list[object] = []
         self.committed = False
 
     async def execute(self, stmt: object) -> _FakeScalarResult:
         text = str(stmt)
+        if "WHERE" not in text.upper():
+            return _FakeScalarResult(None, rows=list(self.rows.values()))
         for key, row in self.rows.items():
             if key in text:
                 return _FakeScalarResult(row)
@@ -65,8 +90,14 @@ class _FakeSystemConfigDB:
 
     def add(self, obj: object) -> None:
         self.added.append(obj)
-        key = obj.key
-        self.rows[key] = obj
+        if hasattr(obj, "key"):
+            key = obj.key  # type: ignore[attr-defined]
+            self.rows[key] = obj  # type: ignore[assignment]
+        else:
+            self.audits.append(obj)
+
+    async def flush(self) -> None:
+        return None
 
     async def commit(self) -> None:
         self.committed = True
@@ -219,21 +250,19 @@ async def test_admin_endpoints(admin_client: AsyncClient) -> None:
     assert response_s1.status_code == 200
     data1 = response_s1.json()
     assert "bot_enabled" in data1
-    assert "default_language" in data1
     assert "telegram_test_mode_enabled" in data1
+    assert "default_language" not in data1
 
     response_s2 = await admin_client.patch(
         "/api/v1/admin/settings/",
         json={
             "bot_enabled": False,
-            "default_language": "ar",
             "telegram_test_mode_enabled": False,
         },
     )
     assert response_s2.status_code == 200
     data2 = response_s2.json()
     assert data2["bot_enabled"] is False
-    assert data2["default_language"] == "ar"
     assert data2["telegram_test_mode_enabled"] is False
 
     # --- test_admin_mount_redirects_to_login ---
@@ -389,10 +418,10 @@ async def test_admin_models_list(client: AsyncClient) -> None:
     model_permissions = {
         "conversation": {"can_create": False, "can_edit": False},
         "message": {"can_create": False, "can_edit": False},
-        "escalation": {"can_create": False, "can_edit": True},
+        "escalation": {"can_create": False, "can_edit": False},
         "quality-review": {"can_create": False, "can_edit": False},
         "product": {"can_create": False, "can_edit": False},
-        "knowledge-base": {"can_create": True, "can_edit": True},
+        "knowledge-base": {"can_create": False, "can_edit": False},
         "system-config": {"can_create": True, "can_edit": True},
         "system-prompt": {"can_create": False, "can_edit": True},
         "metrics-snapshot": {"can_create": False, "can_edit": False},
@@ -700,9 +729,10 @@ async def test_admin_manager_review_operator_endpoints(
         pending_response = await admin_client.get(
             "/api/v1/admin/manager-reviews/pending"
         )
+        eval_db = _FakeAIQualityConfigDB({"manager_qa": {"mode": "manual"}})
         evaluate_response = await _with_fake_db(
             admin_client,
-            _FakeAIQualityConfigDB({"manager_qa": {"mode": "manual"}}),
+            eval_db,
             "POST",
             f"/api/v1/admin/manager-reviews/{pending_item['escalation_id']}/evaluate",
         )
@@ -713,6 +743,9 @@ async def test_admin_manager_review_operator_endpoints(
     assert pending_response.json()[0]["phone"] == "+971501234567"
     assert evaluate_response.status_code == 200
     assert evaluate_response.json()["summary"] == "Strong follow-up and clear close."
+    assert len(eval_db.audits) == 1
+    assert getattr(eval_db.audits[0], "action", None) == "quality.manager_review"
+    assert eval_db.committed is True
     mock_list.assert_awaited_once()
     mock_pending.assert_awaited_once()
     mock_evaluate.assert_awaited_once()
@@ -773,7 +806,7 @@ async def test_admin_report_operator_endpoint(admin_client: AsyncClient) -> None
 async def test_admin_ai_quality_controls_default_config(
     admin_client: AsyncClient,
 ) -> None:
-    """AI Quality Controls should default to no automated QA work."""
+    """AI Quality Controls should default to no automated QA work and expose model options."""
     response = await _with_fake_db(
         admin_client,
         _FakeAIQualityConfigDB(),
@@ -793,6 +826,17 @@ async def test_admin_ai_quality_controls_default_config(
     assert config["bot_qa"]["max_calls_per_run"] <= 2
     assert config["bot_qa"]["max_calls_per_day"] <= 10
     assert data["warnings"] == []
+    assert data["default_model"] == "openai/gpt-6.1-terra"
+    assert isinstance(data["available_models"], list)
+    assert data["available_models"][0] == data["default_model"]
+    assert len(data["available_models"]) == len(set(data["available_models"]))
+    assert {
+        "openai/gpt-6.1-terra",
+        "z-ai/glm-5.2",
+        "openai/gpt-6-luna",
+        "deepseek/deepseek-v4-flash",
+        "z-ai/glm-5",
+    } <= set(data["available_models"])
 
 
 @pytest.mark.asyncio
@@ -855,6 +899,8 @@ async def test_admin_ai_quality_controls_accepts_overrides_with_warnings(
     data = response.json()
     warning_codes = {warning["code"] for warning in data["warnings"]}
     assert {"glm5_qa", "full_transcript"} <= warning_codes
+    assert data["default_model"] == "openai/gpt-6.1-terra"
+    assert "z-ai/glm-5" in data["available_models"]
     assert fake_db.committed is True
     assert fake_db.config is not None
     assert fake_db.config.value["bot_qa"]["model"] == "z-ai/glm-5"
@@ -865,10 +911,14 @@ async def test_admin_ai_quality_controls_accepts_overrides_with_warnings(
 async def test_admin_ai_quality_controls_patch_preserves_unspecified_scopes(
     admin_client: AsyncClient,
 ) -> None:
-    """PATCH should merge updates instead of resetting other scopes to defaults."""
+    """PATCH should merge updates and include custom configured models in available_models."""
     fake_db = _FakeAIQualityConfigDB(
         {
-            "bot_qa": {"mode": "scheduled", "max_calls_per_run": 2},
+            "bot_qa": {
+                "mode": "scheduled",
+                "max_calls_per_run": 2,
+                "model": "custom/qa-judge-v1",
+            },
             "manager_qa": {"mode": "disabled"},
             "red_flags": {"mode": "manual"},
         }
@@ -882,12 +932,16 @@ async def test_admin_ai_quality_controls_patch_preserves_unspecified_scopes(
     )
 
     assert response.status_code == 200
-    config = response.json()["config"]
+    payload = response.json()
+    config = payload["config"]
     assert config["bot_qa"]["mode"] == "scheduled"
     assert config["bot_qa"]["max_calls_per_run"] == 2
     assert config["manager_qa"]["mode"] == "manual"
     assert config["manager_qa"]["max_calls_per_run"] == 3
     assert config["red_flags"]["mode"] == "manual"
+    assert payload["default_model"] == "openai/gpt-6.1-terra"
+    assert "custom/qa-judge-v1" in payload["available_models"]
+    assert len(payload["available_models"]) == len(set(payload["available_models"]))
 
 
 @pytest.mark.asyncio
@@ -1016,3 +1070,472 @@ async def test_admin_session_endpoint_reports_auth_identity(
     dash_after_logout = await admin_client.get("/dashboard/")
     assert dash_after_logout.status_code in (302, 303)
     assert "/admin/login" in dash_after_logout.headers["location"]
+
+
+def test_parse_config_bool_handles_jsonb_scalars_strings_and_dicts() -> None:
+    """parse_config_bool handles string falsy/truthy values instead of Python bool('false') (AD-10)."""
+    from src.core.config_bool import parse_config_bool
+
+    for falsy in (False, 0, "false", "FALSE", "0", "no", "off", ""):
+        assert parse_config_bool(falsy, default=True) is False
+    for truthy in (True, 1, "true", "TRUE", "1", "yes", "on"):
+        assert parse_config_bool(truthy, default=False) is True
+    assert parse_config_bool(None, default=False) is False
+    assert parse_config_bool(None, default=True) is True
+    assert parse_config_bool({"enabled": "false"}, default=True) is False
+    assert parse_config_bool({"value": "yes"}, default=False) is True
+
+
+@pytest.mark.asyncio
+async def test_admin_settings_parses_string_booleans_removes_dead_fields_and_audits(
+    admin_client: AsyncClient,
+) -> None:
+    """GET/PATCH /api/v1/admin/settings/ honours string booleans, omits dead fields, and audits (AD-10, AD-11, AD-14)."""
+    from src.models.admin_action_audit import AdminActionAudit
+
+    fake_db = _FakeSystemConfigDB(
+        {
+            "bot_enabled": "false",
+            "telegram_test_mode_enabled": "0",
+            "default_language": "ar",
+        }
+    )
+
+    get_resp = await _with_fake_system_db(
+        admin_client, fake_db, "GET", "/api/v1/admin/settings/"
+    )
+    assert get_resp.status_code == 200
+    get_data = get_resp.json()
+    assert get_data == {
+        "bot_enabled": False,
+        "telegram_test_mode_enabled": False,
+    }
+    assert "default_language" not in get_data
+    assert "follow_up_enabled" not in get_data
+    assert "max_messages_per_conversation" not in get_data
+
+    patch_resp = await _with_fake_system_db(
+        admin_client,
+        fake_db,
+        "PATCH",
+        "/api/v1/admin/settings/",
+        json={"bot_enabled": True},
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json() == {
+        "bot_enabled": True,
+        "telegram_test_mode_enabled": False,
+    }
+    assert len(fake_db.audits) == 1
+    audit = fake_db.audits[0]
+    assert isinstance(audit, AdminActionAudit)
+    assert audit.action == "settings.update"
+    assert audit.entity_id == "settings"
+    assert audit.before == {
+        "bot_enabled": False,
+        "telegram_test_mode_enabled": False,
+    }
+    assert audit.after == {
+        "bot_enabled": True,
+        "telegram_test_mode_enabled": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_admin_system_health_isolates_contour_errors_and_parses_bot_enabled(
+    admin_client: AsyncClient,
+) -> None:
+    """System health reports status='error' on failing DB/Redis contours instead of masking them (AD-15, AD-10)."""
+    from src.core.database import get_db
+
+    class BrokenDB:
+        async def scalar(self, _stmt: object) -> object:
+            raise RuntimeError("db unavailable")
+
+    async def override_broken_db():
+        yield BrokenDB()
+
+    app.dependency_overrides[get_db] = override_broken_db
+    try:
+        with patch(
+            "src.api.v1.admin._read_zoho_snapshot_status",
+            new=AsyncMock(side_effect=RuntimeError("redis unavailable")),
+        ):
+            err_resp = await admin_client.get("/api/v1/admin/system/health")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert err_resp.status_code == 200
+    err_data = err_resp.json()
+    assert err_data["overall_status"] == "error"
+    by_id = {c["id"]: c for c in err_data["contours"]}
+    assert by_id["whatsapp"]["status"] == "error"
+    assert by_id["zoho_inventory"]["status"] == "error"
+    assert by_id["knowledge_rag"]["status"] == "error"
+    assert by_id["knowledge_rag"]["summary"] == "error"
+
+    class HealthyPausedDB:
+        async def scalar(self, stmt: object) -> object:
+            sql = str(stmt).lower()
+            if "system_configs" in sql:
+                return "false"  # bot_enabled stored as string "false"
+            if "messages" in sql:
+                return datetime(2026, 4, 14, tzinfo=UTC)
+            return 5
+
+    async def override_paused_db():
+        yield HealthyPausedDB()
+
+    from src.schemas.admin import AdminZohoSnapshotStatus
+
+    app.dependency_overrides[get_db] = override_paused_db
+    try:
+        with patch(
+            "src.api.v1.admin._read_zoho_snapshot_status",
+            new=AsyncMock(
+                return_value=AdminZohoSnapshotStatus(status="fresh", item_count=120)
+            ),
+        ):
+            paused_resp = await admin_client.get("/api/v1/admin/system/health")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert paused_resp.status_code == 200
+    paused_by_id = {c["id"]: c for c in paused_resp.json()["contours"]}
+    assert paused_by_id["whatsapp"]["status"] == "warning"
+    assert paused_by_id["whatsapp"]["summary"] == "paused"
+
+
+@pytest.mark.asyncio
+async def test_update_prompt_preserves_description_when_omitted_and_audits(
+    admin_client: AsyncClient,
+) -> None:
+    """PUT /api/v1/admin/prompts/{id} keeps old_prompt.description when omitted and writes audit (AD-33, AD-14)."""
+    from src.api.deps import get_redis
+    from src.core.database import get_db
+    from src.models.admin_action_audit import AdminActionAudit
+    from src.models.system_config import SystemConfig
+    from src.models.system_prompt import SystemPrompt
+
+    prompt_id = uuid.uuid4()
+    now = datetime(2026, 4, 14, tzinfo=UTC)
+    old_prompt = SystemPrompt(
+        id=prompt_id,
+        name="base_prompt",
+        content="Old prompt content",
+        version=2,
+        is_active=True,
+        created_at=now,
+        updated_at=now,
+    )
+    desc_config = SystemConfig(
+        key="prompt_descriptions",
+        value={"base_prompt": "Canonical operator description"},
+    )
+
+    class FakePromptDB:
+        def __init__(self) -> None:
+            self.added: list[object] = []
+
+        async def get(self, model: object, key: object) -> object | None:
+            if model is SystemPrompt and key == prompt_id:
+                return old_prompt
+            if model is SystemConfig and key == "prompt_descriptions":
+                return desc_config
+            return None
+
+        def add(self, obj: object) -> None:
+            self.added.append(obj)
+
+        async def flush(self) -> None:
+            return None
+
+        async def commit(self) -> None:
+            return None
+
+        async def refresh(self, obj: SystemPrompt) -> None:
+            if obj.id is None:
+                obj.id = uuid.uuid4()
+            if obj.created_at is None:
+                obj.created_at = now
+            if obj.updated_at is None:
+                obj.updated_at = now
+
+    fake_db = FakePromptDB()
+    fake_redis = AsyncMock()
+
+    async def override_db():
+        yield fake_db
+
+    async def override_redis():
+        return fake_redis
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_redis] = override_redis
+    try:
+        resp = await admin_client.put(
+            f"/api/v1/admin/prompts/{prompt_id}",
+            json={"content": "Updated prompt content"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_redis, None)
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["description"] == "Canonical operator description"
+    assert payload["version"] == 3
+    fake_redis.delete.assert_awaited_once_with("prompt:base_prompt")
+    audits = [obj for obj in fake_db.added if isinstance(obj, AdminActionAudit)]
+    assert len(audits) == 1
+    assert audits[0].action == "prompt.update"
+
+
+@pytest.mark.asyncio
+async def test_admin_catalog_sync_persists_redis_status_and_audits(
+    admin_client: AsyncClient,
+) -> None:
+    """POST /api/v1/admin/products/sync returns status='queued', stores state in Redis, and audits (AD-16, AD-14)."""
+    from src.api.v1 import admin as admin_module
+    from src.core.database import get_db
+    from src.models.admin_action_audit import AdminActionAudit
+
+    redis_store: dict[str, str] = {}
+
+    class FakeRedis:
+        async def set(self, key: str, value: str, ex: int | None = None) -> None:
+            redis_store[key] = value
+
+        async def get(self, key: str) -> str | None:
+            return redis_store.get(key)
+
+    class FakeCatalogDB:
+        def __init__(self) -> None:
+            self.audits: list[object] = []
+
+        def add(self, obj: object) -> None:
+            self.audits.append(obj)
+
+        async def flush(self) -> None:
+            return None
+
+        async def commit(self) -> None:
+            return None
+
+        async def scalar(self, _stmt: object) -> int:
+            return 10
+
+    fake_db = FakeCatalogDB()
+    fake_redis = FakeRedis()
+    mock_pool = AsyncMock()
+    app.state.arq_pool = mock_pool
+
+    async def override_db():
+        yield fake_db
+
+    app.dependency_overrides[get_db] = override_db
+    try:
+        with patch("src.api.v1.admin.get_redis_client", return_value=fake_redis):
+            sync_resp = await admin_client.post(
+                "/api/v1/admin/products/sync",
+                json={"source": "treejar"},
+            )
+            assert sync_resp.status_code == 200
+            sync_data = sync_resp.json()
+            assert sync_data["status"] == "queued"
+            assert sync_data["synced"] == 0
+
+            # Clear process-local cache to prove GET /catalog/status reads from Redis
+            admin_module._LAST_CATALOG_SYNC_SOURCES.clear()
+            status_resp = await admin_client.get("/api/v1/admin/catalog/status")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        del app.state.arq_pool
+
+    assert status_resp.status_code == 200
+    treejar_status = status_resp.json()["sources"]["treejar"]
+    assert treejar_status["last_status"] == "queued"
+    assert treejar_status["last_triggered_at"] is not None
+    assert len(fake_db.audits) == 1
+    assert isinstance(fake_db.audits[0], AdminActionAudit)
+    assert fake_db.audits[0].action == "catalog.sync"
+
+
+@pytest.mark.asyncio
+async def test_admin_controls_and_notifications_write_audit_entries(
+    admin_client: AsyncClient,
+) -> None:
+    """Controls PUT/PATCH and test notification endpoints record AdminActionAudit entries (AD-14)."""
+    from src.models.admin_action_audit import AdminActionAudit
+
+    ai_db = _FakeAIQualityConfigDB()
+    ai_resp = await _with_fake_db(
+        admin_client,
+        ai_db,
+        "PATCH",
+        "/api/v1/admin/ai-quality-controls",
+        json={"bot_qa": {"mode": "manual"}},
+    )
+    assert ai_resp.status_code == 200
+    assert len(ai_db.audits) == 1
+    assert isinstance(ai_db.audits[0], AdminActionAudit)
+    assert ai_db.audits[0].action == "ai_quality_controls.update"
+
+    pr_db = _FakeSystemConfigDB()
+    pr_resp = await _with_fake_system_db(
+        admin_client,
+        pr_db,
+        "PATCH",
+        "/api/v1/admin/payment-reminder-controls",
+        json={"daily_limit": 12},
+    )
+    assert pr_resp.status_code == 200
+    assert len(pr_db.audits) == 1
+    assert isinstance(pr_db.audits[0], AdminActionAudit)
+    assert pr_db.audits[0].action == "payment_reminder_controls.update"
+
+    notif_db = _FakeSystemConfigDB()
+    with patch(
+        "src.api.v1.admin.notifications_api.send_test_notification",
+        new=AsyncMock(
+            return_value={"status": "ok", "detail": "Test notification sent"}
+        ),
+    ):
+        notif_resp = await _with_fake_system_db(
+            admin_client,
+            notif_db,
+            "POST",
+            "/api/v1/admin/notifications/test",
+        )
+    assert notif_resp.status_code == 200
+    assert len(notif_db.audits) == 1
+    assert isinstance(notif_db.audits[0], AdminActionAudit)
+    assert notif_db.audits[0].action == "notification.test"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_metrics_and_timeseries_redis_cache_and_refresh(
+    admin_client: AsyncClient,
+) -> None:
+    """Dashboard metrics and timeseries cache per period for 60s, support refresh=true, and fail open (P3-5)."""
+    from src.core.database import get_db
+    from src.schemas.admin import TimeseriesPoint, TimeseriesResponse
+
+    cache_store: dict[str, tuple[str, int | None]] = {}
+
+    class FakeRedis:
+        async def get(self, key: str) -> str | None:
+            item = cache_store.get(key)
+            return item[0] if item else None
+
+        async def set(self, key: str, value: str, ex: int | None = None) -> None:
+            cache_store[key] = (value, ex)
+
+    class DummyDB:
+        pass
+
+    async def override_db():
+        yield DummyDB()
+
+    metrics_calls = 0
+    ts_calls = 0
+
+    async def fake_calc_metrics(_db: object, period: str) -> DashboardMetricsResponse:
+        nonlocal metrics_calls
+        metrics_calls += 1
+        return DashboardMetricsResponse(
+            period=period,
+            total_conversations=10 + metrics_calls,
+        )
+
+    async def fake_calc_ts(_db: object, period: str) -> TimeseriesResponse:
+        nonlocal ts_calls
+        ts_calls += 1
+        return TimeseriesResponse(
+            period=period,
+            points=[TimeseriesPoint(date="2026-05-01", new=ts_calls, returning=1)],
+        )
+
+    fake_redis = FakeRedis()
+    app.dependency_overrides[get_db] = override_db
+    try:
+        with (
+            patch("src.api.v1.admin.get_redis_client", return_value=fake_redis),
+            patch(
+                "src.services.dashboard_metrics.calculate_dashboard_metrics",
+                side_effect=fake_calc_metrics,
+            ),
+            patch(
+                "src.services.dashboard_metrics.calculate_timeseries",
+                side_effect=fake_calc_ts,
+            ),
+        ):
+            # 1. Cold miss populates 60s cache
+            m1 = await admin_client.get("/api/v1/admin/dashboard/metrics/?period=month")
+            assert m1.status_code == 200
+            assert m1.json()["total_conversations"] == 11
+            assert metrics_calls == 1
+            assert cache_store["admin:dashboard:metrics:v1:month"][1] == 60
+
+            # 2. Second request hits cache without recomputing
+            m2 = await admin_client.get("/api/v1/admin/dashboard/metrics/?period=month")
+            assert m2.status_code == 200
+            assert m2.json()["total_conversations"] == 11
+            assert metrics_calls == 1
+
+            # 3. Different period uses a distinct cache key
+            mw = await admin_client.get("/api/v1/admin/dashboard/metrics/?period=week")
+            assert mw.status_code == 200
+            assert mw.json()["period"] == "week"
+            assert metrics_calls == 2
+
+            # 4. refresh=true bypasses cache read and updates cached value
+            m3 = await admin_client.get(
+                "/api/v1/admin/dashboard/metrics/?period=month&refresh=true"
+            )
+            assert m3.status_code == 200
+            assert m3.json()["total_conversations"] == 13
+            assert metrics_calls == 3
+
+            # 5. Timeseries caches with 60s TTL and honours refresh=true
+            t1 = await admin_client.get(
+                "/api/v1/admin/dashboard/timeseries/?period=month"
+            )
+            t2 = await admin_client.get(
+                "/api/v1/admin/dashboard/timeseries/?period=month"
+            )
+            assert t1.status_code == 200 and t2.status_code == 200
+            assert t1.json()["points"][0]["new"] == 1
+            assert t2.json()["points"][0]["new"] == 1
+            assert ts_calls == 1
+            assert cache_store["admin:dashboard:timeseries:v1:month"][1] == 60
+
+            t3 = await admin_client.get(
+                "/api/v1/admin/dashboard/timeseries/?period=month&refresh=true"
+            )
+            assert t3.status_code == 200
+            assert t3.json()["points"][0]["new"] == 2
+            assert ts_calls == 2
+
+        # 6. Redis connection failure fails open cleanly
+        class BrokenRedis:
+            async def get(self, _key: str) -> str | None:
+                raise ConnectionError("redis down")
+
+            async def set(self, _key: str, _val: str, ex: int | None = None) -> None:
+                raise ConnectionError("redis down")
+
+        with (
+            patch("src.api.v1.admin.get_redis_client", return_value=BrokenRedis()),
+            patch(
+                "src.services.dashboard_metrics.calculate_dashboard_metrics",
+                side_effect=fake_calc_metrics,
+            ),
+        ):
+            m_err = await admin_client.get(
+                "/api/v1/admin/dashboard/metrics/?period=day"
+            )
+            assert m_err.status_code == 200
+            assert m_err.json()["period"] == "day"
+    finally:
+        app.dependency_overrides.pop(get_db, None)

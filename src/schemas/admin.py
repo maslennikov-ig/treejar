@@ -2,12 +2,38 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .common import Language, SalesStage, UUIDModel
+from src.core.config import settings
+from src.llm.safety import (
+    _BOUNDED_OPENAI_HELPER_MODELS,
+    _OPENROUTER_REASONING_DISABLED_MODEL_IDS,
+    DEFAULT_QUALITY_MODEL,
+    PATH_QUALITY_FINAL,
+    model_name_for_path,
+)
+from src.quality.config import (
+    _AFFORDABLE_QA_MODEL_VARIANTS,
+    AIQualityControlsConfig,
+    AIQualityScopeUsage,
+    build_ai_quality_response,
+)
+from src.quality.config import (
+    AIQualityControlsResponse as _BaseAIQualityControlsResponse,
+)
+
+from .common import (
+    ConversationStatus,
+    DealStatus,
+    EscalationStatus,
+    Language,
+    SalesStage,
+    UUIDModel,
+)
 from .manager_review import ManagerLeaderboardEntry
+from .product import ProductSyncResponse as _BaseProductSyncResponse
 
 
 class PromptRead(UUIDModel):
@@ -164,17 +190,12 @@ class TimeseriesResponse(BaseModel):
 
 class SettingsRead(BaseModel):
     bot_enabled: bool
-    default_language: Language
     telegram_test_mode_enabled: bool
-    follow_up_enabled: bool
-    max_messages_per_conversation: int
 
 
 class SettingsUpdate(BaseModel):
     bot_enabled: bool | None = None
-    default_language: Language | None = None
     telegram_test_mode_enabled: bool | None = None
-    follow_up_enabled: bool | None = None
 
 
 class AdminActionAuditRead(UUIDModel):
@@ -235,6 +256,25 @@ class AdminBotRuleRead(UUIDModel):
     archived_at: datetime | None = None
 
 
+def validate_bot_rule_scope_fields(
+    *,
+    scope: str | None,
+    stage: object | None,
+    language: object | None,
+    segment: str | None,
+) -> None:
+    if scope == "conversation":
+        raise ValueError(
+            "scope 'conversation' is not supported because no target conversation field exists"
+        )
+    if scope == "stage" and not stage:
+        raise ValueError("stage is required when scope is 'stage'")
+    if scope == "language" and not language:
+        raise ValueError("language is required when scope is 'language'")
+    if scope == "segment" and not (isinstance(segment, str) and segment.strip()):
+        raise ValueError("segment is required when scope is 'segment'")
+
+
 class AdminBotRuleWrite(BaseModel):
     title: str = Field(min_length=1, max_length=240)
     type: BotRuleType = "playbook"
@@ -246,6 +286,24 @@ class AdminBotRuleWrite(BaseModel):
     segment: str | None = Field(default=None, max_length=120)
     instruction: str = Field(min_length=1, max_length=5000)
     trigger_examples: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("segment", mode="before")
+    @classmethod
+    def normalize_segment(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+    @model_validator(mode="after")
+    def validate_scope_target(self) -> Self:
+        validate_bot_rule_scope_fields(
+            scope=self.scope,
+            stage=self.stage,
+            language=self.language,
+            segment=self.segment,
+        )
+        return self
 
 
 class AdminBotRuleUpdate(BaseModel):
@@ -259,6 +317,40 @@ class AdminBotRuleUpdate(BaseModel):
     segment: str | None = Field(default=None, max_length=120)
     instruction: str | None = Field(default=None, min_length=1, max_length=5000)
     trigger_examples: list[str] | None = Field(default=None, max_length=20)
+
+    @field_validator("segment", mode="before")
+    @classmethod
+    def normalize_segment(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+    @model_validator(mode="after")
+    def validate_explicit_scope_target(self) -> Self:
+        if self.scope == "conversation":
+            raise ValueError(
+                "scope 'conversation' is not supported because no target conversation field exists"
+            )
+        if (
+            self.scope == "stage"
+            and "stage" in self.model_fields_set
+            and not self.stage
+        ):
+            raise ValueError("stage is required when scope is 'stage'")
+        if (
+            self.scope == "language"
+            and "language" in self.model_fields_set
+            and not self.language
+        ):
+            raise ValueError("language is required when scope is 'language'")
+        if (
+            self.scope == "segment"
+            and "segment" in self.model_fields_set
+            and not self.segment
+        ):
+            raise ValueError("segment is required when scope is 'segment'")
+        return self
 
 
 class AdminBotRulePreviewRequest(BaseModel):
@@ -411,11 +503,28 @@ class AdminConversationDetail(AdminConversationListItem):
 
 class AdminConversationUpdate(BaseModel):
     customer_name: str | None = Field(default=None, max_length=255)
-    status: str | None = Field(default=None, max_length=80)
-    sales_stage: str | None = Field(default=None, max_length=80)
-    escalation_status: str | None = Field(default=None, max_length=80)
-    deal_status: str | None = Field(default=None, max_length=80)
+    status: ConversationStatus | None = None
+    sales_stage: SalesStage | None = None
+    escalation_status: EscalationStatus | None = None
+    deal_status: DealStatus | None = None
     language: Language | None = None
+
+    @field_validator("deal_status", mode="before")
+    @classmethod
+    def normalize_empty_deal_status(cls, value: Any) -> Any:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @model_validator(mode="after")
+    def reject_explicit_null_non_nullable_fields(self) -> Self:
+        for field_name in ("status", "sales_stage", "escalation_status", "language"):
+            if (
+                field_name in self.model_fields_set
+                and getattr(self, field_name) is None
+            ):
+                raise ValueError(f"{field_name} cannot be null")
+        return self
 
 
 class AdminEscalationWrite(BaseModel):
@@ -651,3 +760,70 @@ class AdminSessionInfoResponse(BaseModel):
     actor: str = "admin"
     logout_url: str = "/admin/logout"
     sqladmin_url: str = "/admin/"
+
+
+def resolve_default_ai_quality_model() -> str:
+    """Return the backend policy default model for AI quality evaluation."""
+    return model_name_for_path(PATH_QUALITY_FINAL).strip() or DEFAULT_QUALITY_MODEL
+
+
+def resolve_available_ai_quality_models(
+    config: AIQualityControlsConfig | None = None,
+) -> list[str]:
+    """Return supported quality evaluation models, deduplicated in policy order."""
+    default_model = resolve_default_ai_quality_model()
+    affordable_variants = [
+        variant if "/" in variant else f"z-ai/{variant}"
+        for variant in sorted(_AFFORDABLE_QA_MODEL_VARIANTS)
+    ]
+    candidates: list[str] = [
+        default_model,
+        *affordable_variants,
+        *sorted(_BOUNDED_OPENAI_HELPER_MODELS),
+        getattr(settings, "openrouter_model_fast", ""),
+        *sorted(_OPENROUTER_REASONING_DISABLED_MODEL_IDS),
+        "z-ai/glm-5",
+    ]
+    if config is not None:
+        candidates.extend(
+            [
+                config.bot_qa.model,
+                config.manager_qa.model,
+                config.red_flags.model,
+            ]
+        )
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for raw in candidates:
+        normalized = str(raw or "").strip()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            ordered.append(normalized)
+    return ordered
+
+
+class AIQualityControlsResponse(_BaseAIQualityControlsResponse):
+    default_model: str = Field(default_factory=resolve_default_ai_quality_model)
+    available_models: list[str] = Field(
+        default_factory=resolve_available_ai_quality_models
+    )
+
+
+def build_admin_ai_quality_response(
+    config: AIQualityControlsConfig,
+    *,
+    usage_today: dict[str, AIQualityScopeUsage] | None = None,
+) -> AIQualityControlsResponse:
+    base = build_ai_quality_response(config)
+    return AIQualityControlsResponse(
+        config=base.config,
+        warnings=base.warnings,
+        usage_today=usage_today if usage_today is not None else base.usage_today,
+        default_model=resolve_default_ai_quality_model(),
+        available_models=resolve_available_ai_quality_models(config),
+    )
+
+
+class AdminProductSyncResponse(_BaseProductSyncResponse):
+    status: str = "queued"

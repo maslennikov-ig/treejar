@@ -1,10 +1,7 @@
-"""Auto-FAQ service — saves adapted manager responses as new FAQ entries.
+"""Auto-FAQ service — reviews adapted manager responses as FAQ candidates.
 
-All FAQ entries are normalized to English before saving to ensure
-consistent deduplication and retrieval across languages.
-
-Handles deduplication via cosine similarity (threshold 0.92) to avoid
-storing near-duplicate answers in the knowledge base.
+Handles deterministic safety/context checks and deduplication via cosine
+similarity (threshold 0.92) against active knowledge base entries.
 """
 
 from __future__ import annotations
@@ -14,26 +11,15 @@ import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openrouter import OpenRouterProvider
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import settings
-from src.llm.safety import (
-    PATH_AUTO_FAQ_TRANSLATE,
-    model_name_for_path,
-    model_settings_for_path,
-    run_agent_with_safety,
-)
 from src.models.knowledge_base import KnowledgeBase
 from src.models.knowledge_base_candidate import KnowledgeBaseCandidate
 from src.rag.embeddings import EmbeddingEngine
 from src.services.auto_faq_types import AutoFAQCandidate
 
 logger = logging.getLogger(__name__)
-AUTO_FAQ_TRANSLATE_MODEL_NAME = model_name_for_path(PATH_AUTO_FAQ_TRANSLATE)
 
 # Entries with cosine similarity above this threshold are considered duplicates
 DUPLICATE_THRESHOLD = 0.92
@@ -85,32 +71,6 @@ _SENSITIVE_OR_REGULATED_RE = re.compile(
     re.IGNORECASE,
 )
 
-_TRANSLATE_SYSTEM_PROMPT = """\
-You are a precise translator for a knowledge base.
-Translate the given Q&A pair into clear, professional English.
-Preserve ALL factual content (numbers, dates, prices, product names, SKUs).
-Return ONLY the translated text in the exact same "Q: ...\nA: ..." format.
-If the text is already in English, return it unchanged."""
-
-_translate_model = OpenAIChatModel(
-    AUTO_FAQ_TRANSLATE_MODEL_NAME,
-    provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
-    settings=model_settings_for_path(
-        PATH_AUTO_FAQ_TRANSLATE,
-        model_name=AUTO_FAQ_TRANSLATE_MODEL_NAME,
-    ),
-)
-
-_translate_agent: Agent[None, str] = Agent(
-    model=_translate_model,
-    system_prompt=_TRANSLATE_SYSTEM_PROMPT,
-    retries=0,
-    model_settings=model_settings_for_path(
-        PATH_AUTO_FAQ_TRANSLATE,
-        model_name=AUTO_FAQ_TRANSLATE_MODEL_NAME,
-    ),
-)
-
 
 @dataclass(frozen=True)
 class AutoFAQSaveResult:
@@ -127,38 +87,6 @@ class _CandidatePostCheckResult:
     guard_reasons: tuple[str, ...] = ()
     duplicate_similarity: float | None = None
     embedding: list[float] | None = None
-
-
-async def _normalize_to_english(question: str, answer: str) -> tuple[str, str]:
-    """Translate a Q&A pair to English using the fast LLM model.
-
-    Returns:
-        Tuple of (english_question, english_answer).
-        Falls back to original text if translation fails.
-    """
-    try:
-        content = f"Q: {question}\nA: {answer}"
-        result = await run_agent_with_safety(
-            _translate_agent,
-            PATH_AUTO_FAQ_TRANSLATE,
-            content,
-            model_name=AUTO_FAQ_TRANSLATE_MODEL_NAME,
-        )
-        translated = result.output.strip()
-
-        # Parse back into Q and A
-        if "\nA:" in translated:
-            parts = translated.split("\nA:", 1)
-            q = parts[0].removeprefix("Q:").strip()
-            a = parts[1].strip()
-            return q, a
-
-        # Fallback: return original if parsing fails
-        logger.warning("Failed to parse translated FAQ, using original text")
-        return question, answer
-    except Exception:
-        logger.exception("LLM translation failed, saving FAQ in original language")
-        return question, answer
 
 
 def _detect_context_specific_reasons(*texts: str) -> tuple[str, ...]:
@@ -204,7 +132,10 @@ async def _nearest_duplicate_similarity(
             KnowledgeBase.id,
             KnowledgeBase.embedding.cosine_distance(embedding).label("distance"),
         )
-        .where(KnowledgeBase.embedding.is_not(None))
+        .where(
+            KnowledgeBase.deleted_at.is_(None),
+            KnowledgeBase.embedding.is_not(None),
+        )
         .order_by("distance")
         .limit(1)
     )
@@ -333,109 +264,3 @@ async def review_auto_faq_candidate(
         )
         await db.commit()
     return result
-
-
-async def save_confirmed_faq_candidate(
-    db: AsyncSession,
-    candidate: AutoFAQCandidate,
-    *,
-    original_question: str,
-    manager_draft: str,
-    customer_message: str,
-    embedding_engine: EmbeddingEngine,
-) -> AutoFAQSaveResult:
-    """Persist a candidate after explicit admin confirmation."""
-    checks = await _run_candidate_post_checks(
-        db,
-        candidate,
-        manager_draft=manager_draft,
-        customer_message=customer_message,
-        embedding_engine=embedding_engine,
-    )
-    if checks.status != "needs_confirmation":
-        return AutoFAQSaveResult(
-            status=checks.status,
-            candidate=candidate,
-            guard_reasons=checks.guard_reasons,
-            duplicate_similarity=checks.duplicate_similarity,
-        )
-
-    content_text = _candidate_content(candidate)
-    title = candidate.question[:200]
-    kb_entry = KnowledgeBase(
-        source="auto_faq",
-        category="faq",
-        title=title,
-        content=content_text,
-        language="en",
-        embedding=checks.embedding,
-        is_auto_generated=True,
-        original_question=original_question,
-        manager_draft=manager_draft,
-    )
-    db.add(kb_entry)
-    await db.commit()
-    await db.refresh(kb_entry)
-
-    logger.info(
-        "Auto-FAQ entry created after confirmation: title=%r, id=%s",
-        title[:50],
-        kb_entry.id,
-    )
-    return AutoFAQSaveResult(status="saved", candidate=candidate, entry=kb_entry)
-
-
-async def save_to_faq(
-    db: AsyncSession,
-    question: str,
-    adapted_answer: str,
-    manager_draft: str,
-    embedding_engine: EmbeddingEngine,
-    *,
-    admin_confirmed: bool = False,
-) -> AutoFAQSaveResult:
-    """Review or save a manager's adapted answer as a new FAQ entry.
-
-    The Q&A pair is normalized to English for consistent deduplication and
-    retrieval across all languages. By default this function only returns a
-    candidate that needs admin confirmation; pass ``admin_confirmed=True`` only
-    from an explicit admin approval action.
-
-    Args:
-        db: Async database session.
-        question: The original customer question (any language).
-        adapted_answer: The polished answer (any language).
-        manager_draft: The raw draft from the manager.
-        embedding_engine: Engine for generating embeddings.
-        admin_confirmed: Whether an admin explicitly approved saving.
-
-    Returns:
-        Structured result describing whether the candidate needs confirmation,
-        was saved, or was rejected by deterministic post-checks.
-    """
-    en_question, en_answer = await _normalize_to_english(question, adapted_answer)
-    candidate = AutoFAQCandidate(
-        question=en_question,
-        answer=en_answer,
-        confidence=1.0,
-        language="en",
-    )
-    logger.info("Normalized FAQ to English: %r -> %r", question[:60], en_question[:60])
-
-    if not admin_confirmed:
-        return await review_auto_faq_candidate(
-            db,
-            candidate,
-            manager_draft=manager_draft,
-            customer_message=adapted_answer,
-            embedding_engine=embedding_engine,
-        )
-
-    return await save_confirmed_faq_candidate(
-        db,
-        candidate,
-        original_question=question,
-        manager_draft=manager_draft,
-        customer_message=adapted_answer,
-        embedding_engine=embedding_engine,
-    )

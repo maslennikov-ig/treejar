@@ -182,8 +182,10 @@ async def get_system_prompt_component(
     if redis:
         try:
             cached = await redis.get(cache_key)
-            if cached and isinstance(cached, bytes):
+            if isinstance(cached, bytes) and cached:
                 return str(cached.decode("utf-8"))
+            if isinstance(cached, str) and cached:
+                return cached
         except Exception as e:
             logger.warning("Redis cache error in get_system_prompt_component: %s", e)
 

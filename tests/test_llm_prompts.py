@@ -365,3 +365,25 @@ async def test_build_system_prompt_defers_product_search_budget_to_runtime() -> 
     assert "If two product searches" not in prompt
     assert "Never send an interim message like" in prompt
     assert "Let me try a more specific search for you" in prompt
+
+
+@pytest.mark.asyncio
+async def test_get_system_prompt_component_accepts_str_and_bytes_from_redis() -> None:
+    """Redis cache hits work with both decode_responses=True (str) and raw bytes (AD-33)."""
+    from src.llm.prompts import get_system_prompt_component
+
+    db, redis = AsyncMock(), AsyncMock()
+
+    redis.get.return_value = "CACHED STRING PROMPT"
+    str_result = await get_system_prompt_component(
+        db, redis, "base_prompt", "DEFAULT PROMPT"
+    )
+    assert str_result == "CACHED STRING PROMPT"
+    db.execute.assert_not_awaited()
+
+    redis.get.return_value = b"CACHED BYTES PROMPT"
+    bytes_result = await get_system_prompt_component(
+        db, redis, "base_prompt", "DEFAULT PROMPT"
+    )
+    assert bytes_result == "CACHED BYTES PROMPT"
+    db.execute.assert_not_awaited()

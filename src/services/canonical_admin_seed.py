@@ -826,30 +826,3 @@ async def sync_canonical_bot_behavior_rules(
 
     counts.total_active = active_count if mode == "safe" else len(catalog)
     return counts.as_dict()
-
-
-async def ensure_canonical_seed(
-    db: AsyncSession,
-    embedding_engine: EmbeddingEngine | None = None,
-) -> dict[str, dict[str, int]]:
-    """Create-only seed of missing canonical KB articles and bot rules."""
-    kb_counts = await sync_canonical_knowledge_base(
-        db,
-        embedding_engine,
-        actor=CANONICAL_ACTOR,
-        mode="safe",
-    )
-    rule_counts = await sync_canonical_bot_behavior_rules(
-        db,
-        embedding_engine,
-        actor=CANONICAL_ACTOR,
-        mode="safe",
-    )
-    if (
-        kb_counts["created"]
-        or kb_counts["updated"]
-        or rule_counts["created"]
-        or rule_counts["updated"]
-    ):
-        await db.commit()
-    return {"knowledge_base": kb_counts, "bot_rules": rule_counts}
