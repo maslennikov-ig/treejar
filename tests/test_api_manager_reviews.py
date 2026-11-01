@@ -66,6 +66,12 @@ def test_manager_leaderboard_entry() -> None:
 def test_manager_reviews_router_registered() -> None:
     """Manager reviews router is registered in the API."""
     from src.api.v1.router import api_v1_router
+    from src.main import app
 
-    route_paths = [getattr(route, "path", "") for route in api_v1_router.routes]
+    route_paths = [
+        getattr(route, "path", None)
+        or getattr(getattr(route, "include_context", None), "prefix", "")
+        for route in api_v1_router.routes
+    ]
     assert any("/manager-reviews" in path for path in route_paths)
+    assert "/api/v1/manager-reviews/" in app.openapi()["paths"]

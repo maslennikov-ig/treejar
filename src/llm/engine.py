@@ -18,6 +18,7 @@ from uuid import UUID
 import httpx
 from pydantic import ValidationError
 from pydantic_ai import Agent, RunContext, ToolReturn
+from pydantic_ai.capabilities import PrepareTools
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from pydantic_ai.tools import ToolDefinition
 from sqlalchemy import select
@@ -2405,7 +2406,7 @@ model = OpenAIChatModel(
 sales_agent = Agent(
     model=model,
     deps_type=SalesDeps,
-    prepare_tools=_prepare_sales_tools,
+    capabilities=[PrepareTools(_prepare_sales_tools)],
     retries=2,
     model_settings=model_settings_for_path(
         PATH_CORE_CHAT, model_name=CORE_CHAT_MODEL_NAME

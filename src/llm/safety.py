@@ -12,8 +12,9 @@ from dataclasses import dataclass
 from html import escape
 from typing import Any, Literal, cast, overload
 
+import anyio
 import httpx
-from openai import APITimeoutError, AsyncStream
+from openai import APITimeoutError, AsyncOpenAI, AsyncStream
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from pydantic_ai import ModelSettings, UsageLimits
 from pydantic_ai.exceptions import (
@@ -21,7 +22,7 @@ from pydantic_ai.exceptions import (
     ModelHTTPError,
     UnexpectedModelBehavior,
 )
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.openai import (
     OpenAIChatModel,
@@ -92,6 +93,14 @@ class OpenRouterCompletionError(ModelAPIError):
 class OpenRouterTelemetryChatModel(OpenAIChatModel):
     """Preserve OpenRouter's provider-reported cost on the model response."""
 
+    _client_override: AsyncOpenAI | None = None
+
+    @property
+    def client(self) -> AsyncOpenAI:
+        if self._client_override is not None:
+            return self._client_override
+        return super().client
+
     @overload
     async def _completions_create(
         self,
@@ -108,7 +117,7 @@ class OpenRouterTelemetryChatModel(OpenAIChatModel):
         stream: Literal[False],
         model_settings: OpenAIChatModelSettings,
         model_request_parameters: ModelRequestParameters,
-    ) -> ChatCompletion: ...
+    ) -> ChatCompletion | ModelResponse: ...
 
     async def _completions_create(
         self,
@@ -116,7 +125,7 @@ class OpenRouterTelemetryChatModel(OpenAIChatModel):
         stream: bool,
         model_settings: OpenAIChatModelSettings,
         model_request_parameters: ModelRequestParameters,
-    ) -> ChatCompletion | AsyncStream[ChatCompletionChunk]:
+    ) -> ChatCompletion | AsyncStream[ChatCompletionChunk] | ModelResponse:
         if stream:
             return await super()._completions_create(
                 messages,
@@ -131,8 +140,8 @@ class OpenRouterTelemetryChatModel(OpenAIChatModel):
             # Disable hidden SDK retries inside this single explicit retry budget.
             # Copy the model/client options rather than mutate a shared client.
             request_model = copy(self)
-            request_model.client = self.client.with_options(max_retries=0)
-        prior_response: ChatCompletion | None = None
+            request_model._client_override = self.client.with_options(max_retries=0)
+        prior_response: ChatCompletion | ModelResponse | None = None
         prior_error_type: str | None = None
         retry_cost_unknown = False
         error_type: str | None
@@ -210,8 +219,9 @@ class OpenRouterTelemetryChatModel(OpenAIChatModel):
             prior_error_type = error_type
         raise RuntimeError("Unreachable completion retry state")
 
-    def _process_provider_details(self, response: Any) -> dict[str, Any]:
-        details = super()._process_provider_details(response)
+    def _process_provider_details(self, response: Any) -> dict[str, Any] | None:
+        raw_details = super()._process_provider_details(response)
+        details: dict[str, Any] = dict(raw_details) if raw_details is not None else {}
         cost = _usage_number(getattr(response, "usage", None), "cost", "cost_usd")
         retry_cost = _usage_number(response, _OPENROUTER_RETRY_COST_ATTR)
         valid_costs = [
@@ -233,7 +243,7 @@ class OpenRouterTelemetryChatModel(OpenAIChatModel):
                 details["openrouter_error_type"] = error_type
         if getattr(response, _OPENROUTER_RETRY_COST_UNKNOWN_ATTR, False):
             details["openrouter_retry_cost_unknown"] = True
-        return details
+        return details if details else raw_details
 
     def provider_cost_snapshot(self) -> float | None:
         """Return cost reported by provider responses processed in this run."""
@@ -1023,10 +1033,16 @@ async def run_agent_with_safety(
             else None
         )
         try:
-            result = await asyncio.wait_for(
-                agent.run(user_prompt, **run_kwargs),
-                timeout=policy.timeout_seconds,
-            )
+            async with asyncio.timeout(policy.timeout_seconds) as timeout_ctx:
+                try:
+                    result = await agent.run(user_prompt, **run_kwargs)
+                except anyio.ClosedResourceError as close_exc:
+                    if timeout_ctx.expired():
+                        raise TimeoutError from close_exc
+                    current_task = asyncio.current_task()
+                    if current_task is not None and current_task.cancelling() > 0:
+                        raise asyncio.CancelledError from close_exc
+                    raise
             usage = extract_llm_usage_telemetry(
                 path=policy.path,
                 model_name=model_name,

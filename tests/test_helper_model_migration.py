@@ -11,8 +11,8 @@ from openai import AsyncOpenAI
 from pydantic_ai import Agent
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
-from src.llm.fact_extractor import FastCustomerFactExtractionOutput
 from src.llm.repair_judge import RepairJudgeDecision
+from src.llm.response_adapter import ManagerReplyWithAutoFAQResult
 from src.llm.safety import (
     OpenRouterTelemetryChatModel,
     model_settings_for_path,
@@ -27,10 +27,13 @@ from src.quality.schemas import RedFlagEvaluationResult
     ("path", "model", "output_type", "answer"),
     [
         (
-            "fact_extraction",
+            "auto_faq_candidate",
             "openai/gpt-6-luna",
-            FastCustomerFactExtractionOutput,
-            {"facts": [], "trace_note": "No facts in synthetic input."},
+            ManagerReplyWithAutoFAQResult,
+            {
+                "customer_message": "Thank you for contacting Treejar.",
+                "kb_candidate": None,
+            },
         ),
         (
             "response_repair_judge",

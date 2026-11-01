@@ -21,29 +21,29 @@ dependencies = [
     # Redis + async queue
     "redis>=5.2,<7.0",
     "arq>=0.26,<1.0",
-    # HTTP client
+    # HTTP client & async runtime
     "httpx>=0.28,<1.0",
+    "anyio>=4.14.2,<5.0",
     # Settings & validation
     "pydantic>=2.10,<3.0",
-    "pydantic-settings>=2.7,<3.0",
+    "pydantic-settings>=2.14.2,<3.0",
     # AI orchestration
-    "pydantic-ai>=1.0,<2.0",
+    "pydantic-ai>=1.107.6,<2.0",
     # LLM client (OpenRouter via base_url)
-    "openai>=1.60,<2.0",
+    "openai>=2.29,<3.0",
     # Embeddings (local, multilingual)
-    "sentence-transformers>=3.0.0",
+    "sentence-transformers>=5.6.0",
     # CPU-only torch for deterministic local inference and lock resolution
     "torch>=2.10,<3.0",
     # Utilities
-    "python-multipart>=0.0.18",
-    "python-dotenv>=1.0,<2.0",
+    "python-multipart>=0.0.31",
+    "python-dotenv>=1.2.2,<2.0",
     # Admin panel
-    "sqladmin>=0.20,<1.0",
+    "sqladmin>=0.27.1,<1.0",
     # PDF generation
-    "weasyprint>=63.0,<65.0",
+    "weasyprint>=70.0,<72.0",
     "jinja2>=3.1,<4.0",
     "itsdangerous>=2.2.0",
-    "langgraph>=1.0,<2.0",
 ]
 
 [project.scripts]
@@ -61,6 +61,9 @@ dev = [
     "pre-commit>=4.0,<5.0",
     "deptry>=0.23,<1.0",
 ]
+
+[tool.uv]
+constraint-dependencies = ["setuptools>=84.1.0"]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
@@ -123,6 +126,12 @@ module = ["weasyprint", "weasyprint.*"]
 ignore_missing_imports = true
 follow_untyped_imports = true
 
+# `src/rag/embeddings.py` is SHA256-pinned by `PINNED_RETRIEVAL_CONTRACT_SHA`;
+# sentence-transformers >=6.x returns `Any` from `encode(...)`.
+[[tool.mypy.overrides]]
+module = ["src.rag.embeddings"]
+warn_return_any = false
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -151,7 +160,7 @@ filterwarnings = [
 #
 # These three are sibling modules inside scripts/, imported by path, not PyPI
 # packages. deptry reads them as missing dependencies unless told otherwise.
-known_first_party = ["runtime_support", "escalation_guard", "live_test_destination"]
+known_first_party = ["runtime_support", "escalation_guard", "live_test_destination", "scenario_replay"]
 # Agent and orchestration scratch directories are not part of the package.
 extend_exclude = ["\\.agents", "\\.codex", "\\.superpowers", "\\.worktrees"]
 
@@ -159,4 +168,4 @@ extend_exclude = ["\\.agents", "\\.codex", "\\.superpowers", "\\.worktrees"]
 # `torch` is declared so the CPU wheel is pinned for sentence-transformers;
 # nothing imports it directly.
 DEP002 = ["uvicorn", "asyncpg", "openai", "python-multipart", "python-dotenv", "pytest", "pytest-asyncio", "pytest-cov", "pytest-timeout", "ruff", "mypy", "pre-commit", "deptry", "itsdangerous", "torch"]
-DEP003 = ["starlette", "logfire", "aiohttp"]
+DEP003 = ["starlette", "logfire"]
