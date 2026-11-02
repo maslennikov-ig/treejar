@@ -1346,8 +1346,13 @@ async def process_message_impl(
         # `db_model_main` is "unknown" until the runtime resolves, which is what
         # the `locals()` probe here used to be testing for.
         response_model = f"{db_model_main}|error"
+        error_text = (
+            "عذراً، أواجه مشكلة تقنية مؤقتة حالياً. يرجى المحاولة مرة أخرى بعد لحظات."
+            if is_arabic_customer_language(str(getattr(turn.conv, "language", "en")))
+            else "I apologize, but I am experiencing a temporary issue. Please try again in a moment."
+        )
         rendered = turn.render_reply(
-            "I apologize, but I am experiencing a temporary issue. Please try again in a moment.",
+            error_text,
             response_deps=turn.deps,
             provenance="deterministic_static",
             model_name=response_model,

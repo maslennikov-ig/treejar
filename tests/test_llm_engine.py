@@ -3091,6 +3091,62 @@ async def test_process_message_does_not_recover_catalog_after_side_effect_tool(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_arabic_error_fallback_avoids_language_guard_prompt(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.language = "ar"
+    conv.customer_name = "ليان"
+    text = "نعم، سيستخدمون الكراسي طوال يوم العمل، هل لديكم عينات؟"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.side_effect = RuntimeError("OpenRouter 403 Key limit exceeded")
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|error"
+    assert "مشكلة تقنية مؤقتة" in response.text
+    assert "بماذا يمكنني مساعدتك" not in response.text
+    assert "؟" not in response.text
+
+
+def test_arabic_static_fail_closed_messages_pass_language_guard() -> None:
+    from src.llm.language_guard import enforce_customer_reply_language
+
+    for candidate in (
+        engine_module._exact_quote_fail_closed_message(
+            manager_notified=False, language="ar"
+        ),
+        engine_module._exact_quote_fail_closed_message(
+            manager_notified=True, language="ar"
+        ),
+        engine_module._catalog_price_unavailable_customer_message(language="ar"),
+        engine_module._catalog_mismatch_customer_message(language="ar"),
+    ):
+        assert enforce_customer_reply_language(candidate, language="ar") == candidate
+        assert "بماذا يمكنني مساعدتك" not in candidate
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_successful_normal_path_clears_repair_state(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,

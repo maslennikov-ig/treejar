@@ -1614,14 +1614,24 @@ async def _store_applied_bot_rules(
         )
 
 
-def _catalog_mismatch_customer_message() -> str:
+def _catalog_mismatch_customer_message(*, language: str = "en") -> str:
+    if is_arabic_customer_language(language):
+        return (
+            "لم أتمكن من تأكيد السعر والتوفر الدقيقين لهذا المنتج في النظام حالياً. "
+            "لم يتم إنشاء عرض سعر أو تقديم التزام غير مؤكد."
+        )
     return (
         "I couldn't confirm exact price and availability in Zoho for this item. "
         "I haven't created a quotation or made an unverified commitment."
     )
 
 
-def _catalog_price_unavailable_customer_message() -> str:
+def _catalog_price_unavailable_customer_message(*, language: str = "en") -> str:
+    if is_arabic_customer_language(language):
+        return (
+            "لم أتمكن من تأكيد سعر الكتالوج المعتمد لهذا المنتج حالياً. "
+            "لم يتم إنشاء عرض سعر أو تقديم التزام غير مؤكد."
+        )
     return (
         "I couldn't confirm a customer-facing catalog price for this item. "
         "I haven't created a quotation or made an unverified commitment."
@@ -1794,7 +1804,22 @@ async def _record_catalog_zoho_mismatch(
         logger.warning("Failed to flush catalog/Zoho mismatch audit: %s", exc)
 
 
-def _exact_quote_fail_closed_message(*, manager_notified: bool = False) -> str:
+def _exact_quote_fail_closed_message(
+    *,
+    manager_notified: bool = False,
+    language: str = "en",
+) -> str:
+    if is_arabic_customer_language(language):
+        if manager_notified:
+            return (
+                "لم أتمكن من إتمام عرض السعر الدقيق تلقائياً. "
+                "تم إبلاغ المدير لمراجعة الطلب وإكماله."
+            )
+        return (
+            "لم أتمكن من إتمام عرض السعر الدقيق تلقائياً، ولم أقدم أي التزام غير "
+            "مؤكد بالسعر أو التوفر. يرجى المحاولة بعد لحظات أو المتابعة بالخيارات "
+            "المؤكدة التي ناقشناها."
+        )
     if manager_notified:
         return (
             "I couldn't finalize the exact quotation automatically. "
@@ -2260,7 +2285,10 @@ async def _fail_closed_exact_quote_request(
             deps.conversation.id,
         )
 
-    return _exact_quote_fail_closed_message(manager_notified=manager_notified)
+    return _exact_quote_fail_closed_message(
+        manager_notified=manager_notified,
+        language=str(getattr(deps.conversation, "language", "en")),
+    )
 
 
 async def _resolve_inventory_item(
@@ -3248,7 +3276,9 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
 
     if not stock_info:
         if catalog_product:
-            return _catalog_mismatch_customer_message()
+            return _catalog_mismatch_customer_message(
+                language=str(getattr(ctx.deps.conversation, "language", "en"))
+            )
         return f"Product with SKU {sku} not found in inventory."
 
     snapshot_key = sku.strip().casefold()
@@ -3288,7 +3318,9 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
             sku=sku,
             catalog_product=catalog_product,
         )
-        return _catalog_price_unavailable_customer_message()
+        return _catalog_price_unavailable_customer_message(
+            language=str(getattr(ctx.deps.conversation, "language", "en"))
+        )
 
     vat_text = unit_price_vat_text(
         float(price_decision.unit_price), str(price_decision.currency)
@@ -3981,7 +4013,9 @@ async def _create_quotation(
                 sku=item.sku,
                 catalog_product=catalog_product,
             )
-            return _catalog_price_unavailable_customer_message()
+            return _catalog_price_unavailable_customer_message(
+                language=str(getattr(ctx.deps.conversation, "language", "en"))
+            )
 
         unit_price = price_decision.unit_price
         total_price = unit_price * item.quantity
