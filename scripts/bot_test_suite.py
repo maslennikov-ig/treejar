@@ -69,7 +69,13 @@ class MockMessagingProvider(MessagingProvider):
     def outbound_chat_id(chat_id: str) -> str:
         return chat_id
 
-    async def send_text(self, chat_id: str, text: str) -> str:
+    async def send_text(
+        self,
+        chat_id: str,
+        text: str,
+        crm_message_id: str | None = None,
+    ) -> str:
+        del chat_id, crm_message_id
         self.sent_texts.append(text)
         return f"mock_text_{uuid.uuid4().hex[:6]}"
 
@@ -80,7 +86,10 @@ class MockMessagingProvider(MessagingProvider):
         caption: str | None = None,
         content: bytes | None = None,
         content_type: str | None = None,
+        crm_message_id: str | None = None,
+        caption_crm_message_id: str | None = None,
     ) -> str:
+        del chat_id, crm_message_id, caption_crm_message_id
         self.sent_media.append(
             {
                 "url": url,

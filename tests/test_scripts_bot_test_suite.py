@@ -33,7 +33,10 @@ def _load_bot_test_suite_module():
             sys.path.remove(scripts_str)
 
 
-def test_mock_messaging_provider_exposes_channel_id_and_outbound_chat_id() -> None:
+@pytest.mark.asyncio
+async def test_mock_messaging_provider_exposes_channel_id_and_audited_send_kwargs() -> (
+    None
+):
     module = _load_bot_test_suite_module()
     provider = module.MockMessagingProvider(channel_id="chan-test-123")
 
@@ -41,6 +44,13 @@ def test_mock_messaging_provider_exposes_channel_id_and_outbound_chat_id() -> No
     assert provider.outbound_chat_id("+971000000099#test-9_1") == (
         "+971000000099#test-9_1"
     )
+    msg_id = await provider.send_text(
+        "+971000000099#test-9_1",
+        "Follow-up text",
+        crm_message_id="crm-123",
+    )
+    assert msg_id.startswith("mock_text_")
+    assert provider.sent_texts == ["Follow-up text"]
 
 
 @pytest.mark.asyncio
