@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="portal-style" content="cs">
+<title>Пилот Никита и Noor: схема маршрутизации по чётным и нечётным дням</title>
+</head>
+<body class="cs-page">
+
+<header class="cs-hero">
+  <div class="cs-hero__grid" aria-hidden="true"></div>
+  <div class="cs-container cs-hero__inner">
+    <div>
+      <div class="cs-rule" aria-hidden="true"></div>
+      <p class="cs-eyebrow">Treejar · Техническая памятка для настройки приёмника · 2 ноября 2026</p>
+      <h1 class="cs-hero__title">Маршрутизация Никита и Noor по чётным и нечётным дням</h1>
+      <p class="cs-lead">Виктор и Юля утвердили правила 14-дневного сравнения двух ассистентов на рабочем номере WhatsApp. Поскольку входящие вебхуки сейчас приходят в ваш приёмник, ниже собраны точные правила распределения диалогов, адрес пересылки в Noor и список из четырёх коротких проверок перед включением потока. Внизу страницы — форма на две минуты для подтверждения готовности.</p>
+    </div>
+    <ul class="cs-meta">
+      <li class="cs-meta__row"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 4.8V8l2.2 1.4"/></svg><span><b class="cs-kpi">UTC+3</b> расчёт даты по Москве</span></li>
+      <li class="cs-meta__row"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 4h8M5.5 8h8M5.5 12h8M2.5 4h.01M2.5 8h.01M2.5 12h.01"/></svg><span><b class="cs-kpi">1 владелец</b> на весь диалог</span></li>
+      <li class="cs-meta__row"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5"/></svg><span><b class="cs-kpi">4 теста</b> до пуска клиентов</span></li>
+    </ul>
+  </div>
+</header>
+
+<main class="cs-container cs-artifact-main">
+
+  <section class="cs-artifact-sec">
+    <div class="cs-sec__num">01</div>
+    <h2 class="cs-sec__title">Утверждённые правила распределения</h2>
+    <div class="cs-prose">
+      <p>Все параметры ниже подтверждены Виктором и Юлей 2 ноября 2026 года. Существующие аналитические и архивные обработчики на вашей стороне сохраняются без изменений.</p>
+    </div>
+    <div class="cs-table-wrap">
+      <table class="cs-table">
+        <thead>
+          <tr><th scope="col">Параметр</th><th scope="col">Утверждённое правило</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Кого распределяем</strong></td>
+            <td>Только <strong>новые клиенты</strong>, написавшие после момента старта. Все текущие и ранее начатые переписки остаются у текущих исполнителей и в Noor не переводятся.</td>
+          </tr>
+          <tr>
+            <td><strong>Часовой пояс даты</strong></td>
+            <td><strong>Москва (<code>Europe/Moscow</code>, UTC+3)</strong> — берётся календарное число месяца в момент первого входящего сообщения нового клиента.</td>
+          </tr>
+          <tr>
+            <td><strong>Чётные числа (2, 4, 6…)</strong></td>
+            <td>Диалог закрепляется за <strong>Никитой</strong> (в Noor сообщения этого чата пересылать не нужно).</td>
+          </tr>
+          <tr>
+            <td><strong>Нечётные числа (3, 5, 7…)</strong></td>
+            <td>Диалог закрепляется за <strong>Noor</strong> (события этого чата пересылаются в Noor, ответы Никиты по нему полностью подавляются).</td>
+          </tr>
+          <tr>
+            <td><strong>Смена даты в полночь</strong></td>
+            <td><strong>Не меняет ассистента.</strong> Если клиент впервые написал 3 ноября (нечётный день), Noor продолжает вести его и 4 ноября, и в последующие дни.</td>
+          </tr>
+          <tr>
+            <td><strong>Вход живого менеджера</strong></td>
+            <td>При первом же сообщении менеджера в чате <strong>оба ассистента прекращают автоответы</strong> и отложенные напоминания по этому диалогу.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="cs-artifact-sec">
+    <div class="cs-sec__num">02</div>
+    <h2 class="cs-sec__title">Схема прохождения пакета и защита от двойных ответов</h2>
+    <div class="cs-prose">
+      <p>Ключевое требование пилота — исключить ситуацию, когда одному клиенту отвечают оба бота (включая отложенные приветствия и автонапоминания из фоновой очереди).</p>
+    </div>
+
+    <figure class="cs-prose">
+      <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2ODAgMzU2IiB3aWR0aD0iNjgwIiBoZWlnaHQ9IjM1NiI+CiAgPHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjY4MCIgaGVpZ2h0PSIzNTYiIHJ4PSIxNCIgZmlsbD0iIzBmMTcyYSIvPgogIDxyZWN0IHg9IjEiIHk9IjEiIHdpZHRoPSI2NzgiIGhlaWdodD0iMzU0IiByeD0iMTMiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzMzNDE1NSIgc3Ryb2tlLXdpZHRoPSIxLjUiLz4KCiAgPCEtLSBTdGVwIDEgLS0+CiAgPHJlY3QgeD0iMjgiIHk9IjIwIiB3aWR0aD0iNjI0IiBoZWlnaHQ9IjU4IiByeD0iMTAiIGZpbGw9IiMxZTI5M2IiIHN0cm9rZT0iIzQ3NTU2OSIgc3Ryb2tlLXdpZHRoPSIxLjQiLz4KICA8dGV4dCB4PSIzNDAiIHk9IjQ1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZjhmYWZjIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLC1hcHBsZS1zeXN0ZW0sU2Vnb2UgVUksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNiIgZm9udC13ZWlnaHQ9IjcwMCI+MS4g0JLRhdC+0LTRj9GJ0LjQuSDQstC10LHRhdGD0LogV2hhdHNBcHAgKNGA0LDQsdC+0YfQuNC5INC60LDQvdCw0LsgLi4uOTIzNSk8L3RleHQ+CiAgPHRleHQgeD0iMzQwIiB5PSI2NiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2NiZDVlMSIgZm9udC1mYW1pbHk9InN5c3RlbS11aSwtYXBwbGUtc3lzdGVtLFNlZ29lIFVJLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTMuNSI+0J/QvtGB0YLRg9C/0LDQtdGCINCyINCy0LDRiCDRgtC10LrRg9GJ0LjQuSDQv9GA0LjRkdC80L3QuNC6INCy0LXQsdGF0YPQutC+0LI8L3RleHQ+CgogIDwhLS0gQXJyb3cgMSAtPiAyIC0tPgogIDxwYXRoIGQ9Ik0zNDAgNzh2MjRNMzM0IDk2bDYgNyA2LTciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwZjVkNCIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KCiAgPCEtLSBTdGVwIDIgLS0+CiAgPHJlY3QgeD0iMjgiIHk9IjEwNCIgd2lkdGg9IjYyNCIgaGVpZ2h0PSI2NCIgcng9IjEwIiBmaWxsPSIjMWUyOTNiIiBzdHJva2U9IiMwMGY1ZDQiIHN0cm9rZS13aWR0aD0iMS41Ii8+CiAgPHRleHQgeD0iMzQwIiB5PSIxMzAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNmOGZhZmMiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksLWFwcGxlLXN5c3RlbSxTZWdvZSBVSSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE2IiBmb250LXdlaWdodD0iNzAwIj4yLiDQn9C+0YHRgtC+0Y/QvdC90LDRjyDRgtCw0LHQu9C40YbQsCDQstC70LDQtNC10LvRjNGG0LAg0LTQuNCw0LvQvtCz0LAgKGNoYXRJZCDihpIgb3duZXIpPC90ZXh0PgogIDx0ZXh0IHg9IjM0MCIgeT0iMTUzIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjY2JkNWUxIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLC1hcHBsZS1zeXN0ZW0sU2Vnb2UgVUksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMyI+0J7RgtC60YDRi9GC0YvQuSDRh9Cw0YIg4oaSINC/0YDQtdC20L3QuNC5INCy0LvQsNC00LXQu9C10YYgwrcg0J3QvtCy0YvQuSDQutC70LjQtdC90YIg4oaSINC00LDRgtCwINC/0L4g0JzQvtGB0LrQstC1IChVVEMrMyk8L3RleHQ+CgogIDwhLS0gQXJyb3dzIDIgLT4gYnJhbmNoZXMgLS0+CiAgPHBhdGggZD0iTTE4MCAxNjh2MjZNMTc0IDE4OGw2IDcgNi03TTUwMCAxNjh2MjZNNDk0IDE4OGw2IDcgNi03IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMGY1ZDQiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CgogIDwhLS0gTGVmdCBicmFuY2g6IE5pa2l0YSAtLT4KICA8cmVjdCB4PSIyOCIgeT0iMTk2IiB3aWR0aD0iMzAwIiBoZWlnaHQ9Ijg2IiByeD0iMTAiIGZpbGw9IiMxZTI5M2IiIHN0cm9rZT0iIzY0NzQ4YiIgc3Ryb2tlLXdpZHRoPSIxLjQiLz4KICA8dGV4dCB4PSIxNzgiIHk9IjIyMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2Y4ZmFmYyIgZm9udC1mYW1pbHk9InN5c3RlbS11aSwtYXBwbGUtc3lzdGVtLFNlZ29lIFVJLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTUiIGZvbnQtd2VpZ2h0PSI3MDAiPtCn0ZHRgtC90LDRjyDQtNCw0YLQsCAoMiwgNCwgNuKApikg4oaSINCd0LjQutC40YLQsDwvdGV4dD4KICA8dGV4dCB4PSIxNzgiIHk9IjI0NiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2NiZDVlMSIgZm9udC1mYW1pbHk9InN5c3RlbS11aSwtYXBwbGUtc3lzdGVtLFNlZ29lIFVJLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTMiPtCe0YLQstC10YfQsNC10YIg0YLQvtC70YzQutC+INCd0LjQutC40YLQsDs8L3RleHQ+CiAgPHRleHQgeD0iMTc4IiB5PSIyNjYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNjYmQ1ZTEiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksLWFwcGxlLXN5c3RlbSxTZWdvZSBVSSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEzIj7QsiBOb29yINGB0L7QvtCx0YnQtdC90LjRjyDQvdC1INC/0LXRgNC10YHRi9C70LDRjtGC0YHRjzwvdGV4dD4KCiAgPCEtLSBSaWdodCBicmFuY2g6IE5vb3IgLS0+CiAgPHJlY3QgeD0iMzUyIiB5PSIxOTYiIHdpZHRoPSIzMDAiIGhlaWdodD0iODYiIHJ4PSIxMCIgZmlsbD0iIzFlMjkzYiIgc3Ryb2tlPSIjMDBmNWQ0IiBzdHJva2Utd2lkdGg9IjEuNiIvPgogIDx0ZXh0IHg9IjUwMiIgeT0iMjIzIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjMDBmNWQ0IiBmb250LWZhbWlseT0ic3lzdGVtLXVpLC1hcHBsZS1zeXN0ZW0sU2Vnb2UgVUksc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNSIgZm9udC13ZWlnaHQ9IjcwMCI+0J3QtdGH0ZHRgtC90LDRjyDQtNCw0YLQsCAoMywgNSwgN+KApikg4oaSIE5vb3I8L3RleHQ+CiAgPHRleHQgeD0iNTAyIiB5PSIyNDYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNjYmQ1ZTEiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksLWFwcGxlLXN5c3RlbSxTZWdvZSBVSSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEzIj7QntGC0L/RgNCw0LLQutCwINCd0LjQutC40YLRiyDQt9Cw0LHQu9C+0LrQuNGA0L7QstCw0L3QsDs8L3RleHQ+CiAgPHRleHQgeD0iNTAyIiB5PSIyNjYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNjYmQ1ZTEiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksLWFwcGxlLXN5c3RlbSxTZWdvZSBVSSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEzIj5QT1NUINC/0LDQutC10YLQsCDQsiBOb29yINGBINC30LDQs9C+0LvQvtCy0LrQvtC8IEJlYXJlcjwvdGV4dD4KCiAgPCEtLSBNYW5hZ2VyIHRha2VvdmVyIGJhciAtLT4KICA8cmVjdCB4PSIyOCIgeT0iMjk4IiB3aWR0aD0iNjI0IiBoZWlnaHQ9IjQwIiByeD0iOCIgZmlsbD0iIzE3MjU1NCIgc3Ryb2tlPSIjMzhiZGY4IiBzdHJva2Utd2lkdGg9IjEuMiIgc3Ryb2tlLWRhc2hhcnJheT0iNSA0Ii8+CiAgPHRleHQgeD0iMzQwIiB5PSIzMjMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNlMGYyZmUiIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksLWFwcGxlLXN5c3RlbSxTZWdvZSBVSSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEzIiBmb250LXdlaWdodD0iNjAwIj7QntGC0LLQtdGCINC80LXQvdC10LTQttC10YDQsCAoaXNFY2hvOiB0cnVlKSDihpIg0L/QsNGD0LfQsCDQsNCy0YLQvtC+0YLQstC10YLQvtCyINGDINC+0LHQvtC40YUg0LHQvtGC0L7QsjwvdGV4dD4KPC9zdmc+" alt="Схема распределения входящего сообщения: постоянная таблица владельца диалога, чётная дата по Москве уходит Никите, нечётная дата пересылается в Noor при заблокированной отправке Никиты, ответ менеджера останавливает обоих ботов" width="680" height="356">
+      <figcaption class="cs-muted">Схема маршрутизации новых обращений и защиты от двойных ответов.</figcaption>
+    </figure>
+
+    <div class="cs-prose">
+      <p><b>Технические детали стыковки:</b></p>
+      <ol>
+        <li><b>Постоянное хранение владельца чата:</b> при первом сообщении нового клиента атомарно сохраняйте связку <code>chatId → owner</code> (<code>nikita</code> или <code>noor</code>) в постоянной БД вашей системы (а не в оперативной памяти процесса), чтобы перезапуск сервиса, повторная доставка вебхука или наступление полуночи не меняли назначенного ассистента.</li>
+        <li><b>Жёсткий барьер на финальной отправке Никиты:</b> проверять владельца нужно не только на входе вебхука, но и непосредственно перед вызовом отправки в мессенджер со стороны Никиты (включая отложенные приветствия и догоняющие сообщения). Если владелец чата — <code>noor</code>, отправка от Никиты блокируется.</li>
+        <li><b>Точка приёма Noor:</b> пересылайте исходный JSON-пакет вебхука без изменения структуры и без подмены <code>channelId</code> (оставляйте рабочий канал <code>...9235</code> как есть) запросом <code>POST https://noor.starec.ai/<wbr>api/v1/<wbr>webhook/<wbr>wazzup</code> с заголовком <code>Authorization: Bearer &lt;секрет&gt;</code>. Сам секретный ключ мы передадим отдельно в личном чате через Игоря.</li>
+        <li><b>Обязательная пересылка ответов менеджера и статусов:</b> для всех чатов, закреплённых за <code>noor</code>, пересылайте в Noor не только реплики клиента, но и исходящие ответы живых менеджеров (<code>authorType: "manager"</code> / <code>isEcho: true</code>), а также статусы доставки. Как только Noor видит сообщение менеджера, он автоматически переводит диалог в режим ручного ведения и замолкает.</li>
+        <li><b>Быстрый стоп-переключатель пилота:</b> предусмотрите флаг конфигурации, который при необходимости мгновенно направляет новые обращения только Никите без потери истории и без пересылки старых сообщений задним числом. На своей стороне перед стартом мы зеркально откроем приём и отправку для рабочего канала <code>...9235</code> (сейчас у Noor включён защищённый тестовый режим, рабочим клиентам ничего не отправляется).</li>
+      </ol>
+    </div>
+
+    <div class="cs-note">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7.2v3.6M8 5.2h.01"/></svg>
+      <div><b>Важно до согласованного старта:</b> пожалуйста, не включайте пересылку реального клиентского потока и не меняйте глобальный адрес вебхука без отмашки обеих команд. Сначала проверяем связку на двух выделенных тестовых номерах.</div>
+    </div>
+  </section>
+
+  <section class="cs-artifact-sec">
+    <div class="cs-sec__num">03</div>
+    <h2 class="cs-sec__title">Четыре короткие проверки перед открытием потока</h2>
+    <div class="cs-table-wrap">
+      <table class="cs-table">
+        <thead>
+          <tr><th scope="col">Проверка</th><th scope="col">Ожидаемый результат</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>1. Диалог Никиты + повтор пакета</strong></td>
+            <td>Отвечает только Никита; повторная доставка того же <code>messageId</code> не вызывает второго ответа.</td>
+          </tr>
+          <tr>
+            <td><strong>2. Диалог Noor + тишина второго бота</strong></td>
+            <td>Пакет доходит в Noor (HTTP 200), клиенту отвечает только Noor; Никита не шлёт ни ответа, ни фонового напоминания.</td>
+          </tr>
+          <tr>
+            <td><strong>3. Сохранение владельца после 00:00 МСК</strong></td>
+            <td>В уже открытом диалоге смена чётности даты не переключает собеседника.</td>
+          </tr>
+          <tr>
+            <td><strong>4. Перехват менеджером и стоп-кран</strong></td>
+            <td>После реплики менеджера в WhatsApp оба бота молчат; при выключении флага пилота новые чаты штатно уходят Никите.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="cs-artifact-sec">
+    <div class="cs-sec__num">04</div>
+    <h2 class="cs-sec__title">Подтверждение готовности со стороны специалиста Никиты</h2>
+    <div class="cs-sheet cs-sheet--stack">
+
+      <section class="cs-q" data-portal-question="Готовность маршрутизации">
+        <div class="cs-q__head">
+          <div class="cs-qnum"><span class="cs-qnum__n">01</span><span class="cs-qnum__of">/ 03</span></div>
+          <h3 class="cs-q__title" id="q-router-title">Маршрутизация и хранение владельца диалога</h3>
+          <p class="cs-ctx">Удаётся ли на вашем приёмнике сохранять владельца чата (чётные МСК — Никита, нечётные МСК — Noor) для новых клиентов без затрагивания текущих переписок?</p>
+        </div>
+        <div class="cs-q__body">
+          <div class="cs-opts" role="radiogroup" aria-labelledby="q-router-title" aria-label="Маршрутизация и хранение владельца диалога">
+            <label class="cs-opt"><input class="cs-radio" type="radio" name="router_readiness" value="Схема понятна, готовы настроить"><span>Схема понятна, готовы настроить на нашем приёмнике</span></label>
+            <label class="cs-opt"><input class="cs-radio" type="radio" name="router_readiness" value="Уже готово к тестовой проверке"><span>Уже реализовано на нашей стороне, готовы к совместному тесту</span></label>
+            <label class="cs-opt cs-opt--muted"><input class="cs-radio" type="radio" name="router_readiness" value="Есть технический вопрос или ограничение"><span>Есть вопрос или архитектурное ограничение — опишу ниже</span></label>
+          </div>
+        </div>
+      </section>
+
+      <section class="cs-q" data-portal-question="Блокировка двойных ответов и эхо менеджера">
+        <div class="cs-q__head">
+          <div class="cs-qnum"><span class="cs-qnum__n">02</span><span class="cs-qnum__of">/ 03</span></div>
+          <h3 class="cs-q__title" id="q-fence-title">Блокировка очереди Никиты и проброс ответов менеджера</h3>
+          <p class="cs-ctx">Подтвердите, что для чатов Noor будут отключены фоновые приветствия и напоминания Никиты, а сообщения живых менеджеров (<code>isEcho</code>) будут пересылаться в Noor.</p>
+        </div>
+        <div class="cs-q__body">
+          <div class="cs-opts" role="radiogroup" aria-labelledby="q-fence-title" aria-label="Блокировка очереди Никиты и проброс ответов менеджера">
+            <label class="cs-opt"><input class="cs-radio" type="radio" name="egress_fence_status" value="Подтверждаю оба пункта"><span>Подтверждаю: фоновые отправки Никиты для чатов Noor заблокируем, сообщения менеджеров пробросим</span></label>
+            <label class="cs-opt"><input class="cs-radio" type="radio" name="egress_fence_status" value="Нужна небольшая доработка, укажу срок ниже"><span>Потребуется небольшая доработка — напишу срок в комментарии ниже</span></label>
+          </div>
+        </div>
+      </section>
+
+      <section class="cs-q" data-portal-question="Контакт и окно для совместного теста">
+        <div class="cs-q__head">
+          <div class="cs-qnum"><span class="cs-qnum__n">03</span><span class="cs-qnum__of">/ 03</span></div>
+          <h3 class="cs-q__title"><label for="tech_contact_slot">Ваш контакт для передачи ключа и удобное время 15-минутной проверки</label></h3>
+          <p class="cs-ctx">Укажите имя и Telegram, куда Игорь передаст заголовок авторизации для Noor, и когда удобно провести тест на двух проверочных номерах (пароли и секреты сюда не вписывайте).</p>
+        </div>
+        <div class="cs-q__body">
+          <textarea class="cs-field" rows="2" id="tech_contact_slot" name="tech_contact_slot" placeholder="Имя, @username и удобное время теста"></textarea>
+        </div>
+      </section>
+
+      <section class="cs-q" data-portal-optional>
+        <div class="cs-q__head">
+          <div class="cs-qnum"><span class="cs-qnum__n">+</span></div>
+          <h3 class="cs-q__title"><label for="tech_details_note">Технический комментарий или вопрос (необязательно)</label></h3>
+          <p class="cs-ctx">Если нужно уточнить формат пакета, тайм-ауты (рекомендуем до 10 секунд на приём вебхука) или порядок отката.</p>
+        </div>
+        <div class="cs-q__body">
+          <textarea class="cs-field cs-field--area" id="tech_details_note" name="tech_details_note" placeholder="Необязательно"></textarea>
+        </div>
+      </section>
+
+    </div>
+
+    <div class="cs-submit">
+      <p>Ответы сохраняются по мере ввода. Нажмите «Отправить ответы», когда будете готовы: уведомление сразу поступит Игорю и инженерной команде Noor для передачи ключа и запуска совместного теста.</p>
+      <button type="button" class="cs-btn" data-portal-submit>Отправить ответы<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>
+    </div>
+  </section>
+
+</main>
+</body>
+</html>
