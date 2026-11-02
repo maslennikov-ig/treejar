@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="portal-style" content="cs">
+<title>Две настройки для Noor: лимит ключа и доступ к Zoho CRM</title>
+</head>
+<body class="cs-page">
+
+<header class="cs-hero">
+  <div class="cs-hero__grid" aria-hidden="true"></div>
+  <div class="cs-container cs-hero__inner">
+    <div>
+      <div class="cs-rule" aria-hidden="true"></div>
+      <p class="cs-eyebrow">Treejar × Noor · Пошаговая инструкция для Виктора</p>
+      <h1 class="cs-hero__title">Поднять лимит ключа и вернуть доступ к Zoho CRM</h1>
+      <p class="cs-lead">Виктор, добрый день. Мы обновили и протестировали Noor на всех рабочих сценариях. Чтобы ассистент отвечал без остановок и снова создавал сделки в CRM, нужна ваша помощь в двух личных кабинетах — всё займёт около пяти минут. Склад Zoho Inventory работает исправно, его трогать не нужно.</p>
+    </div>
+    <ul class="cs-meta">
+      <li class="cs-meta__row"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 4.8V8l2.2 1.4"/></svg><span><b class="cs-kpi">5 минут</b> на оба шага</span></li>
+      <li class="cs-meta__row"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 4h8M5.5 8h8M5.5 12h8M2.5 4h.01M2.5 8h.01M2.5 12h.01"/></svg><span><b class="cs-kpi">2 кабинета</b> — OpenRouter и Zoho</span></li>
+      <li class="cs-meta__row"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5"/></svg><span><b class="cs-kpi">1 код</b> вставить внизу страницы</span></li>
+    </ul>
+  </div>
+</header>
+
+<main class="cs-container cs-artifact-main">
+
+  <section class="cs-artifact-sec">
+    <div class="cs-sec__num">01</div>
+    <h2 class="cs-sec__title">Коротко: что работает сейчас и что нужно сделать</h2>
+    <div class="cs-prose">
+      <p>Ниже — общая картина по подключениям Noor. Оба действия безопасны: они не затрагивают сайт Treejar, каталог товаров и работающую связь со складом.</p>
+    </div>
+    <div class="cs-table-wrap">
+      <table class="cs-table">
+        <thead>
+          <tr><th scope="col">Участок</th><th scope="col">Статус и действие</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Склад Zoho Inventory и PDF</strong></td>
+            <td><span class="cs-chip cs-chip--ok">работает</span> <span class="cs-muted">— трогать не нужно</span></td>
+          </tr>
+          <tr>
+            <td><strong>1. Ключ OpenRouter</strong></td>
+            <td><span class="cs-chip cs-chip--warn">лимит $5</span> <span class="cs-muted">— поднять лимит (шаг 1)</span></td>
+          </tr>
+          <tr>
+            <td><strong>2. Zoho CRM</strong></td>
+            <td><span class="cs-chip cs-chip--warn">нужен код</span> <span class="cs-muted">— создать 1 код (шаг 2)</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="cs-artifact-sec">
+    <div class="cs-sec__num">02</div>
+    <h2 class="cs-sec__title">Шаг 1. Поднять лимит ключа в OpenRouter (2 минуты)</h2>
+    <div class="cs-prose">
+      <p>Сервис OpenRouter отвечает за генерацию ответов ассистента в диалогах. При выпуске ключа для Noor на нём был поставлен разовый потолок расходов <b>$5</b>. Как только сумма дошла до <b>$5.07</b>, сервис остановил новые ответы до тех пор, пока владелец аккаунта не поднимет эту планку.</p>
+      <p><b>Что сделать по шагам:</b></p>
+      <ol>
+        <li>Откройте сайт <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">openrouter.ai/settings/keys</a> и войдите в аккаунт, в котором создавался ключ для Noor.</li>
+        <li>Сначала проверьте общий баланс счёта: нажмите на значок профиля в правом верхнем углу и откройте раздел <b>Credits</b> (<a href="https://openrouter.ai/settings/credits" target="_blank" rel="noopener noreferrer">openrouter.ai/settings/credits</a>). Убедитесь, что на балансе есть положительный остаток (например, <b>$30–$50</b>). Если там ноль — пополните счёт кнопкой <b>Add Credits</b>.</li>
+        <li>Вернитесь в раздел <b>Keys</b> (<a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">openrouter.ai/settings/keys</a>).</li>
+        <li>Найдите в списке ключ Noor: его строка начинается с <b><code>sk-or-v1-9d6</code></b> и заканчивается на <b><code>...124</code></b> (рядом будет виден расход <b>$5.07</b> из лимита <b>$5</b>).</li>
+        <li>В правой части строки этого ключа нажмите на три точки <b><code>...</code></b> (или значок карандаша) и выберите пункт <b>Edit</b>.</li>
+        <li>В открывшемся окне найдите поле <b>Credit limit</b>:
+          <ul>
+            <li><b>Рекомендуемый вариант:</b> впишите <b><code>50</code></b> или <b><code>100</code></b> (в долларах), а если ниже есть выпадающий список <b>Limit reset</b> — выберите <b>Monthly</b> (обновлять каждый месяц), чтобы лимит больше не останавливал работу навсегда.</li>
+            <li><b>Либо без отдельного лимита на ключе:</b> просто очистите поле <b>Credit limit</b> (оставьте его пустым) — тогда ключ будет расходовать средства в рамках общего баланса <b>Credits</b>.</li>
+          </ul>
+        </li>
+        <li>Нажмите кнопку <b>Save</b>.</li>
+      </ol>
+    </div>
+    <div class="cs-note">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7.2v3.6M8 5.2h.01"/></svg>
+      <div><b>Не удаляйте ключ и не создавайте новый.</b> Достаточно изменить лимит у существующего ключа <code>...124</code> и нажать <b>Save</b>. Он уже прописан на нашем сервере и заработает автоматически в ту же секунду — копировать и присылать сам ключ не нужно.</div>
+    </div>
+  </section>
+
+  <section class="cs-artifact-sec">
+    <div class="cs-sec__num">03</div>
+    <h2 class="cs-sec__title">Шаг 2. Выпустить временный код для Zoho CRM (3 минуты)</h2>
+    <div class="cs-prose">
+      <p>Чтобы Noor снова находил клиентов по номеру телефона и записывал сделки в <b>Zoho CRM</b>, нужно перевыпустить постоянный ключ связи (технически он называется <i>Refresh Token</i>). <b>Сам постоянный ключ вам выпускать не придётся:</b> достаточно получить в Zoho один одноразовый код по инструкции ниже и вставить его в форму внизу страницы — ровно так же, как вы уже делали для склада в сентябре. Всё остальное мы выполним на сервере сами.</p>
+      <p><b>Маленькая деталь перед началом:</b> одноразовый код Zoho действует ровно <b>10 минут</b> с момента нажатия кнопки <b>Create</b>. Поэтому создавайте его тогда, когда готовы сразу вставить код внизу страницы и нажать «Отправить ответы» (для надёжности можно за минуту написать Игорю в чат: «Сейчас отправлю код Zoho», чтобы мы сразу его приняли).</p>
+      <p><b>Пошаговая инструкция:</b></p>
+      <ol>
+        <li>Войдите в Zoho под главным аккаунтом владельца Treejar (тем же, под которым у вас открываются Zoho CRM и Inventory).</li>
+        <li>Откройте консоль разработчика Zoho по адресу <a href="https://api-console.zoho.eu" target="_blank" rel="noopener noreferrer">api-console.zoho.eu</a>.<br><b>Обратите внимание на окончание адреса — именно <code>.eu</code></b>, а не <code>.com</code>. Аккаунт Treejar находится в европейском регионе Zoho: если случайно откроется <code>.com</code>, нужного приложения на экране просто не будет.</li>
+        <li>На главной странице нажмите на карточку <b>Self Client</b>.<br>Это ваше уже готовое приложение (его Client ID начинается на <b><code>1000.4V1</code></b> и заканчивается на <b><code>W2EG</code></b>). Создавать новое приложение не нужно.</li>
+        <li>Перейдите на вкладку <b>Generate Code</b> (первая вкладка сверху).</li>
+        <li>Заполните три поля строго по таблице-шпаргалке ниже:</li>
+      </ol>
+    </div>
+
+    <div class="cs-table-wrap">
+      <table class="cs-table">
+        <thead>
+          <tr><th scope="col">Поле на экране Zoho</th><th scope="col">Что выбрать или вставить</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Scope</strong></td>
+            <td>Скопируйте и вставьте целиком длинную строку прав доступа из блока прямо под этой таблицей (без пробелов).</td>
+          </tr>
+          <tr>
+            <td><strong>Time Duration</strong></td>
+            <td>Выберите в выпадающем списке <strong>10 minutes</strong> (максимальное время).</td>
+          </tr>
+          <tr>
+            <td><strong>Scope Description</strong></td>
+            <td>Напишите короткую пометку латиницей: <strong>Noor CRM</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="cs-prose">
+      <p><b>Строка для поля Scope (выделите и скопируйте целиком):</b></p>
+      <p><code>ZohoCRM.modules.contacts.READ,<wbr>ZohoCRM.modules.contacts.CREATE,<wbr>ZohoCRM.modules.contacts.UPDATE,<wbr>ZohoCRM.modules.deals.READ,<wbr>ZohoCRM.modules.deals.CREATE,<wbr>ZohoCRM.modules.deals.UPDATE,<wbr>ZohoCRM.coql.READ,<wbr>ZohoCRM.modules.notes.READ,<wbr>ZohoCRM.modules.notes.CREATE,<wbr>ZohoCRM.settings.modules.READ</code></p>
+      <ol start="6">
+        <li>Нажмите кнопку <b>Create</b>. Если Zoho откроет дополнительное окно с выбором портала или организации (<i>Select Portal / CRM Organization</i>), выберите рабочую организацию <b>Treejar</b> в Zoho CRM и подтвердите нажатием <b>Create</b>.</li>
+        <li>На экране появится окно <b>Generated Code</b> со строкой, начинающейся на <b><code>1000.</code></b>, и кнопкой <b>Copy</b>. Нажмите <b>Copy</b>, сразу спуститесь к разделу 05 ниже, вставьте код в поле и нажмите <b>«Отправить ответы»</b>.</li>
+      </ol>
+    </div>
+
+    <div class="cs-note">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7.2v3.6M8 5.2h.01"/></svg>
+      <div><b>Если 10 минут случайно прошли — ничего страшного.</b> Просроченный код просто перестаёт действовать. В любой момент можно повторить шаги 4–7 и отправить свежий код. Сам постоянный Refresh Token после нашего обмена по минутам уже не ограничен и работает бессрочно.</div>
+    </div>
+  </section>
+
+  <section class="cs-artifact-sec">
+    <div class="cs-sec__num">04</div>
+    <h2 class="cs-sec__title">Чего делать не нужно (чтобы не сбить склад)</h2>
+    <div class="cs-prose">
+      <ul>
+        <li><b>Не удаляйте доступы в разделе Connected Apps</b> в настройках аккаунта Zoho — это отключит уже работающую интеграцию со складом Zoho Inventory.</li>
+        <li><b>Не создавайте много кодов подряд «про запас»:</b> Zoho хранит не более 20 активных ключей на одно приложение, а при превышении молча удаляет самый старый. Одного кода для CRM достаточно.</li>
+        <li><b>Не присылайте пароли от аккаунтов и Client Secret.</b> Одноразовый код <code>1000.xxxx...</code> передавать полностью безопасно: без закрытого серверного ключа, который уже хранится у нас, воспользоваться им никто не может.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="cs-artifact-sec">
+    <div class="cs-sec__num">05</div>
+    <h2 class="cs-sec__title">Отметка о готовности и код Zoho CRM</h2>
+    <div class="cs-sheet cs-sheet--stack">
+
+      <section class="cs-q" data-portal-question="Лимит ключа в OpenRouter">
+        <div class="cs-q__head">
+          <div class="cs-qnum"><span class="cs-qnum__n">01</span><span class="cs-qnum__of">/ 03</span></div>
+          <h3 class="cs-q__title" id="q-openrouter-title">Шаг 1: лимит ключа в OpenRouter</h3>
+          <p class="cs-ctx">Отметьте, удалось ли увеличить или снять лимит $5 на ключе, заканчивающемся на <code>...124</code>.</p>
+        </div>
+        <div class="cs-q__body">
+          <div class="cs-opts" role="radiogroup" aria-labelledby="q-openrouter-title" aria-label="Шаг 1: лимит ключа в OpenRouter">
+            <label class="cs-opt"><input class="cs-radio" type="radio" name="openrouter_limit_status" value="Готово, лимит ключа увеличен"><span>Готово — поднял (или убрал) лимит на ключе ...124 и проверил баланс Credits</span></label>
+            <label class="cs-opt"><input class="cs-radio" type="radio" name="openrouter_limit_status" value="Сделаю чуть позже"><span>Пока не менял — сделаю отдельно (отправляю сейчас код Zoho)</span></label>
+            <label class="cs-opt cs-opt--muted"><input class="cs-radio" type="radio" name="openrouter_limit_status" value="Нужна помощь с OpenRouter"><span>Не нашёл нужный ключ или возник вопрос — напишу ниже</span></label>
+          </div>
+        </div>
+      </section>
+
+      <section class="cs-q" data-portal-question="Временный код для Zoho CRM">
+        <div class="cs-q__head">
+          <div class="cs-qnum"><span class="cs-qnum__n">02</span><span class="cs-qnum__of">/ 03</span></div>
+          <h3 class="cs-q__title"><label for="zoho_crm_code">Шаг 2: временный код из Zoho для CRM</label></h3>
+          <p class="cs-ctx">Вставьте скопированный код целиком (он начинается с <code>1000.</code>). Напоминание: код живёт 10 минут — отправляйте сразу после нажатия Create.</p>
+        </div>
+        <div class="cs-q__body">
+          <input class="cs-field" type="text" id="zoho_crm_code" name="zoho_crm_code" autocomplete="off" placeholder="1000.xxxxxxxx.xxxxxxxx">
+        </div>
+      </section>
+
+      <section class="cs-q" data-portal-optional>
+        <div class="cs-q__head">
+          <div class="cs-qnum"><span class="cs-qnum__n">03</span><span class="cs-qnum__of">/ 03</span></div>
+          <h3 class="cs-q__title"><label for="setup_note">Комментарий или вопрос (необязательно)</label></h3>
+          <p class="cs-ctx">Если на каком-то шаге окно выглядело иначе или появилась ошибка — коротко опишите здесь, мы подскажем.</p>
+        </div>
+        <div class="cs-q__body">
+          <textarea class="cs-field cs-field--area" id="setup_note" name="setup_note" placeholder="Необязательно"></textarea>
+        </div>
+      </section>
+
+    </div>
+
+    <div class="cs-submit">
+      <p>Ответы сохраняются сами по мере ввода. Нажмите «Отправить ответы», когда будете готовы передать данные: после отправки страница перейдёт в режим чтения, а уведомление сразу придёт Игорю и команде.</p>
+      <button type="button" class="cs-btn" data-portal-submit>Отправить ответы<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>
+    </div>
+  </section>
+
+</main>
+</body>
+</html>
