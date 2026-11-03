@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 WAZZUP_CHANNEL_PHONE_CACHE_TTL_SECONDS = 600
 WAZZUP_CHANNEL_PHONE_KEY_PREFIX = "wazzup:channel_phone:"
+WAZZUP_OUTBOUND_CRM_KEY_PREFIX = "wazzup:outbound:crm:"
+WAZZUP_OUTBOUND_MSG_KEY_PREFIX = "wazzup:outbound:msg:"
+WAZZUP_OUTBOUND_ECHO_TTL_SECONDS = 3600
 _CHANNEL_PHONE_CACHE_MAX_ENTRIES = 64
 _channel_phone_cache: OrderedDict[tuple[str, str, str], tuple[str, float]] = (
     OrderedDict()
@@ -321,6 +324,31 @@ class WazzupProvider(MessagingProvider):
     def outbound_chat_id(self, chat_id: str) -> str:
         return self._outbound_chat_id(chat_id)
 
+    async def _record_outbound_echo_marker(
+        self,
+        *,
+        crm_message_id: str | None = None,
+        provider_message_id: str | None = None,
+    ) -> None:
+        redis_client = getattr(self, "redis", None)
+        if redis_client is None:
+            return
+        try:
+            if crm_message_id:
+                await redis_client.set(
+                    f"{WAZZUP_OUTBOUND_CRM_KEY_PREFIX}{crm_message_id}",
+                    "1",
+                    ex=WAZZUP_OUTBOUND_ECHO_TTL_SECONDS,
+                )
+            if provider_message_id and provider_message_id != "unknown":
+                await redis_client.set(
+                    f"{WAZZUP_OUTBOUND_MSG_KEY_PREFIX}{provider_message_id}",
+                    "1",
+                    ex=WAZZUP_OUTBOUND_ECHO_TTL_SECONDS,
+                )
+        except Exception:
+            logger.debug("Wazzup outbound echo marker write failed", exc_info=True)
+
     async def send_text(
         self,
         chat_id: str,
@@ -339,8 +367,11 @@ class WazzupProvider(MessagingProvider):
         if crm_message_id:
             payload["crmMessageId"] = crm_message_id
 
+        await self._record_outbound_echo_marker(crm_message_id=crm_message_id)
         response = await self._request("POST", "/message", json=payload)
-        return self._extract_message_id(response.json())
+        msg_id = self._extract_message_id(response.json())
+        await self._record_outbound_echo_marker(provider_message_id=msg_id)
+        return msg_id
 
     async def send_typing(self, chat_id: str) -> bool:
         """Best-effort typing indicator.
@@ -404,8 +435,10 @@ class WazzupProvider(MessagingProvider):
         if crm_message_id:
             payload["crmMessageId"] = crm_message_id
 
+        await self._record_outbound_echo_marker(crm_message_id=crm_message_id)
         response = await self._request("POST", "/message", json=payload)
         msg_id = self._extract_message_id(response.json())
+        await self._record_outbound_echo_marker(provider_message_id=msg_id)
 
         # --- Send caption as a separate text message (if provided) ---
         caption_msg_id: str | None = None
@@ -475,8 +508,11 @@ class WazzupProvider(MessagingProvider):
         if crm_message_id:
             payload["crmMessageId"] = crm_message_id
 
+        await self._record_outbound_echo_marker(crm_message_id=crm_message_id)
         response = await self._request("POST", "/message", json=payload)
-        return self._extract_message_id(response.json())
+        msg_id = self._extract_message_id(response.json())
+        await self._record_outbound_echo_marker(provider_message_id=msg_id)
+        return msg_id
 
     async def resolve_channel_phone(self, channel_id: str) -> str | None:
         """Resolve a Wazzup channelId into a normalized plainId phone."""

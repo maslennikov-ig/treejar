@@ -47,6 +47,7 @@ class WazzupIncomingMessage(BaseModel):
     isEcho: bool | None = None
     authorId: str | None = None  # Manager ID from Wazzup
     authorName: str | None = None  # Manager name from Wazzup
+    crmMessageId: str | None = None  # CRM idempotency key echoed on outbound sends
 
     model_config = {"extra": "allow"}
 

@@ -15,6 +15,10 @@ from pydantic import ValidationError
 
 from src.core.config import settings
 from src.core.database import async_session_factory
+from src.integrations.messaging.wazzup import (
+    WAZZUP_OUTBOUND_CRM_KEY_PREFIX,
+    WAZZUP_OUTBOUND_MSG_KEY_PREFIX,
+)
 from src.schemas import WazzupWebhookPayload
 from src.services.inbound_batch import (
     DEFAULT_INBOUND_BATCH_DEFER_SECONDS,
@@ -25,7 +29,10 @@ from src.services.inbound_batch import (
     resolve_inbound_batch_defer_seconds,
     serialize_inbound_message,
 )
-from src.services.outbound_audit import update_wazzup_statuses
+from src.services.outbound_audit import (
+    find_noor_outbound_audit_matches,
+    update_wazzup_statuses,
+)
 from src.services.proposal_followup import apply_proposal_read_statuses
 
 # Bind to uvicorn.error so info logs appear in docker logs
@@ -115,6 +122,92 @@ def _is_outbound_status_message(message: object) -> bool:
         return False
     status = message.get("status")
     return isinstance(status, str) and status in _OUTBOUND_MESSAGE_STATUSES
+
+
+def _is_candidate_manager_echo(message: object) -> bool:
+    """Return True when a Wazzup ``status='sent'`` item may be a live manager reply.
+
+    Wazzup v3 delivers human manager messages sent from WhatsApp or Wazzup CRM
+    inside ``messages`` with ``isEcho=True`` and ``status='sent'`` (often with
+    ``authorType`` omitted when sent from the WhatsApp phone app). Terminal
+    status updates (``delivered``, ``read``, ``error``, ``edited``) and bare
+    status dicts without ``chatId``/content are excluded here.
+    """
+    if not isinstance(message, dict):
+        return False
+    if message.get("status") != "sent":
+        return False
+    if message.get("authorType") == "bot":
+        return False
+    if message.get("isEcho") is not True and message.get("authorType") != "manager":
+        return False
+    chat_id = message.get("chatId")
+    if not isinstance(chat_id, str) or not chat_id.strip():
+        return False
+    text = message.get("text")
+    has_text = isinstance(text, str) and bool(text.strip())
+    return bool(has_text or message.get("contentUri") or message.get("media"))
+
+
+async def _filter_noor_self_echoes(
+    candidates: list[dict[str, Any]],
+    *,
+    redis: Any,
+) -> set[int]:
+    """Return indices of candidate echoes that belong to Noor's own outbound sends."""
+    self_indices: set[int] = set()
+    unresolved_indices: list[int] = []
+    provider_ids: set[str] = set()
+    crm_ids: set[str] = set()
+
+    for idx, msg in enumerate(candidates):
+        msg_id = msg.get("messageId")
+        crm_id = msg.get("crmMessageId")
+        matched_in_redis = False
+        if redis is not None:
+            try:
+                if isinstance(msg_id, str) and msg_id:
+                    val = await redis.get(f"{WAZZUP_OUTBOUND_MSG_KEY_PREFIX}{msg_id}")
+                    if val in ("1", b"1"):
+                        matched_in_redis = True
+                if not matched_in_redis and isinstance(crm_id, str) and crm_id:
+                    val = await redis.get(f"{WAZZUP_OUTBOUND_CRM_KEY_PREFIX}{crm_id}")
+                    if val in ("1", b"1"):
+                        matched_in_redis = True
+            except Exception:
+                logger.debug("Redis outbound echo lookup failed", exc_info=True)
+        if matched_in_redis:
+            self_indices.add(idx)
+            continue
+        unresolved_indices.append(idx)
+        if isinstance(msg_id, str) and msg_id:
+            provider_ids.add(msg_id)
+        if isinstance(crm_id, str) and crm_id:
+            crm_ids.add(crm_id)
+
+    if unresolved_indices and (provider_ids or crm_ids):
+        try:
+            async with async_session_factory() as db:
+                matched_provider, matched_crm = await find_noor_outbound_audit_matches(
+                    db,
+                    provider_message_ids=provider_ids,
+                    crm_message_ids=crm_ids,
+                )
+            for idx in unresolved_indices:
+                msg = candidates[idx]
+                msg_id = msg.get("messageId")
+                crm_id = msg.get("crmMessageId")
+                if (isinstance(msg_id, str) and msg_id in matched_provider) or (
+                    isinstance(crm_id, str) and crm_id in matched_crm
+                ):
+                    self_indices.add(idx)
+        except Exception:
+            logger.warning(
+                "Outbound audit echo check failed in webhook; deferring check to worker",
+                exc_info=True,
+            )
+
+    return self_indices
 
 
 def _status_updates_from_messages(messages: object) -> list[dict[str, object]]:
@@ -275,15 +368,29 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
 
     # Parse and process messages
     raw_messages = raw_body.get("messages", [])
-    messages = (
-        [
-            message
-            for message in raw_messages
-            if not _is_outbound_status_message(message)
-        ]
-        if isinstance(raw_messages, list)
-        else []
-    )
+    messages: list[Any] = []
+    if isinstance(raw_messages, list):
+        echo_candidates: list[dict[str, Any]] = []
+        echo_slots: list[int] = []
+        for message in raw_messages:
+            if not _is_outbound_status_message(message):
+                messages.append(message)
+            elif _is_candidate_manager_echo(message) and isinstance(message, dict):
+                echo_slots.append(len(messages))
+                messages.append(message)
+                echo_candidates.append(message)
+        if echo_candidates:
+            self_echo_indices = await _filter_noor_self_echoes(
+                echo_candidates,
+                redis=getattr(request.app.state, "redis", None),
+            )
+            if self_echo_indices:
+                drop_positions = {echo_slots[idx] for idx in self_echo_indices}
+                messages = [
+                    item
+                    for pos, item in enumerate(messages)
+                    if pos not in drop_positions
+                ]
     if not messages:
         logger.info("Wazzup webhook: no messages (status update or empty payload)")
         return JSONResponse({"ok": True}, status_code=200)
@@ -309,8 +416,11 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
     arq_pool = request.app.state.arq_pool
 
     for msg in payload.messages:
-        # Filter out status-only updates
-        if msg.status and msg.status != "inbound":
+        # Filter out status-only updates while preserving live manager echoes
+        is_manager_echo = msg.status == "sent" and (
+            msg.isEcho is True or msg.authorType == "manager"
+        )
+        if msg.status and msg.status != "inbound" and not is_manager_echo:
             logger.debug("Skipping non-inbound message: status=%s", msg.status)
             continue
 
@@ -335,18 +445,20 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
             )
             continue
 
-        # Route by authorType
-        author_type = msg.authorType or "client"
-
-        if author_type == "bot":
+        # Route by authorType / isEcho (Wazzup v3 WhatsApp phone echoes omit authorType)
+        if msg.authorType == "bot":
             # Echo of our own bot messages — skip entirely
             logger.debug("Skipping bot echo message")
             continue
 
-        if author_type == "manager":
+        if msg.authorType == "manager" or msg.isEcho is True:
+            author_type = "manager"
+            if msg.authorType != "manager":
+                msg.authorType = "manager"
             # Manager message — save but don't trigger LLM
             logger.info("Accepted manager message: message_type=%s", msg.type)
         else:
+            author_type = msg.authorType or "client"
             # Client message — standard flow
             logger.info("Accepted client message: message_type=%s", msg.type)
 

@@ -774,3 +774,154 @@ def test_a_refused_channel_is_logged_with_both_ids(
     assert other_channel in caplog.text
     assert EXPECTED_CHANNEL_ID in caplog.text
     app.state.redis.rpush.assert_not_called()
+
+
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_accepts_whatsapp_phone_manager_echo_with_status_sent(
+    mock_networks: Any,
+) -> None:
+    """Real Wazzup v3 manager replies from WhatsApp carry status='sent', isEcho=True, and no authorType."""
+    app.state.redis = AsyncMock()
+    app.state.redis.get = AsyncMock(return_value=None)
+    app.state.arq_pool = AsyncMock()
+    status_updater = AsyncMock(return_value=0)
+    proposal_updater = AsyncMock(return_value=0)
+    audit_matcher = AsyncMock(return_value=(set(), set()))
+    db = AsyncMock()
+    db_cm = AsyncMock()
+    db_cm.__aenter__.return_value = db
+    db_cm.__aexit__.return_value = False
+
+    with (
+        patch("src.api.v1.webhook.async_session_factory", return_value=db_cm),
+        patch("src.api.v1.webhook.update_wazzup_statuses", status_updater),
+        patch("src.api.v1.webhook.apply_proposal_read_statuses", proposal_updater),
+        patch("src.api.v1.webhook.find_noor_outbound_audit_matches", audit_matcher),
+        patch("src.api.v1.webhook.settings.wazzup_channel_id", EXPECTED_CHANNEL_ID),
+    ):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={
+                "messages": [
+                    {
+                        "messageId": "3EB0-MANAGER-PHONE-1",
+                        "channelId": EXPECTED_CHANNEL_ID,
+                        "chatId": "971501112233",
+                        "chatType": "whatsapp",
+                        "type": "text",
+                        "text": "Hello, I will assist you personally.",
+                        "dateTime": "2026-11-03T10:00:00.000Z",
+                        "status": "sent",
+                        "isEcho": True,
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    status_updater.assert_awaited_once()
+    audit_matcher.assert_awaited_once()
+    app.state.redis.rpush.assert_awaited_once()
+    queued_payload = json.loads(app.state.redis.rpush.await_args.args[1])
+    assert queued_payload["authorType"] == "manager"
+    assert queued_payload["isEcho"] is True
+    app.state.arq_pool.enqueue_job.assert_awaited_once()
+
+
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_skips_noor_own_outbound_echo_via_audit_table(
+    mock_networks: Any,
+) -> None:
+    """Noor's own outbound replies echoed back with status='sent' must not enqueue a manager takeover."""
+    app.state.redis = AsyncMock()
+    app.state.redis.get = AsyncMock(return_value=None)
+    app.state.arq_pool = AsyncMock()
+    status_updater = AsyncMock(return_value=1)
+    proposal_updater = AsyncMock(return_value=0)
+    audit_matcher = AsyncMock(return_value=({"noor-provider-msg-1"}, set()))
+    db = AsyncMock()
+    db_cm = AsyncMock()
+    db_cm.__aenter__.return_value = db
+    db_cm.__aexit__.return_value = False
+
+    with (
+        patch("src.api.v1.webhook.async_session_factory", return_value=db_cm),
+        patch("src.api.v1.webhook.update_wazzup_statuses", status_updater),
+        patch("src.api.v1.webhook.apply_proposal_read_statuses", proposal_updater),
+        patch("src.api.v1.webhook.find_noor_outbound_audit_matches", audit_matcher),
+        patch("src.api.v1.webhook.settings.wazzup_channel_id", EXPECTED_CHANNEL_ID),
+    ):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={
+                "messages": [
+                    {
+                        "messageId": "noor-provider-msg-1",
+                        "crmMessageId": "bot_reply:conv-1:m1",
+                        "channelId": EXPECTED_CHANNEL_ID,
+                        "chatId": "971501112233",
+                        "chatType": "whatsapp",
+                        "type": "text",
+                        "text": "Welcome to Treejar!",
+                        "dateTime": "2026-11-03T10:00:05.000Z",
+                        "status": "sent",
+                        "isEcho": True,
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    status_updater.assert_awaited_once()
+    audit_matcher.assert_awaited_once()
+    app.state.redis.rpush.assert_not_called()
+    app.state.arq_pool.enqueue_job.assert_not_called()
+
+
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_skips_noor_own_outbound_echo_via_redis_marker(
+    mock_networks: Any,
+) -> None:
+    """In-flight Noor outbound echoes matched via Redis CRM marker skip DB echo query and queue."""
+    app.state.redis = AsyncMock()
+    app.state.redis.get = AsyncMock(side_effect=[None, "1"])
+    app.state.arq_pool = AsyncMock()
+    status_updater = AsyncMock(return_value=0)
+    proposal_updater = AsyncMock(return_value=0)
+    audit_matcher = AsyncMock(return_value=(set(), set()))
+    db = AsyncMock()
+    db_cm = AsyncMock()
+    db_cm.__aenter__.return_value = db
+    db_cm.__aexit__.return_value = False
+
+    with (
+        patch("src.api.v1.webhook.async_session_factory", return_value=db_cm),
+        patch("src.api.v1.webhook.update_wazzup_statuses", status_updater),
+        patch("src.api.v1.webhook.apply_proposal_read_statuses", proposal_updater),
+        patch("src.api.v1.webhook.find_noor_outbound_audit_matches", audit_matcher),
+        patch("src.api.v1.webhook.settings.wazzup_channel_id", EXPECTED_CHANNEL_ID),
+    ):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={
+                "messages": [
+                    {
+                        "messageId": "noor-inflight-msg-2",
+                        "crmMessageId": "bot_reply:conv-1:m2",
+                        "channelId": EXPECTED_CHANNEL_ID,
+                        "chatId": "971501112233",
+                        "chatType": "whatsapp",
+                        "type": "text",
+                        "text": "Here is your quote.",
+                        "dateTime": "2026-11-03T10:00:06.000Z",
+                        "status": "sent",
+                        "isEcho": True,
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    audit_matcher.assert_not_awaited()
+    app.state.redis.rpush.assert_not_called()
+    app.state.arq_pool.enqueue_job.assert_not_called()

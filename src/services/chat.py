@@ -65,6 +65,7 @@ from src.services.inbound_batch import (
 from src.services.inbound_channels import update_conversation_inbound_channel
 from src.services.outbound_audit import (
     deterministic_crm_message_id,
+    find_noor_outbound_audit_matches,
     product_media_crm_message_ids,
     send_wazzup_media_with_audit,
     send_wazzup_text_with_audit,
@@ -844,12 +845,12 @@ async def _stop_typing_refresh(task: asyncio.Task[None] | None) -> None:
 
 
 def _determine_role(msg: WazzupIncomingMessage) -> str:
-    """Determine message role based on Wazzup authorType field.
+    """Determine message role based on Wazzup authorType / isEcho fields.
 
     Returns:
-        'manager' if authorType is 'manager', otherwise 'user'.
+        'manager' if authorType is 'manager' or isEcho is True, otherwise 'user'.
     """
-    if msg.authorType == "manager":
+    if msg.authorType == "manager" or (msg.isEcho is True and msg.authorType != "bot"):
         return "manager"
     return "user"
 
@@ -1191,9 +1192,13 @@ async def _process_batch_inner(
     inbound_channel_phone: str | None = None
 
     # Determine roles for each message
-    has_manager_message = any(m.authorType == "manager" for m in messages)
+    has_manager_message = any(_determine_role(m) == "manager" for m in messages)
     manager_name = next(
-        (m.authorName for m in messages if m.authorType == "manager" and m.authorName),
+        (
+            m.authorName
+            for m in messages
+            if _determine_role(m) == "manager" and m.authorName
+        ),
         None,
     )
     combined_text = "\n".join(m.text for m in messages if m.text)
@@ -1389,11 +1394,69 @@ async def _process_batch_inner(
                 type(exc).__name__,
             )
 
-    if not combined_text.strip():
+    if not combined_text.strip() and not has_manager_message:
         logger.warning("No text content in batch: batch_ref=%s", batch_ref)
         return
 
     async with async_session_factory() as db:
+        # 0a. Defense-in-depth: if a Wazzup status='sent' echo slipped past the
+        # webhook before OutboundMessageAudit committed, drop Noor's own sends
+        # here (inside the per-chat lock, after the previous turn committed).
+        if any(
+            m.status == "sent" and _determine_role(m) == "manager" for m in messages
+        ):
+            matched_provider, matched_crm = await find_noor_outbound_audit_matches(
+                db,
+                provider_message_ids={
+                    m.messageId for m in messages if m.status == "sent" and m.messageId
+                },
+                crm_message_ids={
+                    m.crmMessageId
+                    for m in messages
+                    if m.status == "sent" and m.crmMessageId
+                },
+            )
+            if matched_provider or matched_crm:
+                messages = [
+                    m
+                    for m in messages
+                    if not (
+                        m.status == "sent"
+                        and (
+                            (m.messageId and m.messageId in matched_provider)
+                            or (m.crmMessageId and m.crmMessageId in matched_crm)
+                        )
+                    )
+                ]
+                if not messages:
+                    logger.info(
+                        "Skipping Noor outbound echo batch: batch_ref=%s",
+                        batch_ref,
+                    )
+                    return
+                has_manager_message = any(
+                    _determine_role(m) == "manager" for m in messages
+                )
+                manager_name = next(
+                    (
+                        m.authorName
+                        for m in messages
+                        if _determine_role(m) == "manager" and m.authorName
+                    ),
+                    None,
+                )
+                combined_text = "\n".join(m.text for m in messages if m.text)
+                if not combined_text.strip() and not has_manager_message:
+                    return
+                source_message_id = next(
+                    (
+                        m.messageId
+                        for m in reversed(messages)
+                        if m.messageId and _determine_role(m) == "user"
+                    ),
+                    None,
+                )
+
         # 0. Check if bot is enabled
         cfg_stmt = select(SystemConfig).where(SystemConfig.key == "bot_enabled")
         cfg_result = await db.execute(cfg_stmt)
@@ -1547,7 +1610,11 @@ async def _process_batch_inner(
                         role=role,
                         content=transcription
                         if is_audio and transcription
-                        else (m.text or ""),
+                        else (
+                            m.text
+                            if m.text
+                            else (f"[{m.type}]" if role == "manager" else "")
+                        ),
                         message_type=m.type,
                         wazzup_message_id=m.messageId,
                         tokens_in=tokens_in,

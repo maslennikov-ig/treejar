@@ -1,0 +1,50 @@
+{
+  "artifact": {
+    "id": "9214a99b-5edd-4ad3-8d03-c6d063febd92",
+    "slug": "noor-pilot-final-check-2026-11",
+    "title": "Пилот Никита и Noor: ответ про сделки в CRM и финальные детали",
+    "format": "html",
+    "version": 1,
+    "published_at": "2026-11-02T18:11:45.733+00:00"
+  },
+  "project": {
+    "id": "72883f77-8199-4b3d-b4e9-9862c536809a",
+    "slug": "treejar",
+    "name": "Treejar — Noor"
+  },
+  "versions": [
+    {
+      "version": 1,
+      "title": "Пилот Никита и Noor: ответ про сделки в CRM и финальные детали",
+      "published_at": "2026-11-02T18:11:45.733+00:00"
+    }
+  ],
+  "tokens": [
+    {
+      "id": "e167179e-e816-4e78-b9a6-5c2e852278d0",
+      "label": "Виктор и Юля",
+      "status": "отправлено",
+      "url": "https://aidevteam.ru/a/YmsU34DbxR1a20i9gf9yHFJjGpU0zQgt",
+      "created_at": "2026-11-02T18:11:46.352285+00:00",
+      "submitted_at": "2026-11-03T08:11:32.928+00:00",
+      "last_seen_at": "2026-11-03T08:11:32.928+00:00",
+      "revoked_at": null,
+      "expires_at": null,
+      "latest": {
+        "kind": "submit",
+        "artifact_version": 1,
+        "state": {
+          "crm_write_scope": "Контакт, сделка (New Lead) и черновик КП; счета и заказы за менеджером",
+          "final_launch_note": "",
+          "nikita_tech_contact": "@youpyoupp",
+          "delivery_tariffs_mode": "Юля отправит файл Игорю в Telegram",
+          "delivery_tariffs_note": ""
+        },
+        "summary_md": "**Какие записи разрешаем Noor делать в Zoho на время пилота?**: Контакт, сделка (New Lead) и черновик КП; счета и заказы за менеджером\n**Как передаём тарифы доставки и сборки?**: Юля отправит файл Игорю в Telegram\n**Правила доставки и сборки (текст или ссылка)**: —\n**Кто настраивает пересылку сообщений со стороны бота Никиты?**: @youpyoupp\n**Пожелание или комментарий к запуску (необязательно)**: —",
+        "created_at": "2026-11-03T08:11:33.162861+00:00",
+        "notified_at": "2026-11-03T08:11:33.653+00:00",
+        "notify_error": null
+      }
+    }
+  ]
+}

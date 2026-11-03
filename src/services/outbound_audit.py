@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.outbound_message import OutboundMessageAudit
@@ -692,3 +692,41 @@ async def update_wazzup_statuses(
     if updated:
         await db.flush()
     return updated
+
+
+async def find_noor_outbound_audit_matches(
+    db: AsyncSession,
+    *,
+    provider_message_ids: set[str],
+    crm_message_ids: set[str],
+) -> tuple[set[str], set[str]]:
+    """Return (provider_message_ids, crm_message_ids) owned by Noor outbound sends."""
+    clean_provider_ids = {pid for pid in provider_message_ids if pid}
+    clean_crm_ids = {cid for cid in crm_message_ids if cid}
+    if not clean_provider_ids and not clean_crm_ids:
+        return set(), set()
+
+    clauses = []
+    if clean_provider_ids:
+        clauses.append(OutboundMessageAudit.provider_message_id.in_(clean_provider_ids))
+    if clean_crm_ids:
+        clauses.append(OutboundMessageAudit.crm_message_id.in_(clean_crm_ids))
+
+    result = await db.execute(
+        select(
+            OutboundMessageAudit.provider_message_id,
+            OutboundMessageAudit.crm_message_id,
+        ).where(
+            OutboundMessageAudit.provider == _PROVIDER,
+            or_(*clauses),
+        )
+    )
+    matched_provider: set[str] = set()
+    matched_crm: set[str] = set()
+    for row in result.all():
+        provider_id, crm_id = row[0], row[1]
+        if isinstance(provider_id, str) and provider_id:
+            matched_provider.add(provider_id)
+        if isinstance(crm_id, str) and crm_id:
+            matched_crm.add(crm_id)
+    return matched_provider, matched_crm

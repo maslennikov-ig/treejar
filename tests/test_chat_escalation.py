@@ -389,3 +389,104 @@ async def test_manager_message_saved_with_correct_role(
     ]
     assert len(manager_msgs) == 1
     assert manager_msgs[0].content == "Hi, I'm your manager"
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_worker_drops_raced_noor_outbound_echo_without_manual_takeover(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+) -> None:
+    """Defense-in-depth: a raced Noor status='sent' echo never triggers manual_takeover."""
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+
+    msg = WazzupIncomingMessage(
+        messageId="noor-raced-msg-1",
+        crmMessageId="bot_reply:conv:1",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Noor outbound reply",
+        channelId="ch1",
+        status="sent",
+        timestamp=1704067200,
+        authorType="manager",
+        isEcho=True,
+    )
+    mock_redis = AsyncMock()
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
+
+    with (
+        patch("src.services.chat.settings.wazzup_channel_id", "ch1"),
+        patch(
+            "src.services.chat.find_noor_outbound_audit_matches",
+            AsyncMock(return_value=({"noor-raced-msg-1"}, set())),
+        ),
+    ):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
+
+    mock_session.add.assert_not_called()
+    mock_process_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_worker_whatsapp_phone_echo_without_author_type_triggers_manual_takeover(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+) -> None:
+    """A WhatsApp phone manager echo (isEcho=True, status='sent', authorType=None) activates manual_takeover."""
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+    mock_conv = _make_mock_conv(escalation_status="none")
+    mock_session.execute.side_effect = [
+        MockResult(None),
+        MockResult(mock_conv),
+        MockResult([]),
+    ]
+
+    msg = WazzupIncomingMessage(
+        messageId="phone-mgr-msg-1",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Manager replying from phone",
+        channelId="ch1",
+        status="sent",
+        timestamp=1704067200,
+        authorType=None,
+        isEcho=True,
+    )
+    mock_redis = AsyncMock()
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
+
+    with (
+        patch("src.services.chat.settings.wazzup_channel_id", "ch1"),
+        patch(
+            "src.services.chat.find_noor_outbound_audit_matches",
+            AsyncMock(return_value=(set(), set())),
+        ),
+    ):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
+
+    assert mock_conv.escalation_status == "manual_takeover"
+    mock_process_message.assert_not_awaited()
