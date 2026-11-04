@@ -78,15 +78,22 @@ def test_render_quotation_template_omits_empty_optional_customer_fields() -> Non
     }
 
     html = render_quotation_html(context=context)
+    customer_block = html.split('<div class="customer-info">', 1)[1].split("</div>", 1)[
+        0
+    ]
 
     assert "Treejar Trading FZC LLC" in html
     assert "Skyland" not in html
-    assert "<strong>Name:</strong> ليلى" in html
-    assert "<strong>Phone:</strong> +971501234567" in html
-    assert "<strong>Address:</strong>" not in html
-    assert "UAE" not in html
-    assert "<strong>Company:</strong>" not in html
-    assert "<strong>Email:</strong>" not in html
+    assert "<strong>Name:</strong> ليلى" in customer_block
+    assert "<strong>Phone:</strong> +971501234567" in customer_block
+    assert "<strong>Address:</strong>" not in customer_block
+    assert "UAE" not in customer_block
+    assert "<strong>Company:</strong>" not in customer_block
+    assert "<strong>Email:</strong>" not in customer_block
+    assert (
+        "2–3 business days (Dubai &amp; Sharjah) / "
+        "2–5 business days (other UAE emirates)"
+    ) in html
 
 
 def test_compact_quotation_pdf_keeps_three_realistic_items_on_one_page() -> None:
