@@ -15,9 +15,14 @@ Content rules (spec ``docs/specs/admin-dashboard-polish/spec.md`` section 3.1):
   the manager instead of inventing a number of days, years or a fee.
 * Policies that the runtime already enforces (dual VAT pricing, B2B handoff
   routes, canonical product links) are described as the runtime does them.
-* No free-delivery, free-assembly, return-window, warranty-term, working-hours
-  or payment-method claims: no owner-approved source for them exists in the
-  repository (explicit defer, see ``.codex/handoff.md``).
+* Delivery, assembly and installation timelines and tariffs reflect the
+  client-approved policy of 2026-11-04 (paid delivery only, no free or express
+  delivery, AED 100 minimum order, Dubai vs all-other-emirates including
+  Sharjah tiers, Dubai/Abu Dhabi full-truck weight tiers, AED 30 per display
+  item assembly, project/made-to-order installation included, and cross-border
+  Saudi Arabia / Oman / Qatar arranged via manager). Return-window,
+  warranty-term, working-hours and payment-method specifics remain manager-owned
+  (explicit defer, see ``.codex/handoff.md``).
 
 Nothing here touches the SHA256-pinned RAG files; embeddings go through the
 public ``EmbeddingEngine`` API.
@@ -137,13 +142,35 @@ _POLICY_ARTICLES: tuple[CanonicalKnowledgeArticle, ...] = (
         title="Delivery and installation across the UAE",
         category="delivery",
         content=(
-            "Treejar provides professional delivery and installation (assembly) "
-            "across the UAE, including Dubai. Ready-stock items are delivered "
-            "within a few days from the Dubai warehouse; custom-made orders "
-            "depend on design and quantity. The delivery and installation cost "
-            "and the exact schedule are stated in the quotation or confirmed by "
-            "the manager. Do not promise free delivery, free assembly or a "
-            "specific delivery date unless the manager has confirmed it."
+            "Express delivery is not available, and free delivery is not "
+            "available — delivery is charged. Minimum order amount for "
+            "delivery is AED 100. Ready-stock delivery times: Dubai and "
+            "Sharjah 2–3 business days; other UAE emirates 2–5 business days; "
+            "custom-made orders depend on design and quantity and are "
+            "confirmed by the manager (exact calendar delivery date is "
+            "confirmed by the manager). Standard delivery charges depend on "
+            "order amount across two pricing groups — Dubai vs all other UAE "
+            "emirates (IMPORTANT: Sharjah is in the all-other-emirates pricing "
+            "group with AED 200 minimum charge, even though Sharjah delivery "
+            "takes 2–3 business days). Dubai delivery charges: AED 100–AED 999 "
+            "-> AED 50; AED 1,000–AED 4,000 -> AED 100; AED 4,001–AED 10,000 "
+            "-> AED 200; AED 10,001–AED 30,000 -> AED 600; AED 30,001–AED "
+            "50,000 -> AED 900; AED 50,001–AED 100,000 -> AED 1,500; above "
+            "AED 100,000 -> contact manager. All other UAE emirates (includes "
+            "Sharjah; minimum charge AED 200): AED 100–AED 999 -> AED 200; "
+            "AED 1,000–AED 4,000 -> AED 250; AED 4,001–AED 10,000 -> AED 400; "
+            "AED 10,001–AED 30,000 -> AED 800; AED 30,001–AED 50,000 -> "
+            "AED 1,200; AED 50,001–AED 100,000 -> AED 2,000; above AED 100,000 "
+            "-> contact manager. Full truck delivery (heavy/large orders, "
+            "available only in Dubai and Abu Dhabi; total order weight "
+            "required): up to 1 tonne -> Dubai AED 130, Abu Dhabi AED 300; "
+            "1–3 tonnes -> Dubai AED 300, Abu Dhabi AED 400; above 3 tonnes -> "
+            "contact manager. Outside the UAE (Saudi Arabia, Oman and Qatar): "
+            "delivery and installation are arranged through a manager. "
+            "Assembly and installation: display (ready-stock catalogue) items "
+            "AED 30 per item (optional at checkout); projects and "
+            "made-to-order furniture: installation is included in the project "
+            "cost."
         ),
     ),
     CanonicalKnowledgeArticle(

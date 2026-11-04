@@ -118,24 +118,33 @@ COMMERCIAL_CAPABILITIES: dict[str, CommercialCapability] = {
         mode="direct",
         source=(
             "ratified permission list row 13; docs/faq.md question 9; "
-            "owner decision 2026-09-23"
+            "owner decision 2026-11-04"
         ),
         instruction=(
-            "State that ready-stock items are delivered within a few days and that "
-            "custom-made orders depend on design and quantity; leave a specific "
-            "date to the manager."
+            "State approved UAE delivery timelines (2-3 business days for Dubai "
+            "and Sharjah, 2-5 business days for other UAE emirates, custom-made "
+            "orders depending on design and quantity) and approved delivery "
+            "tariff rules from the injected FAQ/knowledge-base facts (paid "
+            "delivery with no free or express option, AED 100 minimum order, "
+            "Dubai vs all-other-emirates including Sharjah tiers, and Dubai/Abu "
+            "Dhabi full-truck weight tiers); leave orders above AED 100,000, "
+            "full-truck loads above 3 tonnes, deliveries outside the UAE (Saudi "
+            "Arabia, Oman, Qatar), and any specific calendar date to the manager."
         ),
     ),
     "assembly_installation": CommercialCapability(
         mode="direct",
         source=(
             "ratified permission list row 14; docs/faq.md question 10; "
-            "owner decision 2026-09-23"
+            "owner decision 2026-11-04"
         ),
         instruction=(
-            "Confirm that Treejar provides professional delivery and installation "
-            "(assembly) across the UAE, including Dubai; leave the cost and the "
-            "exact schedule to the quotation or the manager."
+            "Confirm professional delivery, assembly, and installation across "
+            "the UAE from the injected FAQ/knowledge-base facts: optional "
+            "assembly is AED 30 per display item, and installation is included "
+            "in the project cost for projects and made-to-order furniture; "
+            "leave exact scheduling and arrangements outside the UAE (Saudi "
+            "Arabia, Oman, Qatar) to the manager."
         ),
     ),
     "specific_delivery_date": CommercialCapability(

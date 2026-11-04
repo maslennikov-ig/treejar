@@ -3,19 +3,28 @@
 The live knowledge base held no FAQ rows on 2026-09-23 (``index_documents`` is
 never called), so a customer asking "Do you provide delivery and assembly in
 Dubai?" got "I can't confirm Dubai delivery or assembly". The owner ruled the
-same day that Noor answers these questions as ``docs/faq.md`` does. Only the
-entries listed here are approved as standing facts; the rest of the FAQ still
-touches manager-controlled terms (warranty, payment, price matching) and stays
-out.
+same day that Noor answers these questions as ``docs/faq.md`` does, and on
+2026-11-04 Julia provided the approved UAE/cross-border delivery, full-truck,
+and assembly tariff policy (`tj-z3hw`). Only the entries listed here are
+approved as standing facts; manager-controlled terms (warranty, payment, price
+matching) stay out.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Mapping, Sequence
 from functools import lru_cache
 from pathlib import Path
 
+from src.dialogue.count_words import COUNT_PATTERN, count_value
+from src.llm.money import (
+    amount_with_uae_vat,
+    canonical_amount,
+    find_customer_output_amounts,
+    round_money,
+)
 from src.llm.verified_answers import _entry_topics, _query_topics
 
 logger = logging.getLogger(__name__)
@@ -24,11 +33,43 @@ _FAQ_PATH = Path(__file__).resolve().parent.parent.parent / "docs" / "faq.md"
 
 # FAQ question number -> approval that makes it a standing fact.
 APPROVED_FAQ_QUESTIONS: dict[int, str] = {
-    9: "owner decision 2026-09-23",
-    10: "owner decision 2026-09-23",
+    9: "owner/client decision 2026-11-04 (Julia delivery & assembly tariff sheet)",
+    10: "owner/client decision 2026-11-04 (Julia delivery & assembly tariff sheet)",
 }
 
 FAQ_SOURCE = "faq_static"
+
+_DELIVERY_CHARGE_FIGURES: frozenset[float] = frozenset(
+    {
+        50.0,
+        100.0,
+        130.0,
+        200.0,
+        250.0,
+        300.0,
+        400.0,
+        600.0,
+        800.0,
+        900.0,
+        1200.0,
+        1500.0,
+        2000.0,
+    }
+)
+_ASSEMBLY_UNIT_FEE = 30.0
+_COUNT_TOKEN_RE = re.compile(rf"(?<![\w-])(?:{COUNT_PATTERN})(?![\w-])", re.IGNORECASE)
+_DELIVERY_FOLLOWUP_QUALIFIER_RE = re.compile(
+    r"\b(?:"
+    r"dubai|sharjah|abu\s+dhabi|ajman|fujairah|ras\s+al\s+khaimah|"
+    r"umm\s+al\s+quwain|al\s+ain|emirates?|uae|saudi(?:\s+arabia)?|oman|qatar|"
+    r"truck|tonnes?|tons?|weight|free|express|display|projects?|made-to-order|"
+    r"checkout|fees?|charges?|costs?|tariffs?|rates?"
+    r")\b"
+    r"|(?:دبي|الشارقة|أبوظبي|ابوظبي|عجمان|الفجيرة|رأس\s+الخيمة|ام\s+القيوين|"
+    r"الإمارات|الامارات|السعودية|عمان|قطر|شاحنة|طن|وزن|مجاني|مجانا|سريع|"
+    r"تكلفة|رسوم|تعرفة)",
+    re.IGNORECASE,
+)
 
 
 def _parse_approved_entries(text: str) -> tuple[dict[str, str], ...]:
@@ -70,13 +111,34 @@ def approved_faq_entries() -> tuple[dict[str, str], ...]:
     return entries
 
 
+def active_faq_topics(
+    query: str,
+    recent_history: Sequence[str] | None = None,
+) -> set[str]:
+    """Topics raised directly by ``query`` or continued from a delivery/assembly turn."""
+
+    topics = set(_query_topics(query))
+    if topics or not recent_history:
+        return topics
+    prior_topics = set(_query_topics(" ".join(recent_history))) & {
+        "delivery",
+        "installation",
+    }
+    if prior_topics and _DELIVERY_FOLLOWUP_QUALIFIER_RE.search(query):
+        return prior_topics
+    return set()
+
+
 def with_approved_faq(
-    query: str, faq_context: Sequence[Mapping[str, str]]
+    query: str,
+    faq_context: Sequence[Mapping[str, str]],
+    *,
+    recent_history: Sequence[str] | None = None,
 ) -> list[dict[str, str]]:
     """Add approved FAQ entries whose topic the customer's message raises."""
 
     merged = [dict(item) for item in faq_context]
-    topics = set(_query_topics(query))
+    topics = active_faq_topics(query, recent_history)
     if not topics:
         return merged
     seen_titles = {str(item.get("title", "")).casefold() for item in merged}
@@ -86,3 +148,81 @@ def with_approved_faq(
         if topics & _entry_topics(f"{entry['title']} {entry['content']}"):
             merged.append(dict(entry))
     return merged
+
+
+def _positive_amount(value: object) -> float | None:
+    canonical = canonical_amount(value)
+    if canonical is None:
+        return None
+    try:
+        parsed = float(canonical)
+    except ValueError:
+        return None
+    return parsed if parsed > 0 else None
+
+
+def grounded_faq_amounts(
+    query: str,
+    faq_context: Sequence[Mapping[str, str]] | None,
+    *,
+    recent_history: Sequence[str] | None = None,
+    customer_amounts: Sequence[object] = (),
+) -> tuple[float, ...]:
+    """Approved AED figures (and bounded fee arithmetic) for a topic-matched FAQ turn."""
+
+    if not faq_context:
+        return ()
+    topics = active_faq_topics(query, recent_history)
+    if not topics:
+        return ()
+
+    base_amounts: set[float] = set()
+    for item in faq_context:
+        item_text = f"{item.get('title', '')} {item.get('content', '')}"
+        if not (topics & _entry_topics(item_text)):
+            continue
+        for token in find_customer_output_amounts(item_text):
+            parsed = _positive_amount(token)
+            if parsed is not None:
+                base_amounts.add(parsed)
+
+    if not base_amounts:
+        return ()
+
+    quantities = {
+        qty
+        for match in _COUNT_TOKEN_RE.finditer(str(query or ""))
+        if (qty := count_value(match.group(0))) is not None and 1 <= qty <= 500
+    }
+    assembly_totals: set[float] = set()
+    if _ASSEMBLY_UNIT_FEE in base_amounts:
+        assembly_totals.add(_ASSEMBLY_UNIT_FEE)
+        assembly_totals.update(
+            round_money(qty * _ASSEMBLY_UNIT_FEE) for qty in quantities
+        )
+
+    delivery_charges = base_amounts & _DELIVERY_CHARGE_FIGURES
+    cust_values = {
+        parsed
+        for raw in customer_amounts
+        if (parsed := _positive_amount(raw)) is not None and parsed <= 1_000_000
+    }
+
+    combined = set(base_amounts) | assembly_totals
+    for d_fee in delivery_charges:
+        for a_fee in assembly_totals:
+            combined.add(round_money(d_fee + a_fee))
+        for c_val in cust_values:
+            combined.add(round_money(c_val + d_fee))
+            for a_fee in assembly_totals:
+                combined.add(round_money(c_val + d_fee + a_fee))
+    for c_val in cust_values:
+        for a_fee in assembly_totals:
+            combined.add(round_money(c_val + a_fee))
+
+    with_vat: set[float] = set()
+    for value in combined:
+        excl, vat, incl = amount_with_uae_vat(value)
+        with_vat.update((excl, vat, incl))
+
+    return tuple(sorted(with_vat))

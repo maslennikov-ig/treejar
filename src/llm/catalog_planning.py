@@ -45,6 +45,7 @@ from src.llm.catalog_families import (
     catalog_text_families,
     contains_catalog_term,
 )
+from src.llm.company_faq import grounded_faq_amounts
 from src.llm.money import (
     AMOUNT_TOKEN_PATTERN,
     BUDGET_AED_CURRENCY_PATTERN,
@@ -1788,13 +1789,22 @@ def grounded_amounts_for_turn(
 
     if _turn_saw_catalog_evidence(deps):
         return None
-    amounts: list[object] = list(_PRICE_FIGURE_RE.findall(str(customer_text or "")))
+    customer_figures = tuple(_PRICE_FIGURE_RE.findall(str(customer_text or "")))
+    amounts: list[object] = list(customer_figures)
     # "Keep the same budget" does not repeat its digits. A validated retained
     # customer requirement is still evidence; catalog prices are not carried
     # forward here and must continue to be retrieved in the current turn.
     budget = DialogueState.from_conversation(deps.conversation).slots.budget_cap_aed
     if budget is not None and budget > 0:
         amounts.append(budget)
+    amounts.extend(
+        grounded_faq_amounts(
+            customer_text,
+            deps.faq_context,
+            recent_history=deps.recent_history,
+            customer_amounts=customer_figures,
+        )
+    )
     return tuple(amounts)
 
 

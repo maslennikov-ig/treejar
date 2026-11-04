@@ -74,6 +74,12 @@ def test_canonical_kb_makes_no_unapproved_promises() -> None:
     vat = next(a for a in seed.canonical_kb_articles() if a.category == "payment")
     assert "excl. 5% vat" in vat.content.lower()
     assert "incl. 5% vat" in vat.content.lower()
+    delivery = next(a for a in seed.canonical_kb_articles() if a.category == "delivery")
+    assert "aed 50" in delivery.content.lower()
+    assert "sharjah" in delivery.content.lower()
+    assert "aed 200" in delivery.content.lower()
+    assert "aed 30 per item" in delivery.content.lower()
+    assert "saudi arabia, oman and qatar" in delivery.content.lower()
 
 
 def test_canonical_bot_rules_cover_the_eight_operating_rules() -> None:

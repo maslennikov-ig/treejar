@@ -10968,6 +10968,37 @@ def test_a_turn_that_touched_no_catalog_may_state_no_sum(
     assert grounded_amounts_for_turn(deps, customer_text="Good Afternoon") == ()
 
 
+def test_delivery_and_assembly_faq_turn_grounds_tariff_sums_without_leaking_onto_greetings(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from src.llm.company_faq import with_approved_faq
+    from src.llm.grounding_output import GroundingViolation, classify_grounding_output
+
+    _db, conv, *_ = mock_deps
+    deps = _deps_without_catalog_evidence(conv)
+    question = "How much is delivery and assembly for 4 chairs in Dubai?"
+    deps.faq_context = with_approved_faq(question, [])
+
+    amounts = grounded_amounts_for_turn(deps, customer_text=question)
+    reply = (
+        "Delivery in Dubai starts at AED 50 for orders of AED 100–AED 999 "
+        "(AED 100 for AED 1,000–AED 4,000), and optional assembly for 4 display "
+        "items is AED 30 per item (AED 120 total, or AED 170 with AED 50 delivery)."
+    )
+    assert classify_grounding_output(reply, grounded_amounts=amounts) == ()
+
+    # Even if top-k RAG happened to place a delivery KB row in faq_context on a bare
+    # greeting, unrequested tariff figures must NOT let invented chair prices pass.
+    greeting_amounts = grounded_amounts_for_turn(deps, customer_text="Good Afternoon")
+    assert greeting_amounts == ()
+    assert classify_grounding_output(
+        "Our ergonomic office chairs start from AED 200.",
+        grounded_amounts=greeting_amounts,
+    ) == (GroundingViolation.UNVERIFIED_PRICE,)
+
+
 def test_the_customers_own_figure_stays_groundable(
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock

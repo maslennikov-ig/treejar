@@ -1252,7 +1252,9 @@ async def _retrieve_context(turn: _Turn) -> None:
         logger.warning("FAQ knowledge base search failed", exc_info=True)
     finally:
         turn.deps.faq_context = with_approved_faq(
-            turn.masked_text, turn.deps.faq_context or ()
+            turn.masked_text,
+            turn.deps.faq_context or (),
+            recent_history=turn.deps.recent_history,
         )
         if turn.latency_trace is not None and faq_started is not None:
             turn.latency_trace.finish_phase("faq_rag", faq_started)

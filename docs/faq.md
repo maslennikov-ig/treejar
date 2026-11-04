@@ -38,11 +38,30 @@ Yes, you are most welcome to visit our showroom in the UAE to experience the pro
 
 ## 9. What is your delivery timeline?
 
-For ready stock items, delivery is quick within a few days. For custom-made orders, delivery depends on design and quantity, but we always commit to clear timelines and execute professionally.
+Express delivery is not available, and free delivery is not available — delivery is charged. The minimum order amount for delivery is AED 100.
+
+Delivery times for ready-stock items:
+- Dubai and Sharjah: 2–3 business days.
+- Other UAE emirates: 2–5 business days.
+- Custom-made orders: timeline depends on design and quantity and is confirmed by the manager.
+
+Standard delivery charges depend on the order amount and the emirate across two pricing groups — Dubai and all other UAE emirates. IMPORTANT: Sharjah is included in the "all other emirates" pricing group (minimum charge AED 200), even though delivery to Sharjah takes 2–3 business days:
+- Dubai delivery charges: order AED 100–AED 999 -> AED 50; AED 1,000–AED 4,000 -> AED 100; AED 4,001–AED 10,000 -> AED 200; AED 10,001–AED 30,000 -> AED 600; AED 30,001–AED 50,000 -> AED 900; AED 50,001–AED 100,000 -> AED 1,500; above AED 100,000 -> please contact the manager.
+- All other UAE emirates (includes Sharjah; minimum charge AED 200): order AED 100–AED 999 -> AED 200; AED 1,000–AED 4,000 -> AED 250; AED 4,001–AED 10,000 -> AED 400; AED 10,001–AED 30,000 -> AED 800; AED 30,001–AED 50,000 -> AED 1,200; AED 50,001–AED 100,000 -> AED 2,000; above AED 100,000 -> please contact the manager.
+
+Full truck delivery (for heavy or large orders; available only in Dubai and Abu Dhabi; total order weight required):
+- Up to 1 tonne: Dubai AED 130, Abu Dhabi AED 300.
+- 1–3 tonnes: Dubai AED 300, Abu Dhabi AED 400.
+- Above 3 tonnes: please contact the manager.
+
+Outside the UAE (Saudi Arabia, Oman and Qatar): delivery and installation are arranged through a manager.
 
 ## 10. Do you provide installation services?
 
-Yes, we provide professional delivery and installation services to ensure proper execution of the project.
+Yes, we provide professional delivery, assembly, and installation services:
+- Display (ready-stock catalogue) items: AED 30 per item; this service is optional and can be selected during checkout.
+- Projects and made-to-order furniture: installation is included in the project cost.
+- Outside the UAE (Saudi Arabia, Oman and Qatar): delivery and installation are arranged through a manager.
 
 ## 11. What makes Treejar different from other suppliers?
 
@@ -72,7 +91,7 @@ Yes, depending on the project requirement, we can arrange samples for approval.
 
 ## 16. Do you supply only in UAE?
 
-We are currently strong in the UAE market, but due to our international network, we can support projects in other regions as well.
+We are currently strong in the UAE market, and we also support cross-border orders. Outside the UAE (Saudi Arabia, Oman and Qatar), delivery and installation are arranged through a manager.
 
 ## 17. What payment terms do you offer?
 
