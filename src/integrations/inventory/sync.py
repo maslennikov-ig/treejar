@@ -4,9 +4,12 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import bindparam, case, func, select, text, update
+
+if TYPE_CHECKING:
+    from sqlalchemy import Table
 from sqlalchemy.dialects.postgresql import insert as pg_upsert
 
 from src.core.config import settings
@@ -333,9 +336,10 @@ async def _upsert_items_batch(
             if not matched_values:
                 return
 
+            product_table = cast("Table", Product.__table__)
             stmt = (
-                update(Product)
-                .where(Product.sku == bindparam("match_sku"))
+                update(product_table)
+                .where(product_table.c.sku == bindparam("match_sku"))
                 .values(
                     zoho_item_id=bindparam("zoho_item_id"),
                     synced_at=func.now(),

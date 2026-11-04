@@ -374,3 +374,51 @@ async def test_sync_products_from_zoho_skips_catalog_lifecycle_steps() -> None:
         mock_embed.assert_not_awaited()
         assert result["deactivated"] == 0
         assert result["embeddings_generated"] == 0
+
+
+@pytest.mark.asyncio
+async def test_upsert_items_batch_uses_core_table_for_sqlalchemy_executemany() -> None:
+    """Regression: ORM update(Product) + parameter list raises InvalidRequestError in SQLAlchemy 2.x."""
+    from collections.abc import AsyncIterator
+    from contextlib import asynccontextmanager
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    executed_statements: list[tuple[object, object]] = []
+    real_session = MagicMock(spec=AsyncSession)
+
+    # Capture stmt emitted by _upsert_items_batch and verify it does NOT carry
+    # ORM entity plugin_subject that routes Session.execute(stmt, list) into
+    # _bulk_update_by_primary_key.
+    existing_result = MagicMock()
+    existing_result.scalars.return_value.all.return_value = ["SKU_1"]
+    update_result = MagicMock()
+
+    async def capture_execute(stmt: object, params: object = None) -> MagicMock:
+        executed_statements.append((stmt, params))
+        return existing_result if len(executed_statements) == 1 else update_result
+
+    real_session.execute = AsyncMock(side_effect=capture_execute)
+    real_session.commit = AsyncMock()
+
+    @asynccontextmanager
+    async def fake_factory() -> AsyncIterator[MagicMock]:
+        yield real_session
+
+    stats = ProductSyncResponse(synced=0, created=0, updated=0, errors=0)
+    with patch(
+        "src.integrations.inventory.sync.async_session_factory",
+        side_effect=fake_factory,
+    ):
+        await _upsert_items_batch(
+            [{"sku": "SKU_1", "status": "active", "item_id": "zoho-1"}],
+            stats,
+        )
+
+    assert len(executed_statements) == 2
+    update_stmt, params = executed_statements[1]
+    assert params == [{"match_sku": "SKU_1", "zoho_item_id": "zoho-1"}]
+    # An ORM-mapped update(Product) sets _propagate_attrs["compile_state_plugin"] == "orm",
+    # which fails on Session.execute(stmt, list_of_dicts) without PK 'id'.
+    propagate = getattr(update_stmt, "_propagate_attrs", {})
+    assert propagate.get("compile_state_plugin") != "orm"
