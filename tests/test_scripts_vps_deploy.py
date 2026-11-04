@@ -387,3 +387,129 @@ def test_preserve_rejects_unverifiable_existing_worker(tmp_path: Path) -> None:
     assert result.returncode != 0
     assert "Cannot verify existing test-worker" in result.stderr
     assert "build app worker" not in calls
+
+
+def _run_live_pilot_marker_deploy(
+    tmp_path: Path,
+    *,
+    running: bool,
+    marker_present: bool = True,
+    live_probe_state: str = "",
+    candidate_probe_state: str = "",
+) -> tuple[subprocess.CompletedProcess[str], str]:
+    release_root = tmp_path / "release"
+    release_root.mkdir()
+    (release_root / "docker-compose.yml").write_text("services: {}\n")
+    archive_path = tmp_path / "release.tar.gz"
+    _build_release_archive(release_root, archive_path)
+    target = tmp_path / "noor"
+    target.mkdir()
+    (target / ".env").write_text("SECRET=do-not-source\n")
+    (target / "docker-compose.yml").write_text("services: {}\n")
+    if marker_present:
+        ops_dir = target / "ops"
+        ops_dir.mkdir()
+        (ops_dir / "live-pilot-worker.enabled").write_text("enabled\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "docker.log"
+    stopped = tmp_path / "stopped"
+    _write_executable(
+        bin_dir / "docker",
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "${{*%% -c*}}" >> '{log}'
+if [[ "$*" == *'stop worker' ]]; then touch '{stopped}'; fi
+if [[ "$*" == *'ps --status running --quiet worker' ]]; then
+    if [ '{int(running)}' = 1 ] && [ ! -f '{stopped}' ]; then echo worker-id; fi
+elif [[ "$1" = exec ]]; then
+    if [[ "$*" == *'live:'* ]]; then
+        echo '{live_probe_state}'
+    else
+        echo 'disabled'
+    fi
+elif [[ "$*" == *'run --rm --no-deps --entrypoint python worker'* ]]; then
+    echo '{candidate_probe_state}'
+fi
+""",
+    )
+    _write_executable(bin_dir / "curl", "#!/usr/bin/env bash\nexit 0\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    result = subprocess.run(
+        [
+            "bash",
+            str(SCRIPT_PATH),
+            "--archive",
+            str(archive_path),
+            "--target-dir",
+            str(target),
+            "--app-only",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert (target / ".env").read_text() == "SECRET=do-not-source\n"
+    if marker_present:
+        assert (target / "ops" / "live-pilot-worker.enabled").exists()
+    return result, log.read_text()
+
+
+def test_app_only_refreshes_fenced_live_pilot_worker_when_marker_present(
+    tmp_path: Path,
+) -> None:
+    live_digest = "live:" + ("c" * 64)
+    result, calls = _run_live_pilot_marker_deploy(
+        tmp_path,
+        running=True,
+        marker_present=True,
+        live_probe_state=live_digest,
+        candidate_probe_state=live_digest,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "build app worker" in calls
+    assert "run --rm --no-deps --entrypoint python worker" in calls
+    assert "up -d --no-build --no-deps --timeout 200 app worker" in calls
+    assert "stop worker" not in calls
+
+
+def test_app_only_stops_live_worker_without_operator_marker(tmp_path: Path) -> None:
+    live_digest = "live:" + ("c" * 64)
+    result, calls = _run_live_pilot_marker_deploy(
+        tmp_path,
+        running=True,
+        marker_present=False,
+        live_probe_state=live_digest,
+        candidate_probe_state=live_digest,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "stop worker" in calls
+    assert "up -d --build --no-deps app" in calls
+    assert "build app worker" not in calls
+
+
+def test_app_only_keeps_stopped_worker_stopped_even_with_live_marker(
+    tmp_path: Path,
+) -> None:
+    result, calls = _run_live_pilot_marker_deploy(
+        tmp_path,
+        running=False,
+        marker_present=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "up -d --build --no-deps app" in calls
+    assert "build app worker" not in calls
+
+
+def test_app_only_rejects_live_fence_mismatch(tmp_path: Path) -> None:
+    result, calls = _run_live_pilot_marker_deploy(
+        tmp_path,
+        running=True,
+        marker_present=True,
+        live_probe_state="live:" + ("c" * 64),
+        candidate_probe_state="live:" + ("d" * 64),
+    )
+    assert result.returncode != 0
+    assert "Candidate changes live-worker channel fence" in result.stderr
+    assert "up -d" not in calls
+    assert "stop worker" not in calls

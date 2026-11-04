@@ -16,8 +16,8 @@ Options:
   --compose-file <path>    Compose file relative to target dir. Default: docker-compose.yml
   --project-name <name>    Docker Compose project name. Default: basename of target dir.
   --health-url <url>       URL checked after deploy. Default: http://127.0.0.1:8002/api/v1/health
-  --app-only               Start app; preserve a verified running test-only worker, otherwise stop worker.
-  --preserve-test-worker   With --app-only, refresh an already-running test-only worker.
+  --app-only               Start app; preserve a verified test-only or operator-enabled live-pilot worker, otherwise stop worker.
+  --preserve-test-worker   With --app-only, refresh an already-running verified worker.
   -h, --help               Show this help.
 
 The release archive should contain the tracked repository files plus optional
@@ -41,6 +41,7 @@ HEALTH_URL="http://127.0.0.1:8002/api/v1/health"
 APP_ONLY=false
 PRESERVE_TEST_WORKER=false
 REFRESH_TEST_WORKER=false
+REFRESH_LIVE_WORKER=false
 KEEP_PATHS=(
     ".agent"
     ".beads"
@@ -163,6 +164,24 @@ else:
     print(hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest())
 PYCODE
 )
+LIVE_WORKER_MARKER="$TARGET_DIR/ops/live-pilot-worker.enabled"
+LIVE_WORKER_PROBE=$(cat <<'PYCODE'
+import hashlib
+import json
+from src.core.config import settings
+fields = (
+    "test_channel_restore_mode",
+    "wazzup_channel_id",
+    "wazzup_outbound_allowed_channel_id",
+    "wazzup_webhook_auth_mode",
+)
+state = {key: getattr(settings, key) for key in fields}
+assert not state["test_channel_restore_mode"]
+assert state["wazzup_webhook_auth_mode"] == "enforce"
+assert state["wazzup_channel_id"] and state["wazzup_channel_id"] == state["wazzup_outbound_allowed_channel_id"]
+print("live:" + hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest())
+PYCODE
+)
 if [ "$PRESERVE_TEST_WORKER" = true ] && [ -f "$TARGET_DIR/$COMPOSE_FILE" ]; then
     EXISTING_WORKER_ID="$(docker compose --project-name "$PROJECT_NAME" \
         -f "$TARGET_DIR/$COMPOSE_FILE" ps --status running --quiet worker)"
@@ -170,6 +189,14 @@ if [ "$PRESERVE_TEST_WORKER" = true ] && [ -f "$TARGET_DIR/$COMPOSE_FILE" ]; the
         TEST_WORKER_STATE="$(docker exec "$EXISTING_WORKER_ID" python -c "$TEST_WORKER_PROBE")"
         if [[ "$TEST_WORKER_STATE" =~ ^[0-9a-f]{64}$ ]]; then
             REFRESH_TEST_WORKER=true
+        elif [ "$TEST_WORKER_STATE" = disabled ] && [ -f "$LIVE_WORKER_MARKER" ]; then
+            LIVE_WORKER_STATE="$(docker exec "$EXISTING_WORKER_ID" python -c "$LIVE_WORKER_PROBE")"
+            if [[ "$LIVE_WORKER_STATE" =~ ^live:[0-9a-f]{64}$ ]]; then
+                REFRESH_LIVE_WORKER=true
+            else
+                echo "Error: Cannot verify existing live-worker channel fence." >&2
+                exit 1
+            fi
         elif [ "$TEST_WORKER_STATE" != disabled ]; then
             echo "Error: Cannot verify existing test-worker safety state." >&2
             exit 1
@@ -177,7 +204,7 @@ if [ "$PRESERVE_TEST_WORKER" = true ] && [ -f "$TARGET_DIR/$COMPOSE_FILE" ]; the
     fi
 fi
 
-if [ "$APP_ONLY" = true ] && [ "$REFRESH_TEST_WORKER" = false ] && [ -f "$TARGET_DIR/$COMPOSE_FILE" ]; then
+if [ "$APP_ONLY" = true ] && [ "$REFRESH_TEST_WORKER" = false ] && [ "$REFRESH_LIVE_WORKER" = false ] && [ -f "$TARGET_DIR/$COMPOSE_FILE" ]; then
     # The app-only gate must also contain an already-running worker. Stop it
     # before replacing the runtime tree or building the new application.
     docker compose --project-name "$PROJECT_NAME" \
@@ -253,6 +280,24 @@ if [ "$REFRESH_TEST_WORKER" = true ]; then
         [ "$(docker exec "$NEW_WORKER_ID" python -c "$TEST_WORKER_PROBE")" != "$TEST_WORKER_STATE" ]; then
         docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" stop worker
         echo "Error: Refreshed worker failed safety verification; worker stopped." >&2
+        exit 1
+    fi
+elif [ "$REFRESH_LIVE_WORKER" = true ]; then
+    docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" build app worker
+    CANDIDATE_LIVE_STATE="$(docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" \
+        run --rm --no-deps --entrypoint python worker -c "$LIVE_WORKER_PROBE")"
+    if [ "$CANDIDATE_LIVE_STATE" != "$LIVE_WORKER_STATE" ]; then
+        echo "Error: Candidate changes live-worker channel fence; running containers preserved." >&2
+        exit 1
+    fi
+    docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" \
+        up -d --no-build --no-deps --timeout 200 app worker
+    NEW_WORKER_ID="$(docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" \
+        ps --status running --quiet worker)"
+    if [ -z "$NEW_WORKER_ID" ] || \
+        [ "$(docker exec "$NEW_WORKER_ID" python -c "$LIVE_WORKER_PROBE")" != "$LIVE_WORKER_STATE" ]; then
+        docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" stop worker
+        echo "Error: Refreshed live worker failed channel-fence verification; worker stopped." >&2
         exit 1
     fi
 elif [ "$APP_ONLY" = true ]; then
