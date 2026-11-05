@@ -40,6 +40,13 @@ logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter()
 _OUTBOUND_MESSAGE_STATUSES = frozenset({"sent", "delivered", "read", "error", "edited"})
+# `tj-r62i`. A manager message must silence Noor even when the router forwards
+# it once with a later delivery status instead of the initial ``sent`` event.
+MANAGER_ECHO_STATUSES = frozenset({"sent", "delivered", "read"})
+
+
+def is_manager_echo_status(status: object) -> bool:
+    return status is None or status in MANAGER_ECHO_STATUSES
 
 
 def _wazzup_webhook_auth_result(request: Request) -> str:
@@ -125,17 +132,19 @@ def _is_outbound_status_message(message: object) -> bool:
 
 
 def _is_candidate_manager_echo(message: object) -> bool:
-    """Return True when a Wazzup ``status='sent'`` item may be a live manager reply.
+    """Return True when a Wazzup echo item may be a live manager reply.
 
     Wazzup v3 delivers human manager messages sent from WhatsApp or Wazzup CRM
     inside ``messages`` with ``isEcho=True`` and ``status='sent'`` (often with
-    ``authorType`` omitted when sent from the WhatsApp phone app). Terminal
-    status updates (``delivered``, ``read``, ``error``, ``edited``) and bare
-    status dicts without ``chatId``/content are excluded here.
+    ``authorType`` omitted when sent from the WhatsApp phone app). A router may
+    forward the same message only with ``delivered``/``read``, so those count
+    too; Noor's own sends are removed afterwards by the outbound audit match.
+    ``error``/``edited`` updates and bare status dicts without
+    ``chatId``/content are excluded here.
     """
     if not isinstance(message, dict):
         return False
-    if message.get("status") != "sent":
+    if message.get("status") not in MANAGER_ECHO_STATUSES:
         return False
     if message.get("authorType") == "bot":
         return False
@@ -208,6 +217,27 @@ async def _filter_noor_self_echoes(
             )
 
     return self_indices
+
+
+def _log_dropped_outbound_item(message: dict[str, Any], *, reason: str) -> None:
+    """Record why a forwarded item did not reach the worker, without PII.
+
+    `tj-r62i`: on the first pilot day no manager message reached Noor and the
+    logs could not say whether none was sent or the router dropped them.
+    """
+    text = message.get("text")
+    logger.info(
+        "Wazzup webhook dropped item: reason=%s status=%s isEcho=%s "
+        "authorType=%s type=%s has_text=%s has_content=%s has_crm_id=%s",
+        reason,
+        message.get("status"),
+        message.get("isEcho"),
+        message.get("authorType"),
+        message.get("type"),
+        isinstance(text, str) and bool(text.strip()),
+        bool(message.get("contentUri") or message.get("media")),
+        bool(message.get("crmMessageId")),
+    )
 
 
 def _status_updates_from_messages(messages: object) -> list[dict[str, object]]:
@@ -379,12 +409,18 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
                 echo_slots.append(len(messages))
                 messages.append(message)
                 echo_candidates.append(message)
+            elif isinstance(message, dict):
+                _log_dropped_outbound_item(message, reason="status_only")
         if echo_candidates:
             self_echo_indices = await _filter_noor_self_echoes(
                 echo_candidates,
                 redis=getattr(request.app.state, "redis", None),
             )
             if self_echo_indices:
+                for idx in self_echo_indices:
+                    _log_dropped_outbound_item(
+                        echo_candidates[idx], reason="noor_self_echo"
+                    )
                 drop_positions = {echo_slots[idx] for idx in self_echo_indices}
                 messages = [
                     item
@@ -417,7 +453,7 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
 
     for msg in payload.messages:
         # Filter out status-only updates while preserving live manager echoes
-        is_manager_echo = msg.status == "sent" and (
+        is_manager_echo = is_manager_echo_status(msg.status) and (
             msg.isEcho is True or msg.authorType == "manager"
         )
         if msg.status and msg.status != "inbound" and not is_manager_echo:

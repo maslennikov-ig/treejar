@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic_ai import RunContext
@@ -11,6 +12,7 @@ from src.llm.catalog_planning import SalesDeps
 from src.llm.escalation_policy import (
     B2B_HANDOFF_TRIGGERS,
     NON_PAUSING_HANDOFF_TRIGGERS,
+    WHOLESALE_HANDOFF_METADATA_KEY,
     critical_escalation_decision,
 )
 from src.services.escalation_state import is_active_human_handoff
@@ -106,6 +108,9 @@ async def escalate_to_manager(
             "its office furniture catalog and that a manager can check sourcing "
             "options, then answer every other part of the customer's message."
         )
+    if trigger == "wholesale_or_bulk_project":
+        metadata[WHOLESALE_HANDOFF_METADATA_KEY] = datetime.now(UTC).isoformat()
+        ctx.deps.conversation.metadata_ = metadata
     if trigger in B2B_HANDOFF_TRIGGERS:
         return (
             "Manager has been notified and will take over this project. In the "

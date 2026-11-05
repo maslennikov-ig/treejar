@@ -6446,7 +6446,7 @@ async def test_process_message_consultative_query_stays_in_full_mode(
     ],
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
-    text = "We need 20 chairs for next week, what options do you have?"
+    text = "We need 12 chairs for next week, what options do you have?"
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []

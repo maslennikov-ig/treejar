@@ -23,6 +23,7 @@ import json
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic_ai import RunContext
@@ -63,8 +64,10 @@ from src.llm.catalog_planning import (
 from src.llm.company_faq import with_approved_faq
 from src.llm.escalation_policy import (
     NON_PAUSING_HANDOFF_TRIGGERS,
+    WHOLESALE_HANDOFF_METADATA_KEY,
     b2b_handoff_buckets,
     critical_escalation_decision,
+    wholesale_handoff_from_history,
 )
 from src.llm.grounding_output import GroundingOutputAction
 from src.llm.outbound_reply_guard import finalize_customer_reply_text
@@ -108,6 +111,7 @@ from src.llm.safety import (
     run_agent_with_safety,
 )
 from src.models.conversation import Conversation
+from src.schemas.common import EscalationType
 from src.services.bot_behavior_rules import (
     BehaviorRuleSearchContext,
     rule_to_applied_dict,
@@ -117,7 +121,10 @@ from src.services.customer_language import (
     is_arabic_customer_language,
     is_strongly_arabic_customer_text,
 )
-from src.services.escalation_state import is_active_human_handoff
+from src.services.escalation_state import (
+    is_active_human_handoff,
+    should_pause_bot_for_escalation,
+)
 from src.services.runtime_execution_evidence import (
     build_runtime_tool_trace,
     extract_runtime_tool_traces,
@@ -761,6 +768,71 @@ def _handoff_brief_allowed(deps: Any, customer_text: str) -> bool:
     )
 
 
+_WHOLESALE_HANDOFF_NOTICE = {
+    "en": (
+        "A Treejar manager has been notified about your project order and "
+        "will contact you shortly with project pricing."
+    ),
+    "ar": "تم إبلاغ مدير المبيعات في Treejar بطلبكم للمشروع، وسيتواصل معكم قريباً بأسعار المشروع.",
+}
+
+
+async def _deterministic_wholesale_handoff(turn: _Turn) -> bool:
+    """Hand a bulk order (20+ units) to a manager when the model did not.
+
+    `tj-r62i` live pilot 2026-11-05: a customer asked for "Qty.350Nos" and then
+    "Work station with cabinet"; the model never escalated and no manager
+    heard of a 350-unit lead. Viktor's rule is that a large order goes to a
+    manager, so after the model's turn the runtime checks the customer's own
+    words (this turn or an earlier one) and, when the model left the handoff
+    out, records the escalation, alerts Telegram and pauses the bot.
+    """
+
+    conversation = turn.deps.conversation
+    metadata = (
+        dict(conversation.metadata_) if isinstance(conversation.metadata_, dict) else {}
+    )
+    # A model-made handoff already set the status; a blocked tool call did not.
+    if should_pause_bot_for_escalation(conversation.escalation_status):
+        return False
+    # After a resolved handoff, only a new bulk request in this turn re-routes.
+    history: tuple[str, ...] = (
+        ()
+        if metadata.get(WHOLESALE_HANDOFF_METADATA_KEY)
+        else tuple(turn.deps.recent_history or ())
+    )
+    decision = wholesale_handoff_from_history(turn.combined_text, history)
+    if not decision.allowed:
+        return False
+
+    from src.integrations.notifications.escalation import notify_manager_escalation
+
+    metadata[WHOLESALE_HANDOFF_METADATA_KEY] = datetime.now(UTC).isoformat()
+    conversation.metadata_ = metadata
+    await notify_manager_escalation(
+        conversation=conversation,
+        reason=f"{decision.reason} Routed by the runtime large-order rule.",
+        recent_messages=list(turn.deps.recent_history or []),
+        db=turn.db,
+        escalation_type=decision.escalation_type or EscalationType.GENERAL,
+        pause_bot=True,
+    )
+    logger.warning("Deterministic wholesale handoff: conversation=%s", conversation.id)
+    return True
+
+
+def _ensure_wholesale_handoff_notice(response: LLMResponseT, language: str) -> None:
+    """The customer must read that a manager is taking over."""
+
+    lowered = response.text.casefold()
+    if "manager" in lowered or "مدير" in response.text:
+        return
+    notice = _WHOLESALE_HANDOFF_NOTICE[
+        "ar" if is_arabic_customer_language(language) else "en"
+    ]
+    response.text = f"{response.text.rstrip()}\n\n{notice}".strip()
+
+
 def _repair_manager_handoff_reason(trace: RepairJudgeTrace) -> str:
     guards = ",".join(sorted({flag.guard_name for flag in trace.flags})) or "unknown"
     outcome = trace.rejection_reason or trace.answer
@@ -1369,4 +1441,9 @@ async def process_message_impl(
             usage_provenance="deterministic_static",
         )
 
-    return await _finalize_turn_response(turn, response)
+    finalized = await _finalize_turn_response(turn, response)
+    if await _deterministic_wholesale_handoff(turn):
+        _ensure_wholesale_handoff_notice(
+            finalized, str(getattr(turn.conv, "language", "en") or "en")
+        )
+    return finalized

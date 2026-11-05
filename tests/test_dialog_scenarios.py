@@ -812,7 +812,7 @@ class TestScenario7OrderHandoffGuard:
     ) -> None:
         from src.schemas.product import ProductSearchResult
 
-        message = "We need 20 chairs for next week, what options do you have?"
+        message = "We need 12 chairs for next week, what options do you have?"
         mock_prompt.return_value = "You are Noor. STAGE: SOLUTION."
         mock_build_history.return_value = [
             ModelRequest(parts=[UserPromptPart(content=message)])
@@ -902,7 +902,7 @@ class TestScenario7OrderHandoffGuard:
 
         from src.schemas.product import ProductRead, ProductSearchResult
 
-        message = "We need 20 chairs for next week, what options do you have?"
+        message = "We need 12 chairs for next week, what options do you have?"
         mock_prompt.return_value = "You are Noor. STAGE: NEEDS ANALYSIS."
         mock_build_history.return_value = [
             ModelRequest(parts=[UserPromptPart(content=message)])

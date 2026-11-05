@@ -202,6 +202,12 @@ def critical_escalation_decision(
     b2b_decision = b2b_handoff_decision(text)
     if b2b_decision.allowed:
         return b2b_decision
+    # tj-r62i: a bulk quantity given in an earlier turn still routes, unless
+    # this conversation's wholesale handoff already happened.
+    if not metadata.get(WHOLESALE_HANDOFF_METADATA_KEY):
+        wholesale = wholesale_handoff_from_history(None, recent_history)
+        if wholesale.allowed:
+            return wholesale
 
     return CriticalEscalationDecision(
         allowed=False,
@@ -216,6 +222,8 @@ def critical_escalation_decision(
 # ordinary office-furniture question, a no-match search or "no quotation yet"
 # never reaches them, because a handoff pauses the bot.
 WHOLESALE_QUANTITY_THRESHOLD = 20
+WHOLESALE_HANDOFF_METADATA_KEY = "wholesale_handoff_notified_at"
+"""Set once a conversation's bulk order reached a manager (tj-r62i)."""
 B2B_HANDOFF_TRIGGERS = frozenset(
     {
         "wholesale_or_bulk_project",
@@ -233,8 +241,19 @@ leave the workstation half unanswered.
 """
 
 _BULK_ITEM_EN = (
-    r"(?:pcs|pieces|units|seats?|desks?|chairs?|work\s?stations?|tables?|"
-    r"cabinets?|lockers?|pods?|sofas?|pedestals?|partitions?)"
+    r"(?:pcs|pieces|units|nos|sets?|seats?|desks?|chairs?|work\s?stations?|"
+    r"tables?|cabinets?|lockers?|pods?|sofas?|pedestals?|partitions?)"
+)
+# `tj-r62i` live pilot 2026-11-05: "Qty.350Nos" (350 workstations) never
+# reached a manager. A quantity the customer labels as such is a quantity
+# whatever follows it, so a "qty"/"quantity" prefix counts on its own.
+_QUANTITY_PREFIX_RE = re.compile(
+    r"\b(?:qty|qnty|quantity|quantities)\b\s*[.:=\-#]?\s*"
+    r"(?:of\s+|about\s+|around\s+|approx\.?\s+|approximately\s+)?"
+    r"(?P<count>\d{1,3}(?:,\d{3})+|\d+)(?!\d)(?![.,]\d)"
+    r"(?!\s*(?:mm|cm|m|meters?|metres?|%)\b)"
+    r"|(?:الكمية|كمية|العدد)\s*[:\-]?\s*(?P<ar_count>\d+)",
+    re.IGNORECASE,
 )
 _BULK_ITEM_AR = (
     r"(?:محطات\s+عمل|محطة\s+عمل|محطات|مكاتب|مكتب|كراسي|كرسي|مقاعد|مقعد|"
@@ -316,7 +335,64 @@ def _largest_bulk_quantity(text: str) -> int:
         except ValueError:
             continue
         largest = max(largest, value)
+    for match in _QUANTITY_PREFIX_RE.finditer(text):
+        raw = match.group("count") or match.group("ar_count") or ""
+        try:
+            value = int(raw.replace(",", ""))
+        except ValueError:
+            continue
+        largest = max(largest, value)
     return largest
+
+
+def wholesale_quantity(customer_text: str | None) -> int:
+    """The largest bulk quantity named in one customer message, or 0."""
+
+    text = str(customer_text or "").translate(_ARABIC_INDIC_DIGITS)
+    normalized = " ".join(text.split())
+    if _NEGATED_B2B_RE.search(normalized):
+        normalized = _NEGATED_B2B_RE.sub(" ", normalized)
+    return _largest_bulk_quantity(normalized)
+
+
+def wholesale_handoff_from_history(
+    customer_text: str | None,
+    recent_history: Sequence[str] = (),
+) -> CriticalEscalationDecision:
+    """A wholesale handoff earned by this turn or an earlier customer turn.
+
+    `tj-r62i`. Customers split a bulk request across messages ("Qty.350Nos",
+    then "Work station with cabinet"), so the current message alone misses
+    it. Only customer lines (``user: ``) of the recent history are read, and
+    only the wholesale route is carried across turns: a human request or an
+    incident stays current-turn only.
+    """
+
+    texts = [str(customer_text or "")]
+    for line in recent_history:
+        line_text = str(line or "")
+        if line_text.startswith("user:"):
+            texts.append(line_text[len("user:") :])
+    for text in texts:
+        if "wholesale_or_bulk_project" in b2b_handoff_buckets(text):
+            quantity = wholesale_quantity(text)
+            detail = f" ({quantity} units)" if quantity else ""
+            return CriticalEscalationDecision(
+                allowed=True,
+                escalation_type=EscalationType.GENERAL,
+                reason=(
+                    "B2B handoff: the customer asked for "
+                    + _B2B_REASONS["wholesale_or_bulk_project"]
+                    + detail
+                    + "."
+                ),
+                trigger="wholesale_or_bulk_project",
+            )
+    return CriticalEscalationDecision(
+        allowed=False,
+        reason="No wholesale handoff route is present.",
+        trigger="noncritical",
+    )
 
 
 def b2b_handoff_buckets(customer_text: str | None) -> tuple[str, ...]:

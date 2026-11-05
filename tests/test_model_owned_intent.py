@@ -15,6 +15,7 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserProm
 from pydantic_ai.usage import RunUsage
 
 from src.llm import engine
+from src.llm.escalation_policy import wholesale_handoff_from_history
 from src.models.conversation import Conversation
 
 
@@ -153,8 +154,15 @@ async def _assert_model_receives_turn(previous, message, metadata, *, saved_case
     assert call.kwargs["message_history"] == history
     assert model_text in response.text
     assert response.tokens_in == 12
-    for automatic_action in (quote, deal, notify):
+    for automatic_action in (quote, deal):
         automatic_action.assert_not_awaited()
+    # tj-r62i: Viktor's large-order rule (20+ units) is the one deterministic
+    # action; the model still receives the whole turn first.
+    if wholesale_handoff_from_history(message, ()).allowed:
+        notify.assert_awaited_once()
+        assert notify.await_args.kwargs["pause_bot"] is True
+    else:
+        notify.assert_not_awaited()
     assert conv.escalation_status == "none"
     # Existing order state is context, never authorization to act this turn.
     for key in (

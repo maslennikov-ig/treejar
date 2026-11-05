@@ -17,6 +17,7 @@ from src.models.message import Message
 from src.models.outbound_message import OutboundMessageAudit
 from src.models.system_config import SystemConfig
 from src.services.customer_language import normalize_customer_language
+from src.services.escalation_state import should_pause_bot_for_escalation
 from src.services.outbound_audit import (
     deterministic_crm_message_id,
     send_wazzup_template_with_audit,
@@ -966,6 +967,11 @@ async def _proposal_followup_candidate_rows(
 
         for conversation, last_customer_inbound_at in rows:
             scanned_count += 1
+            # A manager owns this dialogue: no automatic reminders (tj-r62i).
+            if should_pause_bot_for_escalation(
+                getattr(conversation, "escalation_status", None)
+            ):
+                continue
             if next_due_followup_step(
                 conversation,
                 now=now,

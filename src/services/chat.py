@@ -844,6 +844,11 @@ async def _stop_typing_refresh(task: asyncio.Task[None] | None) -> None:
         await task
 
 
+# Mirrors `src.api.v1.webhook.MANAGER_ECHO_STATUSES`; Noor's own echoes in
+# any of these states are dropped by the outbound audit match below.
+_MANAGER_ECHO_STATUSES = frozenset({"sent", "delivered", "read"})
+
+
 def _determine_role(msg: WazzupIncomingMessage) -> str:
     """Determine message role based on Wazzup authorType / isEcho fields.
 
@@ -1403,17 +1408,20 @@ async def _process_batch_inner(
         # webhook before OutboundMessageAudit committed, drop Noor's own sends
         # here (inside the per-chat lock, after the previous turn committed).
         if any(
-            m.status == "sent" and _determine_role(m) == "manager" for m in messages
+            m.status in _MANAGER_ECHO_STATUSES and _determine_role(m) == "manager"
+            for m in messages
         ):
             matched_provider, matched_crm = await find_noor_outbound_audit_matches(
                 db,
                 provider_message_ids={
-                    m.messageId for m in messages if m.status == "sent" and m.messageId
+                    m.messageId
+                    for m in messages
+                    if m.status in _MANAGER_ECHO_STATUSES and m.messageId
                 },
                 crm_message_ids={
                     m.crmMessageId
                     for m in messages
-                    if m.status == "sent" and m.crmMessageId
+                    if m.status in _MANAGER_ECHO_STATUSES and m.crmMessageId
                 },
             )
             if matched_provider or matched_crm:
@@ -1421,7 +1429,7 @@ async def _process_batch_inner(
                     m
                     for m in messages
                     if not (
-                        m.status == "sent"
+                        m.status in _MANAGER_ECHO_STATUSES
                         and (
                             (m.messageId and m.messageId in matched_provider)
                             or (m.crmMessageId and m.crmMessageId in matched_crm)
