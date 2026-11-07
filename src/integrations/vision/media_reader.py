@@ -170,6 +170,8 @@ async def describe_customer_media(
     }
     if policy.temperature is not None:
         request_payload["temperature"] = policy.temperature
+    if policy.reasoning_enabled is False:
+        request_payload["reasoning"] = {"enabled": False}
 
     start = time.monotonic()
     response = await client.post(

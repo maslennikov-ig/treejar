@@ -378,7 +378,9 @@ _POLICIES: dict[str, LLMPathPolicy] = {
     # without it Noor asks again for a photo the customer already sent. The
     # answer is ~120 words, but vision models think first from the same
     # budget: at 600 tokens Haiku 5.5 cut a flyer reading mid-sentence and
-    # three other models returned nothing (bake-off 2026-11-07).
+    # three other models returned nothing (bake-off 2026-11-07). Reasoning is
+    # off: on Haiku 5.5 the readings matched the thinking run on all six
+    # bake-off cases at ~30% lower cost and latency; 2000 stays as headroom.
     PATH_MEDIA_DESCRIPTION: LLMPathPolicy(
         path=PATH_MEDIA_DESCRIPTION,
         scope="core",
@@ -388,6 +390,7 @@ _POLICIES: dict[str, LLMPathPolicy] = {
         request_limit=1,
         max_attempts=1,
         temperature=0.0,
+        reasoning_enabled=False,
     ),
     PATH_RESPONSE_ADAPTER: LLMPathPolicy(
         path=PATH_RESPONSE_ADAPTER,

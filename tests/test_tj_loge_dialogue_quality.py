@@ -251,6 +251,8 @@ async def test_describe_customer_media_sends_image_and_parses_reply(
     assert "Size as same" in parts[0]["text"]
     assert parts[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
     assert seen["body"]["temperature"] == 0.0
+    assert seen["body"]["reasoning"] == {"enabled": False}
+    assert seen["body"]["max_tokens"] == 2000
     assert result.text == "A 2-seat workstation."
     assert (result.tokens_in, result.tokens_out, result.cost) == (900, 40, 0.0011)
 
