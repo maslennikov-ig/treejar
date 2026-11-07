@@ -86,6 +86,7 @@ from src.llm import catalog_planning as _catalog_planning_runtime
 from src.llm.catalog_planning import (
     _ACTIVE_PRODUCT_MEDIA_AUDIT_STATUSES,
     _CROSS_SELL_REQUEST_RE,
+    GENERIC_INTEREST_SEARCH_CONTRACT,
     CatalogFamily,
     SalesDeps,
     StockSnapshot,
@@ -106,6 +107,12 @@ from src.llm.catalog_planning import (
     _store_catalog_planning,
     _track_sales_tool,
     _zoho_stock_for_catalog_candidates,
+    is_component_only_product,
+    names_no_furniture_need,
+    products_need_reranking,
+    rank_products_for_request,
+    request_wants_components,
+    text_states_a_furniture_need,
 )
 from src.llm.catalog_planning import (
     _catalog_product_families as _catalog_product_families,
@@ -231,7 +238,7 @@ from src.models.product_links import product_canonical_url
 from src.rag.embeddings import EmbeddingEngine
 from src.rag.pipeline import search_products as rag_search_products
 from src.schemas.common import Language, SalesStage
-from src.schemas.product import ProductSearchQuery
+from src.schemas.product import ProductSearchQuery, ProductSearchResult
 
 if TYPE_CHECKING:
     from src.services.chat_latency import ChatLatencyTrace
@@ -2666,6 +2673,28 @@ async def search_products(
             ),
         )
 
+    # tj-loge.4. "I am interested in purchasing office furniture. Could you
+    # assist me?" names no item, and a search for "office furniture" answered
+    # it with arbitrary workstation frames. With no need stated in the turn or
+    # the query, nothing is searched and no search budget is spent.
+    if (
+        names_no_furniture_need(ctx.deps.user_query or "")
+        and not text_states_a_furniture_need(query)
+        and not any(
+            entry.startswith("user:") and text_states_a_furniture_need(entry[5:])
+            for entry in (ctx.deps.recent_history or ())
+        )
+    ):
+        logger.info(
+            "Skipped search_products for a generic purchase-interest turn "
+            "in conversation %s",
+            ctx.deps.conversation.id,
+        )
+        return ToolReturn(
+            return_value="No products searched: the customer has not named a need yet.",
+            content=GENERIC_INTEREST_SEARCH_CONTRACT,
+        )
+
     ctx.deps.product_search_calls += 1
     search_call_number = ctx.deps.product_search_calls
     logger.info(
@@ -2711,6 +2740,38 @@ async def search_products(
         query=search_query,
         embedding_engine=ctx.deps.embedding_engine,
     )
+    # tj-loge.4. "Work station with cabinet" was answered with frame-only rows
+    # ahead of the workstation that has a cabinet. When a returned row is a
+    # frame/part the customer did not ask for, or lacks a requested storage
+    # feature, look a little wider and put complete, matching products first.
+    offer_request_text = f"{effective_query}\n{ctx.deps.user_query or ''}"
+    if products_need_reranking(
+        results.products,
+        offer_request_text,
+        name_of=lambda product: str(product.name_en),
+        description_of=lambda product: product.description_en,
+    ):
+        if len(results.products) >= max_results:
+            wider_results = await rag_search_products(
+                db=ctx.deps.db,
+                query=search_query.model_copy(
+                    update={"limit": min(max_results * 3, 30)}
+                ),
+                embedding_engine=ctx.deps.embedding_engine,
+            )
+            if len(wider_results.products) > len(results.products):
+                results = wider_results
+        ranked_products = rank_products_for_request(
+            results.products,
+            offer_request_text,
+            name_of=lambda product: str(product.name_en),
+            description_of=lambda product: product.description_en,
+        )[:max_results]
+        results = ProductSearchResult(
+            products=ranked_products,
+            query_interpreted=results.query_interpreted,
+            total_found=len(ranked_products),
+        )
     if resolved_reference_products:
         results = _lead_with_resolved_references(
             results, resolved_reference_products, effective_query, max_results
@@ -2922,6 +2983,15 @@ async def search_products(
         )
         if canonical_url:
             desc += f"\nProduct page: {canonical_url}"
+        if is_component_only_product(
+            str(r.name_en), r.description_en
+        ) and not request_wants_components(offer_request_text):
+            desc += (
+                "\nComponent only: this row is a frame, base or part, not a "
+                "complete item. Do not present it as a desk or workstation; "
+                "mention it only if nothing complete fits, and say what is "
+                "not included."
+            )
         product_text = _product_match_text(r)
         product_capacity = _catalog_product_capacity(product_text)
         product_family = _catalog_product_family(product_text)

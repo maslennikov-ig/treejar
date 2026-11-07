@@ -629,14 +629,218 @@ _FURNITURE_MENTION_RE = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 
+# `tj-loge.4`. "I am interested in purchasing office furniture. Could you
+# assist me?" (2026-11-05, a Google Ads lead) states that the customer wants to
+# buy, and nothing about what. The first reply searched "office furniture" and
+# led with three workstation frames before the customer had named any need.
+# Wanting furniture in general is not a category: such a message earns the
+# list of what Treejar supplies and one question, never products or prices.
+#
+# The test is narrow on purpose. It needs a purchase-interest or help phrase,
+# and it is cancelled by anything that already reads as a need: a named item or
+# family, a number, a head count or space, or a question about price. "Hello"
+# and "How much are your prices?" keep the anchor they were calibrated for.
+_GENERIC_PURCHASE_INTEREST_RE = re.compile(
+    r"\bfurniture\b|\bfurnish\w*|\bassist\w*|\bhelp\b"
+    r"|\binterested\b|\bpurchas\w*|\bbuy\w*|\benquir\w*|\binquir\w*"
+    r"|أثاث|مساعد|شراء",
+    re.IGNORECASE | re.UNICODE,
+)
+_STATED_NEED_RE = re.compile(
+    r"\d|\bpods?\b|\bbooths?\b|\blockers?\b|\bsafes?\b|\bstools?\b|\bseating\b"
+    r"|\bwork\s*stations?\b|\bpeople\b|\bpersons?\b|\bstaff\b|\bemployees?\b"
+    r"|\bteam\b|\bseats?\b|\brooms?\b|\bfloors?\b|\bvilla\b|\bbudget\b"
+    r"|\bprices?\b|\bpricing\b|\bcosts?\b|\bquot\w*|\bdelivery\b|\bstock\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def names_no_furniture_need(customer_text: str) -> bool:
+    """A message that wants to buy furniture without saying which furniture.
+
+    True only for a generic purchase-interest or help request ("I am interested
+    in purchasing office furniture. Could you assist me?"). Any named item,
+    family, quantity, space or price question makes it a stated need.
+    """
+
+    text = str(customer_text or "")
+    if not _GENERIC_PURCHASE_INTEREST_RE.search(text):
+        return False
+    return not text_states_a_furniture_need(text)
+
+
+def text_states_a_furniture_need(text: str) -> bool:
+    """Whether text names an item, family, quantity, space or price question."""
+
+    text = str(text or "")
+    if _FURNITURE_MENTION_RE.search(text) or _STATED_NEED_RE.search(text):
+        return True
+    if _catalog_product_families(text):
+        return True
+    return _requested_seat_count(text) is not None
+
 
 def opening_wants_a_price_anchor(customer_text: str) -> bool:
     """Whether a first turn on this message should carry the catalog anchor."""
 
     text = str(customer_text or "")
+    if names_no_furniture_need(text):
+        return False
     if not _ANCHORLESS_OPENING_RE.search(text):
         return True
     return bool(_FURNITURE_MENTION_RE.search(text))
+
+
+GENERIC_INTEREST_SEARCH_CONTRACT = (
+    "The customer has said they want office furniture but has not named any "
+    "item, category, quantity or space yet, so no products were searched. Do "
+    "not list products, models or prices in this reply. Say in one sentence "
+    "what Treejar supplies (office chairs, desks and manager desks, "
+    "workstations, meeting tables, storage, sofas and acoustic pods) and ask "
+    "one question about what they are furnishing."
+)
+
+# `tj-loge.4`. On 2026-11-05 "Work station with cabinet" was answered first
+# with WK 360 and WK 120 frames ("frame-only; tabletops and cabinets are not
+# included") and only then with the SKYLAND EVOQ workstation with a fixed
+# cabinet. Vector order cannot tell a frame from the desk it belongs to, so a
+# component row is recognised from its own text and moved behind every
+# complete product, unless the customer asked for frames or parts.
+_COMPONENT_ONLY_TEXT_RE = re.compile(
+    r"\bframe[\s-]+only\b|\bonly\s+(?:the\s+)?frames?\b"
+    r"|\b(?:base|legs?)[\s-]+only\b"
+    r"|\b(?:table\s*)?tops?(?:\s*(?:,|and|&)\s*\w+)*\s+(?:is\s+|are\s+)?"
+    r"(?:not\s+included|sold\s+separately)"
+    r"|\bwithout\s+(?:the\s+|a\s+)?(?:table\s*)?tops?\b"
+    r"|\bspare\s+parts?\b|\breplacement\s+parts?\b",
+    re.IGNORECASE,
+)
+# A desk "with steel frame" or "white top, black frame" is a desk; a row whose
+# name is just a frame ("WK 360 6-seat workstation frame") is not.
+_COMPONENT_ONLY_NAME_RE = re.compile(
+    r"(?<!metal\s)(?<!steel\s)(?<!chrome\s)(?<!wooden\s)"
+    r"(?<!aluminium\s)(?<!aluminum\s)\bframes?\b",
+    re.IGNORECASE,
+)
+_COMPLETE_ITEM_NAME_RE = re.compile(
+    r"\bwith\b|\btops?\b|\btabletops?\b|\bchairs?\b|\bstools?\b|\bsofas?\b",
+    re.IGNORECASE,
+)
+_COMPONENT_REQUEST_RE = re.compile(
+    r"\bframes?\b|\bbases?\b|\blegs\b|\bspare\s+parts?\b|\breplacement\s+parts?\b"
+    r"|\bcomponents?\b|\bwithout\s+(?:the\s+|a\s+)?(?:table\s*)?tops?\b",
+    re.IGNORECASE,
+)
+_REQUESTED_STORAGE_FEATURE_RE = re.compile(
+    r"\bwith\s+(?:an?\s+|the\s+)?(?:fixed\s+|mobile\s+|attached\s+)?"
+    r"(?:cabinets?|pedestals?|drawers?|storage)\b",
+    re.IGNORECASE,
+)
+# A requested storage feature is met by any of these words in the product row.
+_STORAGE_FEATURE_TERMS = ("cabinet", "pedestal", "drawer", "storage")
+
+
+def is_component_only_product(name: str, description: str | None = None) -> bool:
+    """Whether a catalog row is a frame, base or part rather than a whole item."""
+
+    name_text = str(name or "")
+    if _COMPONENT_ONLY_TEXT_RE.search(f"{name_text}\n{description or ''}"):
+        return True
+    return bool(
+        _COMPONENT_ONLY_NAME_RE.search(name_text)
+        and not _COMPLETE_ITEM_NAME_RE.search(name_text)
+    )
+
+
+def request_wants_components(request_text: str) -> bool:
+    """Whether the customer or search asked for frames, bases or parts."""
+
+    return bool(_COMPONENT_REQUEST_RE.search(str(request_text or "")))
+
+
+def requested_storage_feature(request_text: str) -> bool:
+    """Whether the request asks for an item *with* a cabinet/pedestal/storage."""
+
+    return bool(_REQUESTED_STORAGE_FEATURE_RE.search(str(request_text or "")))
+
+
+def _product_has_storage_feature(product_text: str) -> bool:
+    text = product_text.casefold()
+    for term in _STORAGE_FEATURE_TERMS:
+        if term not in text:
+            continue
+        excluded = re.search(
+            rf"\b{term}s?\s+(?:is\s+|are\s+)?not\s+included"
+            rf"|\bwithout\s+(?:an?\s+)?{term}",
+            text,
+        )
+        if not excluded:
+            return True
+    return False
+
+
+def _offer_tier(
+    name: str,
+    description: str | None,
+    *,
+    demote_components: bool,
+    wants_storage: bool,
+) -> tuple[int, int]:
+    component = demote_components and is_component_only_product(name, description)
+    missing_feature = wants_storage and not _product_has_storage_feature(
+        f"{name}\n{description or ''}"
+    )
+    return (int(component), int(missing_feature))
+
+
+def rank_products_for_request[T](
+    products: Sequence[T],
+    request_text: str,
+    *,
+    name_of: Callable[[T], str],
+    description_of: Callable[[T], str | None],
+) -> list[T]:
+    """Order search rows so complete, feature-matching products come first.
+
+    Stable: rows keep their vector order inside each tier. Component rows go
+    last unless the request asks for components; when the request asks for an
+    item with storage, complete rows that have it go first.
+    """
+
+    demote_components = not request_wants_components(request_text)
+    wants_storage = requested_storage_feature(request_text)
+    return sorted(
+        products,
+        key=lambda product: _offer_tier(
+            name_of(product),
+            description_of(product),
+            demote_components=demote_components,
+            wants_storage=wants_storage,
+        ),
+    )
+
+
+def products_need_reranking[T](
+    products: Sequence[T],
+    request_text: str,
+    *,
+    name_of: Callable[[T], str],
+    description_of: Callable[[T], str | None],
+) -> bool:
+    """Whether any row is a demotable component or lacks a requested feature."""
+
+    demote_components = not request_wants_components(request_text)
+    wants_storage = requested_storage_feature(request_text)
+    return any(
+        _offer_tier(
+            name_of(product),
+            description_of(product),
+            demote_components=demote_components,
+            wants_storage=wants_storage,
+        )
+        != (0, 0)
+        for product in products
+    )
 
 
 def _turn_owes_the_company_question(deps: SalesDeps) -> bool:
@@ -2497,6 +2701,14 @@ __all__ = (
     "catalog_anchor_from_catalog_rows",
     "catalog_anchor_line",
     "opening_wants_a_price_anchor",
+    "names_no_furniture_need",
+    "text_states_a_furniture_need",
+    "GENERIC_INTEREST_SEARCH_CONTRACT",
+    "is_component_only_product",
+    "request_wants_components",
+    "requested_storage_feature",
+    "rank_products_for_request",
+    "products_need_reranking",
     "build_runtime_tool_trace",
     "grounded_amounts_for_turn",
 )

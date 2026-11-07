@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # value a deployed database currently holds.
     openrouter_model_main: str = "openai/gpt-6-luna"
     llm_non_core_budget_blocked: bool = False
+    # Reads customer photos and documents into text before the sales turn.
+    # Must accept image and file input on OpenRouter; empty disables reading.
+    media_description_model: str = "openai/gpt-6.1-terra"
     voice_transcription_model: str = Field(
         default=DEFAULT_VOICE_TRANSCRIPTION_MODEL,
         validation_alias=AliasChoices(
@@ -82,6 +85,11 @@ class Settings(BaseSettings):
     wazzup_webhook_secret: SecretStr = SecretStr("")
     # Shared-account callback ownership requires explicit operator activation.
     wazzup_webhook_guard_enabled: bool = False
+    # A customer often sends one thought as several WhatsApp messages. Noor
+    # answers once the chat has been quiet this long, but never waits longer
+    # than the cap after the oldest unanswered message. 0 disables the wait.
+    inbound_quiet_seconds: float = 15.0
+    inbound_quiet_max_wait_seconds: float = 60.0
 
     # Zoho CRM
     zoho_crm_client_id: str = ""

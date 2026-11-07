@@ -45,6 +45,7 @@ MAX_IN_PROCESS_RETRY_BACKOFF_SECONDS = 30.0
 PATH_CONVERSATION_SUMMARY = "conversation_summary"
 PATH_FACT_EXTRACTION = "fact_extraction"
 PATH_VOICE_TRANSCRIPTION = "voice_transcription"
+PATH_MEDIA_DESCRIPTION = "media_description"
 PATH_RESPONSE_ADAPTER = "response_adapter"
 PATH_RESPONSE_REPAIR_JUDGE = "response_repair_judge"
 PATH_AUTO_FAQ_TRANSLATE = "auto_faq_translate"
@@ -372,6 +373,18 @@ _POLICIES: dict[str, LLMPathPolicy] = {
         total_tokens_limit=4000,
         request_limit=1,
         max_attempts=1,
+    ),
+    # Reads a customer's photo or document into text for the sales turn. Core:
+    # without it Noor asks again for a photo the customer already sent.
+    PATH_MEDIA_DESCRIPTION: LLMPathPolicy(
+        path=PATH_MEDIA_DESCRIPTION,
+        scope="core",
+        max_tokens=600,
+        timeout_seconds=40.0,
+        output_tokens_limit=600,
+        request_limit=1,
+        max_attempts=1,
+        temperature=0.0,
     ),
     PATH_RESPONSE_ADAPTER: LLMPathPolicy(
         path=PATH_RESPONSE_ADAPTER,

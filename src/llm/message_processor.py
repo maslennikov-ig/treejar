@@ -70,6 +70,7 @@ from src.llm.escalation_policy import (
     wholesale_handoff_from_history,
 )
 from src.llm.grounding_output import GroundingOutputAction
+from src.llm.non_sales_intent import NonSalesIntent, non_sales_intent
 from src.llm.outbound_reply_guard import finalize_customer_reply_text
 from src.llm.pii import (
     mask_pii,
@@ -821,6 +822,69 @@ async def _deterministic_wholesale_handoff(turn: _Turn) -> bool:
     return True
 
 
+_NON_SALES_NOTICE_METADATA_KEY = "non_sales_team_notice"
+_SUPPLIER_PITCH_NOTICE = {
+    "en": "I have passed your message to Treejar's commercial team.",
+    "ar": "لقد أرسلت رسالتكم إلى الفريق التجاري في Treejar.",
+}
+
+
+async def _non_sales_team_notice(turn: _Turn) -> NonSalesIntent | None:
+    """Alert a manager to a job application or supplier pitch, once.
+
+    Pilot dialogue of 2026-11-05: a furniture technician sent a CV and the
+    conversation ended with no person ever seeing it. Noor keeps answering
+    (no pause); the manager gets a Telegram alert and an escalation row.
+    """
+
+    conversation = turn.deps.conversation
+    if should_pause_bot_for_escalation(conversation.escalation_status):
+        return None
+    intent = non_sales_intent(turn.combined_text)
+    if intent is None:
+        return None
+    metadata = (
+        dict(conversation.metadata_) if isinstance(conversation.metadata_, dict) else {}
+    )
+    if metadata.get(_NON_SALES_NOTICE_METADATA_KEY):
+        return None
+
+    from src.integrations.notifications.escalation import notify_manager_escalation
+
+    label = "job application" if intent == "recruitment" else "supplier pitch"
+    metadata[_NON_SALES_NOTICE_METADATA_KEY] = {
+        "intent": intent,
+        "at": datetime.now(UTC).isoformat(),
+    }
+    conversation.metadata_ = metadata
+    await notify_manager_escalation(
+        conversation=conversation,
+        reason=(
+            f"Not a sales lead: {label} on the sales line. For your review; "
+            "Noor keeps answering."
+        ),
+        recent_messages=[*(turn.deps.recent_history or []), turn.combined_text],
+        db=turn.db,
+        escalation_type=EscalationType.GENERAL,
+        pause_bot=False,
+    )
+    logger.info(
+        "Non-sales team notice: conversation=%s intent=%s", conversation.id, intent
+    )
+    return intent
+
+
+def _ensure_supplier_pitch_notice(response: LLMResponseT, language: str) -> None:
+    """Ratified row 25: a supplier pitch is passed to the commercial team."""
+
+    if "commercial team" in response.text.casefold():
+        return
+    notice = _SUPPLIER_PITCH_NOTICE[
+        "ar" if is_arabic_customer_language(language) else "en"
+    ]
+    response.text = f"{response.text.rstrip()}\n\n{notice}".strip()
+
+
 def _ensure_wholesale_handoff_notice(response: LLMResponseT, language: str) -> None:
     """The customer must read that a manager is taking over."""
 
@@ -1442,8 +1506,11 @@ async def process_message_impl(
         )
 
     finalized = await _finalize_turn_response(turn, response)
+    language = str(getattr(turn.conv, "language", "en") or "en")
     if await _deterministic_wholesale_handoff(turn):
-        _ensure_wholesale_handoff_notice(
-            finalized, str(getattr(turn.conv, "language", "en") or "en")
-        )
+        _ensure_wholesale_handoff_notice(finalized, language)
+    elif await _non_sales_team_notice(turn) == "supplier_pitch":
+        # A job applicant is told nothing about forwarding (ratified row 24
+        # leaves the application with the sender); the alert is internal.
+        _ensure_supplier_pitch_notice(finalized, language)
     return finalized

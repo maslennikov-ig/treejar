@@ -149,6 +149,18 @@ def zoho_rate_limit_cooldown_is_per_test() -> Generator[None, None, None]:
 
 
 @pytest.fixture(autouse=True)
+def inbound_quiet_window_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[None, None, None]:
+    """Batch tests enqueue and process at once; the live quiet window is real time.
+
+    Tests of the quiet window itself set ``settings.inbound_quiet_seconds``.
+    """
+    monkeypatch.setattr(settings, "inbound_quiet_seconds", 0.0)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def cleanup_db_pool() -> Generator[None, None, None]:
     """Force SQLAlchemy to dispose of the connection pool after each test.
     This prevents 'different event loop' errors when engines are reused across tests.

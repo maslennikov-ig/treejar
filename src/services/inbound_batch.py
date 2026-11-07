@@ -150,3 +150,87 @@ def serialize_inbound_message(
     payload = msg.model_dump(mode="json")
     payload["received_at"] = time.time() if received_at is None else float(received_at)
     return json.dumps(payload, separators=(",", ":"))
+
+
+def _queued_customer_receipt(raw: str | bytes) -> tuple[bool, float | None]:
+    """Return (is_manager, received_at) for one queued inbound payload."""
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError):
+        return False, None
+    if not isinstance(payload, dict):
+        return False, None
+    author_type = payload.get("authorType")
+    is_manager = author_type == "manager" or (
+        payload.get("isEcho") is True and author_type != "bot"
+    )
+    value = payload.get("received_at")
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return is_manager, None
+    return is_manager, float(value)
+
+
+def inbound_quiet_wait_seconds(
+    received_ats: list[float],
+    *,
+    now: float,
+    quiet_seconds: float,
+    max_wait_seconds: float,
+) -> float:
+    """Seconds left before a burst of customer messages counts as finished.
+
+    The newest message must be ``quiet_seconds`` old, but the oldest one never
+    waits past ``max_wait_seconds`` so a customer who keeps typing still gets a
+    reply.
+    """
+    if not received_ats or quiet_seconds <= 0:
+        return 0.0
+    until_quiet = max(received_ats) + quiet_seconds - now
+    until_cap = min(received_ats) + max(quiet_seconds, max_wait_seconds) - now
+    return max(0.0, min(until_quiet, until_cap))
+
+
+async def wait_for_inbound_quiet(
+    redis: Any,
+    queue_key: str,
+    *,
+    sleep: Any = None,
+    clock: Any = time.time,
+) -> float:
+    """Hold an owned batch until the customer has stopped typing.
+
+    WhatsApp customers split one request into several messages 10-40 seconds
+    apart; answering after the first produced two or three replies, some of
+    them contradicting each other (pilot dialogues of 2026-11-05). Returns the
+    total seconds waited. Any Redis failure stops waiting instead of blocking.
+    """
+    import asyncio
+
+    sleeper = sleep or asyncio.sleep
+    quiet = float(settings.inbound_quiet_seconds)
+    max_wait = float(settings.inbound_quiet_max_wait_seconds)
+    waited = 0.0
+    if quiet <= 0:
+        return waited
+    while True:
+        try:
+            queued = await redis.lrange(queue_key, 0, -1)
+        except Exception:
+            logger.warning("Could not inspect inbound queue for quiet window")
+            return waited
+        receipts = [_queued_customer_receipt(raw) for raw in queued or []]
+        if any(is_manager for is_manager, _ in receipts):
+            # A human took over; record it now instead of waiting for quiet.
+            return waited
+        received = [value for _, value in receipts if value is not None]
+        remaining = inbound_quiet_wait_seconds(
+            received,
+            now=clock(),
+            quiet_seconds=quiet,
+            max_wait_seconds=max_wait,
+        )
+        if remaining <= 0:
+            return waited
+        step = min(remaining, 5.0)
+        await sleeper(step)
+        waited += step

@@ -61,8 +61,14 @@ from src.services.inbound_batch import (
     inbound_processing_key,
     inbound_queue_key,
     is_inbound_chat_reference,
+    wait_for_inbound_quiet,
 )
 from src.services.inbound_channels import update_conversation_inbound_channel
+from src.services.inbound_media import (
+    CustomerMediaNote,
+    is_customer_media,
+    read_customer_media,
+)
 from src.services.outbound_audit import (
     deterministic_crm_message_id,
     find_noor_outbound_audit_matches,
@@ -910,6 +916,8 @@ async def process_incoming_batch(
     is_initial_claim = True
     try:
         while True:
+            # Answer a burst of customer messages once, after they stop typing.
+            await wait_for_inbound_quiet(redis, queue_key)
             try:
                 raw_messages = await _claim_inbound_messages(
                     redis,
@@ -1215,6 +1223,24 @@ async def _process_batch_inner(
         ),
         None,
     )
+
+    # Read customer photos and documents into text so the turn can see them.
+    media_notes: dict[str, CustomerMediaNote] = {}
+    customer_media = [
+        m for m in messages if _determine_role(m) == "user" and is_customer_media(m)
+    ]
+    if customer_media:
+        await _ensure_side_effect_guard()
+        media_notes = await read_customer_media(
+            customer_media, channel_id=channel_id, batch_ref=batch_ref
+        )
+        combined_text = "\n".join(
+            media_notes[m.messageId].content
+            if m.messageId in media_notes
+            else (m.text or "")
+            for m in messages
+            if m.messageId in media_notes or m.text
+        )
 
     # Check for audio/voice messages and transcribe them
     audio_results: dict[str, _AudioProcessingResult] = {}
@@ -1612,6 +1638,12 @@ async def _process_batch_inner(
                         tokens_out = audio_result.tokens_out
                         cost = audio_result.cost
                         model = audio_result.model
+                    media_note = media_notes.get(m.messageId)
+                    if media_note is not None:
+                        tokens_in = media_note.tokens_in
+                        tokens_out = media_note.tokens_out
+                        cost = media_note.cost
+                        model = media_note.model
 
                     new_msg = Message(
                         conversation_id=conv.id,
@@ -1619,7 +1651,9 @@ async def _process_batch_inner(
                         content=transcription
                         if is_audio and transcription
                         else (
-                            m.text
+                            media_note.content
+                            if media_note is not None
+                            else m.text
                             if m.text
                             else (f"[{m.type}]" if role == "manager" else "")
                         ),
