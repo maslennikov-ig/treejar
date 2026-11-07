@@ -2833,13 +2833,24 @@ async def search_products(
     if product_match == "exact" and reference_resolution.unresolved_references:
         # A matching returned row does not resolve another absent named SKU.
         product_match = "nearby"
+    media_match_query = (ctx.deps.user_query or "").strip() or effective_query
+    media_product_match = (
+        product_match
+        if media_match_query == effective_query
+        else classify_product_match(
+            media_match_query,
+            [_product_match_text(product) for product in results.products],
+            candidate_skus=[str(product.sku) for product in results.products],
+            customer_request=ctx.deps.user_query,
+        )
+    )
     exact_media_product_keys: set[str] | None = None
-    if product_match == "exact":
+    if media_product_match == "exact":
         exact_keys = {
             str(getattr(product, "id", None) or product.sku)
             for product in results.products
             if is_requested_product_candidate(
-                effective_query,
+                media_match_query,
                 _product_match_text(product),
                 candidate_sku=str(product.sku),
                 customer_request=ctx.deps.user_query,

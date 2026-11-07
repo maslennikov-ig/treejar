@@ -427,6 +427,17 @@ class _Turn:
 
     def known_customer_name(self) -> str:
         quote_details = engine._quote_customer_details_from_metadata(self.conv)
+        crm_name = ""
+        if self.crm_context:
+            candidate = engine._string_value(
+                self.crm_context.get("Name") or self.crm_context.get("Full_Name")
+            )
+            if candidate and candidate.casefold() not in {
+                "unknown",
+                "valued customer",
+                "unknown client",
+            }:
+                crm_name = candidate
         return (
             engine._string_value(self.name_gate_resume_customer_name)
             or engine._string_value(
@@ -434,6 +445,7 @@ class _Turn:
             )
             or engine._string_value(quote_details.get("name"))
             or engine._string_value(self.conv.customer_name)
+            or crm_name
         )
 
     def render_reply(

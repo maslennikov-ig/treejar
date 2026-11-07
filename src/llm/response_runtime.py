@@ -136,6 +136,7 @@ _PRODUCT_REFERENCE_VARIANT_WORDS = frozenset(
         "black",
         "blue",
         "brown",
+        "chrome",
         "green",
         "grey",
         "gray",
@@ -157,6 +158,8 @@ _PRODUCT_REFERENCE_STOP_WORDS = frozenset(
 )
 _REPLY_NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _CAPTION_PRICE_RE = re.compile(r"[—–-]\s*(\d[\d,]*(?:\.\d+)?)\s*[A-Za-z]{3}\s*$")
+_TRAILING_PARENTHETICAL_RE = re.compile(r"(?:\s*\([^)]*\))+\s*$")
+_HYPHENATED_LETTER_MODEL_RE = re.compile(r"(?:^|\s)([A-Z]{3})-([A-Z])$")
 
 ProductMediaReferenceStrength = Literal["full", "model"]
 
@@ -183,22 +186,32 @@ def _product_model_reference(raw_reference: str) -> tuple[str, ...]:
 
     candidates = [raw_reference, *reversed(raw_reference.split(",")[:-1])]
     for candidate in candidates:
+        cleaned = _TRAILING_PARENTHETICAL_RE.sub("", candidate).strip()
+        if not cleaned:
+            continue
         run: list[str] = []
-        for token in reversed(candidate.split()):
-            normalized = _normalized_product_reference(token)
-            if not normalized:
+        for token in reversed(cleaned.split()):
+            chunks = re.findall(r"\w+", token)
+            if not chunks:
                 continue
-            if normalized in _PRODUCT_REFERENCE_VARIANT_WORDS:
+            filtered_chunks = [
+                chunk
+                for chunk in chunks
+                if chunk.casefold() not in _PRODUCT_REFERENCE_VARIANT_WORDS
+            ]
+            if not filtered_chunks:
                 continue
-            if any(char.islower() for char in token):
+            if any(any(char.islower() for char in chunk) for chunk in filtered_chunks):
                 break
-            run[:0] = normalized.split()
+            run[:0] = [chunk.casefold() for chunk in filtered_chunks]
 
-        for index, word in enumerate(run):
-            if _has_digit(word):
-                if index == 0 or _has_digit(run[index - 1]):
-                    break
+        for index in range(1, len(run)):
+            if _has_digit(run[index]) and not _has_digit(run[index - 1]):
                 return tuple(run[index - 1 :])
+
+        letter_match = _HYPHENATED_LETTER_MODEL_RE.search(cleaned)
+        if letter_match is not None:
+            return (letter_match.group(1).casefold(), letter_match.group(2).casefold())
     return ()
 
 
@@ -445,20 +458,38 @@ def _disambiguate_model_siblings(
         # Read the descriptors from the bullet that names this model, so a
         # colour belonging to another product in the reply does not count.
         model_lines = _lines_mentioning(response_text, model_key)
-        if model_lines:
-            response_words = {
-                word for line in model_lines for word in _product_reference_words(line)
-            }
-        # Colour siblings often share a price ("CH 490 V" black and brown both
-        # AED 909); the price then says nothing, and the reply's colour decides.
-        scored_priced = [
-            (_product_media_descriptor_score(item, model_key, response_words), item)
-            for item in priced
-        ]
-        best_priced = max(score for score, _item in scored_priced)
-        if best_priced == 0:
-            return priced
-        return [item for score, item in scored_priced if score == best_priced]
+        bucket_words = (
+            {word for line in model_lines for word in _product_reference_words(line)}
+            if model_lines
+            else response_words
+        )
+        by_price: dict[float, list[ProductMediaPayload]] = {}
+        for item in priced:
+            item_price = _product_media_caption_price(item)
+            if item_price is None:
+                continue
+            by_price.setdefault(round(item_price, 2), []).append(item)
+
+        selected: list[ProductMediaPayload] = []
+        for group in by_price.values():
+            if len(group) == 1:
+                selected.extend(group)
+                continue
+            # Colour siblings often share a price ("CH 490 V" black and brown
+            # both AED 909); the price then says nothing within that price
+            # group, and the reply's colour/descriptors decide.
+            scored_group = [
+                (_product_media_descriptor_score(item, model_key, bucket_words), item)
+                for item in group
+            ]
+            best_group = max(score for score, _item in scored_group)
+            if best_group == 0:
+                selected.extend(group)
+            else:
+                selected.extend(
+                    item for score, item in scored_group if score == best_group
+                )
+        return selected
     if has_full_sibling:
         # The model code in the reply is already explained by a sibling named
         # in full; a bare code is not evidence for the other siblings.
