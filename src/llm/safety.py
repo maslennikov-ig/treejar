@@ -375,13 +375,16 @@ _POLICIES: dict[str, LLMPathPolicy] = {
         max_attempts=1,
     ),
     # Reads a customer's photo or document into text for the sales turn. Core:
-    # without it Noor asks again for a photo the customer already sent.
+    # without it Noor asks again for a photo the customer already sent. The
+    # answer is ~120 words, but vision models think first from the same
+    # budget: at 600 tokens Haiku 5.5 cut a flyer reading mid-sentence and
+    # three other models returned nothing (bake-off 2026-11-07).
     PATH_MEDIA_DESCRIPTION: LLMPathPolicy(
         path=PATH_MEDIA_DESCRIPTION,
         scope="core",
-        max_tokens=600,
+        max_tokens=2000,
         timeout_seconds=40.0,
-        output_tokens_limit=600,
+        output_tokens_limit=2000,
         request_limit=1,
         max_attempts=1,
         temperature=0.0,
