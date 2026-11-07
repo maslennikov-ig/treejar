@@ -56,7 +56,10 @@ class Settings(BaseSettings):
     llm_non_core_budget_blocked: bool = False
     # Reads customer photos and documents into text before the sales turn.
     # Must accept image and file input on OpenRouter; empty disables reading.
-    media_description_model: str = "openai/gpt-6.1-terra"
+    # Chosen 2026-11-07 on a 7-model bake-off of real cases (chair photo,
+    # catalog screenshots, BOQ scan): most careful reading at the cheapest
+    # tier, ~3.5s and ~USD0.0004 per image (tj-loge.1).
+    media_description_model: str = "anthropic/claude-haiku-5.5"
     voice_transcription_model: str = Field(
         default=DEFAULT_VOICE_TRANSCRIPTION_MODEL,
         validation_alias=AliasChoices(

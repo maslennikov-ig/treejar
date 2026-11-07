@@ -217,7 +217,9 @@ def test_detect_media_mime_uses_declared_type_then_magic_bytes() -> None:
 async def test_describe_customer_media_sends_image_and_parses_reply(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "media_description_model", "openai/gpt-6.1-terra")
+    monkeypatch.setattr(
+        settings, "media_description_model", "anthropic/claude-haiku-5.5"
+    )
     seen: dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -226,7 +228,7 @@ async def test_describe_customer_media_sends_image_and_parses_reply(
         return httpx.Response(
             200,
             json={
-                "model": "openai/gpt-6.1-terra",
+                "model": "anthropic/claude-haiku-5.5",
                 "choices": [{"message": {"content": " A 2-seat workstation. "}}],
                 "usage": {
                     "prompt_tokens": 900,
@@ -392,7 +394,7 @@ async def test_photo_only_batch_reaches_the_turn_and_is_stored() -> None:
         tokens_in=900,
         tokens_out=20,
         cost=0.001,
-        model="openai/gpt-6.1-terra",
+        model="anthropic/claude-haiku-5.5",
     )
     read_media = AsyncMock(return_value={"img-1": note})
     process_message = AsyncMock(
@@ -445,7 +447,7 @@ async def test_photo_only_batch_reaches_the_turn_and_is_stored() -> None:
     assert stored["img-1"].message_type == "image"
     assert (stored["img-1"].cost, stored["img-1"].model) == (
         0.001,
-        "openai/gpt-6.1-terra",
+        "anthropic/claude-haiku-5.5",
     )
 
 
