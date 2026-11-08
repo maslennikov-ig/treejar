@@ -1,9 +1,9 @@
 # Orchestrator Handoff
 
 Updated: 2026-11-08
-Current branch: main (`c31bd3eb469bc1ae55a22406756d7d07ed71362e`)
+Current branch: main (live runtime `c31bd3eb469bc1ae55a22406756d7d07ed71362e`; root `/home/me/code/treejar` consolidated onto clean `main` on 2026-11-08)
 Current stage id: tj-r62i (live pilot monitoring with standing bugfix/deploy authority; `tj-loge` & `tj-mi4g` closed)
-Status: Live `c31bd3e` deployed via CI `42455766189` on `https://noor.starec.ai`; `noor-app-1` + `noor-worker-1` healthy (`0` restarts, `ops/live-pilot-worker.enabled` preserved, `TEST_CHANNEL_RESTORE_MODE=false`).
+Status: Live `c31bd3e` deployed via CI `42455766189` on `https://noor.starec.ai`; `noor-app-1` + `noor-worker-1` healthy (`0` restarts, `ops/live-pilot-worker.enabled` preserved, `TEST_CHANNEL_RESTORE_MODE=false`). Local & remote workspace consolidated onto `main` (`/home/me/code/treejar`); all legacy `.worktrees/*` and `codex/*` branches removed, pilot monitor updated to root `main`.
 
 ## Epic tj-loge & Follow-up `tj-mi4g` (2026-11-07..08) & Live Pilot Fixes (`dfdf534`, `7055094`, `c31bd3e`) — deployed
 - Live pilot enabled 2026-11-05 (`tj-r62i`, Treejar WhatsApp `+971523209235`, odd Moscow dates -> Noor via client router `audit.treejartrading.ae`). Shipped `dfdf534` (CI `42056978288`: deterministic 20+ unit handoff incl. `Qty.350Nos`, cross-turn bulk carry, manager `isEcho` delivered/read takeover, paused-chat follow-up guard).
@@ -187,7 +187,7 @@ activation and collect24h UTC[start,end) counters. Do not close tj-uvld early.
 
 Use $orchestrator-stage for the same authorized tj-uvld boundary.
 Read docs/prompts/2026-10-03-zoho-stock-sync-optimization.md and the current
-report/Beads notes to continue. Preserve the dirty primary checkout.
+report/Beads notes to continue. Primary root checkout is clean on `main`.
 
 docs-reviewed: updated - audit reports (`docs/reports/audit-2026-11-01/`) and handoff updated; documentation-decision: dependency-lockfile upgrades preserve public contracts while internal PydanticAI/FastAPI adaptations are covered by strict mypy and full suite.
 graph-reviewed: no-change-needed - no enabled task-owned graph; ordinary code navigation used.
