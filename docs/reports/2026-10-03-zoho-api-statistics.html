@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="portal-style" content="cs">
+  <title>Treejar · Почему задерживается обновление остатков Zoho</title>
+</head>
+<body class="cs-page">
+<header class="cs-hero">
+  <div class="cs-hero__grid" aria-hidden="true"></div>
+  <div class="cs-container cs-hero__inner">
+    <div>
+      <div class="cs-rule" aria-hidden="true"></div>
+      <p class="cs-eyebrow">Treejar · Проверка 3 октября 2026</p>
+      <h1 class="cs-hero__title">Почему задерживается обновление остатков</h1>
+      <p class="cs-lead">Мы собрали статистику обращений Noor к Zoho за сутки. Отказы повторяются в одних и тех же часах. Ниже — точное время, найденная ошибка повторных попыток и два вопроса для проверки остальных интеграций.</p>
+    </div>
+    <ul class="cs-meta">
+      <li class="cs-meta__row"><span><b class="cs-kpi">3 459</b> запросов за сутки</span></li>
+      <li class="cs-meta__row"><span><b class="cs-kpi">14</b> отказов Zoho с кодом 429</span></li>
+      <li class="cs-meta__row"><span><b class="cs-kpi">13</b> запросов максимум за 60 секунд</span></li>
+      <li class="cs-meta__row"><span><b class="cs-kpi">265 из 288</b> обновлений остатков завершились</span></li>
+    </ul>
+  </div>
+</header>
+<main class="cs-container cs-artifact-main">
+  <section class="cs-artifact-sec">
+    <div class="cs-sec__num">01</div>
+    <h2 class="cs-sec__title">Что измерили</h2>
+    <div class="cs-prose">
+      <p><strong>Период: 2 октября 11:00 — 3 октября 11:00, московское время.</strong> Источник — журналы работающего Noor. Учитывались фактические обращения к Zoho; получение токена доступа исключено. Данные других приложений в эту статистику не входят.</p>
+      <div class="cs-table-wrap"><table class="cs-table">
+        <thead><tr><th>Показатель</th><th class="cs-num">За сутки</th></tr></thead>
+        <tbody>
+          <tr><td>Успешные ответы Zoho, код 200</td><td class="cs-num">3 445</td></tr>
+          <tr><td>Отказы из-за ограничений, код 429</td><td class="cs-num">14</td></tr>
+          <tr><td>Завершённые обновления остатков</td><td class="cs-num">265</td></tr>
+          <tr><td>Незавершённые обновления: 14 отказов + 9 пропусков на время паузы</td><td class="cs-num">23</td></tr>
+        </tbody>
+      </table></div>
+      <p>Остатки обновляются каждые 5 минут. Полное обновление требует 13 запросов; при отсутствии отказов это <strong>3 744 запроса в сутки</strong>. При сбое Noor сохраняет предыдущие остатки и повторяет обновление позже. Поэтому количество может временно отставать от Zoho.</p>
+    </div>
+  </section>
+
+  <section class="cs-artifact-sec">
+    <div class="cs-sec__num">02</div>
+    <h2 class="cs-sec__title">Когда происходили отказы</h2>
+    <div class="cs-prose">
+      <p>Все 14 отказов попали в шесть окон с интервалом в четыре часа. В таблице указано время каждого ответа 429 по Москве; это моменты отказов, а не длительность непрерывного сбоя.</p>
+      <div class="cs-table-wrap"><table class="cs-table">
+        <thead><tr><th>Дата</th><th>Время отказов, МСК</th><th class="cs-num">Отказы 429</th><th class="cs-num">Обновления не завершены</th></tr></thead>
+        <tbody>
+          <tr><td>2 октября</td><td>11:16, 11:21, 11:36</td><td class="cs-num">3</td><td class="cs-num">5</td></tr>
+          <tr><td>2 октября</td><td>15:26, 15:36</td><td class="cs-num">2</td><td class="cs-num">4</td></tr>
+          <tr><td>2 октября</td><td>19:11, 19:36</td><td class="cs-num">2</td><td class="cs-num">4</td></tr>
+          <tr><td>2 октября</td><td>23:16, 23:36</td><td class="cs-num">2</td><td class="cs-num">4</td></tr>
+          <tr><td>3 октября</td><td>03:16, 03:26, 03:31</td><td class="cs-num">3</td><td class="cs-num">4</td></tr>
+          <tr><td>3 октября</td><td>07:11, 07:36</td><td class="cs-num">2</td><td class="cs-num">2</td></tr>
+        </tbody>
+      </table></div>
+      <p>Просим сопоставить эти окна с расписанием синхронизации склада, сайта, учётной системы и других сервисов, подключённых к той же организации Zoho Inventory.</p>
+    </div>
+  </section>
+
+  <section class="cs-artifact-sec">
+    <div class="cs-sec__num">03</div>
+    <h2 class="cs-sec__title">Причина: что установлено и что нужно проверить</h2>
+    <div class="cs-prose">
+      <p>Код 429 означает ограничение запросов. <a href="https://www.zoho.com/inventory/api/v1/introduction/#api-call-limit" target="_blank" rel="noopener noreferrer">Документация Zoho</a> указывает общий лимит 100 запросов в минуту на организацию, суточный лимит по тарифу и отдельное ограничение одновременных запросов.</p>
+      <p><strong>Noor самостоятельно не достиг минутного лимита в измеренный период:</strong> максимум составил 13 запросов за любые 60 секунд. Это повод проверить общую нагрузку и запланированные обмены, но по нашим журналам нельзя определить конкретную интеграцию или вид сработавшего ограничения.</p>
+      <p>Суточную квоту также нужно сверить с тарифом и общей статистикой аккаунта: Noor расходует около 3 744 запросов в день при штатном расписании. Счётчики оставшейся квоты Zoho в проверенных ответах не предоставил.</p>
+    </div>
+  </section>
+
+  <section class="cs-artifact-sec">
+    <div class="cs-sec__num">04</div>
+    <h2 class="cs-sec__title">Что меняем со своей стороны</h2>
+    <div class="cs-prose">
+      <p>Повторные попытки предусмотрены. При коротком сбое чтение повторяется до трёх попыток с паузами; при длительной блокировке обновление откладывается.</p>
+      <p><strong>Мы нашли ошибку:</strong> Zoho запрашивал паузу в 30 минут, а Noor сокращал её до 5 минут и обращался повторно слишком рано. Подготовлено и проверено исправление, сохраняющее запрошенную паузу. На момент этого отчёта оно ещё не выложено на сервер.</p>
+    </div>
+    <aside class="cs-note"><p>Исправление уберёт преждевременные повторные обращения Noor. Чтобы устранить исходные отказы, нужно проверить общий расход запросов и расписания остальных интеграций аккаунта Zoho.</p></aside>
+  </section>
+
+  <section class="cs-artifact-sec">
+    <div class="cs-sec__num">05</div>
+    <h2 class="cs-sec__title">Что просим проверить</h2>
+    <div class="cs-sheet">
+      <section class="cs-q" data-portal-question="Интеграции и лимит аккаунта">
+        <div class="cs-q__title"><label for="integrations_and_quota">Какие сервисы подключены к Zoho Inventory и какой суточный лимит указан в аккаунте?</label></div>
+        <div class="cs-q__body"><textarea class="cs-field cs-field--area" id="integrations_and_quota" name="integrations_and_quota" placeholder="Названия интеграций, расписание обменов, тариф или суточный лимит. Если неизвестно — так и напишите. Не указывайте пароли и ключи доступа."></textarea></div>
+      </section>
+      <section class="cs-q" data-portal-question="Обмен каждые четыре часа">
+        <div class="cs-q__title">Есть ли обмен, который запускается каждые четыре часа около указанных окон?</div>
+        <div class="cs-q__body">
+          <div class="cs-opts" role="radiogroup" aria-label="Есть ли обмен каждые четыре часа около указанных окон?">
+            <label class="cs-opt"><input type="radio" name="four_hour_sync" value="Да, нашли совпадающий обмен"><span>Да, нашли совпадающий обмен</span></label>
+            <label class="cs-opt"><input type="radio" name="four_hour_sync" value="Нет, совпадений не нашли"><span>Нет, совпадений не нашли</span></label>
+            <label class="cs-opt"><input type="radio" name="four_hour_sync" value="Пока неизвестно, уточняем"><span>Пока неизвестно, уточняем</span></label>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="cs-submit">
+      <p>Ответы сохраняются автоматически. Нажмите кнопку, когда закончите: после отправки изменить ответы будет нельзя.</p>
+      <button type="button" class="cs-btn" data-portal-submit>Отправить ответы</button>
+    </div>
+  </section>
+</main>
+</body>
+</html>
