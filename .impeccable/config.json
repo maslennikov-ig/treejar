@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "flat-type-hierarchy",
+        "value": "*",
+        "files": [
+          "docs/client-answers/zoho-inventory-code-2026-09.html"
+        ],
+        "createdAt": "2026-09-28T10:16:14.952Z",
+        "reason": "Claude: portal artifact with no own CSS; the portal injects the cs stylesheet (h1 44px vs body 17px, confirmed by artifact.sh shots), which the hook cannot see in the raw file"
+      }
+    ]
+  }
+}
