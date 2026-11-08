@@ -1,19 +1,19 @@
 # Orchestrator Handoff
 
-Updated: 2026-11-07
-Current branch: main (`70550942371d8175151c2b5454b4c7d6348181ae`)
-Current stage id: tj-r62i (live pilot monitoring; epic `tj-loge` closed; follow-up fixes `tj-mi4g` prepared on dedicated worktree)
-Status: Live `7055094` deployed via CI `42399667366` on `https://noor.starec.ai`; `noor-app-1` + `noor-worker-1` healthy (`0` restarts, `ops/live-pilot-worker.enabled` preserved, `TEST_CHANNEL_RESTORE_MODE=false`).
+Updated: 2026-11-08
+Current branch: main (`c31bd3eb469bc1ae55a22406756d7d07ed71362e`)
+Current stage id: tj-r62i (live pilot monitoring with standing bugfix/deploy authority; `tj-loge` & `tj-mi4g` closed)
+Status: Live `c31bd3e` deployed via CI `42455766189` on `https://noor.starec.ai`; `noor-app-1` + `noor-worker-1` healthy (`0` restarts, `ops/live-pilot-worker.enabled` preserved, `TEST_CHANNEL_RESTORE_MODE=false`).
 
-## Epic tj-loge (2026-11-07) & Live Pilot Fixes (`dfdf534`, `7055094`) — deployed
+## Epic tj-loge & Follow-up `tj-mi4g` (2026-11-07..08) & Live Pilot Fixes (`dfdf534`, `7055094`, `c31bd3e`) — deployed
 - Live pilot enabled 2026-11-05 (`tj-r62i`, Treejar WhatsApp `+971523209235`, odd Moscow dates -> Noor via client router `audit.treejartrading.ae`). Shipped `dfdf534` (CI `42056978288`: deterministic 20+ unit handoff incl. `Qty.350Nos`, cross-turn bulk carry, manager `isEcho` delivered/read takeover, paused-chat follow-up guard).
 - Shipped epic `tj-loge` (`321434a`, `4157c74`, `5afa723`, `7055094`, CI `42399667366` green):
   - `tj-loge.1`: inbound customer photos/PDFs read via `anthropic/claude-haiku-5.5` (`MEDIA_DESCRIPTION_MODEL`, reasoning off, `max_tokens=2000`) into bracketed message notes; watch worker logs for `Customer attachment has no downloadable URL` once client router resumes.
   - `tj-loge.2`: sliding inbound quiet window (`INBOUND_QUIET_SECONDS=15`, cap `60s`); manager echoes bypass wait.
   - `tj-loge.3`: non-pausing internal manager alert once per conversation on recruitment/supplier pitches.
   - `tj-loge.4`: generic openings skip premature product search; frame-only/component rows ranked last and labelled.
-- Recurring read-only monitor runs every 2h (`08:00–23:00` MSK) checking nginx router traffic, Postgres activity, full dialogue quality review, app/worker logs, health, and OpenRouter credit (`$13.3986 / $20.00` remaining at `2026-11-07 19:01 UTC`). Client router has sent no traffic since `2026-11-05 14:11 UTC` (client-side router blocker with Viktor / `@youpyoupp`).
-- Deep end-to-end re-audit of the 4 pilot chats (`*4188`, `*2588`, `*0068`, `*5868`) uncovered 4 remaining defects tracked in `tj-mi4g` (product model-reference extraction on dimension-prefixed names/variant tokens in `*0068`, `search_products` `exact_media_product_keys` using LLM internal query instead of customer `user_query` in `*5868`, CRM contact name omitted from `known_customer_name()` causing duplicate name ask in `*2588`, and `"Wholesale only?"` + standalone replacement-lock photo loop guidance in `*2588`), fixed & verified locally on `codex/tj-mi4g-pilot-followup-fixes` awaiting owner push/deploy authorization.
+- Shipped follow-up `tj-mi4g` (`c31bd3e`, CI `42455766189` green, closed) fixing all 4 remaining defects uncovered by end-to-end re-audit of the 2026-11-05 pilot chats (`*0068` `_product_model_reference` + per-price-bucket sibling disambiguation for manager desk photos, `*5868` `search_products` `exact_media_product_keys` using customer `user_query` on follow-up turns, `*2588` `_Turn.known_customer_name()` reading CRM `Name`/`Full_Name`, and `*2588` single-item welcome + no close-up photo loops on standalone spare hardware).
+- Recurring read-only monitor runs every 2h (`08:00–22:00` MSK) checking nginx router traffic, Postgres activity, full dialogue quality review, app/worker logs, health, and OpenRouter credit (`$13.3986 / $20.00` remaining at `2026-11-08 05:01 UTC`). Owner granted standing pilot authority (2026-11-08) to autonomously test, fix, push to `main`, and verify CI auto-deploy for any Noor code/dialogue defects found during monitoring (no prod `.env`/DB/Redis/container mutations, no customer messages, no client router access). Client router silent since `2026-11-05 14:11 UTC` (client-side blocker with Viktor / `@youpyoupp`).
 
 ## Epic tj-id6m (2026-11-01..02) & Live Multi-Turn Synthetic Verification (`tj-0agh`, `tj-8awv`)
 - Full audit + 17 closed remediation slices (`tj-id6m.1`..`tj-id6m.16`, `tj-id6m.18`) merged to `main` (`d7eb8ea`, `93013c9`, `580116a`) and deployed to `https://noor.starec.ai` via GitHub Actions CI/Deploy runs `41330430678` & `41397449530` (`docs/reports/audit-2026-11-01/README.md`). Fixed SPA path traversal (`HTTP 400`, `tj-id6m.1`), 30+ Admin UI/BE wiring bugs (`tj-id6m.2`..`tj-id6m.6`), SQL pagination/indexes (`2026_11_01_admin_ts_indexes`) + 60s dashboard cache (`tj-id6m.7`), ARQ concurrency `max_jobs=8` + staggered crons + server-side `queue_wait` (`tj-id6m.8`), channel/CRM negative/turn-embedding caches + stock digest memoization (`tj-id6m.9`, `tj-id6m.10`), slim runtime `Dockerfile` + lazy web `torch` startup (`libtorch` absent from PID 1) + `React.lazy` SPA splitting + immutable asset headers (`tj-id6m.11`, `tj-id6m.12`), `-13,154` net `src/` LOC of dead layers/helpers (`tj-id6m.13`..`tj-id6m.15`), `0` advisories across Python/FE (`tj-id6m.16`), and Arabic `opening_guard` transliteration + `result.usage` property + `24/24` green `bot_test_suite.py` (`tj-id6m.18`).
@@ -148,7 +148,7 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 ## Explicit defers
 
 - tj-id6m.17 (deferred by owner 2026-11-02 on closing `tj-id6m`): 10 optional product/ops choices parked unless requested (`docs/reports/audit-2026-11-01/README.md`: LLM reasoning effort/retries, in-flight supersession cancel, duplicate current-turn prompt message, CRM `paused`/`closed` reply behavior, manual `escalation_status` editing, `bot_enabled` fail-open vs fail-closed default + UI kill-switch, payment reminder UI/`manual` mode, public `/client-self-test/submit` retirement/rate-limit, KB `language` filter & `target_only` definition, one-off GitHub workflows).
-- tj-r62i / tj-z3hw / tj-mi4g: Live pilot active since `2026-11-05 12:19 UTC` (`dfdf534` + `7055094` live); client router (`audit.treejartrading.ae`) silent since `2026-11-05 14:11 UTC` (client-side blocker with Viktor / `@youpyoupp`, plus manager `isEcho` forwarding confirmation pending); local `tj-mi4g` branch fixes 4 remaining pilot dialogue defects awaiting owner push/deploy approval.
+- tj-r62i / tj-z3hw: Live pilot active since `2026-11-05 12:19 UTC` (`dfdf534`, `7055094`, `c31bd3e` live; `tj-loge` & `tj-mi4g` closed); client router (`audit.treejartrading.ae`) silent since `2026-11-05 14:11 UTC` (client-side blocker with Viktor / `@youpyoupp`, plus manager `isEcho` forwarding confirmation pending).
 
 - tj-i2b1: earlier527fe1f saved budget/hold but failed mixed matching/selection.
   Corrected a72da15live/CI4712passed; fresh2/3unit retained/held proof pending.
