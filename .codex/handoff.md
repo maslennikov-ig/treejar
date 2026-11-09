@@ -1,12 +1,12 @@
 # Orchestrator Handoff
 
 Updated: 2026-11-09
-Current branch: main (live runtime `7baa2a0aa87bd4160066a3846514ad6b06391095`)
-Current stage id: tj-r62i (live pilot monitoring + Nikita shift QA audit; `tj-loge`, `tj-mi4g`, `tj-whq5`, `tj-41ra`, `tj-pf5x`, & `tj-fswr` closed)
-Status: Live `7baa2a0` deployed via CI `42591224340` on `https://noor.starec.ai`; `noor-app-1` + `noor-worker-1` healthy (`0` restarts, `ops/live-pilot-worker.enabled` preserved). Local & remote workspace clean on `main` (`/home/me/code/treejar`).
+Current branch: main (live runtime `a81c150969407261ffe6ebd10b64633e15032394`)
+Current stage id: tj-r62i (live pilot monitoring + Nikita shift QA audit; `tj-loge`, `tj-mi4g`, `tj-whq5`, `tj-41ra`, `tj-pf5x`, `tj-fswr`, & `tj-r62i.1` closed)
+Status: Live `a81c150` deployed via CI `42592319198` on `https://noor.starec.ai`; `noor-app-1` + `noor-worker-1` healthy (`0` restarts, `ops/live-pilot-worker.enabled` preserved, `alembic_version=2026_11_09_shadow_webhooks`). Local & remote workspace clean on `main` (`/home/me/code/treejar`).
 
-## Pilot Bugfixes `tj-whq5`, `tj-41ra`, `tj-pf5x` & `tj-fswr` (2026-11-09) — deployed
-- Shipped `tj-fswr` (`7baa2a0`, CI `42591224340`): expanded `has_deferred_team_check_promise` regex in `src/llm/message_processor.py` to handle article-less return promises (`return with confirmation/update/details`), multi-sentence team mentions (`...still need confirmation from our sales team. I'll check these and return with an update`), and direct check+return pairs without requiring team keywords in the same clause. Uncovered during 12:00 MSK monitor check on chat `*6551` (Bashar, Bon Marche Interior Design, 12x CH 145 quotation Fr4364).
+## Pilot Bugfixes `tj-whq5`, `tj-41ra`, `tj-pf5x`, `tj-fswr` & `tj-r62i.1` (2026-11-09) — deployed
+- Shipped `tj-fswr` (`7baa2a0`, CI `42591224340`) & `tj-r62i.1` (`a81c150`, CI `42592319198`): from `12:00 MSK` audit of live B2B quote chat `*6551` (Bashar, `Bon Marche Interior Design`, `12x CH 145` -> Zoho Sale Order `Fr4364` + PDF delivered), fixed `has_deferred_team_check_promise` article-less/multi-sentence promises & contraction-safe `_QUOTED_SPAN_RE` (`message_processor.py`), preserved approved UAE delivery FAQ + `AED 400` Abu Dhabi tariff grounding across email/detail continuations & quotation subtotals (`company_faq.py`, `catalog_planning.py`), and auto-synced Zoho CRM Contact + `New Lead` Deal on `create_quotation` (`engine.py`, `prompts.py`).
 - Client router (`audit.treejartrading.ae`) resumed traffic on 2026-11-09 02:55 UTC (odd Moscow date), including valid media URLs AND live manager `isEcho=True` (`authorType='manager'`) forwarding. Reviewed active conversations (`*0745`, `*1067`, `*6040`, `*5892`, `*7182`, `*8460`, `*8132`, `*5294`, `*4243`, `*1243`, `*6551`, `*2245`, `*7752`, `*8055`); `anthropic/claude-haiku-5.5` vision/PDF reader, 15s quiet window, opening guard, and `manual_takeover` worked cleanly (also updated pre-fix `*5294` row to `manual_takeover` under owner approval).
 - Shipped `tj-whq5` (`da3248b`, CI `42573039511`): `has_manager_message` in `src/services/chat.py` always transitions `pending`/`in_progress` chats to `manual_takeover`.
 - Shipped `tj-41ra` (`8e47d3a`, CI `42573735618`): non-pausing manager Escalation + Telegram alert on external website orders (`B2C-...`) and deferred team-check promises (`escalation_policy.py`, `message_processor.py`), corporate off-topic guard in `BASE_SYSTEM_PROMPT`, and `"habibi"`/`"حبيبي"` stripping in `outbound_reply_guard.py`.
