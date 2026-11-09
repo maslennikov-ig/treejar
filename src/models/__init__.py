@@ -20,6 +20,7 @@ from src.models.outbound_message import OutboundMessageAudit
 from src.models.product import Product
 from src.models.quality_review import QualityReview
 from src.models.referral import Referral
+from src.models.shadow_webhook_event import ShadowWebhookEvent
 from src.models.system_config import SystemConfig
 from src.models.system_prompt import SystemPrompt
 
@@ -44,6 +45,7 @@ __all__ = [
     "Product",
     "QualityReview",
     "Referral",
+    "ShadowWebhookEvent",
     "SystemConfig",
     "SystemPrompt",
 ]

@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     wazzup_allowed_ips: str = (
         ""  # Comma-separated CIDRs, e.g. "94.242.232.0/22,172.241.70.0/22"
     )
+    # Comma-separated CIDRs/IPs whose unauthenticated mirror webhooks are stored
+    # strictly in observe-only shadow_webhook_events (zero bot/queue/CRM work).
+    wazzup_shadow_audit_ips: str = "46.225.136.202"
     wazzup_webhook_auth_mode: Literal["disabled", "observe", "enforce"] = "disabled"
     wazzup_webhook_secret: SecretStr = SecretStr("")
     # Shared-account callback ownership requires explicit operator activation.

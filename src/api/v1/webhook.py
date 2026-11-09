@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
 import logging
 import secrets
 import time
@@ -34,11 +35,13 @@ from src.services.outbound_audit import (
     update_wazzup_statuses,
 )
 from src.services.proposal_followup import apply_proposal_read_statuses
+from src.services.shadow_webhook_audit import persist_shadow_webhook_payload
 
 # Bind to uvicorn.error so info logs appear in docker logs
 logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter()
+_MAX_SHADOW_WEBHOOK_BYTES = 512 * 1024
 _OUTBOUND_MESSAGE_STATUSES = frozenset({"sent", "delivered", "read", "error", "edited"})
 # `tj-r62i`. A manager message must silence Noor even when the router forwards
 # it once with a later delivery status instead of the initial ``sent`` event.
@@ -122,6 +125,95 @@ def _verify_webhook_origin(request: Request) -> bool:
         return False
 
     return any(client_ip in network for network in networks)
+
+
+@lru_cache(maxsize=8)
+def _parse_shadow_audit_networks(
+    raw: str,
+) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    cleaned = raw.strip()
+    if not cleaned:
+        return ()
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for cidr in cleaned.split(","):
+        cidr = cidr.strip()
+        if cidr:
+            networks.append(ipaddress.ip_network(cidr, strict=False))
+    return tuple(networks)
+
+
+def _verify_shadow_audit_origin(request: Request) -> bool:
+    """Return True when request originates from a configured passive audit mirror IP."""
+    networks = _parse_shadow_audit_networks(settings.wazzup_shadow_audit_ips)
+    if not networks:
+        return False
+
+    client_host = request.client.host if request.client else None
+    if not client_host:
+        return False
+
+    try:
+        client_ip = ipaddress.ip_address(client_host)
+    except ValueError:
+        return False
+
+    return any(client_ip in network for network in networks)
+
+
+async def _capture_shadow_webhook_request(request: Request) -> int:
+    """Persist an observe-only webhook payload without entering Noor's bot pipeline."""
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > _MAX_SHADOW_WEBHOOK_BYTES:
+                logger.warning(
+                    "Wazzup shadow webhook skipped: content-length above limit"
+                )
+                return 0
+        except ValueError:
+            pass
+
+    try:
+        raw_bytes = await request.body()
+    except Exception:
+        logger.warning("Wazzup shadow webhook: failed to read request body")
+        return 0
+
+    if not raw_bytes or len(raw_bytes) > _MAX_SHADOW_WEBHOOK_BYTES:
+        return 0
+
+    try:
+        parsed = json.loads(raw_bytes)
+    except Exception:
+        logger.debug("Wazzup shadow webhook: invalid JSON body")
+        return 0
+
+    if not isinstance(parsed, dict) or parsed.get("test"):
+        return 0
+
+    source_ip = request.client.host if request.client else "unknown"
+    try:
+        async with async_session_factory() as db:
+            stored = await persist_shadow_webhook_payload(
+                db,
+                parsed,
+                source_ip=source_ip,
+            )
+            if stored:
+                await db.commit()
+        if stored:
+            logger.info(
+                "Wazzup shadow webhook captured: stored=%d source_ip=%s",
+                stored,
+                source_ip,
+            )
+        return stored
+    except Exception:
+        logger.warning(
+            "Wazzup shadow webhook: failed to persist observe-only event",
+            exc_info=True,
+        )
+        return 0
 
 
 def _is_outbound_status_message(message: object) -> bool:
@@ -337,6 +429,10 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
     - authorType='bot' → skip (echo of our own bot messages)
     """
     if not _verify_wazzup_webhook_auth(request):
+        if _wazzup_webhook_auth_result(
+            request
+        ) == "missing" and _verify_shadow_audit_origin(request):
+            await _capture_shadow_webhook_request(request)
         return JSONResponse(
             {"error": "unauthorized"},
             status_code=401,
@@ -535,6 +631,27 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
             raise
 
     return JSONResponse({"ok": True}, status_code=200)
+
+
+@router.post("/wazzup/observe")
+async def handle_wazzup_observe_webhook(request: Request) -> JSONResponse:
+    """Explicit observe-only endpoint for passive shift QA mirroring.
+
+    Never enqueues bot work, modifies conversation state, or calls external APIs.
+    """
+    if not (
+        _verify_wazzup_webhook_auth(request) or _verify_shadow_audit_origin(request)
+    ):
+        return JSONResponse(
+            {"error": "unauthorized"},
+            status_code=401,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    stored = await _capture_shadow_webhook_request(request)
+    return JSONResponse(
+        {"ok": True, "observed": True, "stored": stored}, status_code=200
+    )
 
 
 class _GraceDecision(NamedTuple):

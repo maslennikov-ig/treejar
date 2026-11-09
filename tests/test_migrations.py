@@ -113,4 +113,21 @@ def test_admin_timestamp_indexes_migration_and_single_head() -> None:
             referenced_parents.add(down_match.group(1))
 
     heads = revisions - referenced_parents
-    assert heads == {"2026_11_01_admin_ts_indexes"}
+    assert heads == {"2026_11_09_shadow_webhooks"}
+
+
+def test_shadow_webhook_events_migration_and_orm_alignment() -> None:
+    from src.models.shadow_webhook_event import ShadowWebhookEvent
+
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "versions"
+    migration = migrations_dir / "2026_11_09_add_shadow_webhook_events.py"
+    text = migration.read_text()
+
+    assert 'revision: str = "2026_11_09_shadow_webhooks"' in text
+    assert 'down_revision: str | None = "2026_11_01_admin_ts_indexes"' in text
+    assert '"shadow_webhook_events"' in text
+    assert "uq_shadow_webhook_events_message_id" in text
+
+    idx_names = {idx.name for idx in ShadowWebhookEvent.__table__.indexes}
+    assert "ix_shadow_webhook_events_chat_created_at" in idx_names
+    assert "ix_shadow_webhook_events_created_at" in idx_names
