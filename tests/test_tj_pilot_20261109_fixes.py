@@ -311,7 +311,7 @@ def test_pilot_6551_email_continuation_retains_delivery_faq_and_grounds_400_aed(
     None
 ):
     from src.llm.catalog_planning import SalesDeps, grounded_amounts_for_turn
-    from src.llm.company_faq import with_approved_faq
+    from src.llm.company_faq import grounded_faq_amounts, with_approved_faq
 
     recent_history = [
         (
@@ -329,15 +329,21 @@ def test_pilot_6551_email_continuation_retains_delivery_faq_and_grounds_400_aed(
     faq_ctx = with_approved_faq("[EMAIL_1]", [], recent_history=recent_history)
     assert any("AED 400" in item["content"] for item in faq_ctx)
 
-    # Later unrelated showroom question after the email turn does not keep delivery FAQ active
+    # Later showroom question after the email turn gets only showroom FAQ, never delivery tariffs
     later_history = [
         *recent_history,
         "user: Bashar@bonmarche.vip",
         "assistant: Quotation Fr4364 has been prepared and sent.",
     ]
+    later_faq = with_approved_faq(
+        "Where's your showroom?", [], recent_history=later_history
+    )
+    assert [item["title"] for item in later_faq] == ["Can we visit your showroom?"]
     assert (
-        with_approved_faq("Where's your showroom?", [], recent_history=later_history)
-        == []
+        grounded_faq_amounts(
+            "Where's your showroom?", later_faq, recent_history=later_history
+        )
+        == ()
     )
 
     conv = Conversation(

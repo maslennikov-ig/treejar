@@ -51,6 +51,12 @@ APPROVED_FAQ_QUESTIONS: dict[int, str] = {
 
 FAQ_SOURCE = "faq_static"
 
+_APPROVED_ENTRY_TOPICS: dict[str, frozenset[str]] = {
+    "can we visit your showroom?": frozenset({"showroom", "pickup"}),
+    "what is your delivery timeline?": frozenset({"delivery", "installation"}),
+    "do you provide installation services?": frozenset({"delivery", "installation"}),
+}
+
 _DELIVERY_CHARGE_FIGURES: frozenset[float] = frozenset(
     {
         50.0,
@@ -195,8 +201,18 @@ def active_faq_topics(
         if not continued and quote_delivery_active:
             continued.add("delivery")
     if is_showroom_continuation:
-        continued |= history_topics & {"showroom"}
+        continued |= history_topics & {"showroom", "pickup"}
     return continued
+
+
+def _faq_item_topics(item: Mapping[str, str]) -> set[str]:
+    title_key = str(item.get("title", "")).strip().casefold()
+    if title_key.startswith("faq:"):
+        title_key = title_key.removeprefix("faq:").strip()
+    mapped = _APPROVED_ENTRY_TOPICS.get(title_key)
+    if mapped is not None:
+        return set(mapped)
+    return _entry_topics(f"{item.get('title', '')} {item.get('content', '')}")
 
 
 def with_approved_faq(
@@ -220,7 +236,7 @@ def with_approved_faq(
     for entry in approved_faq_entries():
         if entry["title"].casefold() in seen_titles:
             continue
-        if topics & _entry_topics(f"{entry['title']} {entry['content']}"):
+        if topics & _faq_item_topics(entry):
             merged.append(dict(entry))
     return merged
 
@@ -256,11 +272,15 @@ def grounded_faq_amounts(
     if not topics:
         return ()
 
+    tariff_topics = topics & {"delivery", "installation"}
+    if not tariff_topics:
+        return ()
+
     base_amounts: set[float] = set()
     for item in faq_context:
-        item_text = f"{item.get('title', '')} {item.get('content', '')}"
-        if not (topics & _entry_topics(item_text)):
+        if not (tariff_topics & _faq_item_topics(item)):
             continue
+        item_text = f"{item.get('title', '')} {item.get('content', '')}"
         for token in find_customer_output_amounts(item_text):
             parsed = _positive_amount(token)
             if parsed is not None:

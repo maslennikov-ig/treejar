@@ -83,6 +83,8 @@ def test_showroom_hours_map_and_jebel_ali_pickup_receive_approved_faq() -> None:
         "ممكن موقعكم وساعات العمل؟",
     ):
         ctx = with_approved_faq(query, [])
+        assert [item["title"] for item in ctx] == ["Can we visit your showroom?"]
+        assert grounded_faq_amounts(query, ctx) == ()
         contents = " ".join(item["content"] for item in ctx)
         assert (
             "Storall Building, St. 58, Community 599, Jebel Ali Industrial Area 2"
