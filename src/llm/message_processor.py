@@ -890,7 +890,8 @@ async def _non_sales_team_notice(turn: _Turn) -> NonSalesIntent | None:
 
 TEAM_FOLLOWUP_NOTICE_METADATA_KEY = "team_followup_notice"
 _QUOTED_SPAN_RE = re.compile(
-    r"(?:'[^'\n]{4,240}'|‘[^’\n]{4,240}’|\"[^\"\n]{4,240}\"|“[^”\n]{4,240}”)"
+    r"(?:(?<!\w)'[^'\n]{4,240}'(?!\w)|(?<!\w)‘[^’\n]{4,240}’(?!\w)|"
+    r"\"[^\"\n]{4,240}\"|“[^”\n]{4,240}”)"
 )
 _DEFERRED_TEAM_CHECK_EN_RE = re.compile(
     r"\b(?:"
@@ -907,7 +908,8 @@ _DEFERRED_RETURN_EN_RE = re.compile(
     r"\b(?:"
     r"come\s+back\s+to\s+you|"
     r"get\s+back\s+to\s+you|"
-    r"return\s+(?:to\s+you|with\s+(?:(?:the|an?|your)\s+)?(?:answer|confirmation|update|details|information))|"
+    r"return\s+(?:to\s+you|with\s+(?:(?:the|an?|your|our)\s+)?"
+    r"(?:answer|confirmation|update|details|information|quote|pricing|rate|fee|options|availability|schedule|date))|"
     r"update\s+you|"
     r"revert\s+to\s+you|"
     r"let\s+you\s+know|"

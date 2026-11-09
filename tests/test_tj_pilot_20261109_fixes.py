@@ -252,3 +252,243 @@ def test_outbound_guard_strips_arabic_and_english_habibi() -> None:
     english_reply = "Thank you, habibi, how can I help with office furniture today?"
     cleaned_en = finalize_customer_reply_text(english_reply, language="en")
     assert "habibi" not in cleaned_en.casefold()
+
+
+# --- *6551: deferred team-check variations, quote-turn FAQ, & CRM Deal sync ---
+
+
+@pytest.mark.parametrize(
+    "reply_text",
+    [
+        # Exact *6551 Turn 3 wording (no article before "confirmation")
+        (
+            "Ready-stock delivery to Abu Dhabi takes *2–5 business days*. "
+            "The payment method and earliest delivery date after payment remain "
+            "unconfirmed; I’ll check these with our sales team and return with "
+            "confirmation."
+        ),
+        # Exact *6551 Turn 4 wording ("sales team" in sentence 1, "I’ll check" in sentence 2)
+        (
+            "Your email is recorded as *Bashar@bonmarche.vip*.\n\n"
+            "*Quotation Fr4364* for *12 × CH 145 grey* has been prepared and sent.\n\n"
+            "The delivery charge, payment method and earliest delivery date after "
+            "payment still need confirmation from our sales team. I’ll check these "
+            "and return with an update."
+        ),
+        # Two straight-apostrophe contractions on the same line must not be eaten by _QUOTED_SPAN_RE
+        (
+            "I've noted TRN 104397709700003; I'll check these with our sales team "
+            "and return with confirmation."
+        ),
+    ],
+)
+def test_pilot_6551_deferred_team_check_variants_are_detected(reply_text: str) -> None:
+    assert has_deferred_team_check_promise(reply_text) is True
+
+
+@pytest.mark.parametrize(
+    "reply_text",
+    [
+        # *6551 Turn 2: passive policy disclosure + clarifying question, no promise to check now
+        (
+            "Delivery: 2–3 business days to Dubai or Sharjah; 2–5 business days to "
+            "other UAE emirates. Delivery is charged; an exact date requires manager "
+            "confirmation.\n\nWhich emirate will we deliver to?"
+        ),
+        # *6551 Turn 5: showroom scheduling question, no deferred check promise
+        (
+            "You’re welcome to visit. The visit time and whether the *CH 145 grey* "
+            "is on display to try need to be arranged with our manager.\n\n"
+            "When would you like to visit?"
+        ),
+    ],
+)
+def test_pilot_6551_passive_manager_mentions_stay_negative(reply_text: str) -> None:
+    assert has_deferred_team_check_promise(reply_text) is False
+
+
+def test_pilot_6551_email_continuation_retains_delivery_faq_and_grounds_400_aed() -> (
+    None
+):
+    from src.llm.catalog_planning import SalesDeps, grounded_amounts_for_turn
+    from src.llm.company_faq import with_approved_faq
+
+    recent_history = [
+        (
+            "user: 1) My name is Bashar, from Bon Marche Interior Design. "
+            "2) Delivery to Abu Dhabi (Al Shawamekh). "
+            "3) Please send a formal quotation for 12 × CH 145 grey, including "
+            "the delivery charge to Abu Dhabi."
+        ),
+        (
+            "assistant: Ready-stock delivery to Abu Dhabi takes *2–5 business days*. "
+            "What email address should I use for your formal quotation, including "
+            "the delivery charge?"
+        ),
+    ]
+    faq_ctx = with_approved_faq("[EMAIL_1]", [], recent_history=recent_history)
+    assert any("AED 400" in item["content"] for item in faq_ctx)
+
+    # Later unrelated showroom question after the email turn does not keep delivery FAQ active
+    later_history = [
+        *recent_history,
+        "user: Bashar@bonmarche.vip",
+        "assistant: Quotation Fr4364 has been prepared and sent.",
+    ]
+    assert (
+        with_approved_faq("Where's your showroom?", [], recent_history=later_history)
+        == []
+    )
+
+    conv = Conversation(
+        id=uuid.uuid4(),
+        phone="+971501036551",
+        language="en",
+        escalation_status="none",
+        metadata_={},
+    )
+    deps = SalesDeps(
+        db=AsyncMock(),
+        redis=AsyncMock(),
+        conversation=conv,
+        embedding_engine=AsyncMock(),
+        zoho_inventory=AsyncMock(),
+        zoho_crm=None,
+        messaging_client=AsyncMock(),
+        pii_map={},
+        faq_context=faq_ctx,
+        recent_history=recent_history,
+        quotation_subtotal=7920.0,
+    )
+    grounded = set(grounded_amounts_for_turn(deps, customer_text="[EMAIL_1]") or ())
+    assert {400.0, 420.0, 7920.0, 8316.0, 8320.0, 8736.0} <= grounded
+
+
+@pytest.mark.asyncio
+async def test_pilot_6551_create_quotation_auto_syncs_zoho_crm_contact_and_deal(
+    authorized_outbound_unit_path: None,
+) -> None:
+    from unittest.mock import MagicMock
+
+    from pydantic_ai import RunContext
+    from pydantic_ai.models.test import TestModel
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import QuotationItem, SalesDeps, create_quotation
+
+    conv = Conversation(
+        id=uuid.uuid4(),
+        phone="+971501036551",
+        customer_name="Bashar",
+        language="en",
+        sales_stage="qualifying",
+        escalation_status="none",
+        metadata_={
+            "quote_customer_details": {
+                "name": "Bashar",
+                "company": "Bon Marche Interior Design",
+                "email": "Bashar@bonmarche.vip",
+                "address": "Abu Dhabi (Al Shawamekh)",
+            },
+            "order_runtime": {
+                "quote_workflow": {
+                    "version": 2,
+                    "consent": "granted",
+                    "lifecycle": "quote_requested",
+                }
+            },
+        },
+    )
+    db = AsyncMock()
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+    product = SimpleNamespace(
+        sku="CH 145 grey NEW",
+        name_en="Executive Office Chair CH 145 grey NEW",
+        price=660.0,
+        currency="AED",
+        image_url=None,
+        attributes={"treejar_slug": "ch-145-grey"},
+        zoho_item_id="item-145",
+    )
+    exec_res = MagicMock()
+    exec_res.scalar_one_or_none.return_value = product
+    db.execute.return_value = exec_res
+
+    zoho_inv = AsyncMock()
+    zoho_inv.get_stock_bulk_fresh.return_value = [
+        {
+            "sku": "CH 145 grey NEW",
+            "item_id": "item-145",
+            "name": "Executive Office Chair CH 145 grey NEW",
+            "description": "Grey mesh executive chair",
+            "stock_on_hand": 167,
+            "rate": 660.0,
+            "currency_code": "AED",
+        }
+    ]
+    zoho_inv.find_customer_by_phone.return_value = {"contact_id": "inv-cust-6551"}
+    zoho_inv.create_sale_order.return_value = {
+        "saleorder": {
+            "salesorder_id": "378603000026478948",
+            "salesorder_number": "Fr4364",
+            "status": "draft",
+        }
+    }
+
+    zoho_crm = AsyncMock()
+    zoho_crm.find_contact_by_phone.side_effect = [
+        None,
+        {"id": "crm-contact-6551", "Phone": "+971501036551"},
+    ]
+    zoho_crm.create_contact.return_value = {"details": {"id": "crm-contact-6551"}}
+    zoho_crm.create_deal.return_value = {"details": {"id": "crm-deal-6551"}}
+    zoho_crm.get_deal_status.return_value = {
+        "id": "crm-deal-6551",
+        "Stage": "New Lead",
+        "Deal_Name": "Bon Marche Interior Design - Quotation Fr4364",
+        "Contact_Name": {"id": "crm-contact-6551"},
+        "Amount": 7920.0,
+    }
+
+    messaging = AsyncMock()
+    messaging.send_media.return_value = "wazzup-pdf-msg-6551"
+
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=AsyncMock(),
+        zoho_inventory=zoho_inv,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=AsyncMock(),
+        source_message_id="msg-8e5a658a",
+    )
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    with (
+        patch(
+            "src.services.pdf.generator.render_quotation_html",
+            return_value="<html>Fr4364</html>",
+        ),
+        patch(
+            "src.services.pdf.generator.generate_pdf", AsyncMock(return_value=b"%PDF")
+        ),
+    ):
+        result = await create_quotation(
+            ctx, [QuotationItem(sku="CH 145 grey NEW", quantity=12)]
+        )
+
+    assert "Quotation Fr4364 has been prepared and sent" in result
+    assert "AED 7,920.00 excl. 5% VAT" in result
+    assert "AED 8,316.00 incl. 5% VAT" in result
+    assert deps.quotation_subtotal == 7920.0
+    assert conv.zoho_contact_id == "crm-contact-6551"
+    assert conv.zoho_deal_id == "crm-deal-6551"
+    assert conv.deal_amount == 7920.0
+    assert conv.deal_status == "New Lead"
+    zoho_crm.create_contact.assert_awaited_once()
+    zoho_crm.create_deal.assert_awaited_once()

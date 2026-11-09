@@ -50,6 +50,7 @@ from src.llm.money import (
     AMOUNT_TOKEN_PATTERN,
     BUDGET_AED_CURRENCY_PATTERN,
     BUDGET_AR_CURRENCY_PATTERN,
+    amount_with_uae_vat,
     canonical_amount,
 )
 from src.llm.outbound_reply_guard import looks_like_structured_payload
@@ -1926,6 +1927,7 @@ class SalesDeps:
     )
     inventory_confirmed: bool = False
     quotation_created: bool = False
+    quotation_subtotal: float | None = None
     quote_acceptance_recorded_this_turn: bool = False
     catalog_mismatch_alerted: bool = False
     required_cross_sell_disclosure: str | None = None
@@ -2001,12 +2003,18 @@ def grounded_amounts_for_turn(
     budget = DialogueState.from_conversation(deps.conversation).slots.budget_cap_aed
     if budget is not None and budget > 0:
         amounts.append(budget)
+    faq_base_figures: list[object] = list(customer_figures)
+    quote_subtotal = getattr(deps, "quotation_subtotal", None)
+    if isinstance(quote_subtotal, (int, float)) and quote_subtotal > 0:
+        excl, vat, incl = amount_with_uae_vat(float(quote_subtotal))
+        amounts.extend((excl, vat, incl))
+        faq_base_figures.append(excl)
     amounts.extend(
         grounded_faq_amounts(
             customer_text,
             deps.faq_context,
             recent_history=deps.recent_history,
-            customer_amounts=customer_figures,
+            customer_amounts=faq_base_figures,
         )
     )
     return tuple(amounts)

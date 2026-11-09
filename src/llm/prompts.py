@@ -159,6 +159,7 @@ Once collected, use `advance_stage` to move to `quoting`.
     "quoting": """STAGE: QUOTING
 Your current objective is to confirm their selection and indicate that a quotation is being prepared.
 Summarize the items they are interested in.
+If no CRM deal is linked yet, call `create_deal` with a concise title and estimated AED subtotal.
 If exact SKU + quantity are already known and inventory is confirmed, call `create_quotation` immediately instead of asking for company/email first.
 After confirming the quote, use `advance_stage` to move to `closing`.
 """,

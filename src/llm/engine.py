@@ -189,6 +189,7 @@ from src.llm.inventory_customers import (
 )
 from src.llm.inventory_customers import resolve_inventory_customer_id
 from src.llm.inventory_read import InventoryReadUnavailable, inventory_read
+from src.llm.money import amount_with_uae_vat, round_money
 from src.llm.opening_guard import canonical_opening
 from src.llm.order_status import format_order_status
 from src.llm.package_evidence import (
@@ -2094,9 +2095,31 @@ def _store_quotation_effect(
     conversation.metadata_ = metadata
 
 
-def _quotation_prepared_message(conversation: Conversation, quote_number: str) -> str:
+def _quotation_prepared_message(
+    conversation: Conversation,
+    quote_number: str,
+    *,
+    subtotal: float | None = None,
+) -> str:
     if is_arabic_customer_language(getattr(conversation, "language", "en")):
+        if subtotal is not None and subtotal > 0:
+            excl, _vat, incl = amount_with_uae_vat(subtotal)
+            return (
+                f"تم تجهيز عرض السعر {quote_number} وإرساله إليك "
+                f"(إجمالي المنتجات: AED {excl:,.2f} بدون ضريبة 5% / "
+                f"AED {incl:,.2f} شامل الضريبة؛ رسوم التوصيل والتركيب الاختياري "
+                "منفصلة حسب تعرفة Treejar المعتمدة). هل يناسبك العرض؟"
+            )
         return f"تم تجهيز عرض السعر {quote_number} وإرساله إليك. هل يناسبك العرض؟"
+    if subtotal is not None and subtotal > 0:
+        excl, _vat, incl = amount_with_uae_vat(subtotal)
+        return (
+            f"Quotation {quote_number} has been prepared and sent to you "
+            f"(items subtotal: AED {excl:,.2f} excl. 5% VAT / "
+            f"AED {incl:,.2f} incl. 5% VAT; standard UAE delivery and optional "
+            "assembly are separate per Treejar's approved tariff table). "
+            "Please let me know if the quotation works for you."
+        )
     return (
         f"Quotation {quote_number} has been prepared and sent to you. "
         "Please let me know if the quotation works for you."
@@ -3613,7 +3636,7 @@ async def _create_or_reuse_sales_opportunity(
     conversation = deps.conversation
     operation_fingerprint: str | None = None
     try:
-        existing_deal_id = _string_value(conversation.zoho_deal_id)
+        existing_deal_id = _string_value(getattr(conversation, "zoho_deal_id", None))
         if existing_deal_id:
             if not allow_reuse:
                 return SalesOpportunityWriteResult(
@@ -3621,7 +3644,9 @@ async def _create_or_reuse_sales_opportunity(
                     deal_id=existing_deal_id,
                     error="existing_deal_linked",
                 )
-            expected_contact_id = _string_value(conversation.zoho_contact_id)
+            expected_contact_id = _string_value(
+                getattr(conversation, "zoho_contact_id", None)
+            )
             if not expected_contact_id:
                 contact = await crm.find_contact_by_phone(
                     _string_value(conversation.phone)
@@ -3639,14 +3664,11 @@ async def _create_or_reuse_sales_opportunity(
                     )
                 conversation.zoho_contact_id = expected_contact_id
             readback = await crm.get_deal_status(existing_deal_id)
+            raw_deal_amount = getattr(conversation, "deal_amount", None)
             expected_amount = (
                 amount
                 if amount is not None
-                else (
-                    float(conversation.deal_amount)
-                    if conversation.deal_amount is not None
-                    else None
-                )
+                else (float(raw_deal_amount) if raw_deal_amount is not None else None)
             )
             if not isinstance(readback, Mapping) or not _deal_readback_matches(
                 readback,
@@ -3726,7 +3748,7 @@ async def _create_or_reuse_sales_opportunity(
                     error="contact_readback_mismatch",
                 )
 
-        known_contact_id = _string_value(conversation.zoho_contact_id)
+        known_contact_id = _string_value(getattr(conversation, "zoho_contact_id", None))
         if known_contact_id and known_contact_id != contact_id:
             return SalesOpportunityWriteResult(
                 verified=False,
@@ -3797,7 +3819,7 @@ async def _create_or_reuse_sales_opportunity(
             fingerprint=operation_fingerprint,
             status="created",
         )
-        if conversation.sales_stage == SalesStage.GREETING.value:
+        if getattr(conversation, "sales_stage", None) == SalesStage.GREETING.value:
             conversation.sales_stage = SalesStage.QUALIFYING.value
         await deps.db.commit()
 
@@ -3823,7 +3845,9 @@ async def _create_or_reuse_sales_opportunity(
             stage=stage,
         )
     except Exception:
-        if operation_fingerprint and not _string_value(conversation.zoho_deal_id):
+        if operation_fingerprint and not _string_value(
+            getattr(conversation, "zoho_deal_id", None)
+        ):
             _set_sales_opportunity_write_state(
                 conversation,
                 fingerprint=operation_fingerprint,
@@ -3845,7 +3869,7 @@ async def _create_or_reuse_sales_opportunity(
         )
         return SalesOpportunityWriteResult(
             verified=False,
-            deal_id=_string_value(conversation.zoho_deal_id) or None,
+            deal_id=_string_value(getattr(conversation, "zoho_deal_id", None)) or None,
             error="crm_error",
         )
 
@@ -4161,6 +4185,7 @@ async def _create_quotation(
             _string_value(existing_effect.get("sale_order_number")) or "DRAFT"
         )
         ctx.deps.quotation_created = True
+        ctx.deps.quotation_subtotal = round_money(subtotal)
         if _has_canonical_quote_workflow(ctx.deps.conversation):
             await _store_quote_workflow(
                 ctx.deps.db,
@@ -4170,7 +4195,9 @@ async def _create_quotation(
                     lifecycle=QuoteLifecycle.CREATED,
                 ),
             )
-        return _quotation_prepared_message(ctx.deps.conversation, quote_number)
+        return _quotation_prepared_message(
+            ctx.deps.conversation, quote_number, subtotal=subtotal
+        )
 
     # Create a draft once. If an earlier attempt stopped after order creation,
     # verify and resume that order instead of creating a duplicate.
@@ -4421,6 +4448,7 @@ async def _create_quotation(
             "customer_id": customer_id,
             "sale_order_id": sale_order_id,
             "sale_order_number": quote_number,
+            "subtotal": round_money(subtotal),
             "media_crm_message_id": media_crm_message_id,
             "caption_crm_message_id": caption_crm_message_id,
             "media_message_id": _string_value(media_message_id),
@@ -4447,6 +4475,7 @@ async def _create_quotation(
         )
 
     ctx.deps.quotation_created = True
+    ctx.deps.quotation_subtotal = round_money(subtotal)
     if _has_canonical_quote_workflow(ctx.deps.conversation):
         await _store_quote_workflow(
             ctx.deps.db,
@@ -4456,7 +4485,49 @@ async def _create_quotation(
                 lifecycle=QuoteLifecycle.CREATED,
             ),
         )
-    return _quotation_prepared_message(ctx.deps.conversation, quote_number)
+    await _ensure_crm_opportunity_for_quotation(
+        ctx.deps,
+        customer_name=customer_name,
+        customer_company=customer_company,
+        quote_number=quote_number,
+        subtotal=subtotal,
+    )
+    return _quotation_prepared_message(
+        ctx.deps.conversation, quote_number, subtotal=subtotal
+    )
+
+
+async def _ensure_crm_opportunity_for_quotation(
+    deps: SalesDeps,
+    *,
+    customer_name: str,
+    customer_company: str,
+    quote_number: str,
+    subtotal: float,
+) -> None:
+    """Best-effort Zoho CRM Contact + New Lead Deal sync when a quotation PDF is sent.
+
+    2026-11-09 live pilot (*6551): customer moved directly from qualifying to
+    formal quotation Fr4364 (AED 7,920) without entering the quoting stage or
+    calling create_deal, leaving zoho_contact_id and zoho_deal_id NULL.
+    """
+
+    if getattr(deps, "zoho_crm", None) is None:
+        return
+    if _string_value(getattr(deps.conversation, "zoho_deal_id", None)):
+        return
+    account_label = (
+        customer_company
+        if customer_company and customer_company.casefold() != "individual"
+        else customer_name or "Customer"
+    )
+    title = f"{account_label} - Quotation {quote_number}"[:120]
+    await _create_or_reuse_sales_opportunity(
+        deps,
+        title=title,
+        amount=round_money(subtotal) if subtotal > 0 else None,
+        allow_reuse=True,
+    )
 
 
 def _no_verified_cross_sell_disclosure(

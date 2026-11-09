@@ -70,6 +70,16 @@ _DELIVERY_FOLLOWUP_QUALIFIER_RE = re.compile(
     r"تكلفة|رسوم|تعرفة)",
     re.IGNORECASE,
 )
+_DELIVERY_DETAIL_CONTINUATION_RE = re.compile(
+    r"(?:"
+    r"\[(?:EMAIL|PHONE)_\d+\]"
+    r"|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}"
+    r"|\b(?:trn|vat|po\s*box|quotation|quote|company|llc|fzc|fze|inc|ltd|"
+    r"yes|please\s+send|go\s+ahead|confirm)\b"
+    r"|(?:عرض\s+سعر|نعم|أرسل|ارسل|شركة)"
+    r")",
+    re.IGNORECASE,
+)
 
 
 def _parse_approved_entries(text: str) -> tuple[dict[str, str], ...]:
@@ -126,6 +136,12 @@ def active_faq_topics(
     }
     if prior_topics and _DELIVERY_FOLLOWUP_QUALIFIER_RE.search(query):
         return prior_topics
+    immediate_topics = set(_query_topics(" ".join(recent_history[-2:]))) & {
+        "delivery",
+        "installation",
+    }
+    if immediate_topics and _DELIVERY_DETAIL_CONTINUATION_RE.search(query):
+        return immediate_topics
     return set()
 
 
