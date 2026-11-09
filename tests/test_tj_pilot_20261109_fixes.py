@@ -140,6 +140,15 @@ async def test_escalate_to_manager_on_external_order_alerts_once_without_pausing
         ),
         "Let me confirm the floor model with our showroom team and return with the answer.",
         "سأتحقق مع فريق المعرض بخصوص جاهزية الطلب وأعود إليك بالتأكيد.",
+        (
+            "The payment method and earliest delivery date after payment remain unconfirmed; "
+            "I’ll check these with our sales team and return with confirmation."
+        ),
+        (
+            "The delivery charge, payment method and earliest delivery date after payment "
+            "still need confirmation from our sales team. I’ll check these and return with an update."
+        ),
+        "سأتحقق من ذلك مع الإدارة وأعود إليك بالتفاصيل.",
     ],
 )
 def test_deferred_team_check_promises_are_detected(reply_text: str) -> None:
@@ -152,6 +161,8 @@ def test_deferred_team_check_promises_are_detected(reply_text: str) -> None:
         "Here are 3 ergonomic mesh chairs in stock in Sharjah.",
         "Current stock is unconfirmed. The note says, 'I will check with our team and get back to you.'",
         "You are welcome to visit our showroom in Sharjah to try the chair.",
+        "I will check our catalog for executive chairs.",
+        "Let me check the dimensions of this chair: it is 120cm high.",
     ],
 )
 def test_ordinary_or_quoted_replies_are_not_flagged_as_team_promises(

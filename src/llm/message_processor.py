@@ -895,25 +895,32 @@ _QUOTED_SPAN_RE = re.compile(
 _DEFERRED_TEAM_CHECK_EN_RE = re.compile(
     r"\b(?:"
     r"(?:i(?:'ll|’ll|\s+will)|we(?:'ll|’ll|\s+will)|let\s+me)\s+"
-    r"(?:check|confirm|verify|follow\s+up)\b[^.?!]{0,180}"
-    r"\b(?:team|showroom|warehouse|manager|specialist|department)\b"
-    r"|our\s+(?:showroom|sales|order|project|commercial)\s+team\s+will\s+"
+    r"(?:check|confirm|verify|follow\s+up)\b"
+    r"|our\s+(?:showroom|sales|order|project|commercial)?\s*team\s+will\s+"
     r"(?:check|confirm|verify)\b"
+    r"|(?:need(?:s)?|requir(?:es?|ing))\s+(?:confirmation|verification)\s+"
+    r"(?:from|with)\s+our\s+(?:showroom|sales|order|project|commercial)?\s*(?:team|manager)\b"
     r")",
     re.IGNORECASE,
 )
 _DEFERRED_RETURN_EN_RE = re.compile(
-    r"\b(?:come\s+back\s+to\s+you|get\s+back\s+to\s+you|"
-    r"return\s+(?:to\s+you|with\s+(?:the|an|your)\s+(?:answer|confirmation|update))|"
-    r"update\s+you|revert\s+to\s+you)\b",
+    r"\b(?:"
+    r"come\s+back\s+to\s+you|"
+    r"get\s+back\s+to\s+you|"
+    r"return\s+(?:to\s+you|with\s+(?:(?:the|an?|your)\s+)?(?:answer|confirmation|update|details|information))|"
+    r"update\s+you|"
+    r"revert\s+to\s+you|"
+    r"let\s+you\s+know|"
+    r"follow\s+up\s+with\s+you"
+    r")\b",
     re.IGNORECASE,
 )
 _DEFERRED_TEAM_CHECK_AR_RE = re.compile(
-    r"(?:سأتحقق|سأتأكد|سأراجع|سنتحقق|سنتأكد|دعني\s+أتحقق)[^.؟!]{0,180}"
-    r"(?:فريق|المعرض|المستودع|المدير|الإدارة|قسم)",
+    r"(?:سأتحقق|سأتأكد|سأراجع|سنتحقق|سنتأكد|دعني\s+أتحقق)"
+    r"|(?:يحتاج|تتطلب|يتطلب)\s+(?:تأكيد(?:اً)?|موافقة)\s+من\s+(?:فريق(?:نا)?|إدارت(?:نا)?|المعرض|المدير)",
 )
 _DEFERRED_RETURN_AR_RE = re.compile(
-    r"(?:أعود\s+إليك|أرد\s+عليك|أبلغك|أوافيك|نرد\s+عليك|سنتواصل\s+معك)",
+    r"(?:أعود\s+إليك|أرد\s+عليك|أبلغك|أوافيك|نرد\s+عليك|سنتواصل\s+معك|أخبرك|نبلغك)",
 )
 
 
