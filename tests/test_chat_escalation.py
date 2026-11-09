@@ -329,6 +329,118 @@ async def test_manual_takeover_triggered(
     mock_process_message.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("initial_status", ["pending", "in_progress"])
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_manual_takeover_triggered_when_escalation_active(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+    initial_status: str,
+) -> None:
+    """Manager message + escalation_status in (pending, in_progress) -> manual_takeover.
+
+    Ensures that when a manager steps in to handle an active escalation,
+    the conversation transitions to manual_takeover so the bot remains
+    completely silent on subsequent customer replies instead of repeatedly
+    sending the PENDING fallback reply ('A manager has been notified...').
+    """
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+
+    mock_conv = _make_mock_conv(escalation_status=initial_status)
+
+    mock_session.execute.side_effect = [
+        MockResult(None),
+        MockResult(mock_conv),
+        MockResult([]),
+    ]
+
+    msg = WazzupIncomingMessage(
+        messageId="msg-mgr-takeover-active",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Welcome to Treejar! Sreeja here, Sales Manager.",
+        channelId="ch1",
+        timestamp=1704067200,
+        authorType="manager",
+        isEcho=True,
+        authorName="Sreeja",
+    )
+    mock_redis = AsyncMock()
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
+
+    with patch("src.services.chat.settings.wazzup_channel_id", "ch1"):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
+
+    # escalation_status must transition to manual_takeover even if it was pending/in_progress
+    assert mock_conv.escalation_status == "manual_takeover"
+    mock_session.commit.assert_awaited()
+    mock_process_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_customer_reply_after_manual_takeover_from_pending_stays_silent(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+) -> None:
+    """Customer replies after manager took over an escalated chat: bot stays completely silent."""
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+    mock_wazzup = AsyncMock()
+    mock_wazzup_cls.return_value = mock_wazzup
+
+    # Conversation previously had an escalation but is now in manual_takeover
+    mock_conv = _make_mock_conv(escalation_status="manual_takeover")
+
+    mock_session.execute.side_effect = [
+        MockResult(None),
+        MockResult(mock_conv),
+        MockResult([]),
+    ]
+
+    msg = WazzupIncomingMessage(
+        messageId="msg-customer-after-takeover",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Yes we need exactly given. Please give your best price.",
+        channelId="ch1",
+        timestamp=1704067300,
+        authorType="client",
+    )
+    mock_redis = AsyncMock()
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
+
+    with patch("src.services.chat.settings.wazzup_channel_id", "ch1"):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
+
+    mock_session.commit.assert_awaited()
+    # LLM must not be called
+    mock_process_message.assert_not_awaited()
+    # Escalation fallback must not be sent
+    mock_wazzup.send_text.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # Manager role saving test
 # ---------------------------------------------------------------------------

@@ -50,10 +50,7 @@ from src.services.customer_identity import (
     extract_inbound_source_attribution,
 )
 from src.services.customer_language import is_arabic_customer_language
-from src.services.escalation_state import (
-    should_pause_bot_for_escalation,
-    should_send_escalation_fallback,
-)
+from src.services.escalation_state import should_send_escalation_fallback
 from src.services.inbound_batch import (
     inbound_chat_reference,
     inbound_execution_key,
@@ -1585,25 +1582,24 @@ async def _process_batch_inner(
                     channel_phone=inbound_channel_phone,
                 )
 
-            # 2. Manual takeover: manager writes when no escalation is active.
-            # AC08: a manager reply (including one inside the first-turn grace
-            # window) pauses the bot via the existing manual_takeover status,
-            # which stays silent instead of sending the PENDING fallback reply.
+            # 2. Manual takeover: manager writes.
+            # AC08: a manager reply (including one during an active escalation
+            # or inside the first-turn grace window) pauses the bot via the
+            # manual_takeover status, which stays silent instead of sending
+            # the PENDING fallback reply or calling the LLM.
             if has_manager_message:
                 metadata = (
                     dict(conv.metadata_) if isinstance(conv.metadata_, dict) else {}
                 )
                 metadata["last_manager_message_at"] = datetime.now(UTC).isoformat()
                 conv.metadata_ = metadata
-            if has_manager_message and not should_pause_bot_for_escalation(
-                conv.escalation_status
-            ):
-                conv.escalation_status = "manual_takeover"
-                logger.info(
-                    "Manual takeover activated: batch_ref=%s manager_present=%s",
-                    batch_ref,
-                    bool(manager_name),
-                )
+                if conv.escalation_status != "manual_takeover":
+                    conv.escalation_status = "manual_takeover"
+                    logger.info(
+                        "Manual takeover activated: batch_ref=%s manager_present=%s",
+                        batch_ref,
+                        bool(manager_name),
+                    )
 
             # 3. Save incoming messages (deduplicate by wazzup_message_id)
             message_ids = [m.messageId for m in messages if m.messageId]
