@@ -76,13 +76,20 @@ async def escalate_to_manager(
     )
     notified_leads = metadata.get(_NON_PAUSING_LEADS_KEY)
     if non_pausing and isinstance(notified_leads, list) and trigger in notified_leads:
+        if trigger == "external_order_support":
+            return (
+                "The manager already has this external order inquiry. Do not "
+                "create another alert; answer any catalog, stock, showroom, or "
+                "policy question you can verify and leave order-specific "
+                "readiness for the team to confirm."
+            )
         return (
             "The manager already has this sourcing request. Do not mention it "
             "again unless the customer asks; answer the rest of the message."
         )
 
     manager_reason = decision.reason
-    if trigger in B2B_HANDOFF_TRIGGERS:
+    if trigger in B2B_HANDOFF_TRIGGERS or trigger == "external_order_support":
         brief = " ".join(str(reason or "").split())[:300]
         if brief:
             manager_reason = f"{manager_reason} Assistant brief: {brief}"
@@ -102,6 +109,15 @@ async def escalate_to_manager(
             trigger,
         ]
         ctx.deps.conversation.metadata_ = metadata
+        if trigger == "external_order_support":
+            return (
+                "A manager has been notified to check this existing order; you "
+                "stay in the conversation. Let the customer know our team has "
+                "been notified to confirm their order details or pickup "
+                "readiness, do not invent order status or pickup timing, and "
+                "answer every other product, stock, or showroom question in "
+                "their message."
+            )
         return (
             "The sourcing request was passed to a manager; you stay in the "
             "conversation. Say plainly that Treejar does not carry this item in "

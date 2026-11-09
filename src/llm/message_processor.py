@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -67,6 +68,7 @@ from src.llm.escalation_policy import (
     WHOLESALE_HANDOFF_METADATA_KEY,
     b2b_handoff_buckets,
     critical_escalation_decision,
+    external_order_support_decision,
     wholesale_handoff_from_history,
 )
 from src.llm.grounding_output import GroundingOutputAction
@@ -886,6 +888,119 @@ async def _non_sales_team_notice(turn: _Turn) -> NonSalesIntent | None:
     return intent
 
 
+TEAM_FOLLOWUP_NOTICE_METADATA_KEY = "team_followup_notice"
+_QUOTED_SPAN_RE = re.compile(
+    r"(?:'[^'\n]{4,240}'|‘[^’\n]{4,240}’|\"[^\"\n]{4,240}\"|“[^”\n]{4,240}”)"
+)
+_DEFERRED_TEAM_CHECK_EN_RE = re.compile(
+    r"\b(?:"
+    r"(?:i(?:'ll|’ll|\s+will)|we(?:'ll|’ll|\s+will)|let\s+me)\s+"
+    r"(?:check|confirm|verify|follow\s+up)\b[^.?!]{0,180}"
+    r"\b(?:team|showroom|warehouse|manager|specialist|department)\b"
+    r"|our\s+(?:showroom|sales|order|project|commercial)\s+team\s+will\s+"
+    r"(?:check|confirm|verify)\b"
+    r")",
+    re.IGNORECASE,
+)
+_DEFERRED_RETURN_EN_RE = re.compile(
+    r"\b(?:come\s+back\s+to\s+you|get\s+back\s+to\s+you|"
+    r"return\s+(?:to\s+you|with\s+(?:the|an|your)\s+(?:answer|confirmation|update))|"
+    r"update\s+you|revert\s+to\s+you)\b",
+    re.IGNORECASE,
+)
+_DEFERRED_TEAM_CHECK_AR_RE = re.compile(
+    r"(?:سأتحقق|سأتأكد|سأراجع|سنتحقق|سنتأكد|دعني\s+أتحقق)[^.؟!]{0,180}"
+    r"(?:فريق|المعرض|المستودع|المدير|الإدارة|قسم)",
+)
+_DEFERRED_RETURN_AR_RE = re.compile(
+    r"(?:أعود\s+إليك|أرد\s+عليك|أبلغك|أوافيك|نرد\s+عليك|سنتواصل\s+معك)",
+)
+
+
+def has_deferred_team_check_promise(reply_text: str | None) -> bool:
+    """Whether Noor's reply promised to check with an internal team and return."""
+
+    raw = str(reply_text or "").strip()
+    if not raw:
+        return False
+    unquoted = _QUOTED_SPAN_RE.sub(" ", raw)
+    if _DEFERRED_TEAM_CHECK_EN_RE.search(unquoted) and _DEFERRED_RETURN_EN_RE.search(
+        unquoted
+    ):
+        return True
+    return bool(
+        _DEFERRED_TEAM_CHECK_AR_RE.search(unquoted)
+        and _DEFERRED_RETURN_AR_RE.search(unquoted)
+    )
+
+
+async def _deterministic_team_followup_notice(
+    turn: _Turn, response: LLMResponseT
+) -> str | None:
+    """Ensure external-order inquiries and deferred team-check promises alert a human.
+
+    2026-11-09 live pilot (*6040): customer shared paid website order
+    ``B2C-20261109-5702`` and Noor promised 5 times to check pickup readiness
+    with the showroom/order team and come back, without ever notifying a
+    manager. Create a non-pausing escalation alert once per conversation so
+    the sales team sees the request while Noor can still answer general catalog
+    or VAT questions until a manager replies in WhatsApp.
+    """
+
+    conversation = turn.deps.conversation
+    if should_pause_bot_for_escalation(conversation.escalation_status):
+        return None
+    metadata = (
+        dict(conversation.metadata_) if isinstance(conversation.metadata_, dict) else {}
+    )
+    if metadata.get(TEAM_FOLLOWUP_NOTICE_METADATA_KEY):
+        return None
+    notified_leads = metadata.get("manager_sourcing_leads_notified")
+    if isinstance(notified_leads, list) and "external_order_support" in notified_leads:
+        return None
+
+    external_order = external_order_support_decision(turn.combined_text, metadata)
+    kind: str | None = None
+    reason = ""
+    if external_order.allowed:
+        kind = "external_order_support"
+        reason = (
+            f"{external_order.reason} Routed by the runtime follow-up rule; "
+            "Noor keeps answering general questions."
+        )
+    elif has_deferred_team_check_promise(response.text):
+        kind = "deferred_team_check"
+        reason = (
+            "Deferred team check promised: Noor told the customer she will "
+            "check with the Treejar team and return with an answer. For "
+            "manager follow-up; Noor keeps answering."
+        )
+    if kind is None:
+        return None
+
+    from src.integrations.notifications.escalation import notify_manager_escalation
+
+    metadata[TEAM_FOLLOWUP_NOTICE_METADATA_KEY] = {
+        "kind": kind,
+        "at": datetime.now(UTC).isoformat(),
+    }
+    conversation.metadata_ = metadata
+    await notify_manager_escalation(
+        conversation=conversation,
+        reason=reason,
+        recent_messages=[*(turn.deps.recent_history or []), turn.combined_text],
+        db=turn.db,
+        escalation_type=EscalationType.GENERAL,
+        pause_bot=False,
+    )
+    logger.info(
+        "Team follow-up notice: conversation=%s kind=%s",
+        conversation.id,
+        kind,
+    )
+    return kind
+
+
 def _ensure_supplier_pitch_notice(response: LLMResponseT, language: str) -> None:
     """Ratified row 25: a supplier pitch is passed to the commercial team."""
 
@@ -1521,8 +1636,11 @@ async def process_message_impl(
     language = str(getattr(turn.conv, "language", "en") or "en")
     if await _deterministic_wholesale_handoff(turn):
         _ensure_wholesale_handoff_notice(finalized, language)
-    elif await _non_sales_team_notice(turn) == "supplier_pitch":
-        # A job applicant is told nothing about forwarding (ratified row 24
-        # leaves the application with the sender); the alert is internal.
-        _ensure_supplier_pitch_notice(finalized, language)
+    elif (non_sales := await _non_sales_team_notice(turn)) is not None:
+        if non_sales == "supplier_pitch":
+            # A job applicant is told nothing about forwarding (ratified row 24
+            # leaves the application with the sender); the alert is internal.
+            _ensure_supplier_pitch_notice(finalized, language)
+    else:
+        await _deterministic_team_followup_notice(turn, finalized)
     return finalized

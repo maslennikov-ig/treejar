@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from src.llm.language_guard import enforce_customer_reply_language
@@ -13,6 +14,41 @@ from src.llm.opening_guard import (
     name_question_conjunction,
 )
 from src.services.customer_language import normalize_customer_language
+
+_ENDEARMENT_BEFORE_YA_RE = re.compile(
+    r"(?:^|(?<=\s))(?:حبيبي|حبيبتي|يا\s+حبيبي|يا\s+حبيبتي)\s+(?=يا\s+\S)",
+)
+_YA_ENDEARMENT_CLAUSE_RE = re.compile(
+    r"(?:،\s*|\s+)يا\s+(?:حبيبي|حبيبتي|قلبي|عمري)(?=\s*(?:[،,.!؟?\n]|$))",
+)
+_LEADING_ENDEARMENT_RE = re.compile(
+    r"^(?:يا\s+)?(?:حبيبي|حبيبتي)(?=\s*[،,:\n])",
+)
+_LATIN_HABIBI_RE = re.compile(
+    r"(?:,\s*|\s+)\bhabib(?:i|ti)\b(?=\s*(?:[,!?.]|$))|\bhabib(?:i|ti)\s*,\s*",
+    re.IGNORECASE,
+)
+
+
+def _strip_intimate_endearments(text: str) -> str:
+    """Remove non-corporate intimate terms of endearment ('habibi'/'حبيبي').
+
+    2026-11-09 live pilot (*5892): the Arabic reply addressed a caller as
+    ``حبيبي يا هاني``. Keep byte-for-byte text when no endearment is present.
+    """
+    if not text or (
+        "حبيب" not in text
+        and "قلبي" not in text
+        and "عمري" not in text
+        and "habib" not in text.casefold()
+    ):
+        return text
+    cleaned = _ENDEARMENT_BEFORE_YA_RE.sub("", text)
+    cleaned = _YA_ENDEARMENT_CLAUSE_RE.sub("", cleaned)
+    cleaned = _LEADING_ENDEARMENT_RE.sub("أهلاً بك", cleaned)
+    cleaned = _LATIN_HABIBI_RE.sub("", cleaned)
+    return cleaned
+
 
 _STRUCTURED_PAYLOAD_FALLBACK = {
     "en": (
@@ -145,7 +181,9 @@ def _restore_lost_discovery(guarded: str, before: str, *, language: str) -> str:
 def finalize_customer_reply_text(text: str, *, language: str) -> str:
     """Enforce the selected language and one first-turn question at send time."""
 
-    original = _replace_structured_payload(str(text or ""), language=language)
+    original = _strip_intimate_endearments(
+        _replace_structured_payload(str(text or ""), language=language)
+    )
     folded = _fold_trailing_name_question(original, language=language)
     guarded = enforce_customer_reply_language(folded, language=language)
     if guarded == original:

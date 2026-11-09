@@ -209,6 +209,10 @@ def critical_escalation_decision(
         if wholesale.allowed:
             return wholesale
 
+    external_order = external_order_support_decision(text, metadata)
+    if external_order.allowed:
+        return external_order
+
     return CriticalEscalationDecision(
         allowed=False,
         reason="No critical customer-evidenced escalation trigger is present.",
@@ -231,7 +235,9 @@ B2B_HANDOFF_TRIGGERS = frozenset(
         "specialist_out_of_catalog_scope",
     }
 )
-NON_PAUSING_HANDOFF_TRIGGERS = frozenset({"specialist_out_of_catalog_scope"})
+NON_PAUSING_HANDOFF_TRIGGERS = frozenset(
+    {"specialist_out_of_catalog_scope", "external_order_support"}
+)
 """Routes that notify a manager without taking the conversation off the bot.
 
 A sourcing request for equipment Treejar does not carry is a lead worth a
@@ -450,6 +456,76 @@ def b2b_handoff_decision(customer_text: str | None) -> CriticalEscalationDecisio
 
 def _quotation_is_approved(metadata: Mapping[str, Any]) -> bool:
     return _quotation_status(metadata) in _APPROVED_QUOTE_STATUSES
+
+
+_EXTERNAL_ORDER_REFERENCE_RE = re.compile(
+    r"\b(?:b2c|b2b|web|ord|so|inv)-\d{4,}(?:-\d+)*\b"
+    r"|\b(?:order|invoice)\s*(?:number|no\.?|id|ref(?:erence)?|#)\s*[:#\-]?\s*"
+    r"(?=[a-z0-9\-]*\d)[a-z0-9][a-z0-9\-]{3,}\b"
+    r"|(?:رقم\s+(?:ال)?(?:طلب|فاتورة))\s*[:#\-]?\s*"
+    r"(?=[A-Za-z0-9\u0660-\u0669\-]*[\d\u0660-\u0669])[A-Za-z0-9\u0660-\u0669\-]{3,}",
+    re.IGNORECASE,
+)
+_PAID_WEBSITE_ORDER_CONTEXT_RE = re.compile(
+    r"\b(?:paid|ordered|purchased|bought)\s+(?:online|on\s+(?:the\s+|your\s+)?website)\b"
+    r"|\bstatus\s*:\s*(?:completed|paid|processing)\b"
+    r"|(?:دفعت|طلبت|اشتريت)\s+(?:عبر\s+|من\s+)?(?:الموقع|الإنترنت|الانترنت)",
+    re.IGNORECASE,
+)
+_PAID_WEBSITE_ORDER_FOLLOWUP_RE = re.compile(
+    r"\b(?:collect(?:ion)?|pick\s*up|ready|status|when\s+can\s+i|any\s+update)\b"
+    r"|(?:استلام|جاهز|حالة\s+الطلب|متى)",
+    re.IGNORECASE,
+)
+
+
+def external_order_support_decision(
+    customer_text: str | None,
+    conversation_metadata: Mapping[str, Any] | None = None,
+) -> CriticalEscalationDecision:
+    """Alert a manager (without pausing Noor) on unlinked website/order inquiries.
+
+    2026-11-09 live pilot (*6040): a customer shared website order
+    ``B2C-20261109-5702`` (`Status: Completed`) and asked if it was ready for
+    showroom collection. ``check_order_status`` could not see website orders not
+    linked to the WhatsApp conversation, and no manager was alerted.
+    """
+
+    metadata = conversation_metadata or {}
+    if str(metadata.get("zoho_sale_order_id") or "").strip():
+        return CriticalEscalationDecision(
+            allowed=False,
+            reason="Conversation already has a linked sale order.",
+            trigger="noncritical",
+        )
+    text = str(customer_text or "").translate(_ARABIC_INDIC_DIGITS).strip()
+    if not text:
+        return CriticalEscalationDecision(
+            allowed=False,
+            reason="No external order reference is present.",
+            trigger="noncritical",
+        )
+    has_order_ref = bool(_EXTERNAL_ORDER_REFERENCE_RE.search(text))
+    has_paid_website_followup = bool(
+        _PAID_WEBSITE_ORDER_CONTEXT_RE.search(text)
+        and _PAID_WEBSITE_ORDER_FOLLOWUP_RE.search(text)
+    )
+    if has_order_ref or has_paid_website_followup:
+        return CriticalEscalationDecision(
+            allowed=True,
+            escalation_type=EscalationType.GENERAL,
+            reason=(
+                "External order support: the customer referenced an existing "
+                "or website order not linked to this WhatsApp conversation and "
+                "needs human status or pickup confirmation."
+            ),
+            trigger="external_order_support",
+        )
+    return CriticalEscalationDecision(
+        allowed=False,
+        reason="No external order reference is present.",
+        trigger="noncritical",
+    )
 
 
 def _quotation_status(metadata: Mapping[str, Any]) -> str:
