@@ -1,15 +1,14 @@
 # Orchestrator Handoff
 
 Updated: 2026-11-09
-Current branch: main (live runtime `da3248b8a2e5588bc285e2db59a9071621b4da28`)
-Current stage id: tj-r62i (live pilot monitoring with standing bugfix/deploy authority; `tj-loge`, `tj-mi4g`, & `tj-whq5` closed)
-Status: Live `da3248b` deployed via CI `42573039511` on `https://noor.starec.ai`; `noor-app-1` + `noor-worker-1` healthy (`0` restarts, `ops/live-pilot-worker.enabled` preserved, `TEST_CHANNEL_RESTORE_MODE=false`). Local & remote workspace clean on `main` (`/home/me/code/treejar`).
+Current branch: main (live runtime `8e47d3a2e078e528e8c12b10487026f7b485b393`)
+Current stage id: tj-r62i (live pilot monitoring with standing bugfix/deploy authority; `tj-loge`, `tj-mi4g`, `tj-whq5`, & `tj-41ra` closed)
+Status: Live `8e47d3a` deployed via CI `42573735618` on `https://noor.starec.ai`; `noor-app-1` + `noor-worker-1` healthy (`0` restarts, `ops/live-pilot-worker.enabled` preserved, `TEST_CHANNEL_RESTORE_MODE=false`). Local & remote workspace clean on `main` (`/home/me/code/treejar`).
 
-## Pilot Bugfix `tj-whq5` (2026-11-09) — deployed
-- Client router (`audit.treejartrading.ae`) resumed traffic on 2026-11-09 02:55 UTC (odd Moscow date).
-- Reviewed 8 active conversations since 2026-11-05 watermark. Vision media reader processed 7 customer photos/PDFs with `anthropic/claude-haiku-5.5` cleanly.
-- Uncovered bug in `*5294`: when a conversation was escalated to `pending`, manager messages in WhatsApp (`isEcho=True`, `authorType='manager'`) did not transition `conv.escalation_status` to `manual_takeover` because of `and not should_pause_bot_for_escalation(conv.escalation_status)` in `src/services/chat.py` line 1598. This caused Noor to fire `_handle_escalation_fallback` on every subsequent customer reply, repeatedly sending "Thank you for your message! 🙏 A manager has been notified and will get back to you shortly" while Manager Sreeja was actively conversing with the customer.
-- Fixed in `da3248b` (CI `42573039511` green, verified live `da3248b` on `https://noor.starec.ai`): any manager message always sets `conv.escalation_status = "manual_takeover"` regardless of prior escalation state, silencing the bot completely on subsequent customer messages. Added unit test suite in `tests/test_chat_escalation.py`.
+## Pilot Bugfixes `tj-whq5` & `tj-41ra` (2026-11-09) — deployed
+- Client router (`audit.treejartrading.ae`) resumed traffic on 2026-11-09 02:55 UTC (odd Moscow date), including valid media URLs AND live manager `isEcho=True` (`authorType='manager'`) forwarding. Reviewed 9 active conversations (`*0745`, `*1067`, `*6040`, `*5892`, `*7182`, `*8460`, `*8132`, `*5294`, `*4243`); `anthropic/claude-haiku-5.5` vision/PDF reader, 15s quiet window, opening guard, and non-escalated `manual_takeover` worked cleanly.
+- Shipped `tj-whq5` (`da3248b`, CI `42573039511`): in `*5294`, manager replies during an active `pending` escalation previously kept `escalation_status='pending'` instead of `manual_takeover`, causing `_handle_escalation_fallback` spam; `has_manager_message` in `src/services/chat.py` now always transitions to `manual_takeover`.
+- Shipped `tj-41ra` (`8e47d3a`, CI `42573735618`, verified live `8e47d3a`): (1) `*6040` external website order (`B2C-20261109-5702`) & deferred team-check promises now trigger a non-pausing manager Escalation + Telegram alert (`external_order_support` in `escalation_policy.py` + `_deterministic_team_followup_notice` in `message_processor.py`) so promises to check with the showroom/order team always alert a human while Noor still answers stock/VAT questions; (2) `*5892` added explicit corporate boundary in `BASE_SYSTEM_PROMPT` forbidding off-topic personal/lonely-hearts/matchmaking chat or personal bios and added deterministic `"habibi"`/`"حبيبي"` stripping in `outbound_reply_guard.py`. Relocated monitor state/script to `~/.gemini/config/sidecars/treejar-noor-pilot-monitor/`.
 
 ## Epic tj-loge & Follow-up `tj-mi4g` (2026-11-07..08) & Live Pilot Fixes (`dfdf534`, `7055094`, `c31bd3e`) — deployed
 - Live pilot enabled 2026-11-05 (`tj-r62i`, Treejar WhatsApp `+971523209235`, odd Moscow dates -> Noor via client router `audit.treejartrading.ae`). Shipped `dfdf534` (CI `42056978288`: deterministic 20+ unit handoff incl. `Qty.350Nos`, cross-turn bulk carry, manager `isEcho` delivered/read takeover, paused-chat follow-up guard).
@@ -154,7 +153,7 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 ## Explicit defers
 
 - tj-id6m.17 (deferred by owner 2026-11-02 on closing `tj-id6m`): 10 optional product/ops choices parked unless requested (`docs/reports/audit-2026-11-01/README.md`: LLM reasoning effort/retries, in-flight supersession cancel, duplicate current-turn prompt message, CRM `paused`/`closed` reply behavior, manual `escalation_status` editing, `bot_enabled` fail-open vs fail-closed default + UI kill-switch, payment reminder UI/`manual` mode, public `/client-self-test/submit` retirement/rate-limit, KB `language` filter & `target_only` definition, one-off GitHub workflows).
-- tj-r62i / tj-z3hw: Live pilot active since `2026-11-05 12:19 UTC` (`dfdf534`, `7055094`, `c31bd3e` live; `tj-loge` & `tj-mi4g` closed); client router (`audit.treejartrading.ae`) silent since `2026-11-05 14:11 UTC` (client-side blocker with Viktor / `@youpyoupp`, plus manager `isEcho` forwarding confirmation pending).
+- tj-r62i / tj-z3hw: Live pilot active across odd Moscow dates since `2026-11-05` (`dfdf534`, `7055094`, `c31bd3e`, `da3248b`, `8e47d3a` live; `tj-loge`, `tj-mi4g`, `tj-whq5`, `tj-41ra` closed); client router (`audit.treejartrading.ae`) resumed odd-date forwarding + manager `isEcho` events on `2026-11-09 02:55 UTC` (`14` days pilot window ongoing).
 
 - tj-i2b1: earlier527fe1f saved budget/hold but failed mixed matching/selection.
   Corrected a72da15live/CI4712passed; fresh2/3unit retained/held proof pending.
