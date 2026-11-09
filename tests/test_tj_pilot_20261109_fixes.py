@@ -492,3 +492,178 @@ async def test_pilot_6551_create_quotation_auto_syncs_zoho_crm_contact_and_deal(
     assert conv.deal_status == "New Lead"
     zoho_crm.create_contact.assert_awaited_once()
     zoho_crm.create_deal.assert_awaited_once()
+
+
+# --- tj-r62i.2: structural multi-turn quote FAQ & quotation follow-up alerts --
+
+
+def test_six_turn_quote_collection_retains_delivery_faq_via_workflow_state() -> None:
+    """Even after 6+ detail-collection turns scroll the original delivery ask out
+    of recent_history, active quote workflow state keeps UAE delivery tariffs live.
+    """
+    from src.llm.catalog_planning import SalesDeps, grounded_amounts_for_turn
+    from src.llm.company_faq import has_quote_delivery_context, with_approved_faq
+
+    collecting_metadata = {
+        "order_runtime": {
+            "quote_workflow": {
+                "version": 2,
+                "consent": "granted",
+                "lifecycle": "collecting_details",
+            }
+        }
+    }
+    # Original delivery ask was 7 messages ago, so the 5-message recent_history
+    # contains only name/company/address/TRN detail exchanges.
+    detail_only_history = [
+        "user: My name is Bashar",
+        "assistant: Thank you, Bashar. What is your company name?",
+        "user: Bon Marche Interior Design LLC",
+        "assistant: Noted. What is your TRN and email address?",
+        "user: TRN 104397709700003",
+    ]
+    assert has_quote_delivery_context(collecting_metadata) is True
+    faq_ctx = with_approved_faq(
+        "[EMAIL_1]",
+        [],
+        recent_history=detail_only_history,
+        quote_delivery_active=has_quote_delivery_context(collecting_metadata),
+    )
+    assert any("AED 400" in item["content"] for item in faq_ctx)
+
+    conv = Conversation(
+        id=uuid.uuid4(),
+        phone="+971501036551",
+        language="en",
+        escalation_status="none",
+        metadata_=collecting_metadata,
+    )
+    deps = SalesDeps(
+        db=AsyncMock(),
+        redis=AsyncMock(),
+        conversation=conv,
+        embedding_engine=AsyncMock(),
+        zoho_inventory=AsyncMock(),
+        zoho_crm=None,
+        messaging_client=AsyncMock(),
+        pii_map={},
+        faq_context=faq_ctx,
+        recent_history=detail_only_history,
+        quotation_created=True,
+        quotation_subtotal=7920.0,
+    )
+    grounded = set(grounded_amounts_for_turn(deps, customer_text="[EMAIL_1]") or ())
+    assert {400.0, 420.0, 7920.0, 8316.0, 8320.0, 8736.0} <= grounded
+
+    # Once lifecycle is CREATED on subsequent turns (quotation_active=False),
+    # generic "yes" without delivery in recent_history does not re-inject delivery FAQ.
+    created_metadata = {
+        "order_runtime": {
+            "quote_workflow": {
+                "version": 2,
+                "consent": "granted",
+                "lifecycle": "created",
+            }
+        }
+    }
+    assert has_quote_delivery_context(created_metadata) is False
+    assert (
+        with_approved_faq(
+            "Yes, thank you",
+            [],
+            recent_history=detail_only_history,
+            quote_delivery_active=has_quote_delivery_context(created_metadata),
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize(
+    "reply_text",
+    [
+        "Our sales team will contact you shortly regarding the custom payment schedule.",
+        "Our showroom manager will reach out to you today.",
+        "I'll ask our warehouse team and share the confirmation once confirmed.",
+        "فريق المبيعات سيتواصل معك قريباً لتأكيد طريقة الدفع.",
+        "سيتواصل معك فريق المعرض قريباً بخصوص الموعد.",
+    ],
+)
+def test_direct_team_outreach_and_share_once_confirmed_are_detected(
+    reply_text: str,
+) -> None:
+    assert has_deferred_team_check_promise(reply_text) is True
+
+
+@pytest.mark.asyncio
+async def test_quotation_turn_with_unconfirmed_terms_alerts_even_after_earlier_notice() -> (
+    None
+):
+    """Issuing a formal PDF quotation while payment/delivery date remain unconfirmed
+    must send an ORDER_CONFIRMATION alert even if an earlier pre-quote notice fired.
+    """
+    turn = _turn(
+        "Bashar@bonmarche.vip",
+        metadata={
+            "team_followup_notice": {
+                "kind": "deferred_team_check",
+                "at": "2026-11-09T07:20:00+00:00",
+            }
+        },
+    )
+    turn.deps.quotation_created = True
+    turn.deps.quotation_subtotal = 7920.0
+
+    # Notice: no "I'll check and return" promise — only unconfirmed closing terms!
+    reply = LLMResponse(
+        text=(
+            "*Quotation Fr4364* has been prepared and sent (subtotal *AED 7,920.00* excl. VAT). "
+            "Payment method and earliest delivery date after payment remain unconfirmed."
+        ),
+        tokens_in=20,
+        tokens_out=30,
+        cost=0.002,
+        model="openai/gpt-6.1-sol",
+    )
+    notify = AsyncMock()
+    with patch(
+        "src.integrations.notifications.escalation.notify_manager_escalation", notify
+    ):
+        first = await message_processor._deterministic_team_followup_notice(turn, reply)
+        second = await message_processor._deterministic_team_followup_notice(
+            turn, reply
+        )
+
+    assert first == "quotation_followup"
+    assert second is None
+    notify.assert_awaited_once()
+    assert (
+        notify.await_args.kwargs["escalation_type"] is EscalationType.ORDER_CONFIRMATION
+    )
+    assert notify.await_args.kwargs["pause_bot"] is False
+    assert "AED 7,920.00 excl. VAT" in notify.await_args.kwargs["reason"]
+    assert turn.deps.conversation.escalation_status == "none"
+
+
+@pytest.mark.asyncio
+async def test_clean_autonomous_quotation_without_open_terms_does_not_alert() -> None:
+    turn = _turn("test@acme.ae")
+    turn.deps.quotation_created = True
+    turn.deps.quotation_subtotal = 2640.0
+    reply = LLMResponse(
+        text=(
+            "*Quotation Fr5001* has been prepared and sent for *4 × CH 145 grey* "
+            "(subtotal *AED 2,640.00* excl. 5% VAT / *AED 2,772.00* incl. 5% VAT)."
+        ),
+        tokens_in=20,
+        tokens_out=30,
+        cost=0.002,
+        model="openai/gpt-6.1-sol",
+    )
+    notify = AsyncMock()
+    with patch(
+        "src.integrations.notifications.escalation.notify_manager_escalation", notify
+    ):
+        kind = await message_processor._deterministic_team_followup_notice(turn, reply)
+
+    assert kind is None
+    notify.assert_not_awaited()

@@ -19,6 +19,11 @@ from functools import lru_cache
 from pathlib import Path
 
 from src.dialogue.count_words import COUNT_PATTERN, count_value
+from src.dialogue.order_state import (
+    QuoteConsent,
+    QuoteLifecycle,
+    quote_workflow_from_metadata,
+)
 from src.llm.money import (
     amount_with_uae_vat,
     canonical_amount,
@@ -75,11 +80,36 @@ _DELIVERY_DETAIL_CONTINUATION_RE = re.compile(
     r"\[(?:EMAIL|PHONE)_\d+\]"
     r"|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}"
     r"|\b(?:trn|vat|po\s*box|quotation|quote|company|llc|fzc|fze|inc|ltd|"
-    r"yes|please\s+send|go\s+ahead|confirm)\b"
-    r"|(?:عرض\s+سعر|نعم|أرسل|ارسل|شركة)"
+    r"my\s+name\s+is|address|street|building|tower|floor|office|warehouse|"
+    r"plot|area|district|yes|please\s+send|go\s+ahead|confirm)\b"
+    r"|(?:عرض\s+سعر|نعم|أرسل|ارسل|شركة|اسمي|عنوان|شارع|مبنى|مكتب|مستودع)"
     r")",
     re.IGNORECASE,
 )
+
+
+def has_quote_delivery_context(
+    conversation_metadata: Mapping[str, object] | None,
+    *,
+    quotation_active: bool = False,
+) -> bool:
+    """Whether the turn is inside an active quotation collection/issuance flow."""
+
+    if quotation_active:
+        return True
+    if not isinstance(conversation_metadata, Mapping):
+        return False
+    workflow = quote_workflow_from_metadata(dict(conversation_metadata))
+    if workflow.lifecycle in {
+        QuoteLifecycle.QUOTE_REQUESTED,
+        QuoteLifecycle.COLLECTING_DETAILS,
+        QuoteLifecycle.CREATING,
+    }:
+        return True
+    return (
+        workflow.consent is QuoteConsent.GRANTED
+        and workflow.lifecycle is not QuoteLifecycle.CREATED
+    )
 
 
 def _parse_approved_entries(text: str) -> tuple[dict[str, str], ...]:
@@ -124,24 +154,29 @@ def approved_faq_entries() -> tuple[dict[str, str], ...]:
 def active_faq_topics(
     query: str,
     recent_history: Sequence[str] | None = None,
+    *,
+    quote_delivery_active: bool = False,
 ) -> set[str]:
-    """Topics raised directly by ``query`` or continued from a delivery/assembly turn."""
+    """Topics raised directly by ``query`` or continued across a quote/delivery flow."""
 
     topics = set(_query_topics(query))
-    if topics or not recent_history:
+    if topics:
         return topics
-    prior_topics = set(_query_topics(" ".join(recent_history))) & {
-        "delivery",
-        "installation",
-    }
-    if prior_topics and _DELIVERY_FOLLOWUP_QUALIFIER_RE.search(query):
+    is_continuation = bool(
+        _DELIVERY_FOLLOWUP_QUALIFIER_RE.search(query)
+        or _DELIVERY_DETAIL_CONTINUATION_RE.search(query)
+    )
+    if not is_continuation:
+        return set()
+    prior_topics = (
+        set(_query_topics(" ".join(recent_history))) & {"delivery", "installation"}
+        if recent_history
+        else set()
+    )
+    if prior_topics:
         return prior_topics
-    immediate_topics = set(_query_topics(" ".join(recent_history[-2:]))) & {
-        "delivery",
-        "installation",
-    }
-    if immediate_topics and _DELIVERY_DETAIL_CONTINUATION_RE.search(query):
-        return immediate_topics
+    if quote_delivery_active:
+        return {"delivery"}
     return set()
 
 
@@ -150,11 +185,16 @@ def with_approved_faq(
     faq_context: Sequence[Mapping[str, str]],
     *,
     recent_history: Sequence[str] | None = None,
+    quote_delivery_active: bool = False,
 ) -> list[dict[str, str]]:
     """Add approved FAQ entries whose topic the customer's message raises."""
 
     merged = [dict(item) for item in faq_context]
-    topics = active_faq_topics(query, recent_history)
+    topics = active_faq_topics(
+        query,
+        recent_history,
+        quote_delivery_active=quote_delivery_active,
+    )
     if not topics:
         return merged
     seen_titles = {str(item.get("title", "")).casefold() for item in merged}
@@ -183,12 +223,17 @@ def grounded_faq_amounts(
     *,
     recent_history: Sequence[str] | None = None,
     customer_amounts: Sequence[object] = (),
+    quote_delivery_active: bool = False,
 ) -> tuple[float, ...]:
     """Approved AED figures (and bounded fee arithmetic) for a topic-matched FAQ turn."""
 
     if not faq_context:
         return ()
-    topics = active_faq_topics(query, recent_history)
+    topics = active_faq_topics(
+        query,
+        recent_history,
+        quote_delivery_active=quote_delivery_active,
+    )
     if not topics:
         return ()
 

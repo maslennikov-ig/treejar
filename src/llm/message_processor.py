@@ -62,7 +62,7 @@ from src.llm.catalog_planning import (
     _verify_volunteered_claims,
     grounded_amounts_for_turn,
 )
-from src.llm.company_faq import with_approved_faq
+from src.llm.company_faq import has_quote_delivery_context, with_approved_faq
 from src.llm.escalation_policy import (
     NON_PAUSING_HANDOFF_TRIGGERS,
     WHOLESALE_HANDOFF_METADATA_KEY,
@@ -889,18 +889,29 @@ async def _non_sales_team_notice(turn: _Turn) -> NonSalesIntent | None:
 
 
 TEAM_FOLLOWUP_NOTICE_METADATA_KEY = "team_followup_notice"
+TEAM_FOLLOWUP_QUOTE_NOTICE_METADATA_KEY = "team_followup_quote_notice"
 _QUOTED_SPAN_RE = re.compile(
     r"(?:(?<!\w)'[^'\n]{4,240}'(?!\w)|(?<!\w)‘[^’\n]{4,240}’(?!\w)|"
     r"\"[^\"\n]{4,240}\"|“[^”\n]{4,240}”)"
+)
+_TEAM_ROLE_EN = (
+    r"(?:showroom|sales|order|project|commercial|warehouse|logistics|delivery)?"
+    r"\s*(?:team|manager)"
+)
+_DIRECT_TEAM_OUTREACH_EN_RE = re.compile(
+    rf"\bour\s+{_TEAM_ROLE_EN}\s+will\s+"
+    r"(?:contact|reach\s+out(?:\s+to)?|follow\s+up\s+with|call|message)\s+you\b",
+    re.IGNORECASE,
 )
 _DEFERRED_TEAM_CHECK_EN_RE = re.compile(
     r"\b(?:"
     r"(?:i(?:'ll|’ll|\s+will)|we(?:'ll|’ll|\s+will)|let\s+me)\s+"
     r"(?:check|confirm|verify|follow\s+up)\b"
-    r"|our\s+(?:showroom|sales|order|project|commercial)?\s*team\s+will\s+"
-    r"(?:check|confirm|verify)\b"
+    rf"|(?:i(?:'ll|’ll|\s+will)|we(?:'ll|’ll|\s+will)|let\s+me)\s+"
+    rf"(?:ask|coordinate\s+with)\s+(?:our\s+)?{_TEAM_ROLE_EN}\b"
+    rf"|our\s+{_TEAM_ROLE_EN}\s+will\s+(?:check|confirm|verify)\b"
     r"|(?:need(?:s)?|requir(?:es?|ing))\s+(?:confirmation|verification)\s+"
-    r"(?:from|with)\s+our\s+(?:showroom|sales|order|project|commercial)?\s*(?:team|manager)\b"
+    rf"(?:from|with)\s+our\s+{_TEAM_ROLE_EN}\b"
     r")",
     re.IGNORECASE,
 )
@@ -910,6 +921,12 @@ _DEFERRED_RETURN_EN_RE = re.compile(
     r"get\s+back\s+to\s+you|"
     r"return\s+(?:to\s+you|with\s+(?:(?:the|an?|your|our)\s+)?"
     r"(?:answer|confirmation|update|details|information|quote|pricing|rate|fee|options|availability|schedule|date))|"
+    r"share\s+(?:(?:the|an?|your|our)\s+)?"
+    r"(?:answer|confirmation|update|details|information|status|schedule|date)"
+    r"\s+(?:with\s+you|once\s+confirmed)|"
+    r"confirm\s+(?:this|that|these|it|the\s+\w+)\s+with\s+you|"
+    r"contact\s+you|"
+    r"reach\s+out\s+to\s+you|"
     r"update\s+you|"
     r"revert\s+to\s+you|"
     r"let\s+you\s+know|"
@@ -917,12 +934,29 @@ _DEFERRED_RETURN_EN_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+_TEAM_ROLE_AR = (
+    r"(?:فريق(?:نا)?(?:\s+ال\w+)?|إدارت(?:نا)?|مدير\s+المبيعات|قسم\s+المبيعات)"
+)
+_DIRECT_TEAM_OUTREACH_AR_RE = re.compile(
+    rf"(?:{_TEAM_ROLE_AR}\s+(?:سيتواصل|سيتصل|سيرد|يتواصل)\s+(?:معك|معكم|عليك|عليكم)"
+    rf"|(?:سيتواصل|سيتصل|سيرد)\s+(?:معك|معكم|عليك|عليكم)\s+{_TEAM_ROLE_AR})"
+)
 _DEFERRED_TEAM_CHECK_AR_RE = re.compile(
-    r"(?:سأتحقق|سأتأكد|سأراجع|سنتحقق|سنتأكد|دعني\s+أتحقق)"
+    r"(?:سأتحقق|سأتأكد|سأراجع|سنتحقق|سنتأكد|دعني\s+أتحقق|سأسأل\s+فريق)"
     r"|(?:يحتاج|تتطلب|يتطلب)\s+(?:تأكيد(?:اً)?|موافقة)\s+من\s+(?:فريق(?:نا)?|إدارت(?:نا)?|المعرض|المدير)",
 )
 _DEFERRED_RETURN_AR_RE = re.compile(
     r"(?:أعود\s+إليك|أرد\s+عليك|أبلغك|أوافيك|نرد\s+عليك|سنتواصل\s+معك|أخبرك|نبلغك)",
+)
+_UNCONFIRMED_CLOSING_TERMS_RE = re.compile(
+    r"\b(?:"
+    r"unconfirmed|"
+    r"need(?:s)?\s+confirmation|"
+    r"requir(?:es?|ing)\s+(?:manager\s+)?confirmation|"
+    r"(?:arranged|confirmed)\s+with\s+our\s+(?:sales\s+|showroom\s+)?(?:team|manager)"
+    r")\b"
+    r"|(?:غير\s+مؤكد(?:ة)?|يحتاج\s+(?:إلى\s+)?تأكيد|يتطلب\s+تأكيد|تتطلب\s+تأكيد)",
+    re.IGNORECASE,
 )
 
 
@@ -933,6 +967,10 @@ def has_deferred_team_check_promise(reply_text: str | None) -> bool:
     if not raw:
         return False
     unquoted = _QUOTED_SPAN_RE.sub(" ", raw)
+    if _DIRECT_TEAM_OUTREACH_EN_RE.search(
+        unquoted
+    ) or _DIRECT_TEAM_OUTREACH_AR_RE.search(unquoted):
+        return True
     if _DEFERRED_TEAM_CHECK_EN_RE.search(unquoted) and _DEFERRED_RETURN_EN_RE.search(
         unquoted
     ):
@@ -943,17 +981,29 @@ def has_deferred_team_check_promise(reply_text: str | None) -> bool:
     )
 
 
+def has_unconfirmed_closing_terms(reply_text: str | None) -> bool:
+    """Whether Noor's reply leaves manager-gated closing terms unconfirmed."""
+
+    raw = str(reply_text or "").strip()
+    if not raw:
+        return False
+    unquoted = _QUOTED_SPAN_RE.sub(" ", raw)
+    return bool(_UNCONFIRMED_CLOSING_TERMS_RE.search(unquoted))
+
+
 async def _deterministic_team_followup_notice(
     turn: _Turn, response: LLMResponseT
 ) -> str | None:
-    """Ensure external-order inquiries and deferred team-check promises alert a human.
+    """Ensure external-order inquiries, deferred team checks, and open quote terms alert a human.
 
-    2026-11-09 live pilot (*6040): customer shared paid website order
-    ``B2C-20261109-5702`` and Noor promised 5 times to check pickup readiness
-    with the showroom/order team and come back, without ever notifying a
-    manager. Create a non-pausing escalation alert once per conversation so
-    the sales team sees the request while Noor can still answer general catalog
-    or VAT questions until a manager replies in WhatsApp.
+    2026-11-09 live pilot (*6040, *6551):
+    - *6040: customer shared paid website order ``B2C-20261109-5702`` and Noor
+      promised to check pickup readiness without alerting a manager.
+    - *6551: formal quotation ``Fr4364`` was sent while payment method and
+      earliest delivery date after payment remained unconfirmed for sales-team
+      confirmation. Even when a pre-quote follow-up notice already fired on an
+      earlier turn, issuing a formal quotation with open closing items must send
+      a dedicated ``ORDER_CONFIRMATION`` alert without pausing Noor.
     """
 
     conversation = turn.deps.conversation
@@ -962,6 +1012,46 @@ async def _deterministic_team_followup_notice(
     metadata = (
         dict(conversation.metadata_) if isinstance(conversation.metadata_, dict) else {}
     )
+    quotation_created = bool(getattr(turn.deps, "quotation_created", False))
+    if (
+        quotation_created
+        and not metadata.get(TEAM_FOLLOWUP_QUOTE_NOTICE_METADATA_KEY)
+        and (
+            has_deferred_team_check_promise(response.text)
+            or has_unconfirmed_closing_terms(response.text)
+        )
+    ):
+        from src.integrations.notifications.escalation import notify_manager_escalation
+
+        now_iso = datetime.now(UTC).isoformat()
+        subtotal = getattr(turn.deps, "quotation_subtotal", None)
+        subtotal_note = (
+            f" (AED {float(subtotal):,.2f} excl. VAT)"
+            if isinstance(subtotal, (int, float)) and subtotal > 0
+            else ""
+        )
+        notice_payload = {"kind": "quotation_followup", "at": now_iso}
+        metadata[TEAM_FOLLOWUP_QUOTE_NOTICE_METADATA_KEY] = notice_payload
+        metadata.setdefault(TEAM_FOLLOWUP_NOTICE_METADATA_KEY, notice_payload)
+        conversation.metadata_ = metadata
+        await notify_manager_escalation(
+            conversation=conversation,
+            reason=(
+                f"Formal quotation sent{subtotal_note} with open manager-confirmed "
+                "closing items (e.g. payment method, exact delivery date, or custom "
+                "terms). Please follow up with the customer; Noor keeps answering."
+            ),
+            recent_messages=[*(turn.deps.recent_history or []), turn.combined_text],
+            db=turn.db,
+            escalation_type=EscalationType.ORDER_CONFIRMATION,
+            pause_bot=False,
+        )
+        logger.info(
+            "Team follow-up notice: conversation=%s kind=quotation_followup",
+            conversation.id,
+        )
+        return "quotation_followup"
+
     if metadata.get(TEAM_FOLLOWUP_NOTICE_METADATA_KEY):
         return None
     notified_leads = metadata.get("manager_sourcing_leads_notified")
@@ -1523,10 +1613,14 @@ async def _retrieve_context(turn: _Turn) -> None:
     except Exception:
         logger.warning("FAQ knowledge base search failed", exc_info=True)
     finally:
+        conv_metadata = (
+            turn.conv.metadata_ if isinstance(turn.conv.metadata_, Mapping) else None
+        )
         turn.deps.faq_context = with_approved_faq(
             turn.masked_text,
             turn.deps.faq_context or (),
             recent_history=turn.deps.recent_history,
+            quote_delivery_active=has_quote_delivery_context(conv_metadata),
         )
         if turn.latency_trace is not None and faq_started is not None:
             turn.latency_trace.finish_phase("faq_rag", faq_started)

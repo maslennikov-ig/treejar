@@ -45,7 +45,7 @@ from src.llm.catalog_families import (
     catalog_text_families,
     contains_catalog_term,
 )
-from src.llm.company_faq import grounded_faq_amounts
+from src.llm.company_faq import grounded_faq_amounts, has_quote_delivery_context
 from src.llm.money import (
     AMOUNT_TOKEN_PATTERN,
     BUDGET_AED_CURRENCY_PATTERN,
@@ -2009,12 +2009,21 @@ def grounded_amounts_for_turn(
         excl, vat, incl = amount_with_uae_vat(float(quote_subtotal))
         amounts.extend((excl, vat, incl))
         faq_base_figures.append(excl)
+    conv_metadata = getattr(deps.conversation, "metadata_", None)
+    quote_delivery_active = has_quote_delivery_context(
+        conv_metadata if isinstance(conv_metadata, Mapping) else None,
+        quotation_active=bool(
+            getattr(deps, "quotation_created", False)
+            or (isinstance(quote_subtotal, (int, float)) and quote_subtotal > 0)
+        ),
+    )
     amounts.extend(
         grounded_faq_amounts(
             customer_text,
             deps.faq_context,
             recent_history=deps.recent_history,
             customer_amounts=faq_base_figures,
+            quote_delivery_active=quote_delivery_active,
         )
     )
     return tuple(amounts)
