@@ -9,7 +9,17 @@ def test_response_asks_customer_name_detects_direct_name_questions() -> None:
         "May I know your name so I can address you properly?"
     )
     assert response_asks_customer_name("What is your name?")
+    assert response_asks_customer_name("What’s your name?")
+    assert response_asks_customer_name("How may I address you?")
+    assert response_asks_customer_name("How can I call you?")
+    assert response_asks_customer_name("May I have your name, please?")
+    assert response_asks_customer_name("Could I get your first name?")
+    assert response_asks_customer_name("How would you like me to address you?")
+    assert response_asks_customer_name("ما اسمك الكريم؟")
+    assert response_asks_customer_name("ممكن أتعرف على اسمك؟")
+    assert response_asks_customer_name("بماذا أخاطبك؟")
     assert not response_asks_customer_name("I already have your name on the request.")
+    assert not response_asks_customer_name("لدي اسمك بالفعل، وسأتابع طلبك.")
 
 
 def test_a_named_object_is_not_mistaken_for_the_customer_name() -> None:

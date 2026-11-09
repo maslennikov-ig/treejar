@@ -20,9 +20,13 @@ Content rules (spec ``docs/specs/admin-dashboard-polish/spec.md`` section 3.1):
   delivery, AED 100 minimum order, Dubai vs all-other-emirates including
   Sharjah tiers, Dubai/Abu Dhabi full-truck weight tiers, AED 30 per display
   item assembly, project/made-to-order installation included, and cross-border
-  Saudi Arabia / Oman / Qatar arranged via manager). Return-window,
-  warranty-term, working-hours and payment-method specifics remain manager-owned
-  (explicit defer, see ``.codex/handoff.md``).
+  Saudi Arabia / Oman / Qatar arranged via manager), and the showroom / Jebel
+  Ali warehouse policy reflects the client-approved reply of 2026-11-09
+  (Storall Building, St. 58, Community 599, Jebel Ali Industrial Area 2, Dubai;
+  Monday–Saturday 9:00–18:00, Sunday closed; Google Maps pin shared on location
+  or map requests; free warehouse self-pickup with no minimum order amount).
+  Return-window, warranty-term and payment-method specifics remain
+  manager-owned (explicit defer, see ``.codex/handoff.md``).
 
 Nothing here touches the SHA256-pinned RAG files; embeddings go through the
 public ``EmbeddingEngine`` API.
@@ -144,7 +148,11 @@ _POLICY_ARTICLES: tuple[CanonicalKnowledgeArticle, ...] = (
         content=(
             "Express delivery is not available, and free delivery is not "
             "available — delivery is charged. Minimum order amount for "
-            "delivery is AED 100. Ready-stock delivery times: Dubai and "
+            "delivery is AED 100. Self-pickup from the Treejar warehouse in "
+            "Jebel Ali (Storall Building, St. 58, Community 599, Jebel Ali "
+            "Industrial Area 2, Dubai; Monday–Saturday 9:00–18:00, Sunday "
+            "closed) is free of charge, with no minimum order amount. "
+            "Ready-stock delivery times: Dubai and "
             "Sharjah 2–3 business days; other UAE emirates 2–5 business days; "
             "custom-made orders depend on design and quantity and are "
             "confirmed by the manager (exact calendar delivery date is "
@@ -203,11 +211,15 @@ _POLICY_ARTICLES: tuple[CanonicalKnowledgeArticle, ...] = (
         title="Showroom in Dubai",
         category="showroom",
         content=(
-            "Customers are welcome to visit the Treejar showroom in Dubai, UAE, "
-            "to experience the product quality in person. Location on Google "
-            f"Maps: {TREEJAR_SHOWROOM_MAP_URL}. The visit time, and whether a "
-            "particular product is on display to try, are arranged with the "
-            "manager."
+            "Customers are welcome to visit the Treejar showroom and warehouse "
+            "at Storall Building, St. 58, Community 599, Jebel Ali Industrial "
+            "Area 2, Dubai, UAE, to experience the product quality in person. "
+            "Working hours: Monday–Saturday, 9:00–18:00 (Sunday closed). "
+            "Google Maps location (share when the customer asks for the "
+            f"location or map): {TREEJAR_SHOWROOM_MAP_URL}. Self-pickup from "
+            "the Jebel Ali warehouse is free of charge, with no minimum order "
+            "amount. Whether a particular product is on display to try is "
+            "confirmed with the manager."
         ),
     ),
     CanonicalKnowledgeArticle(

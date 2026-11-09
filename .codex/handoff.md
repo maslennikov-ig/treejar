@@ -2,10 +2,11 @@
 
 Updated: 2026-11-09
 Current branch: main (live runtime `58b0ea3` + handoff sync)
-Current stage id: tj-r62i (live pilot monitoring + Nikita shift QA audit; `tj-loge`, `tj-mi4g`, `tj-whq5`, `tj-41ra`, `tj-pf5x`, `tj-fswr`, `tj-r62i.1`, & `tj-r62i.2` delivered)
-Status: Live on `https://noor.starec.ai` (`release_sha=58b0ea381ba9371a4d17593c753d15939b97cc4e`, CI `42595305338`); `noor-app-1` + `noor-worker-1` healthy (`0` restarts, `ops/live-pilot-worker.enabled` preserved). Sent 3 business-policy clarification questions to `AiDevTeam/Виктор` (`telegramMessageId=373`, Antigravity wait `96183f22-a956-58fb-8e7a-3bd861dd8177`). Zero hanging pilot chats.
+Current stage id: tj-r62i (live pilot monitoring + Nikita shift QA audit; `tj-loge`, `tj-mi4g`, `tj-whq5`, `tj-41ra`, `tj-pf5x`, `tj-fswr`, `tj-r62i.1`, `tj-r62i.2`, & `tj-r62i.3` delivered)
+Status: Live on `https://noor.starec.ai`; `noor-app-1` + `noor-worker-1` healthy (`0` restarts, `ops/live-pilot-worker.enabled` preserved). Received client reply `msg 383` (`@youpyoupp`) on Q2 (showroom/warehouse address, hours, map pin, free Jebel Ali self-pickup) and wired in `tj-r62i.3`; Antigravity wait `96183f22-a956-58fb-8e7a-3bd861dd8177` remains `partial` awaiting Q1 (payment methods) & Q3 (`B2C-...` pickup readiness). Zero hanging pilot chats.
 
-## Pilot Bugfixes `tj-whq5`, `tj-41ra`, `tj-pf5x`, `tj-fswr`, `tj-r62i.1` & `tj-r62i.2` (2026-11-09) — deployed
+## Pilot Bugfixes `tj-whq5`, `tj-41ra`, `tj-pf5x`, `tj-fswr`, `tj-r62i.1`, `tj-r62i.2` & `tj-r62i.3` (2026-11-09) — deployed
+- Shipped `tj-r62i.3`: (1) expanded `response_asks_customer_name()` in `src/llm/closed_question_guard.py` with structural EN/AR name-ask patterns so modal/natural phrasings (`"How may I address you?"`, `"May I have your name, please?"`, `"ما اسمك الكريم؟"`, seen in live chats `*1868`, `*0462`, `*0096`) never trigger duplicate `, and how should I address you?` appends in `apply_opening_guard`; (2) wired Julia's (`@youpyoupp`, `msg 383`, `docs/client-answers/noor-pilot-final-check-2026-11/showroom-pickup-2026-11-09.md`) approved showroom/warehouse policy (`Storall Building, St. 58, Community 599, Jebel Ali Industrial Area 2, Dubai`, `Mon–Sat 9:00–18:00`, `Sun closed`, Google Maps pin rule, and free Jebel Ali warehouse self-pickup with no minimum order amount) across `docs/faq.md` (Q8 & Q9), `src/llm/company_faq.py` (`APPROVED_FAQ_QUESTIONS[8]` + showroom continuation), `src/llm/verified_answers.py`, `src/llm/communication_policy.py`, and `src/services/canonical_admin_seed.py` (+ synced prod `knowledge_base` rows).
 - Shipped `tj-fswr` (`7baa2a0`), `tj-r62i.1` (`a81c150`), & structural hardening `tj-r62i.2` (`985808e`): drove multi-turn delivery/assembly FAQ & tariff grounding (`AED 400` Abu Dhabi) from full `recent_history` + durable `quote_workflow` state (`has_quote_delivery_context` in `company_faq.py`), added EN/AR direct team-outreach + dedicated `ORDER_CONFIRMATION` `quotation_followup` alert whenever `create_quotation` runs with open/unconfirmed closing terms (`message_processor.py`), auto-synced Zoho CRM Contact + `New Lead` Deal on `create_quotation` (`engine.py`), and remediated pre-fix prod chats `*6551` (`Fr4364` -> CRM Contact `559571000048697131` + Deal `559571000048645186` `AED 7,920` + Telegram alert) and `*6040` (`B2C-20261109-5702` Telegram pickup alert).
 - Client router (`audit.treejartrading.ae`) resumed traffic on 2026-11-09 02:55 UTC (odd Moscow date), including valid media URLs AND live manager `isEcho=True` (`authorType='manager'`) forwarding. Reviewed active conversations (`*0745`, `*1067`, `*6040`, `*5892`, `*7182`, `*8460`, `*8132`, `*5294`, `*4243`, `*1243`, `*6551`, `*2245`, `*7752`, `*8055`); `anthropic/claude-haiku-5.5` vision/PDF reader, 15s quiet window, opening guard, and `manual_takeover` worked cleanly (also updated pre-fix `*5294` row to `manual_takeover` under owner approval).
 - Shipped `tj-whq5` (`da3248b`, CI `42573039511`): `has_manager_message` in `src/services/chat.py` always transitions `pending`/`in_progress` chats to `manual_takeover`.
@@ -174,8 +175,7 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 - Zoho quotation live E2E remains unverified; no real messages were sent here.
 - tj-1baw latency remains separate; tj-bgwu fixed in `codex/project-consistency-20261013`.
 - Paid second reader stays off; reader-gap drift tracked in tj-4q79.
-- tj-ierv: KB lacks owner facts for returns window, warranty term, hours,
-  payment methods; articles defer them to the manager (delivery/assembly tariffs resolved 2026-11-04 in `tj-z3hw`).
+- tj-ierv: KB lacks owner facts for returns window, warranty term, and payment methods; articles defer them to the manager (delivery/assembly tariffs resolved 2026-11-04 in `tj-z3hw`; showroom address, working hours, map pin, and free Jebel Ali warehouse self-pickup resolved 2026-11-09 in `tj-r62i.3`).
 
 ## Next recommended
 

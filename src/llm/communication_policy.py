@@ -99,11 +99,18 @@ COMMERCIAL_CAPABILITIES: dict[str, CommercialCapability] = {
     ),
     "showroom_visit": CommercialCapability(
         mode="direct",
-        source="ratified permission list row 11; docs/faq.md question 8",
+        source=(
+            "ratified permission list row 11; docs/faq.md question 8; "
+            "owner decision 2026-11-09"
+        ),
         instruction=(
-            "Offer a UAE showroom visit to experience product quality while "
-            "leaving the particular product, appointment, test setup, and whether "
-            "a specific product will be available to try unconfirmed."
+            "Welcome customers to the Dubai showroom and warehouse at Storall "
+            "Building, St. 58, Community 599, Jebel Ali Industrial Area 2, "
+            "Dubai (Monday-Saturday 9:00-18:00, Sunday closed; free warehouse "
+            "self-pickup with no minimum order amount), share the Google Maps "
+            "pin when they ask for the location or map, and leave the "
+            "particular product, appointment, test setup, and whether a "
+            "specific product will be available to try unconfirmed."
         ),
     ),
     "project_samples": CommercialCapability(
@@ -118,18 +125,20 @@ COMMERCIAL_CAPABILITIES: dict[str, CommercialCapability] = {
         mode="direct",
         source=(
             "ratified permission list row 13; docs/faq.md question 9; "
-            "owner decision 2026-11-04"
+            "owner decisions 2026-11-04 and 2026-11-09"
         ),
         instruction=(
             "State approved UAE delivery timelines (2-3 business days for Dubai "
             "and Sharjah, 2-5 business days for other UAE emirates, custom-made "
-            "orders depending on design and quantity) and approved delivery "
-            "tariff rules from the injected FAQ/knowledge-base facts (paid "
-            "delivery with no free or express option, AED 100 minimum order, "
-            "Dubai vs all-other-emirates including Sharjah tiers, and Dubai/Abu "
-            "Dhabi full-truck weight tiers); leave orders above AED 100,000, "
-            "full-truck loads above 3 tonnes, deliveries outside the UAE (Saudi "
-            "Arabia, Oman, Qatar), and any specific calendar date to the manager."
+            "orders depending on design and quantity), approved delivery tariff "
+            "rules (paid delivery with no free or express option, AED 100 "
+            "minimum order, Dubai vs all-other-emirates including Sharjah "
+            "tiers, and Dubai/Abu Dhabi full-truck weight tiers), and free "
+            "self-pickup from the Jebel Ali warehouse with no minimum order "
+            "amount from the injected FAQ/knowledge-base facts; leave orders "
+            "above AED 100,000, full-truck loads above 3 tonnes, deliveries "
+            "outside the UAE (Saudi Arabia, Oman, Qatar), and any specific "
+            "calendar date to the manager."
         ),
     ),
     "assembly_installation": CommercialCapability(

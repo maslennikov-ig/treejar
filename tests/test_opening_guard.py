@@ -555,3 +555,35 @@ def test_an_arabic_answer_naming_treejar_without_persona_survives() -> None:
 
     assert "ولا نشتري الأثاث المستعمل" in guarded
     assert opening_replacement_covers(raw, guarded)
+
+
+def test_live_pilot_modal_name_questions_do_not_duplicate_address_you() -> None:
+    """tj-r62i.3 (*1868, *0462, *0096): natural modal variants already ask the name."""
+    for raw in (
+        (
+            "Hi! I’m Noor from Treejar. I’d be happy to help you choose the right "
+            "office furniture for your space.\n\nHow may I address you?"
+        ),
+        (
+            "Hi! I’m Noor from Treejar. I’d be happy to help you choose the right "
+            "office furniture for your space.\n\nMay I have your name, please?"
+        ),
+    ):
+        guarded = apply_opening_guard(
+            raw,
+            language="en",
+            is_first_turn=True,
+            customer_name=None,
+        )
+        assert "and how should I address you?" not in guarded
+
+    ar_raw = (
+        "أهلاً بك، أنا نور من تريجار، نورّد أثاث المكاتب في الإمارات. ما اسمك الكريم؟"
+    )
+    ar_guarded = apply_opening_guard(
+        ar_raw,
+        language="ar",
+        is_first_turn=True,
+        customer_name=None,
+    )
+    assert "وكيف أخاطبك؟" not in ar_guarded

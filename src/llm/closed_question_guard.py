@@ -65,13 +65,32 @@ _EN_CUSTOMER_NAME_QUESTION_SIGNALS = (
 # folded a second name request onto a reply that already carried one.
 _EN_CUSTOMER_NAME_QUESTION_PATTERNS = (
     re.compile(
-        r"\b(?:share|provide|send|confirm|need|require)\b[^.?!\n]{0,140}"
-        r"\b(?:customer\s+name|full\s+name|your\s+name)\b"
+        r"\b(?:share|provide|send|confirm|need|require|tell\s+(?:me|us)|"
+        r"let\s+(?:me|us)\s+know)\b[^.?!\n]{0,140}"
+        r"\b(?:customer\s+name|full\s+name|first\s+name|your\s+name)\b"
     ),
-    re.compile(r"\bwhat\s+(?:is|was)\s+your\s+name\b"),
+    re.compile(
+        r"\b(?:may|can|could|might)\s+(?:i|we)\s+"
+        r"(?:know|have|get|ask(?:\s+for)?)\s+your\s+(?:(?:first|full)\s+)?name\b"
+    ),
+    re.compile(r"\bwhat(?:'s|\s+is|\s+was)\s+your\s+(?:(?:first|full)\s+)?name\b"),
     re.compile(
         r"\bwhat\s+name\s+(?:should|could|can|may|would|do)\s+"
         r"(?:i|we)\s+use(?:\s+for\s+you|\s+to\s+address\s+you)\b"
+    ),
+    re.compile(
+        r"\bhow\s+(?:should|do|may|can|could|shall|might)\s+"
+        r"(?:i|we)\s+(?:address|call)\s+you\b"
+    ),
+    re.compile(
+        r"\bhow\s+would\s+you\s+like\s+"
+        r"(?:(?:me|us)\s+to\s+(?:address|call)\s+you|"
+        r"to\s+be\s+(?:addressed|called))\b"
+    ),
+    re.compile(
+        r"\bwho\s+(?:am\s+i|are\s+we|"
+        r"do\s+(?:i|we)\s+have\s+the\s+pleasure\s+of)\s+"
+        r"(?:speaking|chatting|talking)\s+(?:with|to)\b"
     ),
 )
 _EN_COMPANY_STATUS_QUESTION_PATTERNS = (
@@ -137,8 +156,26 @@ _AR_REQUEST_SIGNALS = (
 )
 
 
+_AR_CUSTOMER_NAME_QUESTION_PATTERNS = (
+    re.compile(
+        r"(?:"
+        r"ما\s+اسمك"
+        r"|الاسم\s+الكريم"
+        r"|باسمك\s+الكريم"
+        r"|(?:أتشرف|اتشرف|نتشرف)\s+باسمك"
+        r"|مع\s+من\s+(?:أتحدث|اتحدث|أتكلم|اتكلم)"
+        r"|(?:ممكن|هل\s+يمكن(?:ني)?|أقدر|اقدر)\s+"
+        r"(?:أعرف|اعرف|معرفة|(?:أتعرف|اتعرف|نتعرف)\s+على|تشاركني|تزودني\s+بـ?)?\s*"
+        r"(?:اسمك|الاسم)"
+        r"|(?:بماذا|بمَ|بم)\s+(?:أخاطبك|اخاطبك|أناديك|اناديك)"
+        r")"
+    ),
+)
+
+
 def response_asks_customer_name(text: str) -> bool:
-    normalized = " ".join(str(text or "").casefold().split())
+    raw = str(text or "")
+    normalized = " ".join(raw.replace("’", "'").replace("ʼ", "'").casefold().split())
     if not normalized:
         return False
     if any(signal in normalized for signal in _EN_CUSTOMER_NAME_QUESTION_SIGNALS):
@@ -147,7 +184,9 @@ def response_asks_customer_name(text: str) -> bool:
         pattern.search(normalized) for pattern in _EN_CUSTOMER_NAME_QUESTION_PATTERNS
     ):
         return True
-    return _arabic_request_mentions(str(text or ""), _AR_CUSTOMER_NAME_QUESTION_SIGNALS)
+    if any(pattern.search(raw) for pattern in _AR_CUSTOMER_NAME_QUESTION_PATTERNS):
+        return True
+    return _arabic_request_mentions(raw, _AR_CUSTOMER_NAME_QUESTION_SIGNALS)
 
 
 def _arabic_request_mentions(raw_text: str, signals: tuple[str, ...]) -> bool:

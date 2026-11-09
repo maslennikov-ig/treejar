@@ -12,6 +12,7 @@ def test_approved_faq_entries_load_only_the_owner_approved_questions() -> None:
     assert len(entries) == len(APPROVED_FAQ_QUESTIONS)
     titles = {entry["title"] for entry in entries}
     assert titles == {
+        "Can we visit your showroom?",
         "What is your delivery timeline?",
         "Do you provide installation services?",
     }
@@ -73,3 +74,31 @@ def test_approved_faq_is_not_added_to_unrelated_or_duplicate_context() -> None:
     merged = with_approved_faq("Can you install the desks?", existing)
     titles = [item["title"] for item in merged]
     assert titles.count("Do you provide installation services?") == 1
+
+
+def test_showroom_hours_map_and_jebel_ali_pickup_receive_approved_faq() -> None:
+    for query in (
+        "Where is your showroom and what are your working hours?",
+        "Can I do self-pickup from your warehouse?",
+        "ممكن موقعكم وساعات العمل؟",
+    ):
+        ctx = with_approved_faq(query, [])
+        contents = " ".join(item["content"] for item in ctx)
+        assert (
+            "Storall Building, St. 58, Community 599, Jebel Ali Industrial Area 2"
+            in contents
+        )
+        assert "9:00–18:00" in contents
+        assert "free of charge, with no minimum order amount" in contents
+
+    followup_ctx = with_approved_faq(
+        "Are you open on Sunday and can you send the map?",
+        [],
+        recent_history=["User: Can we visit your showroom?"],
+    )
+    assert any("Storall Building" in item["content"] for item in followup_ctx)
+
+    # Generic office/delivery-address mentions must not false-trigger showroom FAQ.
+    assert with_approved_faq("for a small office, 4 people", []) == []
+    assert with_approved_faq("Leila, im the office manager", []) == []
+    assert with_approved_faq("My address is Business Bay Tower", []) == []

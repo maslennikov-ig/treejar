@@ -34,11 +34,18 @@ Yes, we offer custom-made solutions based on client requirements including size,
 
 ## 8. Can we visit your showroom?
 
-Yes, you are most welcome to visit our showroom in the UAE to experience the product quality personally. Our team will assist you in selecting the best solution for your workspace.
+Yes, you are most welcome to visit our showroom and warehouse in Dubai to experience the product quality personally, and our team will assist you in selecting the best solution for your workspace:
+- Address: Storall Building, St. 58, Community 599, Jebel Ali Industrial Area 2, Dubai.
+- Working hours: Monday–Saturday, 9:00–18:00 (Sunday closed).
+- Google Maps location (share when the client asks for the location or map): https://www.google.com/maps/place/Treejar+Trading/@24.9871463,55.1135981,17z
+- Self-pickup from our warehouse in Jebel Ali is free of charge, with no minimum order amount.
+- Whether a specific product is currently on display to try in the showroom is confirmed by the manager.
 
 ## 9. What is your delivery timeline?
 
 Express delivery is not available, and free delivery is not available — delivery is charged. The minimum order amount for delivery is AED 100.
+
+Self-pickup from our warehouse in Jebel Ali (Storall Building, St. 58, Community 599, Jebel Ali Industrial Area 2, Dubai; Monday–Saturday, 9:00–18:00, Sunday closed) is free of charge, with no minimum order amount.
 
 Delivery times for ready-stock items:
 - Dubai and Sharjah: 2–3 business days.

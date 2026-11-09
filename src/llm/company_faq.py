@@ -38,7 +38,14 @@ _FAQ_PATH = Path(__file__).resolve().parent.parent.parent / "docs" / "faq.md"
 
 # FAQ question number -> approval that makes it a standing fact.
 APPROVED_FAQ_QUESTIONS: dict[int, str] = {
-    9: "owner/client decision 2026-11-04 (Julia delivery & assembly tariff sheet)",
+    8: (
+        "owner/client decision 2026-11-09 "
+        "(Julia showroom address, hours, map & Jebel Ali self-pickup policy)"
+    ),
+    9: (
+        "owner/client decision 2026-11-04 (Julia delivery & assembly tariff sheet) "
+        "+ 2026-11-09 (Jebel Ali self-pickup)"
+    ),
     10: "owner/client decision 2026-11-04 (Julia delivery & assembly tariff sheet)",
 }
 
@@ -84,6 +91,16 @@ _DELIVERY_DETAIL_CONTINUATION_RE = re.compile(
     r"plot|area|district|yes|please\s+send|go\s+ahead|confirm)\b"
     r"|(?:عرض\s+سعر|نعم|أرسل|ارسل|شركة|اسمي|عنوان|شارع|مبنى|مكتب|مستودع)"
     r")",
+    re.IGNORECASE,
+)
+
+
+_SHOWROOM_FOLLOWUP_QUALIFIER_RE = re.compile(
+    r"\b(?:"
+    r"hours?|open|closed?|sunday|saturday|monday|tuesday|wednesday|thursday|"
+    r"friday|maps?|pin|directions?|address|pickup|collect|free"
+    r")\b"
+    r"|(?:ساعات|مفتوح|مغلق|الأحد|الاحد|السبت|الجمعة|خريطة|لوكيشن|عنوان|استلام|مجاني)",
     re.IGNORECASE,
 )
 
@@ -162,22 +179,24 @@ def active_faq_topics(
     topics = set(_query_topics(query))
     if topics:
         return topics
-    is_continuation = bool(
+    is_delivery_continuation = bool(
         _DELIVERY_FOLLOWUP_QUALIFIER_RE.search(query)
         or _DELIVERY_DETAIL_CONTINUATION_RE.search(query)
     )
-    if not is_continuation:
+    is_showroom_continuation = bool(_SHOWROOM_FOLLOWUP_QUALIFIER_RE.search(query))
+    if not is_delivery_continuation and not is_showroom_continuation:
         return set()
-    prior_topics = (
-        set(_query_topics(" ".join(recent_history))) & {"delivery", "installation"}
-        if recent_history
-        else set()
+    history_topics = (
+        set(_query_topics(" ".join(recent_history))) if recent_history else set()
     )
-    if prior_topics:
-        return prior_topics
-    if quote_delivery_active:
-        return {"delivery"}
-    return set()
+    continued: set[str] = set()
+    if is_delivery_continuation:
+        continued |= history_topics & {"delivery", "installation"}
+        if not continued and quote_delivery_active:
+            continued.add("delivery")
+    if is_showroom_continuation:
+        continued |= history_topics & {"showroom"}
+    return continued
 
 
 def with_approved_faq(

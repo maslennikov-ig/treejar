@@ -69,7 +69,7 @@ def test_canonical_kb_covers_policies_and_faq_without_manager_terms() -> None:
 def test_canonical_kb_makes_no_unapproved_promises() -> None:
     text = " ".join(article.content.lower() for article in seed.canonical_kb_articles())
 
-    for forbidden in ("7-day", "7 day", "9:00", "free assembly is", "1-5 year"):
+    for forbidden in ("7-day", "7 day", "free assembly is", "1-5 year"):
         assert forbidden not in text
     vat = next(a for a in seed.canonical_kb_articles() if a.category == "payment")
     assert "excl. 5% vat" in vat.content.lower()
@@ -80,6 +80,12 @@ def test_canonical_kb_makes_no_unapproved_promises() -> None:
     assert "aed 200" in delivery.content.lower()
     assert "aed 30 per item" in delivery.content.lower()
     assert "saudi arabia, oman and qatar" in delivery.content.lower()
+    assert "jebel ali" in delivery.content.lower()
+    assert "no minimum order amount" in delivery.content.lower()
+    showroom = next(a for a in seed.canonical_kb_articles() if a.category == "showroom")
+    assert "storall building, st. 58, community 599" in showroom.content.lower()
+    assert "9:00–18:00" in showroom.content.lower()
+    assert "sunday closed" in showroom.content.lower()
 
 
 def test_canonical_bot_rules_cover_the_eight_operating_rules() -> None:
