@@ -18,7 +18,7 @@ from typing import Any
 import httpx
 from arq import Retry
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import case, exists, func, or_, select
 
 from src.core.config import settings
 from src.core.database import async_session_factory
@@ -37,6 +37,8 @@ from src.models.message import (
     message_created_at_from_wazzup,
     message_created_at_now,
 )
+from src.models.outbound_message import OutboundMessageAudit
+from src.models.shadow_webhook_event import ShadowWebhookEvent
 from src.models.system_config import SystemConfig
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.webhook import WazzupIncomingMessage
@@ -52,6 +54,7 @@ from src.services.customer_identity import (
 from src.services.customer_language import is_arabic_customer_language
 from src.services.escalation_state import should_send_escalation_fallback
 from src.services.inbound_batch import (
+    WAZZUP_SYSTEM_AUTO_REPLY_SUBSTRING,
     has_queued_manager_message,
     inbound_chat_reference,
     inbound_execution_key,
@@ -60,6 +63,7 @@ from src.services.inbound_batch import (
     inbound_processing_key,
     inbound_queue_key,
     is_inbound_chat_reference,
+    is_wazzup_system_auto_reply,
     wait_for_inbound_quiet,
 )
 from src.services.inbound_channels import update_conversation_inbound_channel
@@ -410,8 +414,42 @@ async def _manager_takeover_active(
     conv_id = getattr(conv, "id", None)
     if conv_id is not None:
         try:
+            external_echo_exists = exists(
+                select(1).where(
+                    ShadowWebhookEvent.chat_id == Conversation.phone,
+                    ShadowWebhookEvent.is_echo.is_(True),
+                    ShadowWebhookEvent.status.in_(("sent", "delivered", "read")),
+                    or_(
+                        ShadowWebhookEvent.text.is_not(None),
+                        ShadowWebhookEvent.content_uri.is_not(None),
+                    ),
+                    or_(
+                        ShadowWebhookEvent.text.is_(None),
+                        ~ShadowWebhookEvent.text.ilike(
+                            f"%{WAZZUP_SYSTEM_AUTO_REPLY_SUBSTRING}%"
+                        ),
+                    ),
+                    ~exists(
+                        select(1).where(
+                            OutboundMessageAudit.provider_message_id
+                            == ShadowWebhookEvent.message_id
+                        )
+                    ),
+                )
+            )
             fresh_status = await db.scalar(
-                select(Conversation.escalation_status).where(Conversation.id == conv_id)
+                select(
+                    case(
+                        (
+                            or_(
+                                Conversation.escalation_status == "manual_takeover",
+                                external_echo_exists,
+                            ),
+                            "manual_takeover",
+                        ),
+                        else_=Conversation.escalation_status,
+                    )
+                ).where(Conversation.id == conv_id)
             )
             if fresh_status == "manual_takeover":
                 conv.escalation_status = "manual_takeover"
@@ -1253,10 +1291,14 @@ async def _process_batch_inner(
             skipped_count,
         )
 
-    messages = filtered_messages
+    messages = [
+        m
+        for m in filtered_messages
+        if m.type != "missing_call" and not is_wazzup_system_auto_reply(m.text)
+    ]
     if not messages:
         logger.warning(
-            "No messages left after Wazzup channel filtering: batch_ref=%s",
+            "No actionable messages left after Wazzup channel/system filtering: batch_ref=%s",
             batch_ref,
         )
         return

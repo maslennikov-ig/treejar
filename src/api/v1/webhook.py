@@ -27,6 +27,7 @@ from src.services.inbound_batch import (
     inbound_chat_reference,
     inbound_grace_key,
     inbound_queue_key,
+    is_wazzup_system_auto_reply,
     resolve_inbound_batch_defer_seconds,
     serialize_inbound_message,
 )
@@ -246,6 +247,8 @@ def _is_candidate_manager_echo(message: object) -> bool:
     if not isinstance(chat_id, str) or not chat_id.strip():
         return False
     text = message.get("text")
+    if is_wazzup_system_auto_reply(text):
+        return False
     has_text = isinstance(text, str) and bool(text.strip())
     return bool(has_text or message.get("contentUri") or message.get("media"))
 
@@ -581,6 +584,14 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
         if msg.authorType == "bot":
             # Echo of our own bot messages — skip entirely
             logger.debug("Skipping bot echo message")
+            continue
+
+        if msg.type == "missing_call":
+            logger.info("Skipping Wazzup missed-call event")
+            continue
+
+        if is_wazzup_system_auto_reply(msg.text):
+            logger.info("Skipping Wazzup system auto-reply message")
             continue
 
         if msg.authorType == "manager" or msg.isEcho is True:

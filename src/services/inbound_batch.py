@@ -43,6 +43,17 @@ TREEJAR_WORKING_HOURS_END_HOUR = 18
 TREEJAR_CLOSED_WEEKDAYS = frozenset({6})
 _UAE_TZ = ZoneInfo("Asia/Dubai")
 _FALSE_VALUES = frozenset({"false", "0", "no", "off"})
+WAZZUP_SYSTEM_AUTO_REPLY_SUBSTRING = (
+    "please note that you can only send messages in this chat"
+)
+
+
+def is_wazzup_system_auto_reply(text: object) -> bool:
+    """Return True when *text* is Wazzup's built-in missed-call system notice."""
+    if not isinstance(text, str):
+        return False
+    normalized = " ".join(text.split()).casefold()
+    return WAZZUP_SYSTEM_AUTO_REPLY_SUBSTRING in normalized
 
 
 def _parse_grace_seconds(raw: str) -> int:
@@ -194,9 +205,10 @@ def _queued_customer_receipt(raw: str | bytes) -> tuple[bool, float | None]:
     if not isinstance(payload, dict):
         return False, None
     author_type = payload.get("authorType")
-    is_manager = author_type == "manager" or (
-        payload.get("isEcho") is True and author_type != "bot"
-    )
+    is_manager = (
+        author_type == "manager"
+        or (payload.get("isEcho") is True and author_type != "bot")
+    ) and not is_wazzup_system_auto_reply(payload.get("text"))
     value = payload.get("received_at")
     if isinstance(value, bool) or not isinstance(value, int | float):
         return is_manager, None

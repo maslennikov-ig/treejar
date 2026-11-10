@@ -33,7 +33,9 @@ _SUPPLIER_PITCH_RE = re.compile(
     r"|\bour\s+(?:factory|company)\s+(?:manufactures|produces|supplies)\b"
     r"|\bbecome\s+(?:your|a)\s+(?:supplier|vendor|partner)\b"
     r"|\bregister\s+(?:us|our\s+company)\s+as\s+(?:a\s+)?(?:supplier|vendor)\b"
-    r"|\bvendor\s+registration\b",
+    r"|\bvendor\s+registration\b"
+    r"|\bfurniture\s+supply\s+from\b"
+    r"|\bsupply(?:ing)?\s+(?:office\s+)?furniture\s+(?:from|to\s+your)\b",
     re.IGNORECASE | re.UNICODE,
 )
 

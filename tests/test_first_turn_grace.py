@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,10 +18,12 @@ from src.services.inbound_batch import (
     FIRST_TURN_GRACE_WEEKDAYS_ONLY_KEY,
     FIRST_TURN_GRACE_WORKING_HOURS_ONLY_KEY,
     FIRST_TURN_MANAGER_GRACE_SECONDS_KEY,
+    has_queued_manager_message,
     inbound_chat_reference,
     inbound_grace_key,
     inbound_queue_key,
     is_treejar_working_hours,
+    is_wazzup_system_auto_reply,
     resolve_inbound_batch_defer_seconds,
 )
 
@@ -466,3 +469,35 @@ async def test_manager_reply_in_grace_batch_takes_over_and_skips_llm(
     mock_session.commit.assert_awaited()
     mock_process_message.assert_not_awaited()
     mock_wazzup.send_text.assert_not_awaited()
+
+
+def test_wazzup_missed_call_and_auto_reply_are_ignored_by_webhook() -> None:
+    missed_call = {
+        "messageId": "msg-missed-call",
+        "chatId": CHAT_ID,
+        "chatType": "whatsapp",
+        "type": "missing_call",
+        "isEcho": False,
+        "status": "inbound",
+        "channelId": EXPECTED_CHANNEL_ID,
+    }
+    auto_reply = {
+        "messageId": "msg-auto-reply",
+        "chatId": CHAT_ID,
+        "chatType": "whatsapp",
+        "type": "text",
+        "text": (
+            "Please note that you can only send messages in this chat. "
+            "If you need to contact us by phone, please call +971561367742, +971545467851."
+        ),
+        "isEcho": True,
+        "status": "sent",
+        "authorName": "",
+        "channelId": EXPECTED_CHANNEL_ID,
+    }
+    assert is_wazzup_system_auto_reply(auto_reply["text"]) is True
+    assert not has_queued_manager_message([json.dumps(auto_reply)])
+
+    _post([missed_call, auto_reply], defer=180, pttl=-2)
+    app.state.redis.rpush.assert_not_awaited()
+    app.state.arq_pool.enqueue_job.assert_not_awaited()
