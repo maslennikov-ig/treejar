@@ -245,3 +245,98 @@ async def test_reply_after_an_external_action_is_still_sent() -> None:
     assert calls == ["of course", "4"]
     assert send.await_count == 2
     assert send.await_args_list[0].kwargs["text"] == "Your quotation is ready."
+
+
+@pytest.mark.asyncio
+async def test_manager_echo_arriving_during_generation_aborts_bot_send_and_takes_over() -> (
+    None
+):
+    redis = _FakeRedis()
+    queue_key = inbound_queue_key(inbound_chat_reference(CHAT_ID))
+    redis.lists[queue_key].append(_message("m-1", "Hi, I need office chairs", 0))
+
+    conversation = Conversation(
+        id=uuid.uuid4(),
+        phone=CHAT_ID,
+        language="en",
+        escalation_status="none",
+        metadata_={"inbound_channel_id": CHANNEL_ID},
+    )
+    session = AsyncMock()
+    added: list[object] = []
+    session.add = MagicMock(side_effect=added.append)
+
+    def execute(statement: Any) -> MagicMock:
+        result = MagicMock()
+        result.scalars.return_value.first.return_value = None
+        if "wazzup_message_id" in str(statement):
+            result.scalars.return_value.all.return_value = [
+                item.wazzup_message_id for item in added if isinstance(item, Message)
+            ]
+        elif "outbound_message_audits" in str(statement):
+            result.all.return_value = []
+        else:
+            result.scalars.return_value.all.return_value = [conversation]
+        return result
+
+    session.execute.side_effect = execute
+
+    calls: list[str] = []
+
+    async def process_message(**kwargs: Any) -> LLMResponse:
+        calls.append(kwargs["combined_text"])
+        manager_echo = WazzupIncomingMessage(
+            messageId="mgr-echo-1",
+            chatId=CHAT_ID,
+            chatType="whatsapp",
+            type="text",
+            text="Welcome to Treejar! Sweeton here, Sales Manager.",
+            channelId=CHANNEL_ID,
+            timestamp=1790179155,
+            status="delivered",
+            isEcho=True,
+            authorType="manager",
+            authorName="Sweeton",
+        ).model_dump_json()
+        await redis.rpush(queue_key, manager_echo)
+        # Even a non-supersedable tool trace must abort when a human manager took over.
+        return _response("Hello! I am Noor from Treejar.", "create_deal")
+
+    wazzup = AsyncMock()
+    wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
+    send = AsyncMock()
+    with (
+        patch("src.services.chat.settings.wazzup_channel_id", CHANNEL_ID),
+        patch("src.services.chat.async_session_factory") as session_factory,
+        patch("src.services.chat.process_message", side_effect=process_message),
+        patch("src.services.chat.WazzupProvider") as provider_cls,
+        patch("src.services.chat.ZohoInventoryClient") as inventory_cls,
+        patch("src.services.chat.ZohoCRMClient") as crm_cls,
+        patch("src.services.chat.EmbeddingEngine"),
+        patch("src.services.chat.send_wazzup_text_with_audit", send),
+        patch(
+            "src.services.chat._enqueue_summary_refresh_if_needed",
+            new_callable=AsyncMock,
+        ),
+    ):
+        session_factory.return_value.__aenter__.return_value = session
+        provider_cls.return_value.__aenter__ = AsyncMock(return_value=wazzup)
+        provider_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        for client_cls in (inventory_cls, crm_cls):
+            client_cls.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+            client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        await process_incoming_batch({"redis": redis}, inbound_chat_reference(CHAT_ID))
+
+    assert calls == ["Hi, I need office chairs"]
+    send.assert_not_awaited()
+    assert conversation.escalation_status == "manual_takeover"
+    assistant = [
+        item for item in added if isinstance(item, Message) and item.role == "assistant"
+    ]
+    assert assistant == []
+    roles = [
+        (item.role, item.wazzup_message_id)
+        for item in added
+        if isinstance(item, Message)
+    ]
+    assert roles == [("user", "m-1"), ("manager", "mgr-echo-1")]

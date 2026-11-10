@@ -15,19 +15,24 @@ from src.services import inbound_batch
 from src.services.chat import process_incoming_batch
 from src.services.inbound_batch import (
     FIRST_TURN_GRACE_WEEKDAYS_ONLY_KEY,
+    FIRST_TURN_GRACE_WORKING_HOURS_ONLY_KEY,
     FIRST_TURN_MANAGER_GRACE_SECONDS_KEY,
     inbound_chat_reference,
     inbound_grace_key,
     inbound_queue_key,
+    is_treejar_working_hours,
     resolve_inbound_batch_defer_seconds,
 )
 
 client = TestClient(app)
 EXPECTED_CHANNEL_ID = "b49b1b9d-757f-4104-b56d-8f43d62cc515"
 CHAT_ID = "971500001111"
-# 2026-10-22 is a Thursday; 2026-10-24 is a Saturday (both 14:00 in Dubai).
-WEEKDAY_UTC = datetime(2026, 10, 22, 10, 0, tzinfo=UTC)
-SATURDAY_UTC = datetime(2026, 10, 24, 10, 0, tzinfo=UTC)
+# 2026-10-22 is a Thursday; 2026-10-24 is a Saturday; 2026-10-25 is a Sunday.
+WEEKDAY_UTC = datetime(2026, 10, 22, 10, 0, tzinfo=UTC)  # 14:00 Dubai
+SATURDAY_UTC = datetime(2026, 10, 24, 10, 0, tzinfo=UTC)  # 14:00 Dubai
+SUNDAY_UTC = datetime(2026, 10, 25, 10, 0, tzinfo=UTC)  # 14:00 Dubai
+WEEKDAY_EVENING_UTC = datetime(2026, 10, 22, 14, 0, tzinfo=UTC)  # 18:00 Dubai
+WEEKDAY_EARLY_MORNING_UTC = datetime(2026, 10, 22, 4, 59, tzinfo=UTC)  # 08:59 Dubai
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +145,63 @@ async def test_weekend_with_weekdays_only_false_uses_grace() -> None:
             db, phone=CHAT_ID, now_utc=SATURDAY_UTC
         )
         == 900
+    )
+
+
+@pytest.mark.asyncio
+async def test_saturday_working_hours_uses_grace_by_default() -> None:
+    db = _db({FIRST_TURN_MANAGER_GRACE_SECONDS_KEY: 180})
+    assert is_treejar_working_hours(SATURDAY_UTC) is True
+    assert (
+        await resolve_inbound_batch_defer_seconds(
+            db, phone=CHAT_ID, now_utc=SATURDAY_UTC
+        )
+        == 180
+    )
+
+
+@pytest.mark.asyncio
+async def test_weekday_evening_and_early_morning_answer_instantly() -> None:
+    db = _db({FIRST_TURN_MANAGER_GRACE_SECONDS_KEY: 180})
+    assert is_treejar_working_hours(WEEKDAY_EVENING_UTC) is False
+    assert is_treejar_working_hours(WEEKDAY_EARLY_MORNING_UTC) is False
+    assert (
+        await resolve_inbound_batch_defer_seconds(
+            db, phone=CHAT_ID, now_utc=WEEKDAY_EVENING_UTC
+        )
+        == 5
+    )
+    assert (
+        await resolve_inbound_batch_defer_seconds(
+            db, phone=CHAT_ID, now_utc=WEEKDAY_EARLY_MORNING_UTC
+        )
+        == 5
+    )
+
+
+@pytest.mark.asyncio
+async def test_sunday_answers_instantly_during_daytime() -> None:
+    db = _db({FIRST_TURN_MANAGER_GRACE_SECONDS_KEY: 180})
+    assert is_treejar_working_hours(SUNDAY_UTC) is False
+    assert (
+        await resolve_inbound_batch_defer_seconds(db, phone=CHAT_ID, now_utc=SUNDAY_UTC)
+        == 5
+    )
+
+
+@pytest.mark.asyncio
+async def test_working_hours_only_false_allows_evening_grace() -> None:
+    db = _db(
+        {
+            FIRST_TURN_MANAGER_GRACE_SECONDS_KEY: 180,
+            FIRST_TURN_GRACE_WORKING_HOURS_ONLY_KEY: "false",
+        }
+    )
+    assert (
+        await resolve_inbound_batch_defer_seconds(
+            db, phone=CHAT_ID, now_utc=WEEKDAY_EVENING_UTC
+        )
+        == 180
     )
 
 

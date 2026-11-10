@@ -52,8 +52,10 @@ from src.services.customer_identity import (
 from src.services.customer_language import is_arabic_customer_language
 from src.services.escalation_state import should_send_escalation_fallback
 from src.services.inbound_batch import (
+    has_queued_manager_message,
     inbound_chat_reference,
     inbound_execution_key,
+    inbound_grace_key,
     inbound_lock_key,
     inbound_processing_key,
     inbound_queue_key,
@@ -376,6 +378,50 @@ async def _newer_customer_messages_waiting(redis: Any, queue_token: str) -> bool
         logger.warning("Could not inspect inbound queue before reply", exc_info=True)
         return False
     return isinstance(pending, int) and pending > 0
+
+
+async def _queued_manager_message_waiting(redis: Any, queue_token: str) -> bool:
+    try:
+        pending = await redis.llen(inbound_queue_key(queue_token))
+        if isinstance(pending, bool) or not isinstance(pending, int) or pending <= 0:
+            return False
+        queued = await redis.lrange(inbound_queue_key(queue_token), 0, -1)
+    except Exception:
+        logger.warning(
+            "Could not inspect inbound queue for manager takeover",
+            exc_info=True,
+        )
+        return False
+    return has_queued_manager_message(queued or [])
+
+
+async def _manager_takeover_active(
+    redis: Any,
+    db: Any,
+    *,
+    queue_token: str,
+    conv: Any,
+) -> bool:
+    """Return True if a human manager took over while the current turn was running."""
+    if getattr(conv, "escalation_status", None) == "manual_takeover":
+        return True
+    if await _queued_manager_message_waiting(redis, queue_token):
+        return True
+    conv_id = getattr(conv, "id", None)
+    if conv_id is not None:
+        try:
+            fresh_status = await db.scalar(
+                select(Conversation.escalation_status).where(Conversation.id == conv_id)
+            )
+            if fresh_status == "manual_takeover":
+                conv.escalation_status = "manual_takeover"
+                return True
+        except Exception:
+            logger.debug(
+                "Could not recheck conversation escalation_status before send",
+                exc_info=True,
+            )
+    return False
 
 
 def _reply_may_be_superseded(llm_response: Any, message_count: int) -> bool:
@@ -768,9 +814,26 @@ async def _send_deferred_product_media(
     source_message_id: str | None,
     follow_up_suppressed: bool,
     media_items: Sequence[ProductMediaPayload],
+    redis: Any = None,
+    queue_token: str | None = None,
+    conv: Any = None,
 ) -> None:
     """Send queued product images after the customer-facing text reply."""
     for item in dedupe_product_media(media_items):
+        if (
+            redis is not None
+            and queue_token is not None
+            and conv is not None
+            and await _manager_takeover_active(
+                redis, db, queue_token=queue_token, conv=conv
+            )
+        ):
+            logger.info(
+                "Stopping deferred product media: manager takeover detected: "
+                "conversation_ref=%s",
+                inbound_chat_reference(str(conversation_id)),
+            )
+            break
         try:
             send_url = item.url
             if (
@@ -1680,8 +1743,23 @@ async def _process_batch_inner(
             await db.commit()
 
             if has_manager_message:
+                with suppress(Exception):
+                    await redis.delete(inbound_grace_key(batch_ref))
                 logger.info(
                     "Manager message persisted; skipping automated response: "
+                    "batch_ref=%s",
+                    batch_ref,
+                )
+                return
+
+            if await _manager_takeover_active(
+                redis, db, queue_token=queue_token, conv=conv
+            ):
+                if conv.escalation_status != "manual_takeover":
+                    conv.escalation_status = "manual_takeover"
+                    await db.commit()
+                logger.info(
+                    "Manager takeover detected before automated reply; skipping LLM: "
                     "batch_ref=%s",
                     batch_ref,
                 )
@@ -1787,6 +1865,18 @@ async def _process_batch_inner(
                         batch_ref,
                         LLM_TIMEOUT,
                     )
+                    if await _manager_takeover_active(
+                        redis, db, queue_token=queue_token, conv=conv
+                    ):
+                        conv.escalation_status = "manual_takeover"
+                        conv.metadata_ = clear_assistant_proposal(conv.metadata_)
+                        await db.commit()
+                        logger.info(
+                            "Manager takeover detected during LLM timeout; "
+                            "skipping timeout fallback: batch_ref=%s",
+                            batch_ref,
+                        )
+                        return
                     # R3-11: Send timeout fallback in client's language
                     timeout_msg = (
                         "عذراً، أنا مشغول حالياً. يرجى إعادة المحاولة بعد دقيقة."
@@ -1817,6 +1907,19 @@ async def _process_batch_inner(
                     )
                     return
                 latency_trace.finish_phase("llm", llm_started)
+
+                if await _manager_takeover_active(
+                    redis, db, queue_token=queue_token, conv=conv
+                ):
+                    conv.escalation_status = "manual_takeover"
+                    conv.metadata_ = clear_assistant_proposal(conv.metadata_)
+                    await db.commit()
+                    logger.info(
+                        "Manager takeover detected during LLM generation; "
+                        "aborting outbound reply: batch_ref=%s",
+                        batch_ref,
+                    )
+                    return
 
                 if _reply_may_be_superseded(
                     llm_response, len(raw_messages)
@@ -1929,6 +2032,9 @@ async def _process_batch_inner(
                             source_message_id=source_message_id,
                             follow_up_suppressed=runtime_follow_up_suppressed,
                             media_items=llm_response.deferred_product_media,
+                            redis=redis,
+                            queue_token=queue_token,
+                            conv=conv,
                         )
                     finally:
                         latency_trace.finish_phase("deferred_media", media_started)

@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import time
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -31,10 +32,15 @@ DEFAULT_INBOUND_BATCH_DEFER_SECONDS = 5
 # conversation before Noor does. Default 0 keeps Noor instant.
 FIRST_TURN_MANAGER_GRACE_SECONDS_KEY = "first_turn_manager_grace_seconds"
 FIRST_TURN_GRACE_WEEKDAYS_ONLY_KEY = "first_turn_grace_weekdays_only"
+FIRST_TURN_GRACE_WORKING_HOURS_ONLY_KEY = "first_turn_grace_working_hours_only"
 FIRST_TURN_MANAGER_GRACE_MAX_SECONDS = 1800
 # The grace marker outlives the deferred job by this margin so a client message
 # arriving while the grace job is still running does not open a second window.
 FIRST_TURN_GRACE_MARKER_BUFFER_SECONDS = 120
+# Treejar sales team & Dubai showroom hours: Mon-Sat 09:00-18:00 Asia/Dubai.
+TREEJAR_WORKING_HOURS_START_HOUR = 9
+TREEJAR_WORKING_HOURS_END_HOUR = 18
+TREEJAR_CLOSED_WEEKDAYS = frozenset({6})
 _UAE_TZ = ZoneInfo("Asia/Dubai")
 _FALSE_VALUES = frozenset({"false", "0", "no", "off"})
 
@@ -49,6 +55,27 @@ def _parse_grace_seconds(raw: str) -> int:
 
 def _parse_weekdays_only(raw: str) -> bool:
     return str(raw).strip().lower() not in _FALSE_VALUES
+
+
+def is_treejar_working_hours(
+    now_utc: datetime | None = None,
+    *,
+    weekdays_only: bool = False,
+) -> bool:
+    """Return whether *now_utc* falls within Treejar's Dubai sales team hours.
+
+    By default, Treejar's sales team and showroom operate Monday-Saturday
+    09:00-18:00 Asia/Dubai (Sunday closed). When ``weekdays_only`` is True,
+    Saturday is also treated as off-hours.
+    """
+    now = now_utc or datetime.now(UTC)
+    local = now.astimezone(_UAE_TZ)
+    closed_days = {5, 6} if weekdays_only else TREEJAR_CLOSED_WEEKDAYS
+    if local.weekday() in closed_days:
+        return False
+    return (
+        TREEJAR_WORKING_HOURS_START_HOUR <= local.hour < TREEJAR_WORKING_HOURS_END_HOUR
+    )
 
 
 async def _phone_has_prior_messages(db: Any, phone: str) -> bool:
@@ -75,9 +102,10 @@ async def resolve_inbound_batch_defer_seconds(
 ) -> int:
     """Return the batch defer for a client message from *phone*.
 
-    Turn 1 of a brand-new conversation on an eligible UAE day waits for the
-    configured manager grace; every other case uses the standard window. Any
-    failure falls back to the standard window so inbound is never blocked.
+    Turn 1 of a brand-new conversation during eligible UAE working hours waits
+    for the configured manager grace; every other case uses the standard
+    window. Any failure falls back to the standard window so inbound is never
+    blocked.
     """
     default = DEFAULT_INBOUND_BATCH_DEFER_SECONDS
     try:
@@ -86,13 +114,18 @@ async def resolve_inbound_batch_defer_seconds(
         )
         if grace <= 0:
             return default
-        weekdays_only = _parse_weekdays_only(
-            await get_system_config(db, FIRST_TURN_GRACE_WEEKDAYS_ONLY_KEY, "true")
+        working_hours_only = _parse_weekdays_only(
+            await get_system_config(db, FIRST_TURN_GRACE_WORKING_HOURS_ONLY_KEY, "true")
         )
-        if weekdays_only:
-            now = now_utc or datetime.now(UTC)
-            if now.astimezone(_UAE_TZ).weekday() in {5, 6}:
+        weekdays_only = _parse_weekdays_only(
+            await get_system_config(db, FIRST_TURN_GRACE_WEEKDAYS_ONLY_KEY, "false")
+        )
+        now = now_utc or datetime.now(UTC)
+        if working_hours_only:
+            if not is_treejar_working_hours(now, weekdays_only=weekdays_only):
                 return default
+        elif weekdays_only and now.astimezone(_UAE_TZ).weekday() in {5, 6}:
+            return default
         if await _phone_has_prior_messages(db, phone):
             return default
         return max(default, grace)
@@ -168,6 +201,11 @@ def _queued_customer_receipt(raw: str | bytes) -> tuple[bool, float | None]:
     if isinstance(value, bool) or not isinstance(value, int | float):
         return is_manager, None
     return is_manager, float(value)
+
+
+def has_queued_manager_message(queued: Sequence[str | bytes]) -> bool:
+    """Return True when any queued inbound payload belongs to a human manager."""
+    return any(_queued_customer_receipt(raw)[0] for raw in queued)
 
 
 def inbound_quiet_wait_seconds(
