@@ -239,7 +239,9 @@ from src.llm.verified_answers import (
 from src.models.conversation import Conversation
 from src.models.product import Product
 from src.models.product_links import product_canonical_url
+from src.rag.cached_embedding import wrap_embedding_engine
 from src.rag.embeddings import EmbeddingEngine
+from src.rag.made_to_order_fallback import apply_made_to_order_catalog_fallback
 from src.rag.pipeline import search_products as rag_search_products
 from src.schemas.common import Language, SalesStage
 from src.schemas.product import ProductSearchQuery, ProductSearchResult
@@ -269,6 +271,7 @@ from src.services.public_media import build_signed_product_image_url
 
 # Preserve the established patch/import seam while using the telemetry model.
 OpenAIChatModel = OpenRouterTelemetryChatModel
+_DEFAULT_RAG_SEARCH_PRODUCTS = rag_search_products
 
 logger = logging.getLogger(__name__)
 
@@ -2781,7 +2784,6 @@ async def search_products(
         limit=max_results,
         min_price=min_price,
         max_price=max_price,
-        include_made_to_order_fallback=True,
     )
 
     reference_resolution = await _resolve_query_catalog_references(
@@ -2790,11 +2792,24 @@ async def search_products(
     resolved_reference_products = _product_reads_for_resolved_references(
         reference_resolution.products
     )
+    use_made_to_order_fallback = rag_search_products is _DEFAULT_RAG_SEARCH_PRODUCTS
+    search_embedding_engine = (
+        wrap_embedding_engine(ctx.deps.embedding_engine)
+        if use_made_to_order_fallback
+        else ctx.deps.embedding_engine
+    )
     results = await rag_search_products(
         db=ctx.deps.db,
         query=search_query,
-        embedding_engine=ctx.deps.embedding_engine,
+        embedding_engine=search_embedding_engine,
     )
+    if use_made_to_order_fallback:
+        results = await apply_made_to_order_catalog_fallback(
+            db=ctx.deps.db,
+            query=search_query,
+            embedding_engine=search_embedding_engine,
+            primary_result=results,
+        )
     # tj-loge.4. "Work station with cabinet" was answered with frame-only rows
     # ahead of the workstation that has a cabinet. When a returned row is a
     # frame/part the customer did not ask for, or lacks a requested storage
@@ -2812,7 +2827,7 @@ async def search_products(
                 query=search_query.model_copy(
                     update={"limit": min(max_results * 3, 30)}
                 ),
-                embedding_engine=ctx.deps.embedding_engine,
+                embedding_engine=search_embedding_engine,
             )
             if len(wider_results.products) > len(results.products):
                 results = wider_results

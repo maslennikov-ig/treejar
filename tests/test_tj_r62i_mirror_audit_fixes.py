@@ -30,7 +30,6 @@ import httpx
 import pytest
 from pydantic_ai import ToolReturn
 
-import src.llm.engine as engine_module
 from src.integrations.vision.media_reader import (
     CSV_MIME,
     DOCX_MIME,
@@ -44,7 +43,7 @@ from src.llm.engine import _MADE_TO_ORDER_STOCK_LINE, SalesDeps, search_products
 from src.llm.escalation_policy import b2b_handoff_decision, wholesale_quantity
 from src.models.conversation import Conversation
 from src.models.message import Message
-from src.rag.pipeline import search_products as rag_pipeline_search_products
+from src.rag.made_to_order_fallback import search_products_with_made_to_order_fallback
 from src.schemas.product import ProductSearchQuery
 from src.schemas.webhook import WazzupIncomingMessage, WazzupMedia
 from src.services import chat, inbound_media
@@ -383,12 +382,11 @@ async def test_rag_search_products_falls_back_to_zero_stock_sofas_without_extra_
         db.execute.side_effect = [first_res, second_res]
         embedder.embed_async.reset_mock()
 
-        result = await rag_pipeline_search_products(
+        result = await search_products_with_made_to_order_fallback(
             db,
             ProductSearchQuery(
                 query=sofa_query,
                 in_stock_only=True,
-                include_made_to_order_fallback=True,
                 limit=3,
             ),
             embedder,
@@ -430,12 +428,11 @@ async def test_rag_search_products_skips_fallback_when_in_stock_matches_or_item_
     embedder.embed_async = AsyncMock(return_value=[0.1, 0.2, 0.3])
 
     # 1. Ordinary in-stock match does not even run the second SQL query.
-    exact_res = await rag_pipeline_search_products(
+    exact_res = await search_products_with_made_to_order_fallback(
         db,
         ProductSearchQuery(
             query="office chair",
             in_stock_only=True,
-            include_made_to_order_fallback=True,
             limit=3,
         ),
         embedder,
@@ -446,12 +443,11 @@ async def test_rag_search_products_skips_fallback_when_in_stock_matches_or_item_
     # 2. Non-existent product ("water dispenser") does not adopt unrelated zero-stock rows.
     db.execute.reset_mock()
     db.execute.side_effect = [primary_res, fallback_res]
-    missing_res = await rag_pipeline_search_products(
+    missing_res = await search_products_with_made_to_order_fallback(
         db,
         ProductSearchQuery(
             query="water dispenser",
             in_stock_only=True,
-            include_made_to_order_fallback=True,
             limit=3,
         ),
         embedder,
@@ -465,9 +461,17 @@ class _DummyCtx:
 
 
 @pytest.mark.asyncio
-async def test_engine_search_products_marks_made_to_order_sofas_without_ready_stock_claims(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_engine_search_products_marks_made_to_order_sofas_without_ready_stock_claims() -> (
+    None
+):
+    in_stock_reception = _catalog_orm_row(
+        "OF-HAI-Luma-Reception-RJ 9788-8-1800-Walnut",
+        "Reception desk 1800 SKYLAND LUMA 9788-8",
+        category="Desks & Tables",
+        stock=2,
+        price=1450.0,
+        zoho_item_id="zoho-rec-1",
+    )
     sofa_row = _catalog_orm_row(
         "SOFA-COSIMA",
         "Cosima Office Sofa",
@@ -476,25 +480,28 @@ async def test_engine_search_products_marks_made_to_order_sofas_without_ready_st
         price=2000.0,
         zoho_item_id=None,
     )
-    captured_queries: list[ProductSearchQuery] = []
-
-    async def _fake_rag(
-        db: Any, query: ProductSearchQuery, embedding_engine: Any
-    ) -> Any:
-        captured_queries.append(query)
-        from src.schemas.product import ProductRead, ProductSearchResult
-
-        return ProductSearchResult(
-            products=[ProductRead.model_validate(sofa_row)],
-            query_interpreted=query.query,
-            total_found=1,
-        )
-
-    monkeypatch.setattr(engine_module, "rag_search_products", _fake_rag)
-    db = AsyncMock()
     empty_res = MagicMock()
     empty_res.scalars.return_value.all.return_value = []
-    db.execute = AsyncMock(return_value=empty_res)
+    primary_res = MagicMock()
+    primary_res.scalars.return_value.all.return_value = [in_stock_reception]
+    fallback_res = MagicMock()
+    fallback_res.scalars.return_value.all.return_value = [sofa_row]
+
+    seen_predicates: list[str] = []
+
+    async def _execute(stmt: Any, *_args: Any, **_kwargs: Any) -> Any:
+        sql = str(stmt)
+        seen_predicates.append(sql)
+        if "products.stock >" in sql:
+            return primary_res
+        if "products.stock <=" in sql:
+            return fallback_res
+        return empty_res
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=_execute)
+    embedder = AsyncMock()
+    embedder.embed_async = AsyncMock(return_value=[0.1, 0.2, 0.3])
     zoho = AsyncMock()
     zoho.get_stock_bulk = AsyncMock(return_value=[])
 
@@ -508,7 +515,7 @@ async def test_engine_search_products_marks_made_to_order_sofas_without_ready_st
                 sales_stage="discovery",
                 language="en",
             ),
-            embedding_engine=AsyncMock(),
+            embedding_engine=embedder,
             zoho_inventory=zoho,
             zoho_crm=AsyncMock(),
             messaging_client=MagicMock(),
@@ -518,10 +525,10 @@ async def test_engine_search_products_marks_made_to_order_sofas_without_ready_st
         )
     )
 
-    result = await search_products(ctx, "Cosima Office Sofa")  # type: ignore[arg-type]
-    assert (
-        captured_queries and captured_queries[0].include_made_to_order_fallback is True
-    )
+    result = await search_products(ctx, "3-seater Cosima Office Sofa")  # type: ignore[arg-type]
+    assert embedder.embed_async.await_count == 1
+    assert any("products.stock >" in sql for sql in seen_predicates)
+    assert any("products.stock <=" in sql for sql in seen_predicates)
     assert isinstance(result, ToolReturn)
     text = str(result.return_value)
     assert "Name: Cosima Office Sofa" in text
