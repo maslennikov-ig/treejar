@@ -30,6 +30,26 @@ from src.schemas.common import EscalationType
             "explicit_human_request",
         ),
         (
+            "आप लिख के मत भेजिएगा, हमको पढ़ने लिखना नहीं आता है, वॉइस चलाना आता है, बस होइये",
+            EscalationType.HUMAN_REQUESTED,
+            "explicit_human_request",
+        ),
+        (
+            "I cannot read or write, please send a voice note or call me.",
+            EscalationType.HUMAN_REQUESTED,
+            "explicit_human_request",
+        ),
+        (
+            "Please call me on the phone, I cannot read text messages.",
+            EscalationType.HUMAN_REQUESTED,
+            "explicit_human_request",
+        ),
+        (
+            "لا أستطيع القراءة أرسل رسالة صوتية أو اتصل بي",
+            EscalationType.HUMAN_REQUESTED,
+            "explicit_human_request",
+        ),
+        (
             "My order arrived damaged.",
             EscalationType.GENERAL,
             "critical_customer_incident",

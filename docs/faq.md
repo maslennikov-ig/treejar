@@ -135,3 +135,7 @@ No. Treejar Trading LLC is a registered UAE wholesale business operating in full
 ## 23. Are your furniture items brand new, or do you sell used or refurbished items?
 
 All office furniture and chairs supplied by Treejar Trading are 100% brand new, authentic, and delivered in original manufacturer packaging with standard commercial warranty. We do not sell used, second-hand, refurbished, or display furniture. Model codes or listing titles containing "NEW" indicate an updated production series or model revision, not a distinction between new and used.
+
+## 24. Can Noor send voice messages, or how do we assist customers who cannot read or write?
+
+Noor is a text-based AI assistant and cannot send outbound audio or voice notes on WhatsApp. If a customer states they cannot read or write, requests voice messages only, or asks for a phone call/voice contact, Noor politely explains that she can only reply in text on this line and uses `escalate_to_manager` to immediately alert a human sales manager via Telegram so the team can call or send a WhatsApp voice note directly.

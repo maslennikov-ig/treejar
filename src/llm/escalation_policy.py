@@ -58,6 +58,20 @@ _ARABIC_HUMAN_RE = re.compile(
 _ARABIC_PRODUCT_MANAGER_RE = re.compile(
     r"(?:كرسي|مكتب|طاولة|محطة\s+عمل)\s+(?:ال)?مدير",
 )
+_VOICE_OR_ACCESSIBILITY_RE = re.compile(
+    r"\b(?:cannot|can't|cant|unable\s+to|don't\s+know\s+how\s+to)\s+(?:read|write)\b"
+    r"|\b(?:illiterate|cannot\s+read)\b"
+    r"|\b(?:voice\s+(?:notes?|messages?)|audio\s+notes?)\s+(?:only|please)\b"
+    r"|\b(?:only|send)\s+(?:voice\s+(?:notes?|messages?)|audio)\b"
+    r"|\b(?:call|phone)\s+(?:me\s+)?on\s+(?:the\s+)?phone\b"
+    r"|पढ़ने\s*(?:लिखना)?\s*नहीं\s*आता|पढ़ना\s*नहीं\s*आता|लिखना\s*नहीं\s*आता|अनपढ़"
+    r"|वॉइस\s*(?:ही|सिर्फ़|सिर्फ|चलाना|भेज|नोट)"
+    r"|फोन\s*(?:करो|करें|कीजिए|पर)|कॉल\s*(?:करो|करें|कीजिए)"
+    r"|لا\s+[أا]ستطيع\s+القر[اأ]ءة|ما\s+[أا]عرف\s+[أا]?قر[اأ]"
+    r"|رسال[ةه]\s+صوتي[ةه]|تسجيل\s+صوتي"
+    r"|اتصل(?:وا)?\s+(?:بي|معي)\s+(?:هاتفيا|على\s+الهاتف|تلفون|مكالم[ةه])",
+    re.IGNORECASE,
+)
 _PRODUCT_MANAGER_RE = re.compile(
     r"\bmanager(?:'s)?\s+(?:desk|table|chair|office|workstation)\b",
     re.IGNORECASE,
@@ -154,11 +168,12 @@ def critical_escalation_decision(
         or _DIRECT_HUMAN_REQUEST_RE.search(without_product_manager)
         or _CALLBACK_RE.search(without_product_manager)
         or _ARABIC_HUMAN_RE.search(without_arabic_product_manager)
+        or _VOICE_OR_ACCESSIBILITY_RE.search(text)
     ):
         return CriticalEscalationDecision(
             allowed=True,
             escalation_type=EscalationType.HUMAN_REQUESTED,
-            reason="Critical escalation: the customer explicitly requested a human response.",
+            reason="Critical escalation: the customer explicitly requested a human response, phone call, or voice/audio contact due to inability to read text.",
             trigger="explicit_human_request",
         )
 
