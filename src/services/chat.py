@@ -52,7 +52,10 @@ from src.services.customer_identity import (
     extract_inbound_source_attribution,
 )
 from src.services.customer_language import is_arabic_customer_language
-from src.services.escalation_state import should_send_escalation_fallback
+from src.services.escalation_state import (
+    should_pause_bot_for_escalation,
+    should_send_escalation_fallback,
+)
 from src.services.inbound_batch import (
     WAZZUP_SYSTEM_AUTO_REPLY_SUBSTRING,
     has_queued_manager_message,
@@ -462,7 +465,35 @@ async def _manager_takeover_active(
     return False
 
 
-def _reply_may_be_superseded(llm_response: Any, message_count: int) -> bool:
+_RUNTIME_MANAGER_ALERT_METADATA_KEYS = (
+    "wholesale_handoff_notified_at",
+    "non_sales_team_notice",
+    "team_followup_notice",
+    "team_followup_quote_notice",
+)
+
+
+def _snapshot_manager_alert_state(conv: Any) -> tuple[str, dict[str, Any]]:
+    status = str(getattr(conv, "escalation_status", "") or "")
+    metadata = getattr(conv, "metadata_", None)
+    alert_markers = (
+        {
+            key: metadata[key]
+            for key in _RUNTIME_MANAGER_ALERT_METADATA_KEYS
+            if key in metadata
+        }
+        if isinstance(metadata, Mapping)
+        else {}
+    )
+    return status, alert_markers
+
+
+def _reply_may_be_superseded(
+    llm_response: Any,
+    message_count: int,
+    *,
+    escalation_mutated: bool = False,
+) -> bool:
     """A generated reply that newer messages may replace instead of following.
 
     Two customer messages sent seconds apart ("of course", then "4") used to
@@ -473,7 +504,7 @@ def _reply_may_be_superseded(llm_response: Any, message_count: int) -> bool:
     are answered together with the new ones in one reply.
     """
 
-    if message_count >= MAX_SUPERSEDED_BATCH_MESSAGES:
+    if escalation_mutated or message_count >= MAX_SUPERSEDED_BATCH_MESSAGES:
         return False
     traces = getattr(llm_response, "tool_traces", ()) or ()
     return all(
@@ -1884,6 +1915,7 @@ async def _process_batch_inner(
                 llm_started = latency_trace.start_phase()
                 runtime_received_at = datetime.now(UTC)
                 runtime_baseline_inventory = snapshot_runtime_inventory(conv)
+                baseline_alert_state = _snapshot_manager_alert_state(conv)
                 try:
                     typing_task = _start_typing_refresh(wazzup_provider, chat_id)
                     await asyncio.sleep(0)
@@ -1968,8 +2000,15 @@ async def _process_batch_inner(
                     )
                     return
 
+                escalation_mutated = _snapshot_manager_alert_state(
+                    conv
+                ) != baseline_alert_state or should_pause_bot_for_escalation(
+                    conv.escalation_status
+                )
                 if _reply_may_be_superseded(
-                    llm_response, len(raw_messages)
+                    llm_response,
+                    len(raw_messages),
+                    escalation_mutated=escalation_mutated,
                 ) and await _newer_customer_messages_waiting(redis, queue_token):
                     # Put this batch back in front of the newer messages so the
                     # next claim answers all of them in one reply. Its messages
@@ -2056,6 +2095,13 @@ async def _process_batch_inner(
                     bot_reply_sent = True
                     latency_trace.mark_text_delivered()
                     await db.commit()
+                    if should_send_escalation_fallback(conv.escalation_status):
+                        with suppress(Exception):
+                            await redis.setex(
+                                _build_escalation_repeat_key(conv.id),
+                                _ESCALATION_REPEAT_SUPPRESSION_SECONDS,
+                                "1",
+                            )
                 finally:
                     latency_trace.finish_phase("outbound_text", outbound_started)
 

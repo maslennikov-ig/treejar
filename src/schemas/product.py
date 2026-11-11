@@ -32,6 +32,7 @@ class ProductSearchQuery(BaseModel):
     max_price: float | None = None
     colors: list[str] | None = None
     in_stock_only: bool = True
+    include_made_to_order_fallback: bool = False
     limit: int = Field(default=5, ge=1, le=50)
 
 

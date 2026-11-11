@@ -686,6 +686,29 @@ _ZOHO_STOCK_MISSING_LINE = (
     "availability only if the customer asks, and then say it is checked in our "
     "warehouse system before the quotation."
 )
+_MADE_TO_ORDER_STOCK_LINE = (
+    "Availability: made-to-order / non-stock catalog item (0 ready warehouse "
+    "stock). Present this option with its verified catalog price and details, "
+    "state clearly that it is made to order rather than ready warehouse stock "
+    "(do not promise 2-3 business day delivery or immediate Jebel Ali pickup), "
+    "and note that lead time and finish options are confirmed with our manager."
+)
+_MADE_TO_ORDER_CATEGORIES = frozenset({"sofas", "custom furniture"})
+_MADE_TO_ORDER_SKU_PREFIXES = ("SOFA-", "REP-", "EXE-", "MTD-", "CAB-")
+
+
+def _is_made_to_order_catalog_item(product: Any) -> bool:
+    if int(getattr(product, "stock", 0) or 0) > 0:
+        return False
+    if getattr(product, "zoho_item_id", None):
+        return False
+    category = str(getattr(product, "category", "") or "").strip().casefold()
+    if category in _MADE_TO_ORDER_CATEGORIES:
+        return True
+    sku_upper = str(getattr(product, "sku", "") or "").strip().upper()
+    return sku_upper.startswith(_MADE_TO_ORDER_SKU_PREFIXES)
+
+
 # The figure is the actual Zoho stock. The customer hears it as a plain count:
 # where it comes from (catalog, Zoho, "confirmed") is not theirs to care about,
 # and a customer who wants more is told how many there are, never that the rest
@@ -2758,6 +2781,7 @@ async def search_products(
         limit=max_results,
         min_price=min_price,
         max_price=max_price,
+        include_made_to_order_fallback=True,
     )
 
     reference_resolution = await _resolve_query_catalog_references(
@@ -2990,12 +3014,24 @@ async def search_products(
                 as_of=datetime.datetime.now(datetime.UTC),
             )
         ctx.deps.stock_snapshots[sku_key] = stock_snapshot
-        stock_line = (
-            f"Current stock: {stock_snapshot.available} (Zoho-confirmed)"
-            + _STOCK_SHORTFALL_NOTE
-            if stock_snapshot.provenance == "authoritative"
-            else _ZOHO_STOCK_MISSING_LINE
-        )
+        if stock_snapshot.provenance == "authoritative":
+            if stock_snapshot.available == 0:
+                stock_line = (
+                    "Current stock: 0 (Zoho-confirmed). 0 ready units in the "
+                    "warehouse right now: do not promise 2-3 business day "
+                    "delivery or immediate Jebel Ali pickup; state that "
+                    "restock or made-to-order lead time is confirmed with our "
+                    "manager."
+                )
+            else:
+                stock_line = (
+                    f"Current stock: {stock_snapshot.available} (Zoho-confirmed)"
+                    + _STOCK_SHORTFALL_NOTE
+                )
+        elif _is_made_to_order_catalog_item(r):
+            stock_line = _MADE_TO_ORDER_STOCK_LINE
+        else:
+            stock_line = _ZOHO_STOCK_MISSING_LINE
         catalog_price = _valid_catalog_price(r)
         discounted_price: float | None = None
         if catalog_price is not None:

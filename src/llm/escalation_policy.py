@@ -340,9 +340,25 @@ def _follows_a_model_name(text: str, start: int) -> bool:
     return len(word) >= 2 and word.isascii() and word.isalpha() and word.isupper()
 
 
+_ALTERNATIVE_QTY_CONNECTOR_RE = re.compile(
+    r"\b(?:or|versus|vs\.?)\b|(?:\s/\s)|(?:أو|او)",
+    re.IGNORECASE,
+)
+
+
+def _are_alternative_quantity_spans(between: str) -> bool:
+    """True when two adjacent quantity mentions name mutually exclusive options."""
+    if any(sep in between for sep in ("\n", ";", "|")) or ". " in between:
+        return False
+    if len(between) > 40 or re.search(r"\b(?:and|plus|with)\b|[+&]", between, re.I):
+        return False
+    return bool(_ALTERNATIVE_QTY_CONNECTOR_RE.search(between))
+
+
 def _largest_bulk_quantity(text: str) -> int:
     largest = 0
-    total_items = 0
+    additive_groups: list[int] = []
+    prev_end: int | None = None
     for match in _WHOLESALE_QUANTITY_RE.finditer(text):
         if _follows_a_model_name(text, match.start()):
             continue
@@ -351,7 +367,16 @@ def _largest_bulk_quantity(text: str) -> int:
         except ValueError:
             continue
         largest = max(largest, value)
-        total_items += value
+        if (
+            prev_end is not None
+            and additive_groups
+            and _are_alternative_quantity_spans(text[prev_end : match.start()])
+        ):
+            additive_groups[-1] = max(additive_groups[-1], value)
+        else:
+            additive_groups.append(value)
+        prev_end = match.end()
+    total_items = sum(additive_groups)
     for match in _QUANTITY_PREFIX_RE.finditer(text):
         raw = match.group("count") or match.group("ar_count") or ""
         try:

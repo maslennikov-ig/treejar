@@ -1250,12 +1250,19 @@ def query_names_specific_item(query: str) -> bool:
     return bool(named) or any(char.isdigit() for char in without_amounts)
 
 
+_SOFA_EQUIVALENT_TERMS = frozenset(
+    {"sofa", "sofas", "couch", "couches", "settee", "settees", "loveseat", "loveseats"}
+)
+
+
 def _term_variants(term: str) -> set[str]:
     variants = {term}
     if term.endswith("s") and len(term) > 3:
         variants.add(term[:-1])
     else:
         variants.add(f"{term}s")
+    if term in _SOFA_EQUIVALENT_TERMS:
+        variants.update(_SOFA_EQUIVALENT_TERMS)
     return variants
 
 

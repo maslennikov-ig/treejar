@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from sqlalchemy import select
@@ -8,12 +9,45 @@ from sqlalchemy.dialects.postgresql import insert as pg_upsert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.integrations.vector.base import VectorStore
+from src.llm.verified_answers import classify_product_match, query_names_specific_item
 from src.models.knowledge_base import KnowledgeBase
 from src.models.product import Product
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.product import ProductRead, ProductSearchQuery, ProductSearchResult
 
 logger = logging.getLogger(__name__)
+
+_SOFA_REQUEST_RE = re.compile(
+    r"\b(?:sofas?|couch(?:es)?|settees?|loveseats?|poufs?|ottomans?)\b"
+    r"|(?:كنب|كنبة|أريكة|اريكة|صوفا)",
+    re.IGNORECASE,
+)
+_CUSTOM_CATALOG_REQUEST_RE = re.compile(
+    r"\b(?:custom(?:i[sz]ed)?|made[\s-]to[\s-](?:order|measure)|bespoke|"
+    r"exe-[a-z]|mtd-[a-z]|cab-[a-z]|rep-[a-z])\b"
+    r"|(?:تفصيل|حسب\s+الطلب|مقاس(?:ات)?\s+خاص)",
+    re.IGNORECASE,
+)
+_PRODUCT_MATCH_RANK: dict[str, int] = {
+    "missing": 0,
+    "nearby": 1,
+    "generic": 2,
+    "exact": 3,
+}
+
+
+def _product_candidate_text(product: ProductRead) -> str:
+    return (
+        f"{product.name_en}\n{product.description_en or ''}\n{product.category or ''}"
+    )
+
+
+def _is_sofa_catalog_product(product: ProductRead) -> bool:
+    if (product.category or "").strip().casefold() == "sofas":
+        return True
+    return bool(
+        re.search(r"\bsofas?\b", f"{product.name_en} {product.sku}", re.IGNORECASE)
+    )
 
 
 class PgVectorStore(VectorStore):
@@ -141,6 +175,78 @@ async def search_products(
 
     # 6. Map to ProductRead schema models
     product_responses = [ProductRead.model_validate(p) for p in products]
+
+    # 7. Made-to-order / zero-stock catalog fallback (tj-r62i.12):
+    # Entire catalog categories such as Sofas (SOFA-*, priced 875-2750 AED) and
+    # Custom Furniture (EXE-*, MTD-*, CAB-*, REP-*) carry stock=0 in local DB.
+    # Reuse the single query_vector to inspect stock<=0 rows only when in-stock
+    # results missed the requested product or sofa family.
+    if query.in_stock_only and query.include_made_to_order_fallback:
+        primary_match = classify_product_match(
+            query.query,
+            [_product_candidate_text(p) for p in product_responses],
+            candidate_skus=[p.sku for p in product_responses],
+        )
+        primary_rank = _PRODUCT_MATCH_RANK[primary_match]
+        sofa_requested = bool(_SOFA_REQUEST_RE.search(query.query))
+        primary_has_sofa = any(_is_sofa_catalog_product(p) for p in product_responses)
+        custom_requested = bool(_CUSTOM_CATALOG_REQUEST_RE.search(query.query))
+        should_check_fallback = (not product_responses) or (
+            primary_rank <= _PRODUCT_MATCH_RANK["nearby"]
+            and (
+                primary_match == "missing"
+                or (sofa_requested and not primary_has_sofa)
+                or custom_requested
+                or query_names_specific_item(query.query)
+            )
+        )
+        if should_check_fallback:
+            fallback_stmt = select(Product).where(
+                Product.is_active.is_(True),
+                Product.embedding.is_not(None),
+                Product.stock <= 0,
+            )
+            if query.category:
+                fallback_stmt = fallback_stmt.where(Product.category == query.category)
+            if query.min_price is not None:
+                fallback_stmt = fallback_stmt.where(Product.price >= query.min_price)
+            elif not custom_requested:
+                # Exclude unpriced (0 AED) Custom Furniture placeholders unless
+                # the query explicitly asks for custom/made-to-order or names them.
+                fallback_stmt = fallback_stmt.where(Product.price > 0)
+            if query.max_price is not None:
+                fallback_stmt = fallback_stmt.where(Product.price <= query.max_price)
+            fallback_stmt = fallback_stmt.order_by(
+                Product.embedding.cosine_distance(query_vector)
+            ).limit(query.limit)
+            fallback_result = await db.execute(fallback_stmt)
+            fallback_products = fallback_result.scalars().all()
+            fallback_responses = [
+                ProductRead.model_validate(p) for p in fallback_products
+            ]
+            if fallback_responses:
+                fallback_match = classify_product_match(
+                    query.query,
+                    [_product_candidate_text(p) for p in fallback_responses],
+                    candidate_skus=[p.sku for p in fallback_responses],
+                )
+                fallback_rank = _PRODUCT_MATCH_RANK[fallback_match]
+                fallback_has_sofa = any(
+                    _is_sofa_catalog_product(p) for p in fallback_responses
+                )
+                if (
+                    fallback_rank > primary_rank
+                    or (sofa_requested and fallback_has_sofa and not primary_has_sofa)
+                    or (
+                        not product_responses
+                        and (
+                            fallback_rank > 0
+                            or query.category is not None
+                            or custom_requested
+                        )
+                    )
+                ):
+                    product_responses = fallback_responses
 
     # We can interpret the query somehow if we wanted,
     # but for now we just return the raw text
