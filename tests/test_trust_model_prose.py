@@ -151,3 +151,31 @@ async def test_trust_model_prose_skips_regex_non_sales_intent() -> None:
 
     assert result is None
     notify.assert_not_awaited()
+
+
+def test_turn_trusts_model_prose_safe_when_runtime_is_missing_or_mock() -> None:
+    turn = SimpleNamespace(
+        model_runtime=None,
+        prose_guards_mode="auto",
+    )
+    assert (
+        message_processor._Turn.trusts_model_prose(
+            turn,
+            "anthropic/claude-sonnet-5.5",  # type: ignore[arg-type]
+        )
+        is True
+    )
+    assert (
+        message_processor._Turn.trusts_model_prose(
+            turn,
+            "openai/gpt-6.1-sol",  # type: ignore[arg-type]
+        )
+        is False
+    )
+    assert message_processor._Turn.trusts_model_prose(turn, None) is False  # type: ignore[arg-type]
+
+    turn_mock = SimpleNamespace(
+        model_runtime=SimpleNamespace(),
+        prose_guards_mode="auto",
+    )
+    assert message_processor._Turn.trusts_model_prose(turn_mock, None) is False  # type: ignore[arg-type]

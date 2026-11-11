@@ -131,3 +131,7 @@ No. Treejar Trading specializes exclusively in commercial office furniture (work
 ## 22. Can you remove the 5% VAT or sell without a tax invoice?
 
 No. Treejar Trading LLC is a registered UAE wholesale business operating in full compliance with UAE tax regulations. All catalog sales are subject to statutory 5% UAE VAT, and an official tax invoice is issued with every order. VAT cannot be waived, removed, or bypassed under any circumstances.
+
+## 23. Are your furniture items brand new, or do you sell used or refurbished items?
+
+All office furniture and chairs supplied by Treejar Trading are 100% brand new, authentic, and delivered in original manufacturer packaging with standard commercial warranty. We do not sell used, second-hand, refurbished, or display furniture. Model codes or listing titles containing "NEW" indicate an updated production series or model revision, not a distinction between new and used.
