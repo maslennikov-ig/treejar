@@ -122,6 +122,26 @@ class ReplyPolicyState:
     # are quote-detail words, but here they collect the manager's brief, not a
     # quotation the customer has not asked for.
     handoff_brief_allowed: bool = False
+    # tj-r62i.8. Strong conversational models (e.g. Claude Sonnet 5.5) write
+    # coherent openings, transitions, and boundaries on their own; skipping
+    # regex prose-splicing rewrites prevents broken greeting/question splices
+    # while keeping factual price/stock grounding intact.
+    trust_model_prose: bool = False
+
+
+def resolve_trust_model_prose(
+    mode: str | None,
+    model_name: str | None = None,
+) -> bool:
+    """Resolve whether post-generation regex prose rewrites are bypassed."""
+
+    normalized_mode = str(mode or "").strip().casefold()
+    if normalized_mode in {"trust_model", "true", "1", "off"}:
+        return True
+    if normalized_mode in {"legacy", "false", "0"}:
+        return False
+    normalized_model = str(model_name or "").strip().casefold()
+    return normalized_model.startswith("anthropic/")
 
 
 @dataclass(frozen=True, slots=True)
@@ -761,98 +781,78 @@ def render_reply(
 
     raised_flags: list[ReplyGuardFlag] = []
     permitted_asks = _permitted_asks_for_policy_state(state)
-    rendered, flags = _render_declared_guard(
-        text,
-        guard_name="closed_question",
-        guard=partial(
-            repair_closed_questions,
-            language=state.language,
-            customer_name=_customer_name_for_turn(state),
-            company=state.company,
-            customer_type=state.customer_type,
-            delivery_address=state.delivery_address,
-        ),
-    )
-    raised_flags.extend(flags)
-    rendered, flags = _render_declared_guard(
-        rendered,
-        guard_name="premature_quote_details",
-        guard=partial(
-            guard_premature_quote_detail_collection,
-            language=state.language,
-            quote_consent_granted=(
-                AskKind.QUOTE_DETAILS in permitted_asks or state.handoff_brief_allowed
-            ),
-        ),
-    )
-    raised_flags.extend(flags)
-    if rendered.strip():
-        # Before the opening guard, not after. Both orders enforce one question
-        # from the model; only this one lets the name ask survive. The guard
-        # below folds the canonical name question onto the end of the reply,
-        # and this collapse keeps the first question of a line and drops every
-        # later one -- so with the old order it deleted, every first turn, the
-        # question the owner decided on 2026-08-10 that we owe. Measured at
-        # rule 3 = 0.20/2 across two rounds, 19 openings of 20. The one-question
-        # bound is unchanged and is the directive's own: at most one question,
-        # counting a folded pair as one, and the name ask is that pair's other
-        # half. Only first turns move; on every later turn the opening guard
-        # returns the text untouched, so the two orders are the same text.
-        #
-        # This REDUCING guard applies only when its executable proof shows that
-        # every answer word survived and only surplus asks were dropped.
+    rendered = text
+    if not state.trust_model_prose:
         rendered, flags = _render_declared_guard(
             rendered,
-            guard_name="question_form",
-            guard=partial(collapse_question_form, language=state.language),
-            flag_details=("deterministic_fold_would_lose_content",),
+            guard_name="closed_question",
+            guard=partial(
+                repair_closed_questions,
+                language=state.language,
+                customer_name=_customer_name_for_turn(state),
+                company=state.company,
+                customer_type=state.customer_type,
+                delivery_address=state.delivery_address,
+            ),
         )
         raised_flags.extend(flags)
-    rendered, flags = _render_declared_guard(
-        rendered,
-        guard_name="first_turn_opening",
-        guard=partial(
-            apply_first_turn_opening_guard,
-            language=state.language,
-            is_first_turn=state.is_first_turn,
-            customer_name=_customer_name_for_turn(state),
-            anchor_line=state.anchor_line,
-            anchor_has_limited_stock=state.anchor_has_limited_stock,
-            ask_customer_name=AskKind.CUSTOMER_NAME in permitted_asks,
-        ),
-    )
-    raised_flags.extend(flags)
-    if rendered.strip():
-        if not state.is_first_turn:
-            # Deliberately still gated on first turns: the measured bad replies
-            # were unchanged by this guard even with a known name, so there is
-            # no evidence for widening its blast radius.
+        rendered, flags = _render_declared_guard(
+            rendered,
+            guard_name="premature_quote_details",
+            guard=partial(
+                guard_premature_quote_detail_collection,
+                language=state.language,
+                quote_consent_granted=(
+                    AskKind.QUOTE_DETAILS in permitted_asks
+                    or state.handoff_brief_allowed
+                ),
+            ),
+        )
+        raised_flags.extend(flags)
+        if rendered.strip():
             rendered, flags = _render_declared_guard(
                 rendered,
-                guard_name="name_chase",
-                guard=partial(
-                    refuse_to_chase_the_name,
-                    # The slot itself, not the permission derived from it: on a
-                    # later turn the name ask is never permitted anyway, so
-                    # reading the permission would have made this guard strip
-                    # every name question, including the first one we owe.
-                    customer_name_asked=state.customer_name_asked,
-                    customer_name=_customer_name_for_turn(state),
-                    ask_before_filling=state.ask_before_filling,
-                ),
+                guard_name="question_form",
+                guard=partial(collapse_question_form, language=state.language),
                 flag_details=("deterministic_fold_would_lose_content",),
             )
             raised_flags.extend(flags)
+        rendered, flags = _render_declared_guard(
+            rendered,
+            guard_name="first_turn_opening",
+            guard=partial(
+                apply_first_turn_opening_guard,
+                language=state.language,
+                is_first_turn=state.is_first_turn,
+                customer_name=_customer_name_for_turn(state),
+                anchor_line=state.anchor_line,
+                anchor_has_limited_stock=state.anchor_has_limited_stock,
+                ask_customer_name=AskKind.CUSTOMER_NAME in permitted_asks,
+            ),
+        )
+        raised_flags.extend(flags)
+        if rendered.strip():
+            if not state.is_first_turn:
+                rendered, flags = _render_declared_guard(
+                    rendered,
+                    guard_name="name_chase",
+                    guard=partial(
+                        refuse_to_chase_the_name,
+                        customer_name_asked=state.customer_name_asked,
+                        customer_name=_customer_name_for_turn(state),
+                        ask_before_filling=state.ask_before_filling,
+                    ),
+                    flag_details=("deterministic_fold_would_lose_content",),
+                )
+                raised_flags.extend(flags)
 
-        if not state.is_first_turn and AskKind.COMPANY_ACTIVITY in permitted_asks:
-            # This additive discovery ask was designed and measured for later
-            # selling turns; the first-turn set supplies no reason to move it.
-            rendered, flags = _render_declared_guard(
-                rendered,
-                guard_name="company_question",
-                guard=partial(carry_the_company_question, language=state.language),
-            )
-            raised_flags.extend(flags)
+            if not state.is_first_turn and AskKind.COMPANY_ACTIVITY in permitted_asks:
+                rendered, flags = _render_declared_guard(
+                    rendered,
+                    guard_name="company_question",
+                    guard=partial(carry_the_company_question, language=state.language),
+                )
+                raised_flags.extend(flags)
     rendered, flags = _render_declared_guard(
         rendered,
         guard_name="limited_stock",
@@ -864,7 +864,7 @@ def render_reply(
         ),
     )
     raised_flags.extend(flags)
-    if not state.is_first_turn:
+    if not state.is_first_turn and not state.trust_model_prose:
         rendered, flags = _render_declared_guard(
             rendered,
             guard_name="repeated_sentence",

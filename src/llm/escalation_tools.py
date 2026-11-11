@@ -143,3 +143,91 @@ async def escalate_to_manager(
         "Manager has been notified. Acknowledge the customer's request politely "
         "and let them know a human manager will review their conversation shortly."
     )
+
+
+_NON_SALES_NOTICE_KEY = "non_sales_notice"
+
+
+async def report_non_sales_inquiry(
+    ctx: RunContext[SalesDeps],
+    inquiry_type: Literal["supplier_pitch", "recruitment", "other_non_sales"],
+    summary: str,
+) -> str:
+    """Log a supplier/partnership pitch or job/CV inquiry for internal review without pausing Noor.
+
+    Args:
+        inquiry_type: Whether the sender is pitching as a supplier/manufacturer, applying for a job/internship, or making another non-sales outreach.
+        summary: Concise 1-sentence summary of who reached out and what they offered or asked.
+    """
+    logger.info(
+        "LLM Tool called: report_non_sales_inquiry(type=%s, summary=%r)",
+        inquiry_type,
+        summary,
+    )
+    from src.integrations.notifications.escalation import notify_manager_escalation
+    from src.schemas.common import EscalationType
+
+    if is_active_human_handoff(ctx.deps.conversation.escalation_status):
+        return "Manager handoff is already active. Do not create another notification."
+
+    metadata = (
+        dict(ctx.deps.conversation.metadata_)
+        if isinstance(ctx.deps.conversation.metadata_, dict)
+        else {}
+    )
+    if metadata.get(_NON_SALES_NOTICE_KEY):
+        return (
+            "Already logged for internal review; you stay active in the chat. "
+            "Reply briefly and politely within the sales channel boundary without "
+            "sharing staff personal contact numbers or asking sales/quotation questions."
+        )
+
+    clean_summary = " ".join(str(summary or "").split())[:240]
+    label = {
+        "supplier_pitch": "supplier pitch",
+        "recruitment": "job application",
+        "other_non_sales": "non-sales inquiry",
+    }.get(inquiry_type, "non-sales inquiry")
+
+    metadata[_NON_SALES_NOTICE_KEY] = {
+        "intent": inquiry_type,
+        "summary": clean_summary,
+        "source": "model_tool",
+        "at": datetime.now(UTC).isoformat(),
+    }
+    ctx.deps.conversation.metadata_ = metadata
+    reason_detail = f" ({clean_summary})" if clean_summary else ""
+    await notify_manager_escalation(
+        conversation=ctx.deps.conversation,
+        reason=(
+            f"Not a sales lead: {label} on the sales line{reason_detail}. "
+            "For your review; Noor keeps answering."
+        ),
+        recent_messages=[*(ctx.deps.recent_history or []), ctx.deps.user_query],
+        db=ctx.deps.db,
+        escalation_type=EscalationType.GENERAL,
+        pause_bot=False,
+    )
+
+    if inquiry_type == "supplier_pitch":
+        return (
+            "Logged for Treejar's commercial team (chat is not paused). Politely "
+            "let the sender know this WhatsApp line is for office furniture "
+            "customer inquiries, mention that you have passed their note to "
+            "Treejar's commercial team (or direct them to treejartrading.ae), "
+            "do not share staff personal numbers, and do not ask sales or "
+            "quotation questions."
+        )
+    if inquiry_type == "recruitment":
+        return (
+            "Logged internally (chat is not paused). Politely let the sender know "
+            "this WhatsApp line handles office furniture sales inquiries and "
+            "direct them to treejartrading.ae for careers; do not claim their "
+            "application was forwarded to HR, and do not ask sales or quotation "
+            "questions."
+        )
+    return (
+        "Logged internally (chat is not paused). Politely state that this "
+        "WhatsApp line assists only with Treejar office furniture inquiries, and "
+        "do not ask sales or quotation questions."
+    )

@@ -98,6 +98,7 @@ from src.llm.response_policy import (
     ReplyPolicyState,
     permitted_asks_for_turn,
     render_reply,
+    resolve_trust_model_prose,
 )
 from src.llm.response_runtime import (
     _product_media_is_referenced,
@@ -403,6 +404,7 @@ class _Turn:
     failed_run_usage: RunUsageT | None = None
     permitted_asks_cache: frozenset[AskKind] | None = None
     completed_model_history: list[ModelRequestT | ModelResponseT] | None = None
+    prose_guards_mode: str = "auto"
 
     # The verified-answer repair counter lives in conversation metadata; these
     # three keep their zero-argument shape because several call sites hand the
@@ -518,6 +520,9 @@ class _Turn:
                 ),
                 handoff_brief_allowed=_handoff_brief_allowed(
                     response_deps, self.combined_text
+                ),
+                trust_model_prose=resolve_trust_model_prose(
+                    self.prose_guards_mode, model_name
                 ),
             ),
             provenance=provenance,
@@ -1209,6 +1214,7 @@ class _TurnConfig:
     customer_facts_mode: str
     customer_facts_max_context_orders: int
     claim_contract_every_catalog_turn: bool
+    prose_guards_mode: str = "auto"
 
 
 async def _read_turn_config(turn: _Turn) -> _TurnConfig:
@@ -1243,6 +1249,14 @@ async def _read_turn_config(turn: _Turn) -> _TurnConfig:
                 CLAIM_CONTRACT_SCOPE_KEY,
                 "requested_gaps",
             )
+        ),
+        prose_guards_mode=str(
+            await get_system_config(
+                turn.db,
+                "prose_guards_mode",
+                settings.prose_guards_mode,
+            )
+            or "auto"
         ),
     )
 
@@ -1690,6 +1704,7 @@ async def process_message_impl(
         latency_trace=latency_trace,
     )
     config = await _read_turn_config(turn)
+    turn.prose_guards_mode = config.prose_guards_mode
 
     # Intent and next action belong to the tool-using model. Historical route
     # adapters must not inspect the wording, mutate consent or execute actions
@@ -1743,7 +1758,9 @@ async def process_message_impl(
     if await _deterministic_wholesale_handoff(turn):
         _ensure_wholesale_handoff_notice(finalized, language)
     elif (non_sales := await _non_sales_team_notice(turn)) is not None:
-        if non_sales == "supplier_pitch":
+        if non_sales == "supplier_pitch" and not resolve_trust_model_prose(
+            turn.prose_guards_mode, finalized.model
+        ):
             # A job applicant is told nothing about forwarding (ratified row 24
             # leaves the application with the sender); the alert is internal.
             _ensure_supplier_pitch_notice(finalized, language)

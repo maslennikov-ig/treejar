@@ -176,6 +176,9 @@ from src.llm.escalation_policy import critical_escalation_decision
 from src.llm.escalation_tools import (
     escalate_to_manager as _escalate_to_manager_impl,
 )
+from src.llm.escalation_tools import (
+    report_non_sales_inquiry as _report_non_sales_inquiry_impl,
+)
 from src.llm.fact_extractor import (
     extract_delivery_address,
     is_question_clause,
@@ -4958,6 +4961,9 @@ async def check_order_status(ctx: RunContext[SalesDeps]) -> str:
 
 escalate_to_manager = sales_agent.tool(sequential=True)(
     _track_sales_tool(_escalate_to_manager_impl)
+)
+report_non_sales_inquiry = sales_agent.tool(sequential=True)(
+    _track_sales_tool(_report_non_sales_inquiry_impl)
 )
 
 

@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     customer_facts_mode: str = "disabled"
     customer_facts_max_context_orders: int = 3
 
+    # Prose guard policy ("trust_model" | "legacy" | "auto")
+    prose_guards_mode: str = "auto"
+
     # Privacy controls
     pii_masking_enabled: bool = False
 
