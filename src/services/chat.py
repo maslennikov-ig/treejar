@@ -709,10 +709,14 @@ def _normalize_escalation_repeat_text(value: str) -> str:
     return " ".join(value.split()).strip()
 
 
-def _build_escalation_repeat_key(conversation_id: Any, combined_text: str) -> str:
-    normalized_text = _normalize_escalation_repeat_text(combined_text)
-    digest = hashlib.sha256(normalized_text.encode("utf-8")).hexdigest()
-    return f"escalation_repeat:{conversation_id}:{digest}"
+def _build_escalation_repeat_key(conversation_id: Any, combined_text: str = "") -> str:
+    """Key for suppressing repeat canned fallback messages to the customer on WhatsApp.
+
+    Once acknowledged, subsequent messages from the customer while an escalation
+    is pending/active do not trigger duplicate canned replies; the customer's text
+    is saved and forwarded to the manager in Telegram.
+    """
+    return f"escalation_repeat:{conversation_id}"
 
 
 async def _enqueue_summary_refresh_if_needed(
@@ -752,52 +756,53 @@ async def _handle_escalation_fallback(
       3. Re-notify the manager in Telegram (with 5-min cooldown to prevent spam).
     """
     repeat_key = _build_escalation_repeat_key(conv.id, combined_text)
-    if await redis.get(repeat_key):
+    client_already_acknowledged = bool(await redis.get(repeat_key))
+
+    # 1. Client fallback — contextual ack (sent once per conversation window to avoid spam)
+    if not client_already_acknowledged:
+        if is_arabic_customer_language(getattr(conv, "language", "en")):
+            fallback = (
+                "شكراً لتواصلك! 🙏\n"
+                "تم إبلاغ المدير بطلبك وسيتواصل معك قريباً.\n"
+                "يرجى الانتظار قليلاً."
+            )
+        else:
+            fallback = (
+                "Thank you for your message! 🙏\n"
+                "A manager has been notified and will get back to you shortly.\n"
+                "Please bear with us."
+            )
+
+        await send_wazzup_text_with_audit(
+            db,
+            provider=wazzup,
+            conversation_id=conv.id,
+            chat_id=conv.phone,
+            text=fallback,
+            source="escalation_fallback",
+            crm_message_id=deterministic_crm_message_id(
+                "fallback",
+                conv.id,
+                hashlib.sha256(combined_text.encode("utf-8")).hexdigest()[:16],
+            ),
+        )
+
+        # Save fallback as assistant message
+        fb_msg = Message(
+            conversation_id=conv.id,
+            role="assistant",
+            content=fallback,
+            model="fallback",
+            created_at=message_created_at_now(),
+        )
+        db.add(fb_msg)
+        await db.commit()
+        await redis.setex(repeat_key, _ESCALATION_REPEAT_SUPPRESSION_SECONDS, "1")
+    else:
         logger.info(
-            "Suppressing duplicate escalation fallback: chat_ref=%s",
+            "Suppressing duplicate escalation fallback to client: chat_ref=%s",
             inbound_chat_reference(conv.phone),
         )
-        return
-
-    # 1. Client fallback — contextual ack
-    if is_arabic_customer_language(getattr(conv, "language", "en")):
-        fallback = (
-            "شكراً لتواصلك! 🙏\n"
-            "تم إبلاغ المدير بطلبك وسيتواصل معك قريباً.\n"
-            "يرجى الانتظار قليلاً."
-        )
-    else:
-        fallback = (
-            "Thank you for your message! 🙏\n"
-            "A manager has been notified and will get back to you shortly.\n"
-            "Please bear with us."
-        )
-
-    await send_wazzup_text_with_audit(
-        db,
-        provider=wazzup,
-        conversation_id=conv.id,
-        chat_id=conv.phone,
-        text=fallback,
-        source="escalation_fallback",
-        crm_message_id=deterministic_crm_message_id(
-            "fallback",
-            conv.id,
-            hashlib.sha256(combined_text.encode("utf-8")).hexdigest()[:16],
-        ),
-    )
-
-    # Save fallback as assistant message
-    fb_msg = Message(
-        conversation_id=conv.id,
-        role="assistant",
-        content=fallback,
-        model="fallback",
-        created_at=message_created_at_now(),
-    )
-    db.add(fb_msg)
-    await db.commit()
-    await redis.setex(repeat_key, _ESCALATION_REPEAT_SUPPRESSION_SECONDS, "1")
 
     # 2. Re-notify manager (with cooldown)
     cooldown_key = f"escalation_renotify:{conv.id}"

@@ -173,3 +173,48 @@ async def test_escalation_fallback_skips_duplicate_repeat_message() -> None:
     mock_db.commit.assert_not_called()
     mock_tg_instance.send_message.assert_not_called()
     mock_redis.setex.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_escalation_fallback_suppresses_repeat_to_client_even_with_different_text_and_renotifies_manager() -> (
+    None
+):
+    """When client already received fallback, subsequent follow-up text does not spam client but renotifies manager."""
+    from src.services.chat import _handle_escalation_fallback
+
+    conv = MagicMock()
+    conv.id = uuid4()
+    conv.phone = "+971501234567"
+    conv.language = "en"
+
+    mock_wazzup = AsyncMock()
+    mock_redis = AsyncMock()
+    # Call 1: repeat_key check -> "1" (already acknowledged)
+    # Call 2: cooldown_key check -> None (5 min elapsed, notify manager)
+    mock_redis.get = AsyncMock(side_effect=["1", None])
+    mock_redis.setex = AsyncMock()
+    mock_db = AsyncMock()
+    mock_db.add = MagicMock()
+    mock_db.commit = AsyncMock()
+
+    with patch("src.integrations.notifications.telegram.TelegramClient") as mock_tg:
+        mock_tg_instance = MagicMock()
+        mock_tg_instance.send_message = AsyncMock()
+        mock_tg.return_value = mock_tg_instance
+
+        await _handle_escalation_fallback(
+            conv=conv,
+            combined_text="if need i have video",
+            wazzup=mock_wazzup,
+            redis=mock_redis,
+            db=mock_db,
+        )
+
+    # Client was NOT sent another spam fallback
+    mock_wazzup.send_text.assert_not_called()
+    mock_db.add.assert_not_called()
+
+    # Manager WAS re-notified with the new details
+    mock_tg_instance.send_message.assert_called_once()
+    assert "if need i have video" in mock_tg_instance.send_message.call_args[0][0]
+    mock_redis.setex.assert_called_once_with(f"escalation_renotify:{conv.id}", 300, "1")

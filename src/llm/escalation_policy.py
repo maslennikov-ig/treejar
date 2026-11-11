@@ -261,6 +261,15 @@ _QUANTITY_PREFIX_RE = re.compile(
     r"|(?:الكمية|كمية|العدد)\s*[:\-]?\s*(?P<ar_count>\d+)",
     re.IGNORECASE,
 )
+_COMPOUND_SET_QUANTITY_RE = re.compile(
+    r"\b(?P<sets>\d+)\s*(?:sets?|tables?|desks?|work\s?stations?)\s*"
+    r"(?:with|of|each\s+with|each\s+having|having|\*|x)\s*"
+    r"(?P<items>\d+)\s*"
+    r"(?:pcs|pieces|units|chairs?|desks?|seats?|tables?)\b"
+    r"|\b(?P<items_alt>\d+)\s*(?:chairs?|seats?|pcs|pieces|units|desks?)\s*"
+    r"(?:per|for\s+each|in\s+each)\s*(?:set|table|desk|work\s?station)\b.*?\b(?P<sets_alt>\d+)\s*(?:sets?|tables?|desks?)\b",
+    re.IGNORECASE,
+)
 _BULK_ITEM_AR = (
     r"(?:محطات\s+عمل|محطة\s+عمل|محطات|مكاتب|مكتب|كراسي|كرسي|مقاعد|مقعد|"
     r"طاولات|طاولة|وحدات|وحدة|قطع|قطعة|خزائن|خزانة)"
@@ -333,6 +342,7 @@ def _follows_a_model_name(text: str, start: int) -> bool:
 
 def _largest_bulk_quantity(text: str) -> int:
     largest = 0
+    total_items = 0
     for match in _WHOLESALE_QUANTITY_RE.finditer(text):
         if _follows_a_model_name(text, match.start()):
             continue
@@ -341,6 +351,7 @@ def _largest_bulk_quantity(text: str) -> int:
         except ValueError:
             continue
         largest = max(largest, value)
+        total_items += value
     for match in _QUANTITY_PREFIX_RE.finditer(text):
         raw = match.group("count") or match.group("ar_count") or ""
         try:
@@ -348,7 +359,16 @@ def _largest_bulk_quantity(text: str) -> int:
         except ValueError:
             continue
         largest = max(largest, value)
-    return largest
+    for match in _COMPOUND_SET_QUANTITY_RE.finditer(text):
+        sets_str = match.group("sets") or match.group("sets_alt")
+        items_str = match.group("items") or match.group("items_alt")
+        if sets_str and items_str:
+            try:
+                compound = int(sets_str) * int(items_str)
+                largest = max(largest, compound)
+            except ValueError:
+                continue
+    return max(largest, total_items)
 
 
 def wholesale_quantity(customer_text: str | None) -> int:

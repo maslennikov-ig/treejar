@@ -38,6 +38,9 @@ CHANNEL = "b49b1b9d-757f-4104-b56d-8f43d62cc515"
         ("350Nos", 350),
         ("الكمية: 40", 40),
         ("We need 55 workstations", 55),
+        ("4 table with 5 chairs like 4 set", 20),
+        ("4 sets of 5 chairs", 20),
+        ("12 desks and 12 chairs", 24),
     ],
 )
 def test_bulk_quantity_shorthand_is_a_wholesale_route(text: str, expected: int) -> None:
