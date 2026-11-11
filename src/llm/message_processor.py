@@ -414,9 +414,8 @@ class _Turn:
         await _drop_verified_policy_repair_state(self.conv, self.db)
 
     def trusts_model_prose(self, model_name: str | None = None) -> bool:
-        effective_model = model_name or (
-            self.model_runtime._runtime[0] if self.model_runtime._runtime else ""
-        )
+        runtime_pair = getattr(self.model_runtime, "_runtime", None)
+        effective_model = model_name or (runtime_pair[0] if runtime_pair else "")
         return resolve_trust_model_prose(self.prose_guards_mode, effective_model)
 
     def permitted_asks(self) -> frozenset[AskKind]:
