@@ -173,7 +173,7 @@ def critical_escalation_decision(
         return CriticalEscalationDecision(
             allowed=True,
             escalation_type=EscalationType.HUMAN_REQUESTED,
-            reason="Critical escalation: the customer explicitly requested a human response, phone call, or voice/audio contact due to inability to read text.",
+            reason="Critical escalation: the customer explicitly requested a human response.",
             trigger="explicit_human_request",
         )
 
