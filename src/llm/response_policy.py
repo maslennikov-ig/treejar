@@ -389,6 +389,28 @@ def _is_non_quotation_single_field_request(text: str) -> bool:
     return any(re.search(pattern, normalized) for pattern in non_quote_purpose_patterns)
 
 
+def _is_non_sales_boundary_reply(text: str) -> bool:
+    """Whether the reply declines a supplier pitch, recruitment inquiry, or off-channel request."""
+
+    normalized = " ".join(str(text or "").casefold().split())
+    if not normalized:
+        return False
+    return bool(
+        re.search(
+            r"\b(?:"
+            r"supplier\s+(?:or\s+partnership\s+)?(?:proposals?|introductions?|inquir(?:y|ies))"
+            r"|partnership\s+proposals?"
+            r"|purchasing\s+manager"
+            r"|procurement\s+(?:manager|team|department)"
+            r"|sales\s+(?:channel|inquiries\s+only)"
+            r"|job\s+applications?"
+            r"|recruitment"
+            r")\b",
+            normalized,
+        )
+    )
+
+
 def guard_premature_quote_detail_collection(
     text: str,
     *,
@@ -398,6 +420,8 @@ def guard_premature_quote_detail_collection(
     """Replace pre-consent detail collection with the quotation opt-in."""
 
     if quote_consent_granted:
+        return text
+    if _is_non_sales_boundary_reply(text):
         return text
     if _is_non_quotation_single_field_request(text):
         return text

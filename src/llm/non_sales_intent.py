@@ -28,14 +28,19 @@ _RECRUITMENT_RE = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 _SUPPLIER_PITCH_RE = re.compile(
-    r"\bwe\s+are\s+(?:a\s+|an\s+|the\s+)?(?:leading\s+)?"
+    r"\bwe\s+are\s+(?:a\s+|an\s+|the\s+)?(?:[a-z0-9&-]+\s+){0,3}"
     r"(?:manufacturer|supplier|distributor|factory|vendor|exporter)s?\b"
     r"|\bour\s+(?:factory|company)\s+(?:manufactures|produces|supplies)\b"
     r"|\bbecome\s+(?:your|a)\s+(?:supplier|vendor|partner)\b"
+    r"|\bconsidering\s+a\s+new\s+(?:supplier|vendor|manufacturer)\b"
+    r"|\bwork\s+with\s+(?:manufacturers|suppliers|factories)\s+from\b"
     r"|\bregister\s+(?:us|our\s+company)\s+as\s+(?:a\s+)?(?:supplier|vendor)\b"
     r"|\bvendor\s+registration\b"
     r"|\bfurniture\s+supply\s+from\b"
-    r"|\bsupply(?:ing)?\s+(?:office\s+)?furniture\s+(?:from|to\s+your)\b",
+    r"|\bsupply(?:ing)?\s+(?:office\s+)?furniture\s+(?:from|to\s+your)\b"
+    r"|\b(?:whatsapp\s+number|contact|details|email|number)\s+of\s+your\s+"
+    r"(?:purchasing|procurement)\s+(?:manager|team|department)\b"
+    r"|\bknow\s+your\s+(?:purchasing|procurement)\s+(?:manager|team|department)\b",
     re.IGNORECASE | re.UNICODE,
 )
 

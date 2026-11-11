@@ -431,6 +431,11 @@ NATURAL_NAME_PATTERNS = (
         re.I | re.S,
     ),
     re.compile(
+        r"\b(?:best\s+regards|kind\s+regards|warm\s+regards|regards)[,:\s]*\n+\s*"
+        r"(?P<value>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s*$",
+        re.S,
+    ),
+    re.compile(
         _AR_INTRODUCTION + rf"(?P<value>{_PERSON_NAME_WORDS})\s+من\b",
         re.S,
     ),

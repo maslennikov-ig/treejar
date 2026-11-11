@@ -414,6 +414,9 @@ class _Turn:
     def permitted_asks(self) -> frozenset[AskKind]:
         """Read current workflow state, including changes made by model tools."""
 
+        if non_sales_intent(self.combined_text) is not None:
+            self.permitted_asks_cache = frozenset()
+            return self.permitted_asks_cache
         quote_workflow = quote_workflow_from_metadata(self.conv.metadata_)
         self.permitted_asks_cache = permitted_asks_for_turn(
             is_first_turn=self.is_first_turn,

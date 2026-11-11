@@ -483,6 +483,8 @@ def test_job_applications_are_recognised(text: str) -> None:
     [
         "We are a leading manufacturer of office chairs in China",
         "We would like to become your supplier for office chairs",
+        "We are a steel furniture manufacturer in China, specializing in filing cabinets",
+        "May I have the Whatsapp number of your purchasing manager?",
     ],
 )
 def test_supplier_pitches_are_recognised(text: str) -> None:

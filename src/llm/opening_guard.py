@@ -151,7 +151,7 @@ def _strip_generic_english_opening(text: str) -> str:
     body = text.lstrip()
     body = re.sub(r"\A(?:hello|hi|hey)\b[\s!,.:-]*", "", body, count=1, flags=re.I)
     body = re.sub(
-        r"\A(?:welcome\s+to\s+treejar)\b[\s!,.:-]*(?:[^\w\s]+\s*)?",
+        r"\A(?:and\s+)?welcome(?:\s+to\s+treejar(?:\s+trading)?)?\b[\s!,.:-]*(?:[^\w\s]+\s*)?",
         "",
         body,
         count=1,
