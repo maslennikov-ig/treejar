@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.llm import engine
+from src.llm import engine, message_processor
 from src.llm.escalation_tools import report_non_sales_inquiry
 from src.llm.response_policy import (
     AskKind,
@@ -126,3 +126,28 @@ async def test_report_non_sales_inquiry_tool_logs_once_without_pausing() -> None
     assert notify.await_args.kwargs["pause_bot"] is False
     assert conversation.escalation_status == "none"
     assert conversation.metadata_["non_sales_notice"]["source"] == "model_tool"
+
+
+@pytest.mark.asyncio
+async def test_trust_model_prose_skips_regex_non_sales_intent() -> None:
+    conversation = Conversation(
+        id=uuid.uuid4(),
+        phone="+971500000001",
+        language="en",
+        escalation_status="none",
+        metadata_={},
+    )
+    turn = SimpleNamespace(
+        combined_text="We are a cargo and freight logistics services firm looking for 15 chairs",
+        db=AsyncMock(),
+        deps=SimpleNamespace(conversation=conversation, recent_history=[]),
+        trusts_model_prose=lambda: True,
+    )
+    notify = AsyncMock()
+    with patch(
+        "src.integrations.notifications.escalation.notify_manager_escalation", notify
+    ):
+        result = await message_processor._non_sales_team_notice(turn)  # type: ignore[arg-type]
+
+    assert result is None
+    notify.assert_not_awaited()

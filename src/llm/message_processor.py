@@ -413,10 +413,19 @@ class _Turn:
     async def clear_repair_state(self) -> None:
         await _drop_verified_policy_repair_state(self.conv, self.db)
 
+    def trusts_model_prose(self, model_name: str | None = None) -> bool:
+        effective_model = model_name or (
+            self.model_runtime._runtime[0] if self.model_runtime._runtime else ""
+        )
+        return resolve_trust_model_prose(self.prose_guards_mode, effective_model)
+
     def permitted_asks(self) -> frozenset[AskKind]:
         """Read current workflow state, including changes made by model tools."""
 
-        if non_sales_intent(self.combined_text) is not None:
+        if (
+            not self.trusts_model_prose()
+            and non_sales_intent(self.combined_text) is not None
+        ):
             self.permitted_asks_cache = frozenset()
             return self.permitted_asks_cache
         quote_workflow = quote_workflow_from_metadata(self.conv.metadata_)
@@ -860,6 +869,9 @@ async def _non_sales_team_notice(turn: _Turn) -> NonSalesIntent | None:
     """
 
     conversation = turn.deps.conversation
+    trusts_prose = getattr(turn, "trusts_model_prose", None)
+    if callable(trusts_prose) and trusts_prose():
+        return None
     if should_pause_bot_for_escalation(conversation.escalation_status):
         return None
     intent = non_sales_intent(turn.combined_text)
