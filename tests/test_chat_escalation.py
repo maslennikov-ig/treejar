@@ -212,7 +212,7 @@ async def test_bot_silent_when_escalated(
     )
     mock_redis = AsyncMock()
     _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
-    mock_redis.get.side_effect = [None, "already-sent"]
+    mock_redis.get.side_effect = [None, "already-sent", "already-sent"]
 
     ctx = {"redis": mock_redis}
     with patch("src.services.chat.settings.wazzup_channel_id", "ch1"):
