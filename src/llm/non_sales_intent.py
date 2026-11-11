@@ -40,7 +40,17 @@ _SUPPLIER_PITCH_RE = re.compile(
     r"|\bsupply(?:ing)?\s+(?:office\s+)?furniture\s+(?:from|to\s+your)\b"
     r"|\b(?:whatsapp\s+number|contact|details|email|number)\s+of\s+your\s+"
     r"(?:purchasing|procurement)\s+(?:manager|team|department)\b"
-    r"|\bknow\s+your\s+(?:purchasing|procurement)\s+(?:manager|team|department)\b",
+    r"|\bknow\s+your\s+(?:purchasing|procurement)\s+(?:manager|team|department)\b"
+    r"|\b(?:calling|telephony|voip|crm|telecom|software|saas|marketing|seo|logistics|cargo|freight)\s+"
+    r"(?:solutions?|services?|providers?|platforms?|systems?)\b"
+    r"|\bconnect\s+(?:your|their|remote)?\s*(?:agents?|customers?|teams?|callers?)\b"
+    r"|\b(?:reaching|reached)\s+out\s+from\s+[a-z0-9.-]+\b.*\b(?:support|help|partner|collaborate|solutions?|services?)\b"
+    r"|\bmanaging\s+your\s+(?:call\s+center|sales\s+team|support\s+team|operations|it|marketing|procurement|purchasing)\b"
+    r"|\bconnect\s+me\s+with\s+(?:the\s+right\s+person|someone)\s+(?:who\s+is\s+)?managing\b"
+    r"|\boffer(?:ing)?\s+(?:our\s+)?(?:services|solutions|software|products)\s+to\s+(?:your|treejar)\b"
+    r"|\b(?:b2b|corporate)\s+(?:partnership|collaboration|services?)\b"
+    r"|\b(?:photocopier|printer|copier|scanner|air\s*conditioner|chiller)\b.*\b(?:servicing|maintenance|repair|troubleshooting|amc|contract)\b"
+    r"|\b(?:service\s+provider|servicing\s+and\s+maintenance|repair\s+and\s+troubleshooting|annual\s+maintenance\s+contract|technician\s+support)\s+for\s+(?:our\s+|a\s+)?(?:office\s+)?(?:photocopier|printer|copier|scanner|ac|air\s*conditioner|appliance|electronics?)\b",
     re.IGNORECASE | re.UNICODE,
 )
 

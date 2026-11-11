@@ -485,6 +485,11 @@ def test_job_applications_are_recognised(text: str) -> None:
         "We would like to become your supplier for office chairs",
         "We are a steel furniture manufacturer in China, specializing in filing cabinets",
         "May I have the Whatsapp number of your purchasing manager?",
+        "Hi, hope you’re doing well! 👋 I’m reaching out from Voiger.io. We help businesses connect their remote agents with UAE customers through reliable calling solutions. Would you be open to a quick chat about how we can support your team?",
+        "can you connect me with the right person who is managing your call center or sales team",
+        "We are looking for a service provider for our office photocopier/printer. Machine Model: Canon imageRUNNER ADVANCE C5535. Kindly confirm whether you provide servicing and maintenance for this model.",
+        "We provide corporate telephony and VoIP solutions for businesses across UAE",
+        "We are offering cargo and freight logistics services to Treejar",
     ],
 )
 def test_supplier_pitches_are_recognised(text: str) -> None:

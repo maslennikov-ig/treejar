@@ -123,3 +123,11 @@ Because we combine:
 - Professional execution
 
 We don't just sell furniture — we deliver complete office solutions.
+
+## 21. Do you service or repair office equipment, printers, or photocopiers?
+
+No. Treejar Trading specializes exclusively in commercial office furniture (workstations, desks, chairs, tables, storage, and reception furniture). We do not service, maintain, or provide AMC for photocopiers, printers, IT equipment, or office appliances.
+
+## 22. Can you remove the 5% VAT or sell without a tax invoice?
+
+No. Treejar Trading LLC is a registered UAE wholesale business operating in full compliance with UAE tax regulations. All catalog sales are subject to statutory 5% UAE VAT, and an official tax invoice is issued with every order. VAT cannot be waived, removed, or bypassed under any circumstances.

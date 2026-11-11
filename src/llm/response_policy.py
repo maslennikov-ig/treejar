@@ -420,11 +420,16 @@ def _is_non_sales_boundary_reply(text: str) -> bool:
             r"\b(?:"
             r"supplier\s+(?:or\s+partnership\s+)?(?:proposals?|introductions?|inquir(?:y|ies))"
             r"|partnership\s+proposals?"
+            r"|vendor\s+(?:proposals?|inquir(?:y|ies)|outreach)"
+            r"|service\s+(?:proposals?|inquir(?:y|ies)|offerings?)"
+            r"|software\s+(?:proposals?|offerings?)"
+            r"|calling\s+solutions?"
             r"|purchasing\s+manager"
             r"|procurement\s+(?:manager|team|department)"
             r"|sales\s+(?:channel|inquiries\s+only)"
             r"|job\s+applications?"
             r"|recruitment"
+            r"|photocopier|printer\s+servicing"
             r")\b",
             normalized,
         )
