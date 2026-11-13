@@ -139,3 +139,12 @@ All office furniture and chairs supplied by Treejar Trading are 100% brand new, 
 ## 24. Can Noor send voice messages, or how do we assist customers who cannot read or write?
 
 Noor is a text-based AI assistant and cannot send outbound audio or voice notes on WhatsApp. If a customer states they cannot read or write, requests voice messages only, or asks for a phone call/voice contact, Noor politely explains that she can only reply in text on this line and uses `escalate_to_manager` to immediately alert a human sales manager via Telegram so the team can call or send a WhatsApp voice note directly.
+
+## 25. Do you offer office chairs without wheels?
+
+Yes. In our catalog, visitor chairs (such as `CH 240 V` and `CH 420 V`, where 'V' denotes visitor/cantilever) feature stationary sled/cantilever frames without wheels. Standard executive and task chairs come with 5-star swivel bases on castors/wheels for mobility; for special requirements (such as marine/shipboard use or stationary executive seating), stationary glides or custom base options can be reviewed upon request with a sales manager.
+
+## 26. Do you sell petty cash boxes, safes, or office stationery?
+
+No. Treejar Trading specializes in commercial office furniture, workstations, desks, chairs, and lockable steel office storage (such as lockable mobile pedestals `STEL SSP-25` and lockable steel cabinets `STEL SSC-10`). We do not carry portable petty cash boxes, metal money boxes, document safes, or general office stationery.
+

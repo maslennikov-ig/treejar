@@ -59,8 +59,8 @@ def test_canonical_kb_covers_policies_and_faq_without_manager_terms() -> None:
         categories
     )
     faq_titles = [title for title in titles if title.startswith("FAQ: ")]
-    # docs/faq.md has 24 questions; 12, 13 and 17 are manager-controlled.
-    assert len(faq_titles) == 21
+    # docs/faq.md has 26 questions; 12, 13 and 17 are manager-controlled.
+    assert len(faq_titles) == 23
     assert not any("competitor" in title.lower() for title in faq_titles)
     assert not any("warranty" in title.lower() for title in faq_titles)
     assert not any("payment terms" in title.lower() for title in faq_titles)
