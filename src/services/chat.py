@@ -879,6 +879,92 @@ async def _handle_escalation_fallback(
                         await res
 
 
+_MANUAL_TAKEOVER_STALE_SECONDS = 7200  # 2 hours without a manager reply
+_MANUAL_TAKEOVER_RENOTIFY_COOLDOWN = 1800  # 30 minutes between Telegram reminders
+
+
+async def _notify_stale_manual_takeover_followup(
+    conv: Any,
+    combined_text: str,
+    redis: Any,
+) -> None:
+    """Alert managers in Telegram if a customer returns to a stale manual_takeover chat.
+
+    Keeps Noor 100% silent on WhatsApp while ensuring warm returning leads (e.g. a
+    customer writing 'No one came back to me' hours or days after a manager promised
+    a quote) never go unnoticed in Wazzup.
+    """
+    if not combined_text or not combined_text.strip() or redis is None:
+        return
+    metadata = getattr(conv, "metadata_", None)
+    if not isinstance(metadata, dict):
+        return
+    raw_last_mgr = metadata.get("last_manager_message_at")
+    if not isinstance(raw_last_mgr, str) or not raw_last_mgr.strip():
+        return
+    try:
+        last_mgr_dt = datetime.fromisoformat(raw_last_mgr.replace("Z", "+00:00"))
+        if last_mgr_dt.tzinfo is None:
+            last_mgr_dt = last_mgr_dt.replace(tzinfo=UTC)
+    except ValueError:
+        return
+
+    silence_seconds = (datetime.now(UTC) - last_mgr_dt).total_seconds()
+    if silence_seconds < _MANUAL_TAKEOVER_STALE_SECONDS:
+        return
+
+    if not settings.telegram_bot_token or not settings.telegram_chat_id:
+        return
+
+    cooldown_key = f"manual_takeover_renotify:{conv.id}"
+    try:
+        if await redis.get(cooldown_key):
+            return
+        await redis.setex(cooldown_key, _MANUAL_TAKEOVER_RENOTIFY_COOLDOWN, "1")
+    except Exception:
+        logger.warning(
+            "Redis cooldown check failed in _notify_stale_manual_takeover_followup",
+            exc_info=True,
+        )
+        return
+
+    client: Any = None
+    try:
+        from src.integrations.notifications.telegram import TelegramClient
+
+        client = TelegramClient(
+            bot_token=settings.telegram_bot_token,
+            chat_id=settings.telegram_chat_id,
+        )
+        phone_raw = str(getattr(conv, "phone", "") or "")
+        phone_display = phone_raw if phone_raw.startswith("+") else f"+{phone_raw}"
+        safe_text = (
+            combined_text[:200]
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+        hours = silence_seconds / 3600.0
+        await client.send_message(
+            f"⚠️ <b>Customer returned to manager-handled chat</b> "
+            f"(no manager reply for {hours:.1f}h)\n\n"
+            f'📞 <a href="tel:{phone_display}">{phone_display}</a>\n'
+            f"💬 <i>{safe_text}</i>"
+        )
+    except Exception:
+        logger.exception(
+            "Failed to alert manager on stale manual_takeover follow-up: chat_ref=%s",
+            inbound_chat_reference(str(getattr(conv, "phone", ""))),
+        )
+    finally:
+        if client is not None:
+            aclose = getattr(client, "aclose", None) or getattr(client, "close", None)
+            if callable(aclose):
+                res = aclose()
+                if inspect.isawaitable(res):
+                    await res
+
+
 async def _send_deferred_product_media(
     db: Any,
     *,
@@ -1836,6 +1922,7 @@ async def _process_batch_inner(
                 if conv.escalation_status != "manual_takeover":
                     conv.escalation_status = "manual_takeover"
                     await db.commit()
+                await _notify_stale_manual_takeover_followup(conv, combined_text, redis)
                 logger.info(
                     "Manager takeover detected before automated reply; skipping LLM: "
                     "batch_ref=%s",
