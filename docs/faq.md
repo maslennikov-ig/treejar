@@ -151,3 +151,7 @@ No. Treejar Trading specializes in commercial office furniture, workstations, de
 ## 27. Do you offer office furniture rental or short-term leasing?
 
 No. Treejar Trading sells 100% brand-new commercial office furniture only and does not offer short-term, event, weekly, or monthly furniture rental or leasing. However, we welcome single-item and small orders with no minimum order quantity for ready-stock items (free warehouse self-pickup in Jebel Ali, or UAE delivery from AED 100 order value) and can suggest budget-friendly in-stock desks and chairs for purchase.
+
+## 28. Do you offer training or classroom chairs with an attached writing tablet (tablet arm)?
+
+No. Our ready-stock catalogue focuses on commercial office chairs (ergonomic task chairs, executive seating, and sled/cantilever visitor chairs such as `CH 240 V` and `CH 420 V`). We do not carry classroom or training chairs with attached writing tablets / tablet arms in ready stock. For training rooms, seminar spaces, and conference halls, we supply comfortable visitor chairs paired with modular meeting or training tables (such as `DISCUSSION TABLE SKYLAND NOVO 900`, `MEETING TABLE SKYLAND NOVO 2400`, or `MT EVOQ 2200`). For bulk project requirements, custom factory production of chairs with integrated tablet arms can be quoted upon request by a sales manager.
