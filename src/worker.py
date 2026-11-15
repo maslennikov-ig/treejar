@@ -107,8 +107,10 @@ async def startup(ctx: dict[str, Any]) -> None:
         )
         return
 
+    embedding_engine: EmbeddingEngine | None = None
     try:
-        await EmbeddingEngine().warmup_async()
+        embedding_engine = EmbeddingEngine()
+        await embedding_engine.warmup_async()
         logger.info("Embedding model warmed up successfully.")
     except Exception:
         logger.warning(
@@ -116,6 +118,28 @@ async def startup(ctx: dict[str, Any]) -> None:
             "continuing with lazy loading.",
             exc_info=True,
         )
+
+    if ctx.get("redis") is not None:
+        try:
+            from src.core.database import async_session_factory
+            from src.services.canonical_admin_seed import sync_canonical_knowledge_base
+
+            async with async_session_factory() as db:
+                kb_counts = await sync_canonical_knowledge_base(
+                    db,
+                    embedding_engine,
+                    mode="safe",
+                )
+                await db.commit()
+                logger.info(
+                    "Canonical knowledge base safe-sync on startup completed: %s",
+                    kb_counts,
+                )
+        except Exception:
+            logger.warning(
+                "Canonical knowledge base safe-sync failed during worker startup.",
+                exc_info=True,
+            )
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:

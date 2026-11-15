@@ -254,10 +254,11 @@ _POLICY_ARTICLES: tuple[CanonicalKnowledgeArticle, ...] = (
             "Treejar supplies office furniture from ready stock in Dubai: office "
             "chairs (task and mesh chairs, executive seating, visitor chairs), "
             "desks, manager desks and multi-person workstations, meeting tables, "
-            "storage (mobile pedestals, cabinets, lockers and safes), sofas and "
-            "acoustic pods. Specific models, prices and stock levels are taken "
-            "only from the live catalogue search and Zoho stock; product links "
-            "always use https://treejartrading.ae/product/<slug>."
+            "storage (mobile pedestals, cabinets, and steel lockers — no safes, "
+            "petty cash boxes, stationery, office electronics, or furniture "
+            "rental), sofas and acoustic pods. Specific models, prices and stock "
+            "levels are taken only from the live catalogue search and Zoho stock; "
+            "product links always use https://treejartrading.ae/product/<slug>."
         ),
     ),
 )

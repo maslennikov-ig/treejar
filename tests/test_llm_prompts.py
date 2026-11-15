@@ -387,3 +387,37 @@ async def test_get_system_prompt_component_accepts_str_and_bytes_from_redis() ->
     )
     assert bytes_result == "CACHED BYTES PROMPT"
     db.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_system_prompt_component_sentinel_serves_updated_code_default() -> (
+    None
+):
+    """When DB has no override, Redis caches a code-default sentinel so deploys never serve stale prompts."""
+    from unittest.mock import MagicMock
+
+    from src.llm.prompts import (
+        _PROMPT_CODE_DEFAULT_SENTINEL,
+        get_system_prompt_component,
+    )
+
+    db, redis = AsyncMock(), AsyncMock()
+    redis.get.return_value = None
+    db_result = MagicMock()
+    db_result.scalars.return_value.first.return_value = None
+    db.execute.return_value = db_result
+
+    first = await get_system_prompt_component(
+        db, redis, "base_prompt", "CODE PROMPT V1"
+    )
+    assert first == "CODE PROMPT V1"
+    redis.set.assert_awaited_once_with(
+        "prompt:base_prompt", _PROMPT_CODE_DEFAULT_SENTINEL, ex=3600
+    )
+
+    # After a deploy updates default to V2 while Redis still holds the sentinel:
+    redis.get.return_value = _PROMPT_CODE_DEFAULT_SENTINEL.encode("utf-8")
+    second = await get_system_prompt_component(
+        db, redis, "base_prompt", "CODE PROMPT V2"
+    )
+    assert second == "CODE PROMPT V2"
