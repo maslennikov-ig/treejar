@@ -733,6 +733,53 @@ _COMPONENT_REQUEST_RE = re.compile(
     r"|\bcomponents?\b|\bwithout\s+(?:the\s+|a\s+)?(?:table\s*)?tops?\b",
     re.IGNORECASE,
 )
+_EXPLICIT_COMPONENT_REQUEST_RE = re.compile(
+    r"\bframe[\s-]+only\b|\bframes?\s+only\b|\bonly\s+(?:the\s+)?frames?\b"
+    r"|\b(?:base|legs?)[\s-]+only\b|\bonly\s+(?:the\s+)?(?:base|legs)\b"
+    r"|\bwithout\s+(?:the\s+|a\s+)?(?:table\s*)?tops?\b"
+    r"|\bspare\s+parts?\b|\breplacement\s+(?:parts?|frames?|bases?|legs)\b"
+    r"|\bcomponents?\b|\b(?:table\s*)?tops?\s+only\b",
+    re.IGNORECASE,
+)
+_COMPONENT_MODIFIER_CLAUSE_RE = re.compile(
+    r"\b(?:with|on|having|featuring)\b[^.!?\n,;]{0,60}\b(?:frames?|bases?|legs)\b",
+    re.IGNORECASE,
+)
+_COMPLETE_TOP_ITEM_RE = re.compile(
+    r"(?=.*\b(?:table\s*)?tops?\b)"
+    r"(?=.*\b(?:desks?|tables?|workstations?)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_ECONOMICAL_REQUEST_RE = re.compile(
+    r"\b(?:economical|budget[\s-]+friendly|on\s+a\s+budget|"
+    r"(?:low|tight|small)\s+budget|affordable|cheap(?:er|est)?|inexpensive|"
+    r"cost[\s-]+effective|low[\s-]*(?:cost|price)|entry[\s-]*level)\b"
+    r"|\bbudget\s+(?:office\s+)?(?:chairs?|desks?|tables?|workstations?|"
+    r"sofas?|options?|models?|range|tier)\b"
+    r"|(?:اقتصاد(?:ي|ية)|رخيص(?:ة)?|بسعر\s+(?:مناسب|معقول|اقتصادي)|"
+    r"أسعار\s+(?:مناسبة|معقولة|اقتصادية)|ميزانية\s+(?:محدودة|منخفضة))",
+    re.IGNORECASE,
+)
+_COLOUR_VARIANT_REQUEST_RE = re.compile(
+    r"\b(?:colou?rs?|finishes?|shades?|variants?)\b"
+    r"|(?:ألوان|الألوان|لون)",
+    re.IGNORECASE,
+)
+_DIVERSITY_COLOUR_WORDS = frozenset(
+    {
+        "beige",
+        "black",
+        "blue",
+        "brown",
+        "gray",
+        "green",
+        "grey",
+        "orange",
+        "red",
+        "white",
+        "yellow",
+    }
+)
 _REQUESTED_STORAGE_FEATURE_RE = re.compile(
     r"\bwith\s+(?:an?\s+|the\s+)?(?:fixed\s+|mobile\s+|attached\s+)?"
     r"(?:cabinets?|pedestals?|drawers?|storage)\b",
@@ -757,7 +804,32 @@ def is_component_only_product(name: str, description: str | None = None) -> bool
 def request_wants_components(request_text: str) -> bool:
     """Whether the customer or search asked for frames, bases or parts."""
 
-    return bool(_COMPONENT_REQUEST_RE.search(str(request_text or "")))
+    text = str(request_text or "")
+    if _EXPLICIT_COMPONENT_REQUEST_RE.search(text):
+        return True
+    if _COMPLETE_TOP_ITEM_RE.search(text):
+        return False
+    stripped = _COMPONENT_MODIFIER_CLAUSE_RE.sub(" ", text)
+    return bool(_COMPONENT_REQUEST_RE.search(stripped))
+
+
+def wants_economical_options(request_text: str) -> bool:
+    """Whether the request asks for economical or budget-friendly options."""
+
+    return bool(_ECONOMICAL_REQUEST_RE.search(str(request_text or "")))
+
+
+def _wants_colour_variants(request_text: str) -> bool:
+    return bool(_COLOUR_VARIANT_REQUEST_RE.search(str(request_text or "")))
+
+
+def _product_diversity_key(name: str) -> str:
+    tokens = [
+        token
+        for token in re.findall(r"[a-z0-9]+", str(name or "").casefold())
+        if token not in _DIVERSITY_COLOUR_WORDS
+    ]
+    return " ".join(tokens) or str(name or "").casefold().strip()
 
 
 def requested_storage_feature(request_text: str) -> bool:
@@ -795,31 +867,95 @@ def _offer_tier(
     return (int(component), int(missing_feature))
 
 
+def _product_family_mismatch(
+    name: str,
+    category: str | None,
+    requested_families: tuple[CatalogFamily, ...],
+) -> int:
+    if not requested_families:
+        return 0
+    product_families = catalog_text_families(f"{name} {category or ''}")
+    return int(not bool(set(requested_families) & set(product_families)))
+
+
+def _has_duplicate_colour_siblings[T](
+    products: Sequence[T],
+    *,
+    name_of: Callable[[T], str],
+) -> bool:
+    seen: set[str] = set()
+    for product in products:
+        key = _product_diversity_key(name_of(product))
+        if key in seen:
+            return True
+        seen.add(key)
+    return False
+
+
 def rank_products_for_request[T](
     products: Sequence[T],
     request_text: str,
     *,
     name_of: Callable[[T], str],
     description_of: Callable[[T], str | None],
+    price_of: Callable[[T], float | None] | None = None,
+    category_of: Callable[[T], str | None] | None = None,
+    max_price: float | None = None,
 ) -> list[T]:
     """Order search rows so complete, feature-matching products come first.
 
     Stable: rows keep their vector order inside each tier. Component rows go
     last unless the request asks for components; when the request asks for an
-    item with storage, complete rows that have it go first.
+    item with storage, complete rows that have it go first. When the customer
+    asks for economical/budget options without a numeric ceiling, affordable
+    in-family candidates come first. Duplicate colour variants of the same
+    model are placed behind distinct models unless colour variants were asked.
     """
 
     demote_components = not request_wants_components(request_text)
     wants_storage = requested_storage_feature(request_text)
-    return sorted(
-        products,
-        key=lambda product: _offer_tier(
-            name_of(product),
+    economical_sort = (
+        max_price is None
+        and price_of is not None
+        and wants_economical_options(request_text)
+    )
+    requested_families = catalog_text_families(request_text) if economical_sort else ()
+
+    def _base_key(product: T) -> tuple[int, int, int, int, float]:
+        name = name_of(product)
+        comp_tier, storage_tier = _offer_tier(
+            name,
             description_of(product),
             demote_components=demote_components,
             wants_storage=wants_storage,
-        ),
-    )
+        )
+        if not economical_sort:
+            return (comp_tier, storage_tier, 0, 0, 0.0)
+        assert price_of is not None
+        raw_price = price_of(product)
+        category = category_of(product) if category_of is not None else None
+        family_tier = _product_family_mismatch(name, category, requested_families)
+        price_missing = int(raw_price is None or raw_price <= 0)
+        price_val = (
+            float(raw_price) if not price_missing and raw_price is not None else 0.0
+        )
+        return (comp_tier, storage_tier, family_tier, price_missing, price_val)
+
+    ordered = sorted(products, key=_base_key)
+    if _wants_colour_variants(request_text):
+        return ordered
+
+    primary: list[T] = []
+    siblings: list[T] = []
+    seen_keys: set[str] = set()
+    for product in ordered:
+        key = _product_diversity_key(name_of(product))
+        if key in seen_keys:
+            siblings.append(product)
+        else:
+            seen_keys.add(key)
+            primary.append(product)
+    return [*primary, *siblings]
 
 
 def products_need_reranking[T](
@@ -828,12 +964,14 @@ def products_need_reranking[T](
     *,
     name_of: Callable[[T], str],
     description_of: Callable[[T], str | None],
+    price_of: Callable[[T], float | None] | None = None,
+    max_price: float | None = None,
 ) -> bool:
-    """Whether any row is a demotable component or lacks a requested feature."""
+    """Whether any row is a demotable component, lacks a requested feature, or needs budget/diversity reranking."""
 
     demote_components = not request_wants_components(request_text)
     wants_storage = requested_storage_feature(request_text)
-    return any(
+    if any(
         _offer_tier(
             name_of(product),
             description_of(product),
@@ -842,6 +980,16 @@ def products_need_reranking[T](
         )
         != (0, 0)
         for product in products
+    ):
+        return True
+    if (
+        max_price is None
+        and price_of is not None
+        and wants_economical_options(request_text)
+    ):
+        return True
+    return not _wants_colour_variants(request_text) and _has_duplicate_colour_siblings(
+        products, name_of=name_of
     )
 
 
@@ -2770,6 +2918,7 @@ __all__ = (
     "is_component_only_product",
     "request_wants_components",
     "requested_storage_feature",
+    "wants_economical_options",
     "rank_products_for_request",
     "products_need_reranking",
     "build_runtime_tool_trace",

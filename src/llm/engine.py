@@ -114,6 +114,7 @@ from src.llm.catalog_planning import (
     rank_products_for_request,
     request_wants_components,
     text_states_a_furniture_need,
+    wants_economical_options,
 )
 from src.llm.catalog_planning import (
     _catalog_product_families as _catalog_product_families,
@@ -2816,20 +2817,48 @@ async def search_products(
     # frame/part the customer did not ask for, or lacks a requested storage
     # feature, look a little wider and put complete, matching products first.
     offer_request_text = f"{effective_query}\n{ctx.deps.user_query or ''}"
+    economical_request = max_price is None and wants_economical_options(
+        offer_request_text
+    )
     if products_need_reranking(
         results.products,
         offer_request_text,
         name_of=lambda product: str(product.name_en),
         description_of=lambda product: product.description_en,
+        price_of=lambda product: (
+            float(product.price)
+            if getattr(product, "price", None) is not None
+            else None
+        ),
+        max_price=max_price,
     ):
         if len(results.products) >= max_results:
+            wider_limit = (
+                min(max(max_results * 5, 15), 30)
+                if economical_request
+                else min(max_results * 3, 30)
+            )
             wider_results = await rag_search_products(
                 db=ctx.deps.db,
-                query=search_query.model_copy(
-                    update={"limit": min(max_results * 3, 30)}
-                ),
+                query=search_query.model_copy(update={"limit": wider_limit}),
                 embedding_engine=search_embedding_engine,
             )
+            if (
+                not request_wants_components(offer_request_text)
+                and len(wider_results.products) >= wider_limit
+                and wider_limit < 30
+                and all(
+                    is_component_only_product(
+                        str(product.name_en), product.description_en
+                    )
+                    for product in wider_results.products
+                )
+            ):
+                wider_results = await rag_search_products(
+                    db=ctx.deps.db,
+                    query=search_query.model_copy(update={"limit": 30}),
+                    embedding_engine=search_embedding_engine,
+                )
             if len(wider_results.products) > len(results.products):
                 results = wider_results
         ranked_products = rank_products_for_request(
@@ -2837,10 +2866,17 @@ async def search_products(
             offer_request_text,
             name_of=lambda product: str(product.name_en),
             description_of=lambda product: product.description_en,
+            price_of=lambda product: (
+                float(product.price)
+                if getattr(product, "price", None) is not None
+                else None
+            ),
+            category_of=lambda product: getattr(product, "category", None),
+            max_price=max_price,
         )[:max_results]
         results = ProductSearchResult(
             products=ranked_products,
-            query_interpreted=results.query_interpreted,
+            query_interpreted=getattr(results, "query_interpreted", effective_query),
             total_found=len(ranked_products),
         )
     if resolved_reference_products:
