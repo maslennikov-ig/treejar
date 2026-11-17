@@ -4137,25 +4137,54 @@ async def _create_quotation(
 
     # Needs to fetch item details from Zoho Inventory
     catalog_products: dict[str, Any | None] = {}
-    zoho_item_ids_by_sku: dict[str, str | None] = {}
-    for item in items:
-        normalized_sku = item.sku.strip()
-        if normalized_sku not in catalog_products:
-            catalog_products[normalized_sku] = await _find_catalog_product_by_sku(
-                ctx.deps.db, item.sku
-            )
-        catalog_product = catalog_products[normalized_sku]
-        zoho_item_ids_by_sku[item.sku] = getattr(catalog_product, "zoho_item_id", None)
+    zoho_sku_map: dict[str, str] = {}
+    requested_skus = [item.sku for item in items]
+    try:
+        raw_stock_details = await ctx.deps.zoho_inventory.get_stock_bulk_fresh(
+            requested_skus
+        )
+    except InventoryReadUnavailable as exc:
+        if exc.status_code is not None:
+            raise
+        # Warehouse-renamed SKU bridge (e.g. STEL SSC - 15 -> STEL SSL-15 on the
+        # same zoho_item_id): only consult catalog when a live Zoho snapshot is
+        # present, preserving zero-DB deferral when Zoho/snapshot is absent.
+        stock_store = getattr(ctx.deps.zoho_inventory, "stock_store", None)
+        has_snapshot = False
+        if stock_store is not None and callable(getattr(stock_store, "read", None)):
+            try:
+                import inspect as _inspect
 
-    zoho_sku_map = await _resolve_zoho_sku_map_by_item_id(
-        ctx.deps.zoho_inventory, zoho_item_ids_by_sku
-    )
-    skus_to_fetch = list(
-        dict.fromkeys(zoho_sku_map.get(item.sku, item.sku) for item in items)
-    )
-    raw_stock_details = await ctx.deps.zoho_inventory.get_stock_bulk_fresh(
-        skus_to_fetch
-    )
+                read_res = stock_store.read()
+                if _inspect.isawaitable(read_res):
+                    snap_state, _ = await read_res
+                    has_snapshot = bool(getattr(snap_state, "items", None))
+            except Exception:
+                has_snapshot = False
+        if not has_snapshot:
+            raise
+        zoho_item_ids_by_sku: dict[str, str | None] = {}
+        for item in items:
+            normalized_sku = item.sku.strip()
+            if normalized_sku not in catalog_products:
+                catalog_products[normalized_sku] = await _find_catalog_product_by_sku(
+                    ctx.deps.db, item.sku
+                )
+            catalog_product = catalog_products[normalized_sku]
+            zoho_item_ids_by_sku[item.sku] = getattr(
+                catalog_product, "zoho_item_id", None
+            )
+        zoho_sku_map = await _resolve_zoho_sku_map_by_item_id(
+            ctx.deps.zoho_inventory, zoho_item_ids_by_sku
+        )
+        remapped_skus = list(
+            dict.fromkeys(zoho_sku_map.get(item.sku, item.sku) for item in items)
+        )
+        if remapped_skus == list(dict.fromkeys(requested_skus)):
+            raise
+        raw_stock_details = await ctx.deps.zoho_inventory.get_stock_bulk_fresh(
+            remapped_skus
+        )
     stock_rows: list[dict[str, Any]] = []
     for raw_item in raw_stock_details:
         zoho_item = (
@@ -4233,7 +4262,11 @@ async def _create_quotation(
     for item in items:
         zoho_item = _select_verified_quote_item(item.sku)
         normalized_sku = item.sku.strip()
-        catalog_product = catalog_products.get(normalized_sku)
+        if normalized_sku not in catalog_products:
+            catalog_products[normalized_sku] = await _find_catalog_product_by_sku(
+                ctx.deps.db, item.sku
+            )
+        catalog_product = catalog_products[normalized_sku]
         assert zoho_item is not None  # All selected rows were verified above.
 
         price_decision = _commercial_price_decision(

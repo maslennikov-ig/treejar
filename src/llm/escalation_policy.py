@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.core.text_utils import ARABIC_INDIC_DIGITS as _ARABIC_INDIC_DIGITS
-from src.llm.money import BUDGET_AR_CURRENCY_PATTERN
+from src.llm.money import BUDGET_AR_CURRENCY_PATTERN, SKU_FOLLOWING_CURRENCY_PATTERN
 from src.schemas.common import EscalationType
 
 
@@ -286,7 +286,7 @@ _QUANTITY_PREFIX_RE = re.compile(
 _ITEM_COLON_QUANTITY_RE = re.compile(
     rf"\b{_BULK_ITEM_EN}(?:\s+for\s+[a-z]+)?\s*[:=]\s*"
     r"(?P<count>\d{1,3}(?:,\d{3})+|\d+)(?![\d.,/\-–—])"
-    rf"(?!\s*(?:mm|cm|m|meters?|metres?|%|kg|aed|dhs?|usd|{BUDGET_AR_CURRENCY_PATTERN})(?:\b|\s|$))"
+    rf"(?!\s*(?:mm|cm|m|meters?|metres?|%|kg|{SKU_FOLLOWING_CURRENCY_PATTERN})(?:\b|\s|$))"
     r"(?!\s*[x×*]\s*\d)",
     re.IGNORECASE,
 )
