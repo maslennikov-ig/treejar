@@ -266,7 +266,7 @@ leave the workstation half unanswered.
 """
 
 _BULK_ITEM_EN = (
-    r"(?:pcs|pieces|units|nos|sets?|seats?|desks?|chairs?|work\s?stations?|"
+    r"(?:pcs?|pieces|units|nos|sets?|seats?|desks?|chairs?|work\s?stations?|"
     r"tables?|cabinets?|lockers?|pods?|sofas?|pedestals?|partitions?|"
     r"bench(?:es)?|stools?)"
 )
@@ -313,20 +313,22 @@ _WHOLESALE_QUANTITY_RE = re.compile(
     re.IGNORECASE,
 )
 _WHOLESALE_PRICING_RE = re.compile(
-    r"\b(?:wholesale|bulk|volume|trade|project|tender)\s+"
-    r"(?:discount|price|prices|pricing|rate|rates|deal|offer|terms)\b"
-    r"|\b(?:special|better|best)\s+(?:wholesale|bulk|volume|project)\s+"
+    r"\b(?:wholesale|whole[\s-]sale|whole[\s-]sell(?:er|ers)?|bulk|volume|trade|project|tender)\s+"
+    r"(?:discount|price|prices|pricing|rate|rates|deal|offer|terms|list|pricelist)\b"
+    r"|\b(?:special|better|best)\s+(?:wholesale|whole[\s-]sale|whole[\s-]sell(?:er|ers)?|bulk|volume|project)\s+"
     r"(?:price|prices|pricing|rate|rates|discount|deal|offer)\b"
-    r"|\bdiscount\s+for\s+(?:a\s+)?(?:bulk|wholesale|large|big)\s+(?:order|quantity|quantities)\b"
-    r"|\b(?:wholesale|bulk)\s+order\b"
+    r"|\bdiscount\s+for\s+(?:a\s+)?(?:bulk|wholesale|whole[\s-]sale|whole[\s-]sell|large|big)\s+(?:order|quantity|quantities)\b"
+    r"|\b(?:wholesale|whole[\s-]sale|whole[\s-]sell|bulk)\s+order\b"
     r"|\btender\b|\bboq\b|\bbill\s+of\s+quantities\b"
+    r"|\b(?:are\s+you\s+(?:a\s+)?)?whole[\s-]sell(?:er|ers)?\b"
+    r"|\bwhole[\s-]sell\b"
     r"|خصم\s+(?:ال)?(?:جملة|كميات|كمية)|(?:سعر|أسعار|اسعار)\s+(?:ال)?جملة"
     r"|بالجملة|طلب\s+جملة|عرض\s+سعر\s+خاص\s+(?:لل)?(?:كميات|كمية)|مناقصة",
     re.IGNORECASE,
 )
 _CUSTOM_MADE_TO_ORDER_RE = re.compile(
-    r"\bcustom(?:ised|ized)?[\s-]+(?:made|built|size[ds]?|sizing|dimensions?|"
-    r"design(?:ed)?|manufactur\w*|fabricat\w*|furniture|table|desk|"
+    r"\bcustom(?:ised|ized)?(?:[\s-]+|\s+(?:\w+[\s-]+){1,2})(?:made|built|size[ds]?|sizing|dimensions?|"
+    r"shape[ds]?|design(?:ed)?|manufactur\w*|fabricat\w*|furniture|table|desk|"
     r"workstation|cabinet|joinery|carpentry|\d)"
     r"|\bmade[\s-]to[\s-](?:order|measure)\b|\bbespoke\b|\btailor[\s-]?made\b"
     r"|\bbuilt[\s-]?in\s+(?:power|electrical|electric|sockets?|outlets?)\b"
@@ -352,21 +354,39 @@ _NEGATED_B2B_RE = re.compile(
 )
 
 
-_MODEL_SERIES_WORDS = frozenset(
-    {"luma", "novo", "skyland", "ch", "model", "series", "sku", "code", "ref"}
+_CATALOG_SERIES_WORDS = frozenset(
+    {
+        "luma",
+        "novo",
+        "skyland",
+        "evoq",
+        "raya",
+        "imago",
+        "xten",
+        "simple",
+        "stel",
+        "comp",
+        "ch",
+        "af",
+        "ex",
+    }
+)
+_EXPLICIT_COUNT_UNITS = re.compile(
+    r"\b(?:pcs?|pieces|units|nos|قطع|وحدات|حبه)\b",
+    re.IGNORECASE,
 )
 
 
-def _follows_a_model_name(text: str, start: int) -> bool:
+def _follows_a_model_name(text: str, start: int, matched_span: str = "") -> bool:
     """``NOVO 2400 tables`` names a model, not 2,400 tables."""
 
+    if _EXPLICIT_COUNT_UNITS.search(matched_span):
+        return False
     preceding = text[:start].rstrip().rsplit(maxsplit=1)
     if not preceding:
         return False
     word = preceding[-1].strip(".,:;()[]")
-    if word.casefold() in _MODEL_SERIES_WORDS:
-        return True
-    return len(word) >= 2 and word.isascii() and word.isalpha() and word.isupper()
+    return word.casefold() in _CATALOG_SERIES_WORDS
 
 
 _ALTERNATIVE_QTY_CONNECTOR_RE = re.compile(
@@ -388,7 +408,7 @@ def _largest_bulk_quantity(text: str) -> int:
     largest = 0
     raw_spans: list[tuple[int, int, int]] = []
     for match in _WHOLESALE_QUANTITY_RE.finditer(text):
-        if _follows_a_model_name(text, match.start()):
+        if _follows_a_model_name(text, match.start(), match.group()):
             continue
         try:
             value = int(match.group("count").replace(",", ""))

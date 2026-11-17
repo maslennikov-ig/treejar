@@ -146,7 +146,7 @@ Yes. In our catalog, visitor chairs (such as `CH 240 V` and `CH 420 V`, where 'V
 
 ## 26. Do you sell petty cash boxes, safes, or office stationery?
 
-No. Treejar Trading specializes in commercial office furniture, workstations, desks, chairs, and lockable steel office storage (such as lockable mobile pedestals `STEL SSP-25`, lockable steel cabinets `STEL SSC-10`, and steel lockers `STEL SSL-1`–`STEL SSL-4`). We do not carry portable petty cash boxes, metal money boxes, document safes, general office stationery, office electronics/machines (such as paper shredders, printers, or photocopiers), or residential plastic dining chairs.
+No. Treejar Trading specializes in commercial office furniture, workstations, desks, chairs, and lockable steel office storage (such as lockable mobile pedestals `STEL SSP-25`, lockable steel cabinets `STEL SSC-10`, and steel lockers `STEL SSL-1`–`STEL SSL-4`). We do not carry portable petty cash boxes, metal money boxes, document safes, general office stationery, office electronics/machines (such as paper shredders, printers, or photocopiers), residential beds / bedroom furniture (double beds, single beds, mattresses, or bedroom wardrobes), or residential plastic dining chairs.
 
 ## 27. Do you offer office furniture rental or short-term leasing?
 
