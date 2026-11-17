@@ -149,7 +149,12 @@ async def _release_chat_lock(redis: Any, lock: tuple[str, str]) -> None:
 
 def _pending_is_live(conversation: Any, pending: Mapping[str, Any]) -> bool:
     from src.dialogue.order_state import QuoteConsent, quote_workflow_from_metadata
+    from src.services.escalation_state import should_pause_bot_for_escalation
 
+    if should_pause_bot_for_escalation(
+        getattr(conversation, "escalation_status", None)
+    ):
+        return False
     if not pending.get("items"):
         return False
     workflow = quote_workflow_from_metadata(getattr(conversation, "metadata_", None))
@@ -242,6 +247,7 @@ async def retry_pending_quotation(
     from src.llm.engine import _create_quotation
     from src.llm.response_runtime import QuotationItem
     from src.models.conversation import Conversation
+    from src.services.escalation_state import should_pause_bot_for_escalation
 
     redis = ctx["redis"]
     async with async_session_factory() as db:
@@ -251,6 +257,17 @@ async def retry_pending_quotation(
         pending = pending_quotation(conversation)
         if pending is None:
             return "nothing_pending"
+        if should_pause_bot_for_escalation(
+            getattr(conversation, "escalation_status", None)
+        ):
+            clear_pending_quotation(conversation)
+            await db.commit()
+            logger.info(
+                "Pending quotation cleared due to active human handoff: conversation=%s status=%s",
+                conversation_id,
+                getattr(conversation, "escalation_status", None),
+            )
+            return "handed_to_manager"
         if not _pending_is_live(conversation, pending):
             logger.info(
                 "Pending quotation no longer eligible for retry: conversation=%s",
@@ -273,6 +290,19 @@ async def retry_pending_quotation(
             pending = pending_quotation(conversation)
             if pending is None:
                 return "nothing_pending"
+            if should_pause_bot_for_escalation(
+                getattr(conversation, "escalation_status", None)
+            ):
+                clear_pending_quotation(conversation)
+                await db.commit()
+                logger.info(
+                    "Pending quotation cleared inside lock due to human handoff: conversation=%s status=%s",
+                    conversation_id,
+                    getattr(conversation, "escalation_status", None),
+                )
+                return "handed_to_manager"
+            if not _pending_is_live(conversation, pending):
+                return "not_eligible"
             _update_pending(conversation, retry_scheduled_for=None)
             deps = _build_deps(db, redis, conversation, pending)
             items = [

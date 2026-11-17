@@ -220,7 +220,11 @@ def critical_escalation_decision(
     # tj-r62i: a bulk quantity given in an earlier turn still routes, unless
     # this conversation's wholesale handoff already happened.
     if not metadata.get(WHOLESALE_HANDOFF_METADATA_KEY):
-        wholesale = wholesale_handoff_from_history(None, recent_history)
+        wholesale = wholesale_handoff_from_history(
+            None,
+            recent_history,
+            conversation_metadata=metadata,
+        )
         if wholesale.allowed:
             return wholesale
 
@@ -263,7 +267,8 @@ leave the workstation half unanswered.
 
 _BULK_ITEM_EN = (
     r"(?:pcs|pieces|units|nos|sets?|seats?|desks?|chairs?|work\s?stations?|"
-    r"tables?|cabinets?|lockers?|pods?|sofas?|pedestals?|partitions?)"
+    r"tables?|cabinets?|lockers?|pods?|sofas?|pedestals?|partitions?|"
+    r"bench(?:es)?|stools?)"
 )
 # `tj-r62i` live pilot 2026-11-05: "Qty.350Nos" (350 workstations) never
 # reached a manager. A quantity the customer labels as such is a quantity
@@ -274,6 +279,15 @@ _QUANTITY_PREFIX_RE = re.compile(
     r"(?P<count>\d{1,3}(?:,\d{3})+|\d+)(?!\d)(?![.,]\d)"
     r"(?!\s*(?:mm|cm|m|meters?|metres?|%)\b)"
     r"|(?:الكمية|كمية|العدد)\s*[:\-]?\s*(?P<ar_count>\d+)",
+    re.IGNORECASE,
+)
+# `tj-t6g7` live pilot 2026-11-17 (*8054): spreadsheet/BOQ table screenshots put
+# the furniture noun before ": <count>" ("Ergonomic chair: 97", "Workstations: 50").
+_ITEM_COLON_QUANTITY_RE = re.compile(
+    rf"\b{_BULK_ITEM_EN}(?:\s+for\s+[a-z]+)?\s*[:=]\s*"
+    r"(?P<count>\d{1,3}(?:,\d{3})+|\d+)(?![\d.,/\-–—])"
+    rf"(?!\s*(?:mm|cm|m|meters?|metres?|%|kg|aed|dhs?|usd|{BUDGET_AR_CURRENCY_PATTERN})(?:\b|\s|$))"
+    r"(?!\s*[x×*]\s*\d)",
     re.IGNORECASE,
 )
 _COMPOUND_SET_QUANTITY_RE = re.compile(
@@ -372,8 +386,7 @@ def _are_alternative_quantity_spans(between: str) -> bool:
 
 def _largest_bulk_quantity(text: str) -> int:
     largest = 0
-    additive_groups: list[int] = []
-    prev_end: int | None = None
+    raw_spans: list[tuple[int, int, int]] = []
     for match in _WHOLESALE_QUANTITY_RE.finditer(text):
         if _follows_a_model_name(text, match.start()):
             continue
@@ -381,16 +394,30 @@ def _largest_bulk_quantity(text: str) -> int:
             value = int(match.group("count").replace(",", ""))
         except ValueError:
             continue
+        raw_spans.append((match.start(), match.end(), value))
+    for match in _ITEM_COLON_QUANTITY_RE.finditer(text):
+        try:
+            value = int(match.group("count").replace(",", ""))
+        except ValueError:
+            continue
+        raw_spans.append((match.start(), match.end(), value))
+
+    raw_spans.sort(key=lambda item: (item[0], -(item[1] - item[0])))
+    additive_groups: list[int] = []
+    prev_end: int | None = None
+    for start, end, value in raw_spans:
+        if prev_end is not None and start < prev_end:
+            continue
         largest = max(largest, value)
         if (
             prev_end is not None
             and additive_groups
-            and _are_alternative_quantity_spans(text[prev_end : match.start()])
+            and _are_alternative_quantity_spans(text[prev_end:start])
         ):
             additive_groups[-1] = max(additive_groups[-1], value)
         else:
             additive_groups.append(value)
-        prev_end = match.end()
+        prev_end = end
     total_items = sum(additive_groups)
     for match in _QUANTITY_PREFIX_RE.finditer(text):
         raw = match.group("count") or match.group("ar_count") or ""
@@ -411,6 +438,37 @@ def _largest_bulk_quantity(text: str) -> int:
     return max(largest, total_items)
 
 
+def recorded_wholesale_quantity(
+    conversation_metadata: Mapping[str, Any] | None,
+) -> int:
+    """Total units recorded semantically by the model in ``selected_items``."""
+    if not isinstance(conversation_metadata, Mapping):
+        return 0
+    state = conversation_metadata.get("dialogue_state")
+    if not isinstance(state, Mapping):
+        return 0
+    slots = state.get("slots")
+    if not isinstance(slots, Mapping):
+        return 0
+    items = slots.get("selected_items")
+    if not isinstance(items, list):
+        return 0
+    total = 0
+    for row in items:
+        if not isinstance(row, Mapping):
+            continue
+        raw_qty = row.get("quantity")
+        if isinstance(raw_qty, bool) or raw_qty is None:
+            continue
+        try:
+            qty = int(raw_qty)
+        except (TypeError, ValueError):
+            continue
+        if qty > 0:
+            total += qty
+    return total
+
+
 def wholesale_quantity(customer_text: str | None) -> int:
     """The largest bulk quantity named in one customer message, or 0."""
 
@@ -424,14 +482,13 @@ def wholesale_quantity(customer_text: str | None) -> int:
 def wholesale_handoff_from_history(
     customer_text: str | None,
     recent_history: Sequence[str] = (),
+    *,
+    conversation_metadata: Mapping[str, Any] | None = None,
 ) -> CriticalEscalationDecision:
-    """A wholesale handoff earned by this turn or an earlier customer turn.
+    """A wholesale handoff earned by this turn, history, or model-recorded items.
 
-    `tj-r62i`. Customers split a bulk request across messages ("Qty.350Nos",
-    then "Work station with cabinet"), so the current message alone misses
-    it. Only customer lines (``user: ``) of the recent history are read, and
-    only the wholesale route is carried across turns: a human request or an
-    incident stays current-turn only.
+    `tj-r62i` / `tj-t6g7`. Customers split a bulk request across messages or send
+    spreadsheet/photo BOQs that the model records via ``record_customer_requirements``.
     """
 
     texts = [str(customer_text or "")]
@@ -454,6 +511,18 @@ def wholesale_handoff_from_history(
                 ),
                 trigger="wholesale_or_bulk_project",
             )
+    recorded_qty = recorded_wholesale_quantity(conversation_metadata)
+    if recorded_qty >= WHOLESALE_QUANTITY_THRESHOLD:
+        return CriticalEscalationDecision(
+            allowed=True,
+            escalation_type=EscalationType.GENERAL,
+            reason=(
+                "B2B handoff: the customer asked for "
+                + _B2B_REASONS["wholesale_or_bulk_project"]
+                + f" ({recorded_qty} units)."
+            ),
+            trigger="wholesale_or_bulk_project",
+        )
     return CriticalEscalationDecision(
         allowed=False,
         reason="No wholesale handoff route is present.",

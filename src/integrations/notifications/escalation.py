@@ -64,6 +64,9 @@ async def notify_manager_escalation(
 
     # Persist the escalation row so manager-review jobs and audit paths can track it.
     if pause_bot:
+        from src.llm.quotation_deferral import clear_pending_quotation
+
+        clear_pending_quotation(conversation)
         conversation.escalation_status = EscalationStatus.PENDING.value
     db.add(
         Escalation(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import inspect
 import json
 import logging
 import re
@@ -2561,14 +2562,53 @@ def _record_recovery_tool_result(
     return result
 
 
+async def _resolve_zoho_sku_map_by_item_id(
+    zoho_inventory: Any,
+    zoho_item_ids_by_sku: Mapping[str, str | None] | None,
+) -> dict[str, str]:
+    """Map catalog SKUs to live Zoho SKUs when warehouse renamed a SKU in Zoho."""
+    if not zoho_item_ids_by_sku:
+        return {}
+    stock_store = getattr(zoho_inventory, "stock_store", None)
+    if stock_store is None or not callable(getattr(stock_store, "read", None)):
+        return {}
+    try:
+        read_res = stock_store.read()
+        if not inspect.isawaitable(read_res):
+            return {}
+        state, _ = await read_res
+    except Exception:
+        return {}
+    items_map = getattr(state, "items", None)
+    if not isinstance(items_map, Mapping):
+        return {}
+    mapped: dict[str, str] = {}
+    for catalog_sku, item_id in zoho_item_ids_by_sku.items():
+        if not item_id:
+            continue
+        row = items_map.get(str(item_id))
+        if not isinstance(row, Mapping) or row.get("status", "active") != "active":
+            continue
+        zoho_sku = row.get("sku")
+        if isinstance(zoho_sku, str) and zoho_sku.strip():
+            mapped[catalog_sku] = zoho_sku.strip()
+    return mapped
+
+
 async def _zoho_stock_for_catalog_candidates(
     deps: SalesDeps,
     skus: Sequence[str],
+    *,
+    zoho_item_ids_by_sku: Mapping[str, str | None] | None = None,
 ) -> tuple[dict[str, int], datetime.datetime] | None:
     if not skus:
         return None
+    zoho_sku_map = await _resolve_zoho_sku_map_by_item_id(
+        deps.zoho_inventory, zoho_item_ids_by_sku
+    )
+    lookup_skus = list(dict.fromkeys(zoho_sku_map.get(sku, sku) for sku in skus))
     try:
-        raw_items = await deps.zoho_inventory.get_stock_bulk(list(skus))
+        raw_items = await deps.zoho_inventory.get_stock_bulk(lookup_skus)
     except Exception:
         logger.warning(
             "Zoho stock lookup failed for verified catalog plan", exc_info=True
@@ -2590,6 +2630,11 @@ async def _zoho_stock_for_catalog_candidates(
         except (TypeError, ValueError):
             continue
         stock_by_sku[str(item["sku"]).strip().casefold()] = max(inventory_available, 0)
+
+    for catalog_sku, zoho_sku in zoho_sku_map.items():
+        zoho_key = zoho_sku.strip().casefold()
+        if zoho_key in stock_by_sku:
+            stock_by_sku[catalog_sku.strip().casefold()] = stock_by_sku[zoho_key]
 
     return stock_by_sku, datetime.datetime.now(datetime.UTC)
 
@@ -2708,6 +2753,7 @@ __all__ = (
     "_turn_owes_the_company_question",
     "_turn_saw_catalog_evidence",
     "_verify_volunteered_claims",
+    "_resolve_zoho_sku_map_by_item_id",
     "_zoho_stock_for_catalog_candidates",
     "AnchorCatalogRow",
     "CatalogAnchor",

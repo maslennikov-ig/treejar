@@ -101,6 +101,7 @@ from src.llm.catalog_planning import (
     _product_search_response_contract,
     _record_recovery_tool_result,
     _requested_catalog_evidence_gaps,
+    _resolve_zoho_sku_map_by_item_id,
     _search_budget_fallback_contract,
     _search_products_limit_message,
     _stock_follow_up_contract,
@@ -2863,6 +2864,11 @@ async def search_products(
     stock_lookup = await _zoho_stock_for_catalog_candidates(
         ctx.deps,
         [str(product.sku) for product in results.products if product.sku],
+        zoho_item_ids_by_sku={
+            str(product.sku): getattr(product, "zoho_item_id", None)
+            for product in results.products
+            if product.sku
+        },
     )
     zoho_stock_by_sku, zoho_stock_as_of = (
         stock_lookup
@@ -4007,6 +4013,51 @@ async def _create_quotation(
     require_resolved_customer_writes(ctx)
     logger.info(f"LLM Tool called: create_quotation(items={items})")
 
+    from src.llm.escalation_policy import (
+        WHOLESALE_HANDOFF_METADATA_KEY,
+        WHOLESALE_QUANTITY_THRESHOLD,
+    )
+
+    total_requested_units = sum(
+        max(0, int(item.quantity))
+        for item in items
+        if not isinstance(item.quantity, bool)
+    )
+    if total_requested_units >= WHOLESALE_QUANTITY_THRESHOLD:
+        clear_pending_quotation(ctx.deps.conversation)
+        from src.integrations.notifications.escalation import notify_manager_escalation
+        from src.schemas.common import EscalationType
+        from src.services.escalation_state import should_pause_bot_for_escalation
+
+        if not should_pause_bot_for_escalation(ctx.deps.conversation.escalation_status):
+            updated_meta = dict(ctx.deps.conversation.metadata_ or {})
+            updated_meta[WHOLESALE_HANDOFF_METADATA_KEY] = datetime.datetime.now(
+                datetime.UTC
+            ).isoformat()
+            ctx.deps.conversation.metadata_ = updated_meta
+            await notify_manager_escalation(
+                conversation=ctx.deps.conversation,
+                reason=(
+                    "B2B handoff: the customer asked for a wholesale or bulk project "
+                    f"order (20+ units or bulk pricing) ({total_requested_units} units). "
+                    "Routed from quotation request."
+                ),
+                recent_messages=list(ctx.deps.recent_history or []),
+                db=ctx.deps.db,
+                escalation_type=EscalationType.GENERAL,
+                pause_bot=True,
+            )
+        return (
+            f"Orders of {WHOLESALE_QUANTITY_THRESHOLD}+ units ({total_requested_units} "
+            "units requested) require wholesale project pricing from a Treejar sales "
+            "manager rather than an automated retail PDF quotation. No draft order or "
+            "PDF was created; a sales manager has been notified and will take over "
+            "this conversation. Tell the customer plainly that their item list and "
+            "details have been passed to our project manager, who will follow up "
+            "shortly with wholesale project pricing, and do not claim that a PDF "
+            "quotation is being generated automatically."
+        )
+
     metadata = ctx.deps.conversation.metadata_
     shortfall = (metadata or {}).get("quotation_stock_shortfall")
     if isinstance(shortfall, dict):
@@ -4085,12 +4136,27 @@ async def _create_quotation(
     )
 
     # Needs to fetch item details from Zoho Inventory
-    skus_to_fetch = [item.sku for item in items]
+    catalog_products: dict[str, Any | None] = {}
+    zoho_item_ids_by_sku: dict[str, str | None] = {}
+    for item in items:
+        normalized_sku = item.sku.strip()
+        if normalized_sku not in catalog_products:
+            catalog_products[normalized_sku] = await _find_catalog_product_by_sku(
+                ctx.deps.db, item.sku
+            )
+        catalog_product = catalog_products[normalized_sku]
+        zoho_item_ids_by_sku[item.sku] = getattr(catalog_product, "zoho_item_id", None)
+
+    zoho_sku_map = await _resolve_zoho_sku_map_by_item_id(
+        ctx.deps.zoho_inventory, zoho_item_ids_by_sku
+    )
+    skus_to_fetch = list(
+        dict.fromkeys(zoho_sku_map.get(item.sku, item.sku) for item in items)
+    )
     raw_stock_details = await ctx.deps.zoho_inventory.get_stock_bulk_fresh(
         skus_to_fetch
     )
     stock_rows: list[dict[str, Any]] = []
-    catalog_products: dict[str, Any | None] = {}
     for raw_item in raw_stock_details:
         zoho_item = (
             _coerce_inventory_item(raw_item, require_item_id=True)
@@ -4104,10 +4170,18 @@ async def _create_quotation(
     metadata.pop("quotation_stock_shortfall", None)
     ctx.deps.conversation.metadata_ = metadata
 
+    def _select_verified_quote_item(requested_sku: str) -> dict[str, Any] | None:
+        mapped_sku = zoho_sku_map.get(requested_sku)
+        if mapped_sku:
+            matched = select_stock_item(mapped_sku, stock_rows)
+            if matched is not None:
+                return matched
+        return select_stock_item(requested_sku, stock_rows)
+
     # All selected rows must be fresh and numeric before any business write.
     requested_by_id: dict[str, int] = {}
     for selected in items:
-        verified = select_stock_item(selected.sku, stock_rows)
+        verified = _select_verified_quote_item(selected.sku)
         if verified is None:
             raise InventoryReadUnavailable(status_code=None)
         item_id = str(verified["item_id"])
@@ -4120,7 +4194,7 @@ async def _create_quotation(
             as_of=snapshot_as_of,
         )
     for selected in items:
-        verified = select_stock_item(selected.sku, stock_rows)
+        verified = _select_verified_quote_item(selected.sku)
         assert verified is not None
         available = int(verified["stock_on_hand"])
         if requested_by_id[str(verified["item_id"])] > available:
@@ -4157,13 +4231,9 @@ async def _create_quotation(
     )
 
     for item in items:
-        zoho_item = select_stock_item(item.sku, stock_rows)
+        zoho_item = _select_verified_quote_item(item.sku)
         normalized_sku = item.sku.strip()
-        if normalized_sku not in catalog_products:
-            catalog_products[normalized_sku] = await _find_catalog_product_by_sku(
-                ctx.deps.db, item.sku
-            )
-        catalog_product = catalog_products[normalized_sku]
+        catalog_product = catalog_products.get(normalized_sku)
         assert zoho_item is not None  # All selected rows were verified above.
 
         price_decision = _commercial_price_decision(

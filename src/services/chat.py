@@ -1819,6 +1819,7 @@ async def _process_batch_inner(
                     dict(conv.metadata_) if isinstance(conv.metadata_, dict) else {}
                 )
                 metadata["last_manager_message_at"] = datetime.now(UTC).isoformat()
+                metadata.pop("pending_quotation", None)
                 conv.metadata_ = metadata
                 if conv.escalation_status != "manual_takeover":
                     conv.escalation_status = "manual_takeover"

@@ -826,13 +826,15 @@ async def _deterministic_wholesale_handoff(turn: _Turn) -> bool:
     # A model-made handoff already set the status; a blocked tool call did not.
     if should_pause_bot_for_escalation(conversation.escalation_status):
         return False
-    # After a resolved handoff, only a new bulk request in this turn re-routes.
+    already_notified = bool(metadata.get(WHOLESALE_HANDOFF_METADATA_KEY))
     history: tuple[str, ...] = (
-        ()
-        if metadata.get(WHOLESALE_HANDOFF_METADATA_KEY)
-        else tuple(turn.deps.recent_history or ())
+        () if already_notified else tuple(turn.deps.recent_history or ())
     )
-    decision = wholesale_handoff_from_history(turn.combined_text, history)
+    decision = wholesale_handoff_from_history(
+        turn.combined_text,
+        history,
+        conversation_metadata=None if already_notified else metadata,
+    )
     if not decision.allowed:
         return False
 
