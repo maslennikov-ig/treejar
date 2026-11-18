@@ -502,6 +502,7 @@ def resolve_ssh_command() -> list[str]:
     home = pathlib.Path.home()
     key_candidates = [
         home / ".ssh" / "treejar_vps",
+        REPO_ROOT.parent / ".treejar-tools" / "ssh" / "treejar_vps",
         REPO_ROOT / ".tmp" / "ssh" / "treejar_vps",
         home / "Treejar-Windows-Laptop-20261118" / "ssh" / "treejar_vps",
     ]

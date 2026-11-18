@@ -117,6 +117,7 @@ def ensure_overlay_copied(
     home = pathlib.Path.home()
     candidates.extend(
         [
+            repo_root.parent / ".treejar-tools" / "gitignored-overlay",
             repo_root.parent / "Treejar-Windows-Laptop-20261118" / "gitignored-overlay",
             home / "Treejar-Windows-Laptop-20261118" / "gitignored-overlay",
             repo_root.parent.parent
@@ -155,6 +156,7 @@ def ensure_ssh_setup(
         bundle_candidates.append(ssh_bundle_dir)
     bundle_candidates.extend(
         [
+            repo_root.parent / ".treejar-tools" / "ssh",
             repo_root / ".tmp" / "ssh",
             home / "Treejar-Windows-Laptop-20261118" / "ssh",
             repo_root.parent / "Treejar-Windows-Laptop-20261118" / "ssh",
