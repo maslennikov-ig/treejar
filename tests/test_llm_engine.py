@@ -1371,6 +1371,84 @@ def test_product_media_reference_bare_model_code_does_not_add_siblings() -> None
     assert _referenced_product_media(pending, reply) == (media["novo_four"],)
 
 
+def test_product_media_reference_rejects_wrong_colour_and_non_new_siblings_0418() -> (
+    None
+):
+    # Live pilot *0418 Turn 4 (2026-11-19): SK 38 white NEW was already sent in Turn 1,
+    # so pending_product_media only held SK 38 black NEW (same AED 866 price) and
+    # SK 38 white (non-NEW prefix match, AED 1,173.33). Neither was offered.
+    sk38_black_new = ProductMediaPayload(
+        url="https://example.com/sk38-black-new.jpg",
+        caption="Adjustable table SkyLand SK 38 black NEW — 866.00 AED",
+        product_key="sk38-black-new",
+        reference_tokens=(
+            "Adjustable table SkyLand SK 38 black NEW",
+            "SK 38 black NEW",
+        ),
+    )
+    sk38_white_old = ProductMediaPayload(
+        url="https://example.com/sk38-white-old.jpg",
+        caption="Adjustable table SkyLand SK 38 white — 1173.33 AED",
+        product_key="sk38-white-old",
+        reference_tokens=("Adjustable table SkyLand SK 38 white", "SK 38 white"),
+    )
+    sk38_white_new = ProductMediaPayload(
+        url="https://example.com/sk38-white-new.jpg",
+        caption="Adjustable table SkyLand SK 38 white NEW — 866.00 AED",
+        product_key="sk38-white-new",
+        reference_tokens=(
+            "Adjustable table SkyLand SK 38 white NEW",
+            "SK 38 white NEW",
+        ),
+    )
+    reply = (
+        "1. *SkyLand SK 38 white NEW* is the one I suggested earlier. "
+        "It is AED 866.00 excl. 5% VAT (AED 909.30 incl. 5% VAT), with 49 in stock.\n"
+        "https://treejartrading.ae/product/adjustable-table-skyland-sk-38-white-new\n"
+    )
+
+    assert _referenced_product_media((sk38_black_new, sk38_white_old), reply) == ()
+    assert _referenced_product_media((sk38_black_new,), reply) == ()
+    assert _referenced_product_media((sk38_white_old,), reply) == ()
+    assert _referenced_product_media(
+        (sk38_black_new, sk38_white_old, sk38_white_new), reply
+    ) == (sk38_white_new,)
+
+
+def test_product_media_reference_separates_new_edition_from_base_model() -> None:
+    ch616_old = ProductMediaPayload(
+        url="https://example.com/ch616-black.jpg",
+        caption="Executive Office Chair CH 616 black — 410.00 AED",
+        product_key="ch616-black",
+        reference_tokens=("Executive Office Chair CH 616 black", "CH 616 black"),
+    )
+    ch616_new = ProductMediaPayload(
+        url="https://example.com/ch616-new-black.jpg",
+        caption="Operative Office Chair CH 616 NEW black — 295.00 AED",
+        product_key="ch616-new-black",
+        reference_tokens=(
+            "Operative Office Chair CH 616 NEW black",
+            "CH 616 NEW black",
+        ),
+    )
+
+    assert _referenced_product_media(
+        (ch616_old, ch616_new),
+        "• *CH 616 black* — AED 410.00 excl. 5% VAT.",
+    ) == (ch616_old,)
+    assert _referenced_product_media(
+        (ch616_old, ch616_new),
+        "• *CH 616 NEW black* — AED 295.00 excl. 5% VAT.",
+    ) == (ch616_new,)
+    assert (
+        _referenced_product_media(
+            (ch616_new,),
+            "• *CH 616 black* — AED 410.00 excl. 5% VAT.",
+        )
+        == ()
+    )
+
+
 @pytest.mark.asyncio
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)

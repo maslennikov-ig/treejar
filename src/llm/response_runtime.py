@@ -140,7 +140,6 @@ _PRODUCT_REFERENCE_VARIANT_WORDS = frozenset(
         "green",
         "grey",
         "gray",
-        "new",
         "orange",
         "red",
         "walnut",
@@ -148,6 +147,8 @@ _PRODUCT_REFERENCE_VARIANT_WORDS = frozenset(
         "yellow",
     }
 )
+_PRODUCT_EDITION_WORDS = frozenset({"new"})
+_PRODUCT_MODEL_SKIP_WORDS = _PRODUCT_REFERENCE_VARIANT_WORDS | _PRODUCT_EDITION_WORDS
 
 
 # Words that name a count only inside a product name; plain number words
@@ -197,7 +198,7 @@ def _product_model_reference(raw_reference: str) -> tuple[str, ...]:
             filtered_chunks = [
                 chunk
                 for chunk in chunks
-                if chunk.casefold() not in _PRODUCT_REFERENCE_VARIANT_WORDS
+                if chunk.casefold() not in _PRODUCT_MODEL_SKIP_WORDS
             ]
             if not filtered_chunks:
                 continue
@@ -302,16 +303,53 @@ def _lines_mentioning(response_text: str, words: Sequence[str]) -> list[str]:
     ]
 
 
-def _names_another_colour(
-    reference: str, reference_words: Sequence[str], response_text: str
+def _editions(words: Iterable[str]) -> set[str]:
+    return {word for word in words if word in _PRODUCT_EDITION_WORDS}
+
+
+def _contains_exact_product_reference(reference: str, padded_response: str) -> bool:
+    """Match ``reference`` on token boundaries without matching a longer edition."""
+
+    needle = f" {reference} "
+    ref_editions = _editions(reference.split())
+    start = 0
+    while (pos := padded_response.find(needle, start)) != -1:
+        tail = padded_response[pos + len(needle) :].lstrip()
+        next_word = tail.split(maxsplit=1)[0] if tail else ""
+        if next_word in _PRODUCT_EDITION_WORDS and next_word not in ref_editions:
+            start = pos + 1
+            continue
+        return True
+    return False
+
+
+def _is_variant_compatible_on_lines(
+    raw_references: Iterable[str],
+    words_to_match: Sequence[str],
+    response_text: str,
 ) -> bool:
-    reference_colours = _colours(reference.split())
-    if not reference_colours:
-        return False
-    stated_colours: set[str] = set()
-    for line in _lines_mentioning(response_text, reference_words):
-        stated_colours |= _colours(_product_reference_words(line))
-    return bool(stated_colours) and not stated_colours & reference_colours
+    """Return whether at least one matching reply line preserves colour and edition."""
+
+    lines = _lines_mentioning(response_text, words_to_match)
+    if not lines:
+        return True
+    ref_tokens = [
+        word
+        for raw in raw_references
+        for word in _normalized_product_reference(raw).split()
+    ]
+    ref_colours = _colours(ref_tokens)
+    ref_editions = _editions(ref_tokens)
+    for line in lines:
+        line_words = _product_reference_words(line)
+        line_colours = _colours(line_words)
+        line_editions = _editions(line_words)
+        colour_ok = (
+            not ref_colours or not line_colours or bool(line_colours & ref_colours)
+        )
+        if colour_ok and line_editions == ref_editions:
+            return True
+    return False
 
 
 def _product_reference_number(word: str) -> str:
@@ -340,7 +378,7 @@ def _product_media_reference_strength(
         reference = _normalized_product_reference(raw_reference)
         if not reference:
             continue
-        if reference in normalized_response:
+        if _contains_exact_product_reference(reference, padded_response):
             return "full"
 
         reference_words = [
@@ -353,9 +391,12 @@ def _product_media_reference_strength(
             and any(_has_digit(word) for word in reference_words)
             and all(word in response_words for word in reference_words)
         ):
-            if _names_another_colour(reference, reference_words, response_text):
-                # "CH 490 V" named as brown is not the black sibling; leave it
-                # to the sibling rules instead of calling it a full match.
+            if not _is_variant_compatible_on_lines(
+                item.reference_tokens, reference_words, response_text
+            ):
+                # "CH 490 V" named as brown is not the black sibling, and
+                # "SK 38 white NEW" is not the older non-NEW sibling; leave it
+                # to the model-sibling rules instead of calling it a full match.
                 model_match = True
                 continue
             return "full"
@@ -539,6 +580,10 @@ def _referenced_product_media(
         if strength != "model":
             continue
         key = model_keys[index]
+        if key and not _is_variant_compatible_on_lines(
+            items[index].reference_tokens, key, response_text
+        ):
+            continue
         if sibling_counts.get(key, 0) <= 1:
             kept_model_only.add(index)
         else:
