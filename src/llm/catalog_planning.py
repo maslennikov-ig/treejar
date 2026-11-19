@@ -788,6 +788,219 @@ _REQUESTED_STORAGE_FEATURE_RE = re.compile(
 # A requested storage feature is met by any of these words in the product row.
 _STORAGE_FEATURE_TERMS = ("cabinet", "pedestal", "drawer", "storage")
 
+_SPEC_SKIP_KEY_RE = re.compile(
+    r"\b(?:package|parentage|batteries|unit(?:\s+of\s+measure)?|number\s+of\s+boxes|"
+    r"number\s+of\s+items|is\s+customizable|country\s+of\s+origin|"
+    r"recommended\s+uses|theme)\b",
+    re.IGNORECASE,
+)
+_FEATURE_BOILERPLATE_RE = re.compile(
+    r"^(?:fast\s+delivery\s+across\s+uae|professional\s+(?:smart\s+furniture|adjustable\s+tables))$",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class CatalogConcept:
+    """Semantic/attribute concept bridging customer vocabulary and catalog naming."""
+
+    name: str
+    query_re: re.Pattern[str]
+    product_match_re: re.Pattern[str]
+    sql_terms: tuple[str, ...]
+    product_exclude_re: re.Pattern[str] | None = None
+
+
+CATALOG_CONCEPTS: tuple[CatalogConcept, ...] = (
+    CatalogConcept(
+        name="height_adjustable_desk",
+        query_re=re.compile(
+            r"\b(?:height[\s-]+adjustable|sit[\s-]+stand|standing\s+(?:desks?|tables?)|"
+            r"adjustable[\s-]+(?:height|desks?|tables?)|motorized\s+(?:desks?|tables?)|"
+            r"electric\s+(?:desks?|tables?|standing)|smart\s+furniture)\b"
+            r"|(?:طاول[ةه]\s+قابل[ةه]\s+للتعديل|مكتب\s+قابل\s+للتعديل|تعديل\s+الارتفاع|مكتب\s+وقوف)",
+            re.IGNORECASE,
+        ),
+        product_match_re=re.compile(
+            r"\b(?:adjustable\s+(?:table|desk|frame)|adjustable\s+tables|"
+            r"standing\s+desk|height[\s-]+adjustable|sit[\s-]+stand|lifting\s+mechanism)\b",
+            re.IGNORECASE,
+        ),
+        product_exclude_re=re.compile(
+            r"\b(?:chairs?|stools?|sofas?|fridge|cabinets?|lockers?)\b",
+            re.IGNORECASE,
+        ),
+        sql_terms=(
+            "adjustable table",
+            "adjustable desk",
+            "adjustable tables",
+            "standing desk",
+            "height adjustable",
+            "sit-stand",
+            "adjustable frame",
+        ),
+    ),
+    CatalogConcept(
+        name="acoustic_pod",
+        query_re=re.compile(
+            r"\b(?:(?:acoustic|sound[\s-]?proof|silence|phone|meeting|work)\s+(?:pods?|booths?)|"
+            r"pods?|booths?)\b|(?:كبسول[ةه]|مقصور[ةه]\s+صوتي)",
+            re.IGNORECASE,
+        ),
+        product_match_re=re.compile(
+            r"\b(?:pods?|booths?|acoustic|soundproof)\b",
+            re.IGNORECASE,
+        ),
+        sql_terms=("pod", "booth", "acoustic"),
+    ),
+    CatalogConcept(
+        name="bar_stool",
+        query_re=re.compile(
+            r"\b(?:bar\s+stools?|counter\s+stools?|high\s+stools?|stools?)\b"
+            r"|(?:كرسي\s+بار|مقعد\s+مرتفع)",
+            re.IGNORECASE,
+        ),
+        product_match_re=re.compile(r"\bstools?\b", re.IGNORECASE),
+        sql_terms=("stool",),
+    ),
+    CatalogConcept(
+        name="l_shape_desk",
+        query_re=re.compile(
+            r"\b(?:l[\s-]+shap(?:e|ed)|corner)\s+(?:desks?|tables?|workstations?)\b"
+            r"|(?:مكتب\s+زاوي[ةه]|على\s+شكل\s+L)",
+            re.IGNORECASE,
+        ),
+        product_match_re=re.compile(
+            r"\b(?:l[\s-]+shap(?:e|ed)|corner)\b",
+            re.IGNORECASE,
+        ),
+        product_exclude_re=re.compile(
+            r"\b(?:sofas?|chairs?|cabinets?)\b",
+            re.IGNORECASE,
+        ),
+        sql_terms=("l-shape", "l shape", "l-shaped", "corner"),
+    ),
+    CatalogConcept(
+        name="reception_desk",
+        query_re=re.compile(
+            r"\b(?:reception\s+(?:desks?|tables?|counters?)|front\s+desk)\b"
+            r"|(?:مكتب\s+استقبال|كاونتر\s+استقبال)",
+            re.IGNORECASE,
+        ),
+        product_match_re=re.compile(r"\breception\b", re.IGNORECASE),
+        product_exclude_re=re.compile(
+            r"\b(?:chairs?|sofas?|seating)\b",
+            re.IGNORECASE,
+        ),
+        sql_terms=("reception",),
+    ),
+    CatalogConcept(
+        name="meeting_table",
+        query_re=re.compile(
+            r"\b(?:meeting\s+tables?|conference\s+tables?|boardroom\s+tables?|"
+            r"discussion\s+tables?|training\s+tables?)\b|(?:طاول[ةه]\s+اجتماع)",
+            re.IGNORECASE,
+        ),
+        product_match_re=re.compile(
+            r"\b(?:meeting|conference|boardroom|discussion|training)\s+tables?\b",
+            re.IGNORECASE,
+        ),
+        product_exclude_re=re.compile(r"\bchairs?\b", re.IGNORECASE),
+        sql_terms=("meeting table", "discussion table", "conference"),
+    ),
+    CatalogConcept(
+        name="steel_storage",
+        query_re=re.compile(
+            r"\b(?:lockers?|mobile\s+(?:pedestals?|drawers?)|filing\s+cabinets?|"
+            r"steel\s+(?:cabinets?|storage|lockers?))\b"
+            r"|(?:خزان[ةه]\s+ملفات|لوكر|وحدة\s+أدراج)",
+            re.IGNORECASE,
+        ),
+        product_match_re=re.compile(
+            r"\b(?:lockers?|pedestals?|mobile\s+drawer|filing|stel\s+ss)\b",
+            re.IGNORECASE,
+        ),
+        product_exclude_re=re.compile(
+            r"\b(?:desks?|workstations?)\b",
+            re.IGNORECASE,
+        ),
+        sql_terms=("locker", "pedestal", "mobile drawer", "stel "),
+    ),
+)
+
+
+def extract_product_specifications_summary(
+    attributes: Mapping[str, Any] | None,
+    *,
+    max_chars: int = 320,
+) -> str:
+    """Format concise, non-boilerplate specs/features from ``Product.attributes``."""
+    if not isinstance(attributes, Mapping):
+        return ""
+    parts: list[str] = []
+    seen_values: set[str] = set()
+    specs = attributes.get("specifications")
+    if isinstance(specs, Mapping):
+        for raw_key, raw_val in specs.items():
+            key = " ".join(str(raw_key).split()).strip()
+            val = " ".join(str(raw_val).split()).strip()
+            if not key or not val or _SPEC_SKIP_KEY_RE.search(key):
+                continue
+            dedupe_key = f"{key.casefold()}:{val.casefold()}"
+            if dedupe_key in seen_values:
+                continue
+            seen_values.add(dedupe_key)
+            parts.append(f"{key}: {val}")
+    features = attributes.get("features")
+    if isinstance(features, Sequence) and not isinstance(features, (str, bytes)):
+        for raw_feat in features:
+            feat = " ".join(str(raw_feat).split()).strip()
+            if not feat or _FEATURE_BOILERPLATE_RE.match(feat):
+                continue
+            if feat.casefold() in seen_values:
+                continue
+            seen_values.add(feat.casefold())
+            parts.append(feat)
+    if not parts:
+        return ""
+    summary_parts: list[str] = []
+    total_len = 0
+    for part in parts:
+        added = len(part) + (2 if summary_parts else 0)
+        if total_len + added > max_chars:
+            if not summary_parts:
+                summary_parts.append(part[: max_chars - 3].rstrip() + "...")
+            break
+        summary_parts.append(part)
+        total_len += added
+    return "; ".join(summary_parts)
+
+
+def requested_catalog_concepts(request_text: str) -> tuple[CatalogConcept, ...]:
+    """Return catalog concepts named by the customer or tool search text."""
+    text = str(request_text or "")
+    if not text.strip():
+        return ()
+    return tuple(c for c in CATALOG_CONCEPTS if c.query_re.search(text))
+
+
+def product_matches_concept(
+    concept: CatalogConcept,
+    *,
+    name: str,
+    description: str | None = None,
+    category: str | None = None,
+    subcategory: str | None = None,
+    attributes: Mapping[str, Any] | None = None,
+) -> bool:
+    """Whether a catalog row matches ``concept`` via name, category, description, or specs."""
+    identity_text = f"{name}\n{category or ''}\n{subcategory or ''}"
+    if concept.product_exclude_re and concept.product_exclude_re.search(identity_text):
+        return False
+    specs_summary = extract_product_specifications_summary(attributes, max_chars=800)
+    full_text = f"{identity_text}\n{description or ''}\n{specs_summary}"
+    return bool(concept.product_match_re.search(full_text))
+
 
 def is_component_only_product(name: str, description: str | None = None) -> bool:
     """Whether a catalog row is a frame, base or part rather than a whole item."""
@@ -892,6 +1105,40 @@ def _has_duplicate_colour_siblings[T](
     return False
 
 
+def count_concept_matches[T](
+    products: Sequence[T],
+    concepts: Sequence[CatalogConcept],
+    *,
+    name_of: Callable[[T], str],
+    description_of: Callable[[T], str | None],
+    category_of: Callable[[T], str | None] | None = None,
+    subcategory_of: Callable[[T], str | None] | None = None,
+    attributes_of: Callable[[T], Mapping[str, Any] | None] | None = None,
+) -> int:
+    """Count products matching at least one requested catalog concept."""
+    if not concepts:
+        return len(products)
+    return sum(
+        1
+        for product in products
+        if any(
+            product_matches_concept(
+                concept,
+                name=name_of(product),
+                description=description_of(product),
+                category=category_of(product) if category_of is not None else None,
+                subcategory=(
+                    subcategory_of(product) if subcategory_of is not None else None
+                ),
+                attributes=(
+                    attributes_of(product) if attributes_of is not None else None
+                ),
+            )
+            for concept in concepts
+        )
+    )
+
+
 def rank_products_for_request[T](
     products: Sequence[T],
     request_text: str,
@@ -900,18 +1147,24 @@ def rank_products_for_request[T](
     description_of: Callable[[T], str | None],
     price_of: Callable[[T], float | None] | None = None,
     category_of: Callable[[T], str | None] | None = None,
+    subcategory_of: Callable[[T], str | None] | None = None,
+    attributes_of: Callable[[T], Mapping[str, Any] | None] | None = None,
+    stock_of: Callable[[T], int] | None = None,
     max_price: float | None = None,
 ) -> list[T]:
     """Order search rows so complete, feature-matching products come first.
 
-    Stable: rows keep their vector order inside each tier. Component rows go
-    last unless the request asks for components; when the request asks for an
-    item with storage, complete rows that have it go first. When the customer
-    asks for economical/budget options without a numeric ceiling, affordable
-    in-family candidates come first. Duplicate colour variants of the same
-    model are placed behind distinct models unless colour variants were asked.
+    Stable: rows keep their vector order inside each tier. Concept-matching rows
+    go before non-matching rows, and in-stock concept matches precede zero-stock
+    concept matches. Component rows go last unless the request asks for
+    components; when the request asks for an item with storage, complete rows
+    that have it go first. When the customer asks for economical/budget options
+    without a numeric ceiling, affordable in-family candidates come first.
+    Duplicate colour variants of the same model are placed behind distinct
+    models unless colour variants were asked.
     """
 
+    active_concepts = requested_catalog_concepts(request_text)
     demote_components = not request_wants_components(request_text)
     wants_storage = requested_storage_feature(request_text)
     economical_sort = (
@@ -921,25 +1174,58 @@ def rank_products_for_request[T](
     )
     requested_families = catalog_text_families(request_text) if economical_sort else ()
 
-    def _base_key(product: T) -> tuple[int, int, int, int, float]:
+    def _base_key(product: T) -> tuple[int, int, int, int, int, int, float]:
         name = name_of(product)
+        description = description_of(product)
+        category = category_of(product) if category_of is not None else None
+        subcategory = subcategory_of(product) if subcategory_of is not None else None
+        attributes = attributes_of(product) if attributes_of is not None else None
+        concept_tier = (
+            int(
+                not any(
+                    product_matches_concept(
+                        concept,
+                        name=name,
+                        description=description,
+                        category=category,
+                        subcategory=subcategory,
+                        attributes=attributes,
+                    )
+                    for concept in active_concepts
+                )
+            )
+            if active_concepts
+            else 0
+        )
+        stock_tier = (
+            int(stock_of(product) <= 0)
+            if active_concepts and stock_of is not None and concept_tier == 0
+            else 0
+        )
         comp_tier, storage_tier = _offer_tier(
             name,
-            description_of(product),
+            description,
             demote_components=demote_components,
             wants_storage=wants_storage,
         )
         if not economical_sort:
-            return (comp_tier, storage_tier, 0, 0, 0.0)
+            return (concept_tier, comp_tier, storage_tier, stock_tier, 0, 0, 0.0)
         assert price_of is not None
         raw_price = price_of(product)
-        category = category_of(product) if category_of is not None else None
         family_tier = _product_family_mismatch(name, category, requested_families)
         price_missing = int(raw_price is None or raw_price <= 0)
         price_val = (
             float(raw_price) if not price_missing and raw_price is not None else 0.0
         )
-        return (comp_tier, storage_tier, family_tier, price_missing, price_val)
+        return (
+            concept_tier,
+            comp_tier,
+            storage_tier,
+            stock_tier,
+            family_tier,
+            price_missing,
+            price_val,
+        )
 
     ordered = sorted(products, key=_base_key)
     if _wants_colour_variants(request_text):
@@ -965,9 +1251,29 @@ def products_need_reranking[T](
     name_of: Callable[[T], str],
     description_of: Callable[[T], str | None],
     price_of: Callable[[T], float | None] | None = None,
+    category_of: Callable[[T], str | None] | None = None,
+    subcategory_of: Callable[[T], str | None] | None = None,
+    attributes_of: Callable[[T], Mapping[str, Any] | None] | None = None,
+    stock_of: Callable[[T], int] | None = None,
     max_price: float | None = None,
 ) -> bool:
-    """Whether any row is a demotable component, lacks a requested feature, or needs budget/diversity reranking."""
+    """Whether any row is a demotable component, misses a concept, or needs budget/diversity reranking."""
+
+    active_concepts = requested_catalog_concepts(request_text)
+    if active_concepts:
+        matches = count_concept_matches(
+            products,
+            active_concepts,
+            name_of=name_of,
+            description_of=description_of,
+            category_of=category_of,
+            subcategory_of=subcategory_of,
+            attributes_of=attributes_of,
+        )
+        if matches < len(products):
+            return True
+        if stock_of is not None and any(stock_of(p) <= 0 for p in products):
+            return True
 
     demote_components = not request_wants_components(request_text)
     wants_storage = requested_storage_feature(request_text)

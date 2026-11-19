@@ -108,11 +108,13 @@ from src.llm.catalog_planning import (
     _store_catalog_planning,
     _track_sales_tool,
     _zoho_stock_for_catalog_candidates,
+    extract_product_specifications_summary,
     is_component_only_product,
     names_no_furniture_need,
     products_need_reranking,
     rank_products_for_request,
     request_wants_components,
+    requested_catalog_concepts,
     text_states_a_furniture_need,
     wants_economical_options,
 )
@@ -243,7 +245,10 @@ from src.models.product import Product
 from src.models.product_links import product_canonical_url
 from src.rag.cached_embedding import wrap_embedding_engine
 from src.rag.embeddings import EmbeddingEngine
-from src.rag.made_to_order_fallback import apply_made_to_order_catalog_fallback
+from src.rag.made_to_order_fallback import (
+    apply_made_to_order_catalog_fallback,
+    augment_results_with_concept_candidates,
+)
 from src.rag.pipeline import search_products as rag_search_products
 from src.schemas.common import Language, SalesStage
 from src.schemas.product import ProductSearchQuery, ProductSearchResult
@@ -2817,10 +2822,11 @@ async def search_products(
     # frame/part the customer did not ask for, or lacks a requested storage
     # feature, look a little wider and put complete, matching products first.
     offer_request_text = f"{effective_query}\n{ctx.deps.user_query or ''}"
+    active_concepts = requested_catalog_concepts(offer_request_text)
     economical_request = max_price is None and wants_economical_options(
         offer_request_text
     )
-    if products_need_reranking(
+    needs_rerank = products_need_reranking(
         results.products,
         offer_request_text,
         name_of=lambda product: str(product.name_en),
@@ -2830,37 +2836,48 @@ async def search_products(
             if getattr(product, "price", None) is not None
             else None
         ),
+        category_of=lambda product: getattr(product, "category", None),
+        subcategory_of=lambda product: getattr(product, "subcategory", None),
+        attributes_of=lambda product: getattr(product, "attributes", None),
+        stock_of=lambda product: int(getattr(product, "stock", 0) or 0),
         max_price=max_price,
-    ):
-        if len(results.products) >= max_results:
-            wider_limit = (
-                min(max(max_results * 5, 15), 30)
-                if economical_request
-                else min(max_results * 3, 30)
+    )
+    if needs_rerank and len(results.products) >= max_results:
+        wider_limit = (
+            min(max(max_results * 5, 15), 30)
+            if economical_request or active_concepts
+            else min(max_results * 3, 30)
+        )
+        wider_results = await rag_search_products(
+            db=ctx.deps.db,
+            query=search_query.model_copy(update={"limit": wider_limit}),
+            embedding_engine=search_embedding_engine,
+        )
+        if (
+            not request_wants_components(offer_request_text)
+            and len(wider_results.products) >= wider_limit
+            and wider_limit < 30
+            and all(
+                is_component_only_product(str(product.name_en), product.description_en)
+                for product in wider_results.products
             )
+        ):
             wider_results = await rag_search_products(
                 db=ctx.deps.db,
-                query=search_query.model_copy(update={"limit": wider_limit}),
+                query=search_query.model_copy(update={"limit": 30}),
                 embedding_engine=search_embedding_engine,
             )
-            if (
-                not request_wants_components(offer_request_text)
-                and len(wider_results.products) >= wider_limit
-                and wider_limit < 30
-                and all(
-                    is_component_only_product(
-                        str(product.name_en), product.description_en
-                    )
-                    for product in wider_results.products
-                )
-            ):
-                wider_results = await rag_search_products(
-                    db=ctx.deps.db,
-                    query=search_query.model_copy(update={"limit": 30}),
-                    embedding_engine=search_embedding_engine,
-                )
-            if len(wider_results.products) > len(results.products):
-                results = wider_results
+        if len(wider_results.products) > len(results.products):
+            results = wider_results
+    if use_made_to_order_fallback and active_concepts:
+        results = await augment_results_with_concept_candidates(
+            db=ctx.deps.db,
+            query=search_query,
+            concepts=active_concepts,
+            existing_result=results,
+            min_results=max_results,
+        )
+    if (needs_rerank or active_concepts) and results.products:
         ranked_products = rank_products_for_request(
             results.products,
             offer_request_text,
@@ -2872,6 +2889,9 @@ async def search_products(
                 else None
             ),
             category_of=lambda product: getattr(product, "category", None),
+            subcategory_of=lambda product: getattr(product, "subcategory", None),
+            attributes_of=lambda product: getattr(product, "attributes", None),
+            stock_of=lambda product: int(getattr(product, "stock", 0) or 0),
             max_price=max_price,
         )[:max_results]
         results = ProductSearchResult(
@@ -2927,10 +2947,14 @@ async def search_products(
     lumbar_fact_requested = require_lumbar_support
 
     def _product_match_text(product: Any) -> str:
+        specs_summary = extract_product_specifications_summary(
+            getattr(product, "attributes", None)
+        )
         return (
             f"{product.name_en}\n"
             f"{product.description_en or ''}\n"
             f"{product.category or ''}"
+            + (f"\n{specs_summary}" if specs_summary else "")
         )
 
     # The SKU often carries the finish ("...-9719-4-Walnut") the name leaves
@@ -3109,12 +3133,25 @@ async def search_products(
             media_caption = f"{r.name_en} — price not currently verified"
 
         canonical_url = product_canonical_url(r)
+        category_parts = [
+            part
+            for part in (
+                str(getattr(r, "category", "") or "").strip(),
+                str(getattr(r, "subcategory", "") or "").strip(),
+            )
+            if part
+        ]
+        specs_summary = extract_product_specifications_summary(
+            getattr(r, "attributes", None)
+        )
         desc = (
             f"Name: {r.name_en}\n"
             f"SKU: {r.sku}\n"
-            f"{price_line}\n"
-            f"{stock_line}\n"
-            f"Description: {r.description_en}"
+            + (f"Category: {' / '.join(category_parts)}\n" if category_parts else "")
+            + f"{price_line}\n"
+            + f"{stock_line}\n"
+            + f"Description: {r.description_en}"
+            + (f"\nSpecifications: {specs_summary}" if specs_summary else "")
         )
         if canonical_url:
             desc += f"\nProduct page: {canonical_url}"

@@ -207,6 +207,12 @@ _NEARBY_EQUIVALENTS = {
     "pods": {"booth", "booths"},
     "booth": {"pod", "pods"},
     "booths": {"pod", "pods"},
+    "sit": {"adjustable", "standing"},
+    "stand": {"adjustable", "standing"},
+    "standing": {"adjustable"},
+    "height": {"adjustable"},
+    "motor": {"adjustable", "electric"},
+    "motorized": {"adjustable", "electric"},
 }
 
 

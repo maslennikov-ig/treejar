@@ -15,10 +15,16 @@ cached query embedding to inspect ``Product.stock <= 0`` catalog items.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import Text, cast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.llm.catalog_planning import (
+    CatalogConcept,
+    count_concept_matches,
+    product_matches_concept,
+)
 from src.llm.verified_answers import classify_product_match, query_names_specific_item
 from src.models.product import Product
 from src.rag.cached_embedding import wrap_embedding_engine
@@ -141,6 +147,101 @@ async def apply_made_to_order_catalog_fallback(
             total_found=len(fallback_responses),
         )
     return primary_result
+
+
+async def augment_results_with_concept_candidates(
+    db: AsyncSession,
+    query: ProductSearchQuery,
+    *,
+    concepts: Sequence[CatalogConcept],
+    existing_result: ProductSearchResult,
+    min_results: int,
+) -> ProductSearchResult:
+    """Supplement vector results via SQL lexical/attribute lookup when concepts miss."""
+    if not concepts:
+        return existing_result
+    matched_count = count_concept_matches(
+        existing_result.products,
+        concepts,
+        name_of=lambda product: str(product.name_en),
+        description_of=lambda product: product.description_en,
+        category_of=lambda product: product.category,
+        subcategory_of=lambda product: product.subcategory,
+        attributes_of=lambda product: product.attributes,
+    )
+    if matched_count >= min_results:
+        return existing_result
+
+    sql_terms = tuple(
+        dict.fromkeys(term for concept in concepts for term in concept.sql_terms)
+    )
+    if not sql_terms:
+        return existing_result
+
+    term_clauses = [
+        clause
+        for term in sql_terms
+        for pattern in (f"%{term}%",)
+        for clause in (
+            Product.name_en.ilike(pattern),
+            Product.category.ilike(pattern),
+            Product.subcategory.ilike(pattern),
+            Product.description_en.ilike(pattern),
+            cast(Product.attributes, Text).ilike(pattern),
+        )
+    ]
+    stmt = select(Product).where(
+        Product.is_active.is_(True),
+        or_(*term_clauses),
+    )
+    if query.category:
+        stmt = stmt.where(Product.category == query.category)
+    if query.min_price is not None:
+        stmt = stmt.where(Product.price >= query.min_price)
+    else:
+        stmt = stmt.where(Product.price > 0)
+    if query.max_price is not None:
+        stmt = stmt.where(Product.price <= query.max_price)
+    stmt = stmt.order_by(
+        (Product.stock > 0).desc(),
+        Product.stock.desc(),
+        Product.price.asc(),
+    ).limit(max(min_results * 5, 20))
+
+    exec_res = await db.execute(stmt)
+    raw_rows = list(exec_res.scalars().all())
+    if not raw_rows:
+        return existing_result
+
+    merged = list(existing_result.products)
+    seen_skus = {str(p.sku).strip().casefold() for p in merged}
+    for row in raw_rows:
+        candidate = ProductRead.model_validate(row)
+        sku_key = str(candidate.sku).strip().casefold()
+        if sku_key in seen_skus:
+            continue
+        if not any(
+            product_matches_concept(
+                concept,
+                name=str(candidate.name_en),
+                description=candidate.description_en,
+                category=candidate.category,
+                subcategory=candidate.subcategory,
+                attributes=candidate.attributes,
+            )
+            for concept in concepts
+        ):
+            continue
+        seen_skus.add(sku_key)
+        merged.append(candidate)
+
+    if len(merged) == len(existing_result.products):
+        return existing_result
+    return ProductSearchResult(
+        products=merged,
+        query_interpreted=existing_result.query_interpreted,
+        total_found=len(merged),
+    )
 
 
 async def search_products_with_made_to_order_fallback(
