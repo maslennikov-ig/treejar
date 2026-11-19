@@ -19,6 +19,7 @@ from src.llm.catalog_planning import (
     product_matches_concept,
     rank_products_for_request,
     requested_catalog_concepts,
+    resolve_search_concepts,
 )
 from src.llm.verified_answers import classify_product_match
 from src.models.conversation import Conversation
@@ -412,3 +413,143 @@ def test_other_catalog_concepts_detected_uniformly(
 ) -> None:
     concepts = requested_catalog_concepts(query)
     assert expected_concept in [c.name for c in concepts]
+
+
+def test_seating_adjustable_height_never_triggers_height_adjustable_desk() -> None:
+    """Reproduces *6563: vision commentary on chair adjustable-height arms must not match desks."""
+    chair_vision = (
+        "[The customer sent a photo. The photo shows: high-back swivel task chair with a "
+        "black mesh backrest, padded headrest, two black armrests with adjustable height "
+        "and pivot, a black lever under the seat (likely for tilt or height control), "
+        "and a chrome five-star aluminium base.]"
+    )
+    assert requested_catalog_concepts(chair_vision) == ()
+    assert requested_catalog_concepts("height-adjustable office chair") == ()
+    assert requested_catalog_concepts("chair with adjustable height headrest") == ()
+    assert [
+        c.name
+        for c in requested_catalog_concepts(
+            "electric height adjustable desk, black mesh office chair in background"
+        )
+    ] == ["height_adjustable_desk"]
+    assert [
+        c.name
+        for c in requested_catalog_concepts("do you have height-adjustable models?")
+    ] == ["height_adjustable_desk"]
+
+
+def test_resolve_search_concepts_prevents_cross_family_and_background_leakage() -> None:
+    assert (
+        resolve_search_concepts(
+            "high-back black mesh office chair",
+            "I need 2 meeting tables and 10 office chairs",
+        )
+        == ()
+    )
+    assert (
+        resolve_search_concepts(
+            "office chair",
+            "[The customer sent a photo. The photo shows: chair beside a 2-door storage cabinet and standing desk]",
+        )
+        == ()
+    )
+    assert [
+        c.name
+        for c in resolve_search_concepts(
+            "office desk",
+            "looking for an electric height adjustable desk",
+        )
+    ] == ["height_adjustable_desk"]
+    assert [
+        c.name
+        for c in resolve_search_concepts(
+            "meeting table",
+            "I need a meeting table and 4 bar stools",
+        )
+    ] == ["meeting_table"]
+
+
+@pytest.mark.asyncio
+async def test_search_products_chair_photo_with_adjustable_height_armrests_returns_chairs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """End-to-end reproduction of *6563 Turn 1."""
+    ch145 = _product(
+        "CH 145 black Chrome",
+        "Executive office chair CH 145 black Chrome",
+        category="Chairs",
+        stock=3,
+        price=545.33,
+    )
+    ch950 = _product(
+        "CH 950 black",
+        "SkyLand Executive Chair CH 950 BLACK",
+        category="Chairs",
+        stock=4,
+        price=1974.0,
+    )
+    ch135 = _product(
+        "CH 135 black",
+        "Executive Office Chair CH 135 black",
+        category="Chairs",
+        stock=1,
+        price=620.0,
+    )
+    sk20_orm = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="SK 20 white",
+        name_en="Adjustable table SkyLand SK 20 white",
+        name_ar=None,
+        description_en="Adjustable table SkyLand SK 20 white",
+        category="Smart Furniture",
+        subcategory=None,
+        price=795.0,
+        currency="AED",
+        stock=40,
+        image_url=None,
+        zoho_item_id=None,
+        attributes={"specifications": {"Desk Design": "Standing Desk"}},
+        is_active=True,
+        created_at=datetime.now(UTC),
+        updated_at=None,
+    )
+
+    mock_rag = AsyncMock(
+        return_value=ProductSearchResult(
+            products=[ch145, ch950, ch135],
+            query_interpreted="high-back black mesh office chair with headrest, adjustable armrests, chrome five-star base",
+            total_found=3,
+        )
+    )
+    monkeypatch.setattr(engine_module, "rag_search_products", mock_rag)
+    monkeypatch.setattr(engine_module, "_DEFAULT_RAG_SEARCH_PRODUCTS", mock_rag)
+    monkeypatch.setattr(
+        engine_module,
+        "apply_made_to_order_catalog_fallback",
+        AsyncMock(side_effect=lambda *, primary_result, **_: primary_result),
+    )
+
+    deps = _deps(
+        "Hi. I am interested in purchasing office furniture.\n"
+        "[The customer sent a photo with the caption: 'You have stock for'. "
+        "The photo shows: high-back swivel task chair with a black mesh backrest, "
+        "padded headrest, black armrests with adjustable height and pivot, "
+        "chrome five-star aluminium base.]\n"
+        "we need 3pcs urgently to deliver Abu Dhabi?"
+    )
+    sql_res = MagicMock()
+    sql_res.scalars.return_value.all.return_value = [sk20_orm]
+    deps.db.execute.return_value = sql_res
+
+    result = await engine_module.search_products(
+        _ctx(deps),
+        "high-back black mesh office chair with headrest, adjustable armrests, chrome five-star base",
+        max_results=3,
+    )
+
+    assert isinstance(result, ToolReturn)
+    text = str(result.return_value)
+    assert "CH 145 black Chrome" in text
+    assert "CH 950 black" in text
+    assert "CH 135 black" in text
+    assert "SK 20 white" not in text

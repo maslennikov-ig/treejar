@@ -114,7 +114,7 @@ from src.llm.catalog_planning import (
     products_need_reranking,
     rank_products_for_request,
     request_wants_components,
-    requested_catalog_concepts,
+    resolve_search_concepts,
     text_states_a_furniture_need,
     wants_economical_options,
 )
@@ -2822,7 +2822,8 @@ async def search_products(
     # frame/part the customer did not ask for, or lacks a requested storage
     # feature, look a little wider and put complete, matching products first.
     offer_request_text = f"{effective_query}\n{ctx.deps.user_query or ''}"
-    active_concepts = requested_catalog_concepts(offer_request_text)
+    active_concepts = resolve_search_concepts(effective_query, ctx.deps.user_query)
+    preferred_families = _catalog_product_families(effective_query) or None
     economical_request = max_price is None and wants_economical_options(
         offer_request_text
     )
@@ -2841,6 +2842,7 @@ async def search_products(
         attributes_of=lambda product: getattr(product, "attributes", None),
         stock_of=lambda product: int(getattr(product, "stock", 0) or 0),
         max_price=max_price,
+        active_concepts=active_concepts,
     )
     if needs_rerank and len(results.products) >= max_results:
         wider_limit = (
@@ -2893,6 +2895,8 @@ async def search_products(
             attributes_of=lambda product: getattr(product, "attributes", None),
             stock_of=lambda product: int(getattr(product, "stock", 0) or 0),
             max_price=max_price,
+            active_concepts=active_concepts,
+            preferred_families=preferred_families,
         )[:max_results]
         results = ProductSearchResult(
             products=ranked_products,

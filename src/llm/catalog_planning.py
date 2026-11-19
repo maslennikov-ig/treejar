@@ -805,20 +805,36 @@ class CatalogConcept:
     """Semantic/attribute concept bridging customer vocabulary and catalog naming."""
 
     name: str
+    family: CatalogFamily
     query_re: re.Pattern[str]
     product_match_re: re.Pattern[str]
     sql_terms: tuple[str, ...]
     product_exclude_re: re.Pattern[str] | None = None
 
 
+_BARE_HEIGHT_ADJUSTABLE_RE = re.compile(
+    r"\b(?:height[\s-]+adjustable|adjustable[\s-]+height)\b|(?:تعديل\s+الارتفاع)",
+    re.IGNORECASE,
+)
+_SEATING_OR_CHAIR_PART_RE = re.compile(
+    r"\b(?:chairs?|stools?|sofas?|seating|armrests?|headrests?|lumbar|backrests?|seats?)\b"
+    r"|(?:كرسي|كراسي|مقعد|مسند)",
+    re.IGNORECASE,
+)
+
+
 CATALOG_CONCEPTS: tuple[CatalogConcept, ...] = (
     CatalogConcept(
         name="height_adjustable_desk",
+        family="workspace",
         query_re=re.compile(
-            r"\b(?:height[\s-]+adjustable|sit[\s-]+stand|standing\s+(?:desks?|tables?)|"
-            r"adjustable[\s-]+(?:height|desks?|tables?)|motorized\s+(?:desks?|tables?)|"
-            r"electric\s+(?:desks?|tables?|standing)|smart\s+furniture)\b"
-            r"|(?:طاول[ةه]\s+قابل[ةه]\s+للتعديل|مكتب\s+قابل\s+للتعديل|تعديل\s+الارتفاع|مكتب\s+وقوف)",
+            r"\b(?:(?:height[\s-]+adjustable|adjustable[\s-]+height|motorized|electric)\s+"
+            r"(?:[a-z0-9-]+\s+){0,2}(?:desks?|tables?|workstations?|frames?)|"
+            r"(?:desks?|tables?|workstations?|frames?)\s+(?:with\s+|for\s+)?"
+            r"(?:height[\s-]+adjustable|adjustable[\s-]+height|height[\s-]+adjustment)|"
+            r"sit[\s-]+stand|standing\s+(?:desks?|tables?)|"
+            r"adjustable[\s-]+(?:desks?|tables?)|electric\s+standing|smart\s+furniture)\b"
+            r"|(?:(?:طاول[ةه]|مكتب)\s+(?:قابل[ةه]\s+للتعديل|(?:ب)?تعديل\s+الارتفاع)|مكتب\s+وقوف)",
             re.IGNORECASE,
         ),
         product_match_re=re.compile(
@@ -842,6 +858,7 @@ CATALOG_CONCEPTS: tuple[CatalogConcept, ...] = (
     ),
     CatalogConcept(
         name="acoustic_pod",
+        family="privacy",
         query_re=re.compile(
             r"\b(?:(?:acoustic|sound[\s-]?proof|silence|phone|meeting|work)\s+(?:pods?|booths?)|"
             r"pods?|booths?)\b|(?:كبسول[ةه]|مقصور[ةه]\s+صوتي)",
@@ -855,6 +872,7 @@ CATALOG_CONCEPTS: tuple[CatalogConcept, ...] = (
     ),
     CatalogConcept(
         name="bar_stool",
+        family="seating",
         query_re=re.compile(
             r"\b(?:bar\s+stools?|counter\s+stools?|high\s+stools?|stools?)\b"
             r"|(?:كرسي\s+بار|مقعد\s+مرتفع)",
@@ -865,6 +883,7 @@ CATALOG_CONCEPTS: tuple[CatalogConcept, ...] = (
     ),
     CatalogConcept(
         name="l_shape_desk",
+        family="workspace",
         query_re=re.compile(
             r"\b(?:l[\s-]+shap(?:e|ed)|corner)\s+(?:desks?|tables?|workstations?)\b"
             r"|(?:مكتب\s+زاوي[ةه]|على\s+شكل\s+L)",
@@ -882,6 +901,7 @@ CATALOG_CONCEPTS: tuple[CatalogConcept, ...] = (
     ),
     CatalogConcept(
         name="reception_desk",
+        family="workspace",
         query_re=re.compile(
             r"\b(?:reception\s+(?:desks?|tables?|counters?)|front\s+desk)\b"
             r"|(?:مكتب\s+استقبال|كاونتر\s+استقبال)",
@@ -896,6 +916,7 @@ CATALOG_CONCEPTS: tuple[CatalogConcept, ...] = (
     ),
     CatalogConcept(
         name="meeting_table",
+        family="workspace",
         query_re=re.compile(
             r"\b(?:meeting\s+tables?|conference\s+tables?|boardroom\s+tables?|"
             r"discussion\s+tables?|training\s+tables?)\b|(?:طاول[ةه]\s+اجتماع)",
@@ -910,6 +931,7 @@ CATALOG_CONCEPTS: tuple[CatalogConcept, ...] = (
     ),
     CatalogConcept(
         name="steel_storage",
+        family="storage",
         query_re=re.compile(
             r"\b(?:lockers?|mobile\s+(?:pedestals?|drawers?)|filing\s+cabinets?|"
             r"steel\s+(?:cabinets?|storage|lockers?))\b"
@@ -928,6 +950,7 @@ CATALOG_CONCEPTS: tuple[CatalogConcept, ...] = (
     ),
     CatalogConcept(
         name="low_storage_cabinet",
+        family="storage",
         query_re=re.compile(
             r"\b(?:low|small|short|under[\s-]?desk)\s+(?:2[\s-]?door\s+|two[\s-]?door\s+)?"
             r"(?:office\s+|storage\s+)?(?:cabinets?|cupboards?)\b"
@@ -955,6 +978,7 @@ CATALOG_CONCEPTS: tuple[CatalogConcept, ...] = (
     ),
     CatalogConcept(
         name="office_cabinet",
+        family="storage",
         query_re=re.compile(
             r"\b(?:(?:office|storage|file|filing|freestanding|closed|"
             r"2[\s-]?door|two[\s-]?door|wooden|wood|tall|medium)\s+)+"
@@ -1056,7 +1080,40 @@ def requested_catalog_concepts(request_text: str) -> tuple[CatalogConcept, ...]:
             continue
         if concept.query_re.search(text):
             matched.append(concept)
+            continue
+        if (
+            concept.name == "height_adjustable_desk"
+            and _BARE_HEIGHT_ADJUSTABLE_RE.search(text)
+            and not _SEATING_OR_CHAIR_PART_RE.search(text)
+        ):
+            matched.append(concept)
     return tuple(matched)
+
+
+def resolve_search_concepts(
+    effective_query: str,
+    user_query: str | None = None,
+) -> tuple[CatalogConcept, ...]:
+    """Resolve active concepts for a search call without cross-family leakage.
+
+    When the LLM's explicit search query already identifies one or more catalog
+    concepts, keep only those concepts so unrelated items in a multi-item turn or
+    background objects in a vision photo note do not hijack the search. When the
+    search query is broader (e.g. "desk" or "cabinet"), inherit only user-turn
+    concepts compatible with the search query's product families.
+    """
+    query_concepts = requested_catalog_concepts(effective_query)
+    if query_concepts:
+        return query_concepts
+    user_concepts = requested_catalog_concepts(user_query or "")
+    if not user_concepts:
+        return ()
+    query_families = catalog_text_families(effective_query)
+    if query_families:
+        return tuple(
+            concept for concept in user_concepts if concept.family in query_families
+        )
+    return user_concepts
 
 
 def product_matches_concept(
@@ -1226,6 +1283,8 @@ def rank_products_for_request[T](
     attributes_of: Callable[[T], Mapping[str, Any] | None] | None = None,
     stock_of: Callable[[T], int] | None = None,
     max_price: float | None = None,
+    active_concepts: Sequence[CatalogConcept] | None = None,
+    preferred_families: Sequence[CatalogFamily] | None = None,
 ) -> list[T]:
     """Order search rows so complete, feature-matching products come first.
 
@@ -1239,7 +1298,11 @@ def rank_products_for_request[T](
     models unless colour variants were asked.
     """
 
-    active_concepts = requested_catalog_concepts(request_text)
+    resolved_concepts = (
+        tuple(active_concepts)
+        if active_concepts is not None
+        else requested_catalog_concepts(request_text)
+    )
     demote_components = not request_wants_components(request_text)
     wants_storage = requested_storage_feature(request_text)
     economical_sort = (
@@ -1247,7 +1310,15 @@ def rank_products_for_request[T](
         and price_of is not None
         and wants_economical_options(request_text)
     )
-    requested_families = catalog_text_families(request_text) if economical_sort else ()
+    requested_families = (
+        (
+            tuple(preferred_families)
+            if preferred_families
+            else catalog_text_families(request_text)
+        )
+        if economical_sort
+        else ()
+    )
 
     def _base_key(product: T) -> tuple[int, int, int, int, int, int, float]:
         name = name_of(product)
@@ -1267,13 +1338,13 @@ def rank_products_for_request[T](
                         attributes=attributes,
                     )
                 )
-                for concept in active_concepts
+                for concept in resolved_concepts
             )
-            if active_concepts
+            if resolved_concepts
             else 0
         )
-        matched_any_concept = (not active_concepts) or (
-            concept_misses < len(active_concepts)
+        matched_any_concept = (not resolved_concepts) or (
+            concept_misses < len(resolved_concepts)
         )
         stock_tier = (
             int(stock_of(product) <= 0)
@@ -1334,14 +1405,19 @@ def products_need_reranking[T](
     attributes_of: Callable[[T], Mapping[str, Any] | None] | None = None,
     stock_of: Callable[[T], int] | None = None,
     max_price: float | None = None,
+    active_concepts: Sequence[CatalogConcept] | None = None,
 ) -> bool:
     """Whether any row is a demotable component, misses a concept, or needs budget/diversity reranking."""
 
-    active_concepts = requested_catalog_concepts(request_text)
-    if active_concepts:
+    resolved_concepts = (
+        tuple(active_concepts)
+        if active_concepts is not None
+        else requested_catalog_concepts(request_text)
+    )
+    if resolved_concepts:
         matches = count_concept_matches(
             products,
-            active_concepts,
+            resolved_concepts,
             name_of=name_of,
             description_of=description_of,
             category_of=category_of,
@@ -3306,6 +3382,7 @@ __all__ = (
     "wants_economical_options",
     "rank_products_for_request",
     "products_need_reranking",
+    "resolve_search_concepts",
     "build_runtime_tool_trace",
     "grounded_amounts_for_turn",
 )
