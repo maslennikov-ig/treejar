@@ -46,7 +46,12 @@ _CALLBACK_RE = re.compile(
     r"|\b(?:can|could|would)\s+(?:you|someone|a\s+manager|your\s+team)"
     r"\s+(?:please\s+)?(?:call|phone|contact)\s+(?:me|us)\b"
     r"|\b(?:have|ask)\s+(?:someone|a\s+manager|your\s+team|a\s+team\s+member)"
-    r"\s+(?:call|phone|contact)\s+(?:me|us)\b",
+    r"\s+(?:call|phone|contact)\s+(?:me|us)\b"
+    r"|\b(?:i(?:'m|\s+am)|we(?:'re|\s+are)|i|we)\s+(?:trying|tried)\s+to\s+"
+    r"(?:call|phone|ring)\s+(?:you|your\s+(?:number|office|team|manager))\b"
+    r"|\b(?:no\s+one|nobody)\s+(?:is\s+)?answering\s+(?:the\s+|my\s+)?(?:call|phone)\b"
+    r"|\b(?:can't|cannot|unable\s+to)\s+reach\s+(?:you|anyone)\s+"
+    r"(?:by\s+phone|on\s+(?:the\s+)?(?:phone|call|mobile))\b",
     re.IGNORECASE,
 )
 _ARABIC_HUMAN_RE = re.compile(

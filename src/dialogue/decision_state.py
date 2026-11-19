@@ -701,6 +701,18 @@ def decision_state_directives(
             "ALREADY received an internal notification for this conversation. Do "
             "not claim no one was notified."
         )
+    non_sales_notice = metadata.get("non_sales_notice")
+    if isinstance(non_sales_notice, Mapping):
+        non_sales_intent_val = str(non_sales_notice.get("intent") or "").strip()
+        if non_sales_intent_val:
+            directives.append(
+                f"NON-SALES INQUIRY LOGGED ({non_sales_intent_val}): This "
+                "conversation is already flagged as a non-sales inquiry "
+                f"({non_sales_intent_val}), not a furniture buyer. Reply briefly "
+                "and politely within the sales channel boundary without asking "
+                "sales discovery or quotation questions, unless the sender "
+                "explicitly starts a new genuine office furniture purchase inquiry."
+            )
 
     selected = [
         item

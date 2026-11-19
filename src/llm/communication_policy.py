@@ -106,11 +106,12 @@ COMMERCIAL_CAPABILITIES: dict[str, CommercialCapability] = {
         instruction=(
             "Welcome customers to the Dubai showroom and warehouse at Storall "
             "Building, St. 58, Community 599, Jebel Ali Industrial Area 2, "
-            "Dubai (Monday-Saturday 9:00-18:00, Sunday closed; free warehouse "
-            "self-pickup with no minimum order amount), share the Google Maps "
-            "pin when they ask for the location or map, and leave the "
-            "particular product, appointment, test setup, and whether a "
-            "specific product will be available to try unconfirmed."
+            "Dubai (Dubai mainland, outside the JAFZA Freezone — no Freezone "
+            "gate pass required; Monday-Saturday 9:00-18:00, Sunday closed; "
+            "free warehouse self-pickup with no minimum order amount), share "
+            "the Google Maps pin when they ask for the location or map, and "
+            "leave the particular product, appointment, test setup, and "
+            "whether a specific product will be available to try unconfirmed."
         ),
     ),
     "project_samples": CommercialCapability(

@@ -136,7 +136,7 @@ async def escalate_to_manager(
             "confirm a manager will handle project pricing and any custom work "
             "without promising a discount, lead time or delivery date, and end "
             "with one short question for the brief: company name, target "
-            "delivery timeline and delivery location in the UAE."
+            "delivery timeline and delivery destination (UAE emirate/area or GCC country)."
         )
 
     return (

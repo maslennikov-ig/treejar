@@ -104,9 +104,11 @@ _DELIVERY_DETAIL_CONTINUATION_RE = re.compile(
 _SHOWROOM_FOLLOWUP_QUALIFIER_RE = re.compile(
     r"\b(?:"
     r"hours?|open|closed?|sunday|saturday|monday|tuesday|wednesday|thursday|"
-    r"friday|maps?|pin|directions?|address|pickup|collect|free"
+    r"friday|maps?|pin|directions?|address|pickup|collect|free|"
+    r"freezone|free\s*zone|jafza|gate\s*pass"
     r")\b"
-    r"|(?:ساعات|مفتوح|مغلق|الأحد|الاحد|السبت|الجمعة|خريطة|لوكيشن|عنوان|استلام|مجاني)",
+    r"|(?:ساعات|مفتوح|مغلق|الأحد|الاحد|السبت|الجمعة|خريطة|لوكيشن|عنوان|استلام|مجاني|"
+    r"منطقة\s+حرة|المنطقة\s+الحرة|جافزا)",
     re.IGNORECASE,
 )
 

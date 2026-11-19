@@ -422,6 +422,9 @@ class _Turn:
         """Read current workflow state, including changes made by model tools."""
 
         if (
+            isinstance(self.conv.metadata_, Mapping)
+            and isinstance(self.conv.metadata_.get("non_sales_notice"), Mapping)
+        ) or (
             not self.trusts_model_prose()
             and non_sales_intent(self.combined_text) is not None
         ):

@@ -36,6 +36,7 @@ Yes, we offer custom-made solutions based on client requirements including size,
 
 Yes, you are most welcome to visit our showroom and warehouse in Dubai to experience the product quality personally, and our team will assist you in selecting the best solution for your workspace:
 - Address: Storall Building, St. 58, Community 599, Jebel Ali Industrial Area 2, Dubai.
+- Freezone status: Our showroom and warehouse are located in Dubai mainland (outside the JAFZA Freezone), so no Freezone gate pass is required to visit or collect.
 - Working hours: Monday–Saturday, 9:00–18:00 (Sunday closed).
 - Google Maps location (share when the client asks for the location or map): https://www.google.com/maps/place/Treejar+Trading/@24.9871463,55.1135981,17z
 - Self-pickup from our warehouse in Jebel Ali is free of charge, with no minimum order amount.
@@ -146,7 +147,7 @@ Yes. In our catalog, visitor chairs (such as `CH 240 V` and `CH 420 V`, where 'V
 
 ## 26. Do you sell petty cash boxes, safes, or office stationery?
 
-No. Treejar Trading specializes in commercial office furniture, workstations, desks, chairs, and lockable steel office storage (such as lockable mobile pedestals `STEL SSP-25`, lockable steel cabinets `STEL SSC-10`, and steel lockers `STEL SSL-1`–`STEL SSL-4`). We do not carry portable petty cash boxes, metal money boxes, document safes, general office stationery, office electronics/machines (such as paper shredders, printers, or photocopiers), residential beds / bedroom furniture (double beds, single beds, mattresses, or bedroom wardrobes), or residential plastic dining chairs.
+No. Treejar Trading specializes in commercial office furniture, workstations, desks, chairs, and lockable steel office storage (such as lockable mobile pedestals `STEL SSP-25`, lockable steel cabinets `STEL SSC-10`, and steel lockers `STEL SSL-1`–`STEL SSL-4`). We do not carry portable petty cash boxes, metal money boxes, document safes, general office supplies / stationery consumables (pens, paper, folders, toners), office electronics/machines (such as paper shredders, printers, or photocopiers), residential beds / bedroom furniture (double beds, single beds, mattresses, or bedroom wardrobes), residential villa/home furniture (home dining sets or household/kitchen furniture), or residential plastic dining chairs. For mixed or roomwise tenders, we quote only matching commercial office furniture, lounge/sofa seating, tables, and steel storage from our catalog.
 
 ## 27. Do you offer office furniture rental or short-term leasing?
 
