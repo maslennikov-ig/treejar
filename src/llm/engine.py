@@ -5118,8 +5118,28 @@ async def check_order_status(ctx: RunContext[SalesDeps]) -> str:
         return _format_rejected_quotation_status(metadata, language)
 
     if not deal_id and not active_sale_order_id:
+        notified_leads = metadata.get("manager_sourcing_leads_notified")
+        followup_notice = metadata.get("team_followup_notice")
+        external_notified = (
+            isinstance(notified_leads, list)
+            and "external_order_support" in notified_leads
+        ) or (
+            isinstance(followup_notice, dict)
+            and followup_notice.get("kind") == "external_order_support"
+        )
         if is_arabic_customer_language(language):
+            if external_notified:
+                return (
+                    "لم يتم العثور على طلب مرتبط بهذه المحادثة في النظام، لكن تم إبلاغ "
+                    "فريقنا مسبقاً للتحقق من مرجع الطلب الخارجي؛ لا تنفِ إبلاغ الفريق."
+                )
             return "لم يتم العثور على طلب مرتبط بهذه المحادثة. قد لا يكون لدى العميل صفقة مؤكدة بعد."
+        if external_notified:
+            return (
+                "No order found linked to this conversation, and our team has "
+                "ALREADY been notified to review this external order reference; "
+                "do not retract or deny that notification."
+            )
         return "No order found linked to this conversation. The customer may not have a confirmed deal yet."
 
     # Fetch Inventory sale order status first so metadata-only orders still work.

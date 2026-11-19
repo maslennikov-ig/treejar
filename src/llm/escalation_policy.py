@@ -329,12 +329,14 @@ _WHOLESALE_PRICING_RE = re.compile(
 _CUSTOM_MADE_TO_ORDER_RE = re.compile(
     r"\bcustom(?:ised|ized)?(?:[\s-]+|\s+(?:\w+[\s-]+){1,2})(?:made|built|size[ds]?|sizing|dimensions?|"
     r"shape[ds]?|design(?:ed)?|manufactur\w*|fabricat\w*|furniture|table|desk|"
-    r"workstation|cabinet|joinery|carpentry|\d)"
+    r"workstation|cabinet|joinery|carpentry|chairs?|stools?|sofas?|seating|"
+    r"bench(?:es)?|pods?|booths?|\d)"
     r"|\bmade[\s-]to[\s-](?:order|measure)\b|\bbespoke\b|\btailor[\s-]?made\b"
+    r"|\b(?:as\s+a\s+|need\s+(?:a\s+|an\s+)?|make\s+(?:a\s+|an\s+)?|custom(?:ised|ized)?\s+)prototype\b"
     r"|\bbuilt[\s-]?in\s+(?:power|electrical|electric|sockets?|outlets?)\b"
     r"|\bnon[\s-]?standard\s+(?:size|sizes|dimensions?)\b"
     r"|\bspecial\s+(?:size|sizes|dimensions?)\b"
-    r"|تفصيل\s+(?:\S+\s+)?(?:طاولة|طاولات|مكتب|مكاتب|أثاث|اثاث|خزائن|خزانة)"
+    r"|تفصيل\s+(?:\S+\s+)?(?:طاولة|طاولات|مكتب|مكاتب|أثاث|اثاث|خزائن|خزانة|كرسي|كراسي|كنب|مقاعد)"
     r"|حسب\s+الطلب|مقاس(?:ات)?\s+خاص(?:ة)?|تصنيع\s+خاص"
     r"|(?:وحدات|مقابس)\s+كهرباء\s+مدمجة",
     re.IGNORECASE,

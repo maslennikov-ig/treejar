@@ -663,6 +663,45 @@ def decision_state_directives(
     )
     directives: list[str] = []
 
+    notified_leads = metadata.get("manager_sourcing_leads_notified")
+    notified_list = (
+        [str(item).strip() for item in notified_leads if str(item or "").strip()]
+        if isinstance(notified_leads, Sequence)
+        and not isinstance(notified_leads, (str, bytes))
+        else []
+    )
+    followup_notice = metadata.get("team_followup_notice")
+    followup_kind = (
+        str(followup_notice.get("kind") or "").strip()
+        if isinstance(followup_notice, Mapping)
+        else ""
+    )
+    if (
+        "external_order_support" in notified_list
+        or followup_kind == "external_order_support"
+    ):
+        directives.append(
+            "MANAGER NOTIFICATION SENT (non-pausing): Our team has ALREADY been "
+            "notified about this unlinked external order inquiry. Never claim no "
+            "one was notified or retract an earlier confirmation that our team "
+            "was alerted; continue helping with any catalog, policy, or "
+            "marketplace guidance without inventing Treejar order status."
+        )
+    other_non_pausing: list[str] = [
+        item for item in notified_list if item != "external_order_support"
+    ]
+    if followup_kind and followup_kind != "external_order_support":
+        other_non_pausing.append(followup_kind)
+    if isinstance(metadata.get("team_followup_quote_notice"), Mapping):
+        other_non_pausing.append("quotation_followup")
+    if other_non_pausing:
+        labels = ", ".join(dict.fromkeys(other_non_pausing))
+        directives.append(
+            f"MANAGER NOTIFICATION SENT (non-pausing: {labels}): Our team has "
+            "ALREADY received an internal notification for this conversation. Do "
+            "not claim no one was notified."
+        )
+
     selected = [
         item
         for item in state.slots.selected_items
