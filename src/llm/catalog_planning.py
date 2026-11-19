@@ -926,6 +926,64 @@ CATALOG_CONCEPTS: tuple[CatalogConcept, ...] = (
         ),
         sql_terms=("locker", "pedestal", "mobile drawer", "stel "),
     ),
+    CatalogConcept(
+        name="low_storage_cabinet",
+        query_re=re.compile(
+            r"\b(?:low|small|short|under[\s-]?desk)\s+(?:2[\s-]?door\s+|two[\s-]?door\s+)?"
+            r"(?:office\s+|storage\s+)?(?:cabinets?|cupboards?)\b"
+            r"|\bcredenzas?\b"
+            r"|\boffice\s+small\s+cabinet\b"
+            r"|(?:خزان[ةه]\s+(?:منخفض[ةه]|صغير[ةه]))",
+            re.IGNORECASE,
+        ),
+        product_match_re=re.compile(
+            r"\b(?:credenzas?|low\s+cabinet|service\s+cabinet|"
+            r"simple\s+cabinet\s+with\s+wooden\s+doors)\b",
+            re.IGNORECASE,
+        ),
+        product_exclude_re=re.compile(
+            r"\b(?:workstations?|work\s+stations?|desks?|chairs?|stools?|sofas?|"
+            r"hanging\s+cabinet|mobile\s+drawer)\b",
+            re.IGNORECASE,
+        ),
+        sql_terms=(
+            "credenza",
+            "low cabinet",
+            "service cabinet",
+            "simple cabinet with wooden doors",
+        ),
+    ),
+    CatalogConcept(
+        name="office_cabinet",
+        query_re=re.compile(
+            r"\b(?:(?:office|storage|file|filing|freestanding|closed|"
+            r"2[\s-]?door|two[\s-]?door|wooden|wood|tall|medium)\s+)+"
+            r"(?:cabinets?|cupboards?)\b"
+            r"|(?:خزان[ةه]\s+(?:مكتبي[ةه]|تخزين|ملفات|ببابين))",
+            re.IGNORECASE,
+        ),
+        product_match_re=re.compile(
+            r"\b(?:file\s+cabinet|metal\s+file|cabinet\s+with\s+wooden|"
+            r"cabinet\s+closed\s+doors|medium\s+cabinet|low\s+cabinet|"
+            r"credenzas?|door\s+locker|service\s+cabinet|stel\s+ss[cl])\b",
+            re.IGNORECASE,
+        ),
+        product_exclude_re=re.compile(
+            r"\b(?:workstations?|work\s+stations?|desks?|chairs?|stools?|sofas?|"
+            r"hanging\s+cabinet|mobile\s+drawer|pedestals?)\b",
+            re.IGNORECASE,
+        ),
+        sql_terms=(
+            "cabinet with wooden",
+            "metal file",
+            "file cabinet",
+            "cabinet closed doors",
+            "door locker",
+            "low cabinet",
+            "credenza",
+            "medium cabinet",
+        ),
+    ),
 )
 
 
@@ -981,7 +1039,24 @@ def requested_catalog_concepts(request_text: str) -> tuple[CatalogConcept, ...]:
     text = str(request_text or "")
     if not text.strip():
         return ()
-    return tuple(c for c in CATALOG_CONCEPTS if c.query_re.search(text))
+    wants_hanging = bool(re.search(r"\b(?:hanging|wall[\s-]?mounted)\b", text, re.I))
+    desk_with_cabinet = bool(
+        re.search(
+            r"\b(?:work\s?stations?|desks?)\s+(?:with|and|&)\s+"
+            r"(?:a\s+)?(?:fixed\s+|side\s+|low\s+|storage\s+)?cabinets?\b",
+            text,
+            re.I,
+        )
+    )
+    matched: list[CatalogConcept] = []
+    for concept in CATALOG_CONCEPTS:
+        if concept.name in {"low_storage_cabinet", "office_cabinet"} and (
+            wants_hanging or desk_with_cabinet
+        ):
+            continue
+        if concept.query_re.search(text):
+            matched.append(concept)
+    return tuple(matched)
 
 
 def product_matches_concept(
@@ -1180,10 +1255,10 @@ def rank_products_for_request[T](
         category = category_of(product) if category_of is not None else None
         subcategory = subcategory_of(product) if subcategory_of is not None else None
         attributes = attributes_of(product) if attributes_of is not None else None
-        concept_tier = (
-            int(
-                not any(
-                    product_matches_concept(
+        concept_misses = (
+            sum(
+                int(
+                    not product_matches_concept(
                         concept,
                         name=name,
                         description=description,
@@ -1191,15 +1266,18 @@ def rank_products_for_request[T](
                         subcategory=subcategory,
                         attributes=attributes,
                     )
-                    for concept in active_concepts
                 )
+                for concept in active_concepts
             )
             if active_concepts
             else 0
         )
+        matched_any_concept = (not active_concepts) or (
+            concept_misses < len(active_concepts)
+        )
         stock_tier = (
             int(stock_of(product) <= 0)
-            if active_concepts and stock_of is not None and concept_tier == 0
+            if stock_of is not None and matched_any_concept
             else 0
         )
         comp_tier, storage_tier = _offer_tier(
@@ -1209,7 +1287,7 @@ def rank_products_for_request[T](
             wants_storage=wants_storage,
         )
         if not economical_sort:
-            return (concept_tier, comp_tier, storage_tier, stock_tier, 0, 0, 0.0)
+            return (concept_misses, comp_tier, storage_tier, stock_tier, 0, 0, 0.0)
         assert price_of is not None
         raw_price = price_of(product)
         family_tier = _product_family_mismatch(name, category, requested_families)
@@ -1218,7 +1296,7 @@ def rank_products_for_request[T](
             float(raw_price) if not price_missing and raw_price is not None else 0.0
         )
         return (
-            concept_tier,
+            concept_misses,
             comp_tier,
             storage_tier,
             stock_tier,
@@ -1272,8 +1350,9 @@ def products_need_reranking[T](
         )
         if matches < len(products):
             return True
-        if stock_of is not None and any(stock_of(p) <= 0 for p in products):
-            return True
+
+    if stock_of is not None and any(stock_of(p) <= 0 for p in products):
+        return True
 
     demote_components = not request_wants_components(request_text)
     wants_storage = requested_storage_feature(request_text)
@@ -1923,9 +2002,9 @@ _FOOTPRINT_PRODUCT_QUERY_RE = re.compile(
 )
 _DIMENSION_UNIT = r"(?:mm|cm|m|in(?:ches?)?|ft|feet)"
 _DIMENSION_PAIR_RE = re.compile(
-    rf"\b\d+(?:\.\d+)?\s*(?:{_DIMENSION_UNIT})?\s*(?:x|×|by)\s*"
+    rf"\b\d+(?:\.\d+)?\s*(?:{_DIMENSION_UNIT})?\s*(?:x|×|х|by)\s*"
     rf"\d+(?:\.\d+)?\s*(?:{_DIMENSION_UNIT})?"
-    rf"(?:\s*(?:x|×|by)\s*\d+(?:\.\d+)?\s*(?:{_DIMENSION_UNIT})?)?",
+    rf"(?:\s*(?:x|×|х|by)\s*\d+(?:\.\d+)?\s*(?:{_DIMENSION_UNIT})?)?",
     re.IGNORECASE,
 )
 _DIMENSION_AXIS_RE = re.compile(

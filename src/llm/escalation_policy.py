@@ -465,6 +465,7 @@ def _largest_bulk_quantity(text: str) -> int:
             additive_groups.append(value)
         prev_end = end
     total_items = sum(additive_groups)
+    qty_prefix_spans: list[tuple[int, int, int]] = []
     for match in _QUANTITY_PREFIX_RE.finditer(text):
         raw = match.group("count") or match.group("ar_count") or ""
         try:
@@ -472,6 +473,22 @@ def _largest_bulk_quantity(text: str) -> int:
         except ValueError:
             continue
         largest = max(largest, value)
+        qty_prefix_spans.append((match.start(), match.end(), value))
+    qty_prefix_groups: list[int] = []
+    prev_qty_end: int | None = None
+    for start, end, value in qty_prefix_spans:
+        if prev_qty_end is not None and start < prev_qty_end:
+            continue
+        if (
+            prev_qty_end is not None
+            and qty_prefix_groups
+            and _are_alternative_quantity_spans(text[prev_qty_end:start])
+        ):
+            qty_prefix_groups[-1] = max(qty_prefix_groups[-1], value)
+        else:
+            qty_prefix_groups.append(value)
+        prev_qty_end = end
+    total_qty_prefix = sum(qty_prefix_groups)
     for match in _COMPOUND_SET_QUANTITY_RE.finditer(text):
         sets_str = match.group("sets") or match.group("sets_alt")
         items_str = match.group("items") or match.group("items_alt")
@@ -481,7 +498,7 @@ def _largest_bulk_quantity(text: str) -> int:
                 largest = max(largest, compound)
             except ValueError:
                 continue
-    return max(largest, total_items)
+    return max(largest, total_items, total_qty_prefix)
 
 
 def recorded_wholesale_quantity(
@@ -545,7 +562,11 @@ def wholesale_handoff_from_history(
     for text in texts:
         if "wholesale_or_bulk_project" in b2b_handoff_buckets(text):
             quantity = wholesale_quantity(text)
-            detail = f" ({quantity} units)" if quantity else ""
+            detail = (
+                f" ({quantity} units)"
+                if quantity >= WHOLESALE_QUANTITY_THRESHOLD
+                else ""
+            )
             return CriticalEscalationDecision(
                 allowed=True,
                 escalation_type=EscalationType.GENERAL,
@@ -576,6 +597,27 @@ def wholesale_handoff_from_history(
     )
 
 
+_ATTACHMENT_BODY_RE = re.compile(
+    r"(\[The customer sent a (?:photo|document)[^\]]*?\b(?:The photo shows:|It contains:)\s*)(?P<body>.*?)(\])",
+    re.IGNORECASE | re.DOTALL,
+)
+_ATTACHMENT_DOC_LABEL_RE = re.compile(
+    r"\b(?:tender|boq|bill\s+of\s+quantities)\b",
+    re.IGNORECASE,
+)
+
+
+def _pricing_text_without_attachment_doc_labels(normalized: str) -> str:
+    """Ignore speculative vision-reader BOQ/tender labels unless customer wrote them."""
+
+    return _ATTACHMENT_BODY_RE.sub(
+        lambda m: (
+            m.group(1) + _ATTACHMENT_DOC_LABEL_RE.sub(" ", m.group("body")) + m.group(3)
+        ),
+        normalized,
+    )
+
+
 def b2b_handoff_buckets(customer_text: str | None) -> tuple[str, ...]:
     """Every B2B handoff route this customer message earns, in priority order."""
 
@@ -587,10 +629,11 @@ def b2b_handoff_buckets(customer_text: str | None) -> tuple[str, ...]:
     normalized = " ".join(text.split())
     if _NEGATED_B2B_RE.search(normalized):
         normalized = _NEGATED_B2B_RE.sub(" ", normalized)
+    pricing_text = _pricing_text_without_attachment_doc_labels(normalized)
     buckets: list[str] = []
     if _largest_bulk_quantity(
         normalized
-    ) >= WHOLESALE_QUANTITY_THRESHOLD or _WHOLESALE_PRICING_RE.search(normalized):
+    ) >= WHOLESALE_QUANTITY_THRESHOLD or _WHOLESALE_PRICING_RE.search(pricing_text):
         buckets.append("wholesale_or_bulk_project")
     if _CUSTOM_MADE_TO_ORDER_RE.search(
         normalized
