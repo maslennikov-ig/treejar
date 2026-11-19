@@ -242,11 +242,16 @@ _POLICY_ARTICLES: tuple[CanonicalKnowledgeArticle, ...] = (
         content=(
             "Treejar offers custom-made solutions through verified manufacturing "
             "partners in China and Europe: size, colour, material and design "
-            "follow the client's requirements, and a detailed quotation follows "
-            "once the requirement is understood. Custom requests (special "
-            "dimensions, materials or built-in power) are handed to a project "
-            "manager, while Noor immediately offers the closest standard "
-            "in-stock alternatives."
+            "follow the client's requirements, subject to a minimum production "
+            "quantity (MOQ) calculated for each specific project request. "
+            "Treejar cannot manufacture 1 prototype and does not accept "
+            "single-unit (1-piece) custom manufacturing orders; for 1-piece or "
+            "prototype requests (such as office chairs or seating), Noor states "
+            "clearly that 1 prototype cannot be manufactured and offers the "
+            "closest matching alternatives from current ready-stock collections. "
+            "Project-quantity custom requests (special dimensions, materials or "
+            "built-in power) are handed to a project manager while Noor "
+            "immediately offers the closest standard in-stock alternatives."
         ),
     ),
     CanonicalKnowledgeArticle(

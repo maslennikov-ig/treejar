@@ -1,4 +1,4 @@
-"""Regression tests for 2026-11-19 live pilot audit (*1201 and *9005)."""
+"""Regression tests for 2026-11-19 live pilot audit (*1201 and *9005) and Julia's policy answers."""
 
 from __future__ import annotations
 
@@ -12,8 +12,12 @@ from src.llm.engine import check_order_status
 from src.llm.escalation_policy import (
     b2b_handoff_buckets,
     critical_escalation_decision,
+    external_order_support_decision,
+    is_single_unit_prototype_request,
 )
+from src.llm.prompts import BASE_SYSTEM_PROMPT
 from src.schemas.common import EscalationType
+from src.services import canonical_admin_seed as seed
 
 
 def _make_ctx(*, language: str, metadata: dict) -> SimpleNamespace:
@@ -107,12 +111,13 @@ async def test_check_order_status_default_unchanged_without_escalation() -> None
     "text",
     [
         "Hello Do you make customized Chair ?",
-        "Like this is also ok we need as a prototype",
         "Can you make a custom bar stool for our lounge?",
         "نريد تفصيل كرسي خاص للمعرض",
     ],
 )
-def test_custom_seating_and_prototype_trigger_custom_made_to_order(text: str) -> None:
+def test_custom_seating_triggers_custom_made_to_order_when_not_single_prototype(
+    text: str,
+) -> None:
     assert "custom_made_to_order" in b2b_handoff_buckets(text)
     decision = critical_escalation_decision(customer_text=text)
     assert decision.allowed is True
@@ -120,7 +125,71 @@ def test_custom_seating_and_prototype_trigger_custom_made_to_order(text: str) ->
     assert decision.escalation_type is EscalationType.GENERAL
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Like this is also ok we need as a prototype\nOnly one",
+        "Can you make 1 prototype custom chair?",
+        "We need a single custom chair as a prototype",
+    ],
+)
+def test_single_unit_prototype_stays_autonomous_and_emits_no_1_prototype_directive(
+    text: str,
+) -> None:
+    assert is_single_unit_prototype_request(text) is True
+    assert "custom_made_to_order" not in b2b_handoff_buckets(text)
+    conversation = SimpleNamespace(language="en", metadata_={})
+    directives = decision_state_directives(conversation, customer_text=text)
+    assert any(
+        "cannot manufacture 1 prototype and does not accept single-unit" in d
+        for d in directives
+    )
+
+
+def test_persisted_prototype_intent_evidence_keeps_policy_directive_active() -> None:
+    conversation = SimpleNamespace(
+        language="en",
+        metadata_={
+            "model_customer_intent": {
+                "evidence": "Like this is also ok we need as a prototype\nOnly one"
+            }
+        },
+    )
+    directives = decision_state_directives(
+        conversation,
+        customer_text="I want to know if you can make so that I can send you the dimensions",
+    )
+    assert any(
+        "cannot manufacture 1 prototype and does not accept single-unit" in d
+        for d in directives
+    )
+
+
 def test_custom_colour_still_does_not_trigger_made_to_order() -> None:
     assert "custom_made_to_order" not in b2b_handoff_buckets(
         "Can you make this in a custom colour?"
     )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "406-1370546-0301923",
+        "I ordered a chair on Amazon and need the tax invoice",
+        "طلبت من أمازون ومحتاج الفاتورة",
+    ],
+)
+def test_marketplace_order_inquiry_routes_to_ali_via_external_order_support(
+    text: str,
+) -> None:
+    decision = external_order_support_decision(text)
+    assert decision.allowed is True
+    assert decision.trigger == "external_order_support"
+    assert "route to Ali" in decision.reason
+
+
+def test_canonical_kb_and_prompt_include_no_1_prototype_policy() -> None:
+    kb_text = " ".join(a.content.lower() for a in seed.canonical_kb_articles())
+    assert "cannot manufacture 1 prototype" in kb_text
+    assert "minimum production quantity" in kb_text
+    assert "cannot manufacture 1 prototype" in BASE_SYSTEM_PROMPT.lower()

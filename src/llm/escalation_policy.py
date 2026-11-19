@@ -337,7 +337,6 @@ _CUSTOM_MADE_TO_ORDER_RE = re.compile(
     r"workstation|cabinet|joinery|carpentry|chairs?|stools?|sofas?|seating|"
     r"bench(?:es)?|pods?|booths?|\d)"
     r"|\bmade[\s-]to[\s-](?:order|measure)\b|\bbespoke\b|\btailor[\s-]?made\b"
-    r"|\b(?:as\s+a\s+|need\s+(?:a\s+|an\s+)?|make\s+(?:a\s+|an\s+)?|custom(?:ised|ized)?\s+)prototype\b"
     r"|\bbuilt[\s-]?in\s+(?:power|electrical|electric|sockets?|outlets?)\b"
     r"|\bnon[\s-]?standard\s+(?:size|sizes|dimensions?)\b"
     r"|\bspecial\s+(?:size|sizes|dimensions?)\b"
@@ -346,6 +345,26 @@ _CUSTOM_MADE_TO_ORDER_RE = re.compile(
     r"|(?:وحدات|مقابس)\s+كهرباء\s+مدمجة",
     re.IGNORECASE,
 )
+_SINGLE_UNIT_PROTOTYPE_RE = re.compile(
+    r"\b(?:1|one|single|a|an)\s+prototype\b"
+    r"|\bas\s+a\s+prototype\b"
+    r"|\bneed\s+prototype\b"
+    r"|\bprototype\s+(?:only|chair|stool|desk|table|furniture|sample|piece)\b"
+    r"|\b(?:only\s+(?:1|one)|(?:1|one|single)\s+(?:pc|piece|unit))\b"
+    r"|\b(?:1|one|single)\s+custom(?:ised|ized)?\b"
+    r"|(?:نموذج|عينة)\s+(?:واحد(?:ة)?|فقط)|قطعة\s+واحدة\s+فقط",
+    re.IGNORECASE,
+)
+
+
+def is_single_unit_prototype_request(text: str | None) -> bool:
+    """Whether the customer text requests a 1-piece custom prototype or single custom unit."""
+    normalized = " ".join(str(text or "").translate(_ARABIC_INDIC_DIGITS).split())
+    if not normalized:
+        return False
+    return bool(_SINGLE_UNIT_PROTOTYPE_RE.search(normalized))
+
+
 _SPECIALIST_OUT_OF_CATALOG_RE = re.compile(
     r"\bfume\s+(?:hoods?|cupboards?|cabinets?)\b|\bchemical\s+hoods?\b"
     r"|\bbiosafety\s+cabinets?\b|\blaminar\s+flow\b|\bautoclaves?\b"
@@ -573,7 +592,9 @@ def b2b_handoff_buckets(customer_text: str | None) -> tuple[str, ...]:
         normalized
     ) >= WHOLESALE_QUANTITY_THRESHOLD or _WHOLESALE_PRICING_RE.search(normalized):
         buckets.append("wholesale_or_bulk_project")
-    if _CUSTOM_MADE_TO_ORDER_RE.search(normalized):
+    if _CUSTOM_MADE_TO_ORDER_RE.search(
+        normalized
+    ) and not _SINGLE_UNIT_PROTOTYPE_RE.search(normalized):
         buckets.append("custom_made_to_order")
     if _SPECIALIST_OUT_OF_CATALOG_RE.search(normalized):
         buckets.append("specialist_out_of_catalog_scope")
@@ -616,10 +637,21 @@ def _quotation_is_approved(metadata: Mapping[str, Any]) -> bool:
 
 _EXTERNAL_ORDER_REFERENCE_RE = re.compile(
     r"\b(?:b2c|b2b|web|ord|so|inv)-\d{4,}(?:-\d+)*\b"
+    r"|\b\d{3}-\d{7}-\d{7}\b"
     r"|\b(?:order|invoice)\s*(?:number|no\.?|id|ref(?:erence)?|#)\s*[:#\-]?\s*"
     r"(?=[a-z0-9\-]*\d)[a-z0-9][a-z0-9\-]{3,}\b"
     r"|(?:رقم\s+(?:ال)?(?:طلب|فاتورة))\s*[:#\-]?\s*"
     r"(?=[A-Za-z0-9\u0660-\u0669\-]*[\d\u0660-\u0669])[A-Za-z0-9\u0660-\u0669\-]{3,}",
+    re.IGNORECASE,
+)
+_MARKETPLACE_NAME_RE = re.compile(
+    r"\b(?:amazon(?:\.ae)?|noon(?:\.com)?)\b|أمازون|امازون|نون",
+    re.IGNORECASE,
+)
+_MARKETPLACE_ORDER_CONTEXT_RE = re.compile(
+    r"\b(?:order(?:ed)?|bought|purchased|invoice|tax\s+invoice|receipt|delivery|tracking)\b"
+    r"|\b\d{3}-\d{7}-\d{7}\b"
+    r"|طلب|طلبت|اشتريت|فاتور[ةه]|إيصال",
     re.IGNORECASE,
 )
 _PAID_WEBSITE_ORDER_CONTEXT_RE = re.compile(
@@ -639,12 +671,14 @@ def external_order_support_decision(
     customer_text: str | None,
     conversation_metadata: Mapping[str, Any] | None = None,
 ) -> CriticalEscalationDecision:
-    """Alert a manager (without pausing Noor) on unlinked website/order inquiries.
+    """Alert a manager (without pausing Noor) on unlinked website/marketplace order inquiries.
 
     2026-11-09 live pilot (*6040): a customer shared website order
     ``B2C-20261109-5702`` (`Status: Completed`) and asked if it was ready for
     showroom collection. ``check_order_status`` could not see website orders not
     linked to the WhatsApp conversation, and no manager was alerted.
+    2026-11-19 client policy (Julia, msg 882): marketplace order/invoice
+    dialogues (e.g. Amazon ``406-...`` in *1201) route to Ali.
     """
 
     metadata = conversation_metadata or {}
@@ -662,19 +696,33 @@ def external_order_support_decision(
             trigger="noncritical",
         )
     has_order_ref = bool(_EXTERNAL_ORDER_REFERENCE_RE.search(text))
+    has_marketplace_order = bool(
+        re.search(r"\b\d{3}-\d{7}-\d{7}\b", text)
+        or (
+            _MARKETPLACE_NAME_RE.search(text)
+            and _MARKETPLACE_ORDER_CONTEXT_RE.search(text)
+        )
+    )
     has_paid_website_followup = bool(
         _PAID_WEBSITE_ORDER_CONTEXT_RE.search(text)
         and _PAID_WEBSITE_ORDER_FOLLOWUP_RE.search(text)
     )
-    if has_order_ref or has_paid_website_followup:
-        return CriticalEscalationDecision(
-            allowed=True,
-            escalation_type=EscalationType.GENERAL,
-            reason=(
+    if has_order_ref or has_marketplace_order or has_paid_website_followup:
+        reason = (
+            "Marketplace / external order support (route to Ali): the customer "
+            "referenced a marketplace or external order/invoice not linked to "
+            "this WhatsApp conversation and needs human review."
+            if has_marketplace_order
+            else (
                 "External order support: the customer referenced an existing "
                 "or website order not linked to this WhatsApp conversation and "
                 "needs human status or pickup confirmation."
-            ),
+            )
+        )
+        return CriticalEscalationDecision(
+            allowed=True,
+            escalation_type=EscalationType.GENERAL,
+            reason=reason,
             trigger="external_order_support",
         )
     return CriticalEscalationDecision(

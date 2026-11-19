@@ -37,6 +37,7 @@ from src.dialogue.state import (
     DialogueState,
     ProposalItem,
 )
+from src.llm.escalation_policy import is_single_unit_prototype_request
 
 MAX_PROPOSAL_QUESTION_CHARS = 400
 MAX_PROPOSAL_ITEMS = 6
@@ -713,6 +714,24 @@ def decision_state_directives(
                 "sales discovery or quotation questions, unless the sender "
                 "explicitly starts a new genuine office furniture purchase inquiry."
             )
+    recorded_intent = metadata.get("model_customer_intent")
+    intent_evidence = (
+        str(recorded_intent.get("evidence") or "")
+        if isinstance(recorded_intent, Mapping)
+        else ""
+    )
+    if is_single_unit_prototype_request(
+        customer_text
+    ) or is_single_unit_prototype_request(intent_evidence):
+        directives.append(
+            "CUSTOM PROTOTYPE / SINGLE-UNIT POLICY: Treejar cannot manufacture "
+            "1 prototype and does not accept single-unit (1 piece) custom "
+            "manufacturing orders; custom production requires a minimum order "
+            "quantity (MOQ) calculated per specific project request. State "
+            "clearly that we cannot manufacture 1 prototype, do not promise "
+            "custom fabrication for 1 unit, and offer matching alternatives "
+            "from our current ready-stock collections."
+        )
 
     selected = [
         item

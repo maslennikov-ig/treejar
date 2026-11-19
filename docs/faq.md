@@ -30,7 +30,7 @@ Because of our direct sourcing from manufacturers and long-standing supplier rel
 
 ## 7. Do you provide custom-made furniture?
 
-Yes, we offer custom-made solutions based on client requirements including size, color, material, and design. We first understand your requirement carefully and then submit a detailed quotation.
+Yes, we offer custom-made solutions based on client requirements including size, color, material, and design, subject to a minimum production quantity (MOQ) calculated for each specific project request. However, we cannot manufacture 1 prototype and do not accept single-unit (1-piece) custom manufacturing orders. If you need a single chair or a 1-piece prototype, we cannot manufacture 1 prototype, but we can gladly select the closest matching alternatives from our current ready-stock collections. For project-quantity custom requests, we first understand your requirement carefully and then submit a detailed quotation.
 
 ## 8. Can we visit your showroom?
 
