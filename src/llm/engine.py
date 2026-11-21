@@ -2850,11 +2850,19 @@ async def search_products(
             if economical_request or active_concepts
             else min(max_results * 3, 30)
         )
+        wider_query = search_query.model_copy(update={"limit": wider_limit})
         wider_results = await rag_search_products(
             db=ctx.deps.db,
-            query=search_query.model_copy(update={"limit": wider_limit}),
+            query=wider_query,
             embedding_engine=search_embedding_engine,
         )
+        if use_made_to_order_fallback:
+            wider_results = await apply_made_to_order_catalog_fallback(
+                db=ctx.deps.db,
+                query=wider_query,
+                embedding_engine=search_embedding_engine,
+                primary_result=wider_results,
+            )
         if (
             not request_wants_components(offer_request_text)
             and len(wider_results.products) >= wider_limit
@@ -2869,8 +2877,25 @@ async def search_products(
                 query=search_query.model_copy(update={"limit": 30}),
                 embedding_engine=search_embedding_engine,
             )
-        if len(wider_results.products) > len(results.products):
-            results = wider_results
+        if wider_results.products:
+            merged_products = list(results.products)
+            seen_skus = {
+                str(product.sku).strip().casefold() for product in merged_products
+            }
+            for product in wider_results.products:
+                sku_key = str(product.sku).strip().casefold()
+                if sku_key in seen_skus:
+                    continue
+                seen_skus.add(sku_key)
+                merged_products.append(product)
+            if len(merged_products) > len(results.products):
+                results = ProductSearchResult(
+                    products=merged_products,
+                    query_interpreted=getattr(
+                        wider_results, "query_interpreted", effective_query
+                    ),
+                    total_found=len(merged_products),
+                )
     if use_made_to_order_fallback and active_concepts:
         results = await augment_results_with_concept_candidates(
             db=ctx.deps.db,

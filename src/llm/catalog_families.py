@@ -13,7 +13,23 @@ from typing import Literal
 CatalogFamily = Literal["seating", "workspace", "storage", "privacy"]
 
 CATALOG_PRODUCT_FAMILIES: tuple[tuple[CatalogFamily, tuple[str, ...]], ...] = (
-    ("seating", ("chair", "stool", "seat", "كرسي", "كراسي")),
+    (
+        "seating",
+        (
+            "chair",
+            "stool",
+            "seat",
+            "sofa",
+            "couch",
+            "settee",
+            "loveseat",
+            "كرسي",
+            "كراسي",
+            "كنب",
+            "كنبة",
+            "أريكة",
+        ),
+    ),
     (
         "workspace",
         (

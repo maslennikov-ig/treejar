@@ -111,8 +111,10 @@ def _search_products_limit_message(*, include_no_results: bool = False) -> str:
         prefix + "Search limit reached for this customer message. "
         "Do not call search_products again. "
         "Answer using the previous search results if you already have relevant items. "
-        "Otherwise explain that no exact match was found and offer nearby "
-        "alternatives or one clarifying question."
+        "Otherwise explain plainly that no matching item was found in our catalog "
+        "and offer nearby categories we carry or one clarifying question. "
+        "Never promise to check with the team or come back later on unsearched or "
+        "unfound items unless escalate_to_manager confirmed a handoff."
     )
 
 
@@ -880,6 +882,24 @@ CATALOG_CONCEPTS: tuple[CatalogConcept, ...] = (
         ),
         product_match_re=re.compile(r"\bstools?\b", re.IGNORECASE),
         sql_terms=("stool",),
+    ),
+    CatalogConcept(
+        name="office_sofa",
+        family="seating",
+        query_re=re.compile(
+            r"\b(?:sofas?|couch(?:es)?|settees?|loveseats?|lounge\s+seating)\b"
+            r"|(?:كنب[ةه]?|أريكة|اريكة|صوفا)",
+            re.IGNORECASE,
+        ),
+        product_match_re=re.compile(
+            r"\b(?:sofas?|couch(?:es)?|settees?|loveseats?|office\s+bench)\b",
+            re.IGNORECASE,
+        ),
+        product_exclude_re=re.compile(
+            r"\b(?:desks?|tables?|workstations?|chairs?|stools?|cabinets?|lockers?)\b",
+            re.IGNORECASE,
+        ),
+        sql_terms=("sofa",),
     ),
     CatalogConcept(
         name="l_shape_desk",
@@ -3094,10 +3114,52 @@ def _materialize_verified_catalog_facts(deps: SalesDeps) -> str | None:
     return "\n".join(lines)
 
 
+_ITEMIZED_PRODUCT_NOUN_RE = re.compile(
+    r"\b(?:chairs?|sofas?|couch(?:es)?|settees?|loveseats?|stools?|desks?|"
+    r"tables?|workstations?|work\s+stations?|cabinets?|cupboards?|lockers?|"
+    r"pedestals?|pods?|booths?|counters?|bench(?:es)?|shel(?:f|ves)|"
+    r"credenzas?)\b"
+    r"|(?:كرسي|كراسي|كنب[ةه]?|أريكة|مكتب|مكاتب|طاول[ةه]|محط[ةه]\s+عمل|"
+    r"خزان[ةه]|خزائن|لوكر|كبسول[ةه]|مقصور[ةه])",
+    re.IGNORECASE,
+)
+
+
+def _itemized_product_request_count(text: str) -> int:
+    """Count distinct product-item clauses in a multi-item request."""
+    raw = str(text or "").strip()
+    if not raw:
+        return 0
+    chunks = [
+        part.strip(" \t•-*0123456789.)(")
+        for part in re.split(r"[\n;]+|,(?=\s*[a-zA-Z\u0600-\u06ff0-9])", raw)
+    ]
+    matched = [
+        chunk for chunk in chunks if chunk and _ITEMIZED_PRODUCT_NOUN_RE.search(chunk)
+    ]
+    return len(matched) if len(matched) >= 3 else 0
+
+
 def _product_search_call_limit(deps: SalesDeps) -> int:
-    turn_families = _catalog_product_families(getattr(deps, "user_query", ""))
-    family_count = len(set(turn_families or deps.catalog_planning.families))
-    return min(6, max(2, 2 * family_count))
+    user_query = str(getattr(deps, "user_query", "") or "")
+    turn_families = _catalog_product_families(user_query)
+    itemized_count = _itemized_product_request_count(user_query)
+    planning = getattr(deps, "catalog_planning", None)
+    planning_families = planning.families if planning is not None else ()
+    if not turn_families and not planning_families and not itemized_count:
+        for entry in reversed(getattr(deps, "recent_history", ()) or ()):
+            if not isinstance(entry, str) or not entry.startswith("user:"):
+                continue
+            prior_text = entry[5:].strip()
+            prior_families = _catalog_product_families(prior_text)
+            prior_items = _itemized_product_request_count(prior_text)
+            if prior_families or prior_items:
+                turn_families = prior_families
+                itemized_count = prior_items
+                break
+    family_count = len(set(turn_families or planning_families))
+    family_limit = min(6, max(2, 2 * family_count))
+    return min(8, max(family_limit, itemized_count))
 
 
 def _append_required_tool_disclosures(text: str, deps: SalesDeps) -> str:
