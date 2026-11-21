@@ -78,9 +78,14 @@ def _filename_hint(message: Any, url: str | None, caption: str) -> str | None:
         if isinstance(candidate, str) and "." in candidate.strip():
             return candidate.strip()
     if url:
-        tail = urllib.parse.unquote(urllib.parse.urlparse(url).path.rsplit("/", 1)[-1])
+        parsed = urllib.parse.urlparse(url)
+        tail = urllib.parse.unquote(parsed.path.rsplit("/", 1)[-1])
         if "." in tail:
             return tail
+        for query_name in urllib.parse.parse_qs(parsed.query).get("filename", ()):
+            cleaned = query_name.strip()
+            if "." in cleaned:
+                return cleaned
     return None
 
 

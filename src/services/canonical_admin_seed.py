@@ -262,7 +262,7 @@ _POLICY_ARTICLES: tuple[CanonicalKnowledgeArticle, ...] = (
             "chairs (task and mesh chairs, executive seating, visitor chairs), "
             "desks, manager desks and multi-person workstations, meeting tables, "
             "storage (mobile pedestals, cabinets, and steel lockers — no safes, "
-            "petty cash boxes, notice/signage boards, general office supplies/stationery, office electronics, residential beds, residential villa/home furniture, tablet-arm training chairs, or furniture "
+            "petty cash boxes, notice/signage boards, general office supplies/stationery, office electronics, residential beds/bedside tables/nightstands, residential villa/home furniture, tablet-arm training chairs, or furniture "
             "rental), sofas and acoustic pods. Specific models, prices and stock "
             "levels are taken only from the live catalogue search and Zoho stock; "
             "product links always use https://treejartrading.ae/product/<slug>."

@@ -35,7 +35,6 @@ _SUPPLIER_PITCH_RE = re.compile(
     r"|\bconsidering\s+a\s+new\s+(?:supplier|vendor|manufacturer)\b"
     r"|\bwork\s+with\s+(?:manufacturers|suppliers|factories)\s+from\b"
     r"|\bregister\s+(?:us|our\s+company)\s+as\s+(?:a\s+)?(?:supplier|vendor)\b"
-    r"|\bvendor\s+registration\b"
     r"|\bfurniture\s+supply\s+from\b"
     r"|\bsupply(?:ing)?\s+(?:office\s+)?furniture\s+(?:from|to\s+your)\b"
     r"|\b(?:whatsapp\s+number|contact|details|email|number)\s+of\s+your\s+"

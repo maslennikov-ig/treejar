@@ -83,13 +83,22 @@ async def escalate_to_manager(
                 "policy question you can verify and leave order-specific "
                 "readiness for the team to confirm."
             )
+        if trigger == "b2b_vendor_onboarding":
+            return (
+                "The manager already has this B2B vendor-onboarding or compliance "
+                "document request. Do not create another alert; answer any "
+                "catalog, quotation, or delivery question you can verify."
+            )
         return (
             "The manager already has this sourcing request. Do not mention it "
             "again unless the customer asks; answer the rest of the message."
         )
 
     manager_reason = decision.reason
-    if trigger in B2B_HANDOFF_TRIGGERS or trigger == "external_order_support":
+    if trigger in B2B_HANDOFF_TRIGGERS or trigger in {
+        "external_order_support",
+        "b2b_vendor_onboarding",
+    }:
         brief = " ".join(str(reason or "").split())[:300]
         if brief:
             manager_reason = f"{manager_reason} Assistant brief: {brief}"
@@ -117,6 +126,16 @@ async def escalate_to_manager(
                 "readiness, do not invent order status or pickup timing, and "
                 "answer every other product, stock, or showroom question in "
                 "their message."
+            )
+        if trigger == "b2b_vendor_onboarding":
+            return (
+                "A manager has been notified with this corporate vendor-onboarding "
+                "or compliance document request; you stay in the conversation. "
+                "Confirm politely that our team has been notified to share "
+                "Treejar's registration details or documents (such as Trade "
+                "License or TRN), never invent registration or bank details, "
+                "and continue helping with any furniture, quotation, or delivery "
+                "questions."
             )
         return (
             "The sourcing request was passed to a manager; you stay in the "

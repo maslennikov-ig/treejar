@@ -237,6 +237,10 @@ def critical_escalation_decision(
     if external_order.allowed:
         return external_order
 
+    vendor_onboarding = b2b_vendor_onboarding_decision(text)
+    if vendor_onboarding.allowed:
+        return vendor_onboarding
+
     return CriticalEscalationDecision(
         allowed=False,
         reason="No critical customer-evidenced escalation trigger is present.",
@@ -260,7 +264,11 @@ B2B_HANDOFF_TRIGGERS = frozenset(
     }
 )
 NON_PAUSING_HANDOFF_TRIGGERS = frozenset(
-    {"specialist_out_of_catalog_scope", "external_order_support"}
+    {
+        "specialist_out_of_catalog_scope",
+        "external_order_support",
+        "b2b_vendor_onboarding",
+    }
 )
 """Routes that notify a manager without taking the conversation off the bot.
 
@@ -336,6 +344,8 @@ _CUSTOM_MADE_TO_ORDER_RE = re.compile(
     r"shape[ds]?|design(?:ed)?|manufactur\w*|fabricat\w*|furniture|table|desk|"
     r"workstation|cabinet|joinery|carpentry|chairs?|stools?|sofas?|seating|"
     r"bench(?:es)?|pods?|booths?|\d)"
+    r"|\b(?:furniture|tables?|desks?|workstations?|cabinets?|chairs?|stools?|"
+    r"sofas?|seating|bench(?:es)?|pods?|booths?)\s+custom(?:ised|ized)\b"
     r"|\bmade[\s-]to[\s-](?:order|measure)\b|\bbespoke\b|\btailor[\s-]?made\b"
     r"|\bbuilt[\s-]?in\s+(?:power|electrical|electric|sockets?|outlets?)\b"
     r"|\bnon[\s-]?standard\s+(?:size|sizes|dimensions?)\b"
@@ -771,6 +781,51 @@ def external_order_support_decision(
     return CriticalEscalationDecision(
         allowed=False,
         reason="No external order reference is present.",
+        trigger="noncritical",
+    )
+
+
+_COLD_SUPPLIER_PITCH_RE = re.compile(
+    r"\b(?:become|register\s+(?:us|our\s+company)\s+as)\s+(?:your|a)\s+"
+    r"(?:supplier|vendor|partner)\b"
+    r"|\bwe\s+are\s+(?:a\s+|an\s+|the\s+)?(?:[a-z0-9&-]+\s+){0,3}"
+    r"(?:manufacturer|supplier|distributor|factory|vendor|exporter)s?\b",
+    re.IGNORECASE,
+)
+_B2B_VENDOR_ONBOARDING_RE = re.compile(
+    r"\b(?:external\s+)?(?:supplier|vendor)\s+(?:registration|onboarding|application|profile)\b"
+    r"|\bregister\s+(?:treejar|you|your\s+company)\s+as\s+(?:our|a|an)\s+(?:approved\s+)?(?:supplier|vendor)\b"
+    r"|\b(?:trade\s+licen[cs]e|trn\s+certificate|vat\s+certificate|tax\s+registration\s+certificate)\b",
+    re.IGNORECASE,
+)
+
+
+def b2b_vendor_onboarding_decision(
+    customer_text: str | None,
+) -> CriticalEscalationDecision:
+    """Alert a manager (without pausing Noor) when a corporate buyer sends vendor-onboarding forms or compliance requests."""
+
+    text = " ".join(str(customer_text or "").split())
+    if not text or _COLD_SUPPLIER_PITCH_RE.search(text):
+        return CriticalEscalationDecision(
+            allowed=False,
+            reason="No B2B buyer vendor-onboarding request is present.",
+            trigger="noncritical",
+        )
+    if _B2B_VENDOR_ONBOARDING_RE.search(text):
+        return CriticalEscalationDecision(
+            allowed=True,
+            escalation_type=EscalationType.GENERAL,
+            reason=(
+                "B2B vendor onboarding: a corporate buyer requested Treejar "
+                "supplier/vendor registration or company compliance documents "
+                "(Trade License, TRN, or vendor form)."
+            ),
+            trigger="b2b_vendor_onboarding",
+        )
+    return CriticalEscalationDecision(
+        allowed=False,
+        reason="No B2B buyer vendor-onboarding request is present.",
         trigger="noncritical",
     )
 

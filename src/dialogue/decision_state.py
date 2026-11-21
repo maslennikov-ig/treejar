@@ -129,7 +129,13 @@ def keyboard_layout_reading(text: str) -> tuple[str, str] | None:
             lambda match: _transliterate(match.group(0), _CYRILLIC_TO_QWERTY),
             stripped,
         )
-        return ("Russian", reading) if _LATIN_RE.search(reading) else None
+        if not _LATIN_RE.search(reading):
+            return None
+        if _classify_normalized(_normalize(reading)) is not None or (
+            len(stripped.split()) <= 2 and len(stripped) <= 20
+        ):
+            return ("Russian", reading)
+        return None
     if (
         _ARABIC_RE.search(stripped)
         and not _CYRILLIC_RE.search(stripped)
@@ -688,10 +694,26 @@ def decision_state_directives(
             "was alerted; continue helping with any catalog, policy, or "
             "marketplace guidance without inventing Treejar order status."
         )
+    if (
+        "b2b_vendor_onboarding" in notified_list
+        or followup_kind == "b2b_vendor_onboarding"
+    ):
+        directives.append(
+            "MANAGER NOTIFICATION SENT (non-pausing): Our team has ALREADY been "
+            "notified about this B2B vendor-onboarding or compliance document "
+            "request (such as Trade License, TRN, or External Supplier "
+            "Registration). Never claim no one was notified; continue helping "
+            "with any catalog, quotation, or delivery questions."
+        )
     other_non_pausing: list[str] = [
-        item for item in notified_list if item != "external_order_support"
+        item
+        for item in notified_list
+        if item not in {"external_order_support", "b2b_vendor_onboarding"}
     ]
-    if followup_kind and followup_kind != "external_order_support":
+    if followup_kind and followup_kind not in {
+        "external_order_support",
+        "b2b_vendor_onboarding",
+    }:
         other_non_pausing.append(followup_kind)
     if isinstance(metadata.get("team_followup_quote_notice"), Mapping):
         other_non_pausing.append("quotation_followup")
