@@ -196,9 +196,9 @@ async def report_non_sales_inquiry(
     )
     if metadata.get(_NON_SALES_NOTICE_KEY):
         return (
-            "Already logged for internal review; you stay active in the chat. "
-            "Reply briefly and politely within the sales channel boundary without "
-            "sharing staff personal contact numbers or asking sales/quotation questions."
+            "Already logged for internal review. Address new information briefly. "
+            "Omit any channel explanation or forwarding confirmation already given. "
+            "Keep staff contact details private."
         )
 
     clean_summary = " ".join(str(summary or "").split())[:240]

@@ -730,11 +730,13 @@ def decision_state_directives(
         if non_sales_intent_val:
             directives.append(
                 f"NON-SALES INQUIRY LOGGED ({non_sales_intent_val}): This "
-                "conversation is already flagged as a non-sales inquiry "
-                f"({non_sales_intent_val}), not a furniture buyer. Reply briefly "
-                "and politely within the sales channel boundary without asking "
-                "sales discovery or quotation questions, unless the sender "
-                "explicitly starts a new genuine office furniture purchase inquiry."
+                "outreach has already been logged. If the sender only thanks you "
+                "or acknowledges your answer, give at most one short courteous "
+                "line. Omit the channel explanation, forwarding confirmation, "
+                "and sales invitation you already gave. Correct any material "
+                "misunderstanding briefly without asking sales discovery or quotation "
+                "questions. Answer a new, genuine office furniture purchase inquiry "
+                "on its own merits."
             )
     recorded_intent = metadata.get("model_customer_intent")
     intent_evidence = (

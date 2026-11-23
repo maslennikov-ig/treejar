@@ -147,12 +147,14 @@ bypassed AS (
     ON pc.norm_phone = regexp_replace(s.chat_id, '[^0-9]', '', 'g')
   WHERE NOT s.is_echo
     AND s.created_at >= (now() AT TIME ZONE 'UTC') - interval '72 hours'
+    -- Noor stores the message only after batching, media reads, and the first-turn
+    -- manager grace period. Wait before treating a shadow event as unmatched.
+    AND s.created_at <= (now() AT TIME ZONE 'UTC') - interval '10 minutes'
     AND s.created_at >= pc.conv_created_utc
     AND NOT EXISTS (
       SELECT 1 FROM messages m
-      WHERE m.conversation_id = pc.id
+      WHERE m.wazzup_message_id = s.message_id
         AND m.role = 'user'
-        AND m.created_at BETWEEN s.created_at - interval '10 minutes' AND s.created_at + interval '10 minutes'
     )
 )
 SELECT 'ALERT: STICKY_NOOR_CHAT_BYPASSED_ROUTER' AS alert_type,
@@ -327,8 +329,8 @@ SELECT chat_ref,
                AND mgr_cnt = 0
               THEN 'unanswered_inbound_gt_3m' END,
          CASE WHEN (quote_lifecycle = 'created' OR has_quote_pdf)
-               AND zoho_deal_id IS NULL
-              THEN 'quote_missing_crm_deal' END,
+               AND (zoho_contact_id IS NULL OR zoho_deal_id IS NULL)
+              THEN 'quote_missing_crm_contact_or_deal' END,
          CASE WHEN mgr_cnt > 0
                AND escalation_status NOT IN ('manual_takeover', 'resolved')
               THEN 'manager_replied_without_takeover' END,
@@ -337,7 +339,8 @@ SELECT chat_ref,
                AND esc_cnt = 0
                AND mgr_cnt = 0
               THEN 'unescalated_team_promise' END,
-         CASE WHEN pending_esc_utc IS NOT NULL
+         CASE WHEN escalation_status IN ('pending', 'in_progress')
+               AND pending_esc_utc IS NOT NULL
                AND pending_esc_utc < (now() AT TIME ZONE 'utc') - interval '60 minutes'
                AND (last_mgr_utc IS NULL OR last_mgr_utc < pending_esc_utc)
               THEN 'pending_escalation_unanswered_gt_60m' END,
@@ -353,10 +356,10 @@ SELECT chat_ref,
 FROM conv_stats
 WHERE (
   (last_role = 'user' AND last_msg_utc < (now() AT TIME ZONE 'utc') - interval '3 minutes' AND escalation_status = 'none' AND mgr_cnt = 0)
-  OR ((quote_lifecycle = 'created' OR has_quote_pdf) AND zoho_deal_id IS NULL)
+  OR ((quote_lifecycle = 'created' OR has_quote_pdf) AND (zoho_contact_id IS NULL OR zoho_deal_id IS NULL))
   OR (mgr_cnt > 0 AND escalation_status NOT IN ('manual_takeover', 'resolved'))
   OR (has_team_promise AND escalation_status = 'none' AND esc_cnt = 0 AND mgr_cnt = 0)
-  OR (pending_esc_utc IS NOT NULL AND pending_esc_utc < (now() AT TIME ZONE 'utc') - interval '60 minutes' AND (last_mgr_utc IS NULL OR last_mgr_utc < pending_esc_utc))
+  OR (escalation_status IN ('pending', 'in_progress') AND pending_esc_utc IS NOT NULL AND pending_esc_utc < (now() AT TIME ZONE 'utc') - interval '60 minutes' AND (last_mgr_utc IS NULL OR last_mgr_utc < pending_esc_utc))
   OR (escalation_status = 'manual_takeover' AND last_role = 'user' AND last_msg_utc < (now() AT TIME ZONE 'utc') - interval '30 minutes' AND (last_mgr_utc IS NULL OR last_mgr_utc < last_msg_utc - interval '4 hours'))
 )
 ORDER BY last_msg_utc DESC;
@@ -372,7 +375,7 @@ docker exec noor-redis-1 sh -c '
 '
 
 echo ""
-echo "--- [4] WORKER MEDIA / ATTACHMENT / ERROR LOGS (last $LOG_SINCE) ---"
+echo "--- [4] WORKER MEDIA, ATTACHMENTS, AND SERVICE LOGS (last $LOG_SINCE) ---"
 echo "[Media & attachment signals in noor-worker-1]:"
 docker logs --since "$LOG_SINCE" noor-worker-1 2>&1 | grep -E "Customer attachment has no downloadable URL|\[The customer sent|media_reader|inbound_media" || echo "(none)"
 

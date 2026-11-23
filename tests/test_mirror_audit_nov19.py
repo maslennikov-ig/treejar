@@ -45,6 +45,8 @@ def test_non_sales_notice_persists_in_decision_state_and_suppresses_asks() -> No
     joined = "\n".join(directives)
     assert "NON-SALES INQUIRY LOGGED (supplier_pitch)" in joined
     assert "without asking sales discovery or quotation questions" in joined
+    assert "give at most one short courteous line" in joined
+    assert "Omit the channel explanation, forwarding confirmation" in joined
 
     turn = _Turn(
         db=MagicMock(),

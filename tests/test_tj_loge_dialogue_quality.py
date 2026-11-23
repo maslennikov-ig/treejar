@@ -353,6 +353,38 @@ async def test_read_customer_media_reports_a_failed_read() -> None:
 
 
 @pytest.mark.asyncio
+async def test_oversized_pdf_records_the_limit_without_calling_vision() -> None:
+    downloader = AsyncMock()
+    downloader.download_media.return_value = b"%PDF" + bytes(
+        media_reader.MAX_DOCUMENT_BYTES
+    )
+    url = "https://cdn.wazzup24.com/file/?filename=Office%20catalog.pdf"
+    attachment = WazzupIncomingMessage(
+        messageId="doc-1",
+        chatId=CHAT_ID,
+        channelId=CHANNEL_ID,
+        contentUri=url,
+        type="document",
+    )
+    with (
+        patch.object(inbound_media, "WazzupProvider") as provider_cls,
+        patch.object(inbound_media, "describe_customer_media") as describe,
+    ):
+        provider_cls.return_value.__aenter__ = AsyncMock(return_value=downloader)
+        provider_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        notes = await read_customer_media(
+            [attachment], channel_id=CHANNEL_ID, batch_ref="ib1_test"
+        )
+
+    assert not notes["doc-1"].read
+    assert notes["doc-1"].content == (
+        '[The customer sent a document "Office catalog.pdf", but it could not be '
+        "opened because it exceeds the 15 MiB attachment limit.]"
+    )
+    describe.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_photo_only_batch_reaches_the_turn_and_is_stored() -> None:
     """*2588 / *5868: a photo with no text used to be dropped before the LLM."""
 

@@ -106,6 +106,7 @@ def format_media_note(
     description: str | None,
     mime_type: str | None = None,
     skipped_due_to_batch_limit: bool = False,
+    size_limit_bytes: int | None = None,
 ) -> str:
     """Return the stored text for one customer attachment.
 
@@ -118,6 +119,13 @@ def format_media_note(
         note = f"[The customer sent a {message_type}; Noor cannot view videos.]"
         return f"{caption}\n{note}" if caption else note
     kind = _kind_label(message_type, mime_type)
+    if size_limit_bytes is not None:
+        name = f' "{caption}"' if caption else ""
+        limit_mib = size_limit_bytes // (1024 * 1024)
+        return (
+            f"[The customer sent a {kind}{name}, but it could not be opened "
+            f"because it exceeds the {limit_mib} MiB attachment limit.]"
+        )
     if skipped_due_to_batch_limit:
         if kind == "document":
             name = f' "{caption}"' if caption else ""
@@ -194,12 +202,28 @@ async def _read_one(
         mime_type = detect_media_mime(data, declared, filename=filename_hint)
         if mime_type is None:
             raise ValueError("Unsupported attachment type")
-        if len(data) > media_size_limit(mime_type):
-            raise ValueError("Attachment too large")
         is_doc_mime = (
             mime_type in DOCUMENT_MIME_TYPES or mime_type in LOCAL_DOCUMENT_MIME_TYPES
         )
         filename = (caption or filename_hint) if is_doc_mime else None
+        size_limit = media_size_limit(mime_type)
+        if len(data) > size_limit:
+            logger.warning(
+                "Customer attachment exceeds size limit: batch_ref=%s size=%d limit=%d",
+                batch_ref,
+                len(data),
+                size_limit,
+            )
+            return CustomerMediaNote(
+                content=format_media_note(
+                    message_type=message_type,
+                    caption=filename or caption,
+                    description=None,
+                    mime_type=mime_type,
+                    size_limit_bytes=size_limit,
+                ),
+                read=False,
+            )
         result = await describe_customer_media(
             data,
             mime_type=mime_type,

@@ -141,8 +141,8 @@ def repin(
         print(f"drift: {entry}")
     if check:
         print(
-            f"{len(drifted)} pin(s) stale; re-run without --check to record "
-            "the current state"
+            f"{len(drifted)} pin(s) stale in {manifest_path}; re-run without "
+            "--check to record the current state"
         )
         return 1
     manifest_path.write_text(
