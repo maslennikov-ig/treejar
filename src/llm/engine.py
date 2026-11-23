@@ -252,6 +252,7 @@ from src.rag.made_to_order_fallback import (
 from src.rag.pipeline import search_products as rag_search_products
 from src.schemas.common import Language, SalesStage
 from src.schemas.product import ProductSearchQuery, ProductSearchResult
+from src.services.inbound_batch import showroom_clock_context
 
 if TYPE_CHECKING:
     from src.services.chat_latency import ChatLatencyTrace
@@ -1707,8 +1708,16 @@ def _coerce_inventory_item(
         return None
     try:
         item["rate"] = float(rate)
+        if isinstance(stock_on_hand, bool):
+            return None
         item["stock_on_hand"] = int(stock_on_hand)
-    except (TypeError, ValueError):
+        # Older provider rows expose only physical stock. When availability is
+        # present, committed units and units not on hand cannot be offered.
+        available = item.get("available_stock", stock_on_hand)
+        if isinstance(available, bool):
+            return None
+        item["sellable_units"] = max(0, min(item["stock_on_hand"], int(available)))
+    except (TypeError, ValueError, OverflowError):
         return None
 
     if require_item_id:
@@ -2561,10 +2570,15 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
         "Use a selling unit only when tool evidence explicitly establishes it. "
         "If that evidence is missing, quote the catalog price without assigning "
         "a packaging unit; do not multiply or divide the price using a packaging "
-        "quantity. "
+        "quantity. Seating capacity describes one assembled item. Match the "
+        "requested configuration before treating a seat count as an order quantity "
+        "or applying any unit price. When checking fit, compare both footprint "
+        "dimensions in the same units; confirm orientation from a drawing. "
+        "Use explicit specifications for dimensions, never a model number. "
         "Never claim an action "
         "completed unless its tool confirms success.\n"
     )
+    base_prompt += "\n" + showroom_clock_context()
     metadata = ctx.deps.conversation.metadata_ or {}
     keys = (
         "pending_quote_selection",
@@ -3554,7 +3568,7 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
 
     snapshot_key = sku.strip().casefold()
     existing_snapshot = ctx.deps.stock_snapshots.get(snapshot_key)
-    available = stock_info.get("stock_on_hand", 0)
+    available = stock_info["sellable_units"]
     try:
         available_int = max(int(available), 0)
     except (TypeError, ValueError):
@@ -4320,14 +4334,14 @@ async def _create_quotation(
         snapshot_as_of = datetime.datetime.now(datetime.UTC)
         ctx.deps.stock_snapshots[selected.sku.strip().casefold()] = StockSnapshot(
             sku=selected.sku,
-            available=int(verified["stock_on_hand"]),
+            available=int(verified["sellable_units"]),
             source="zoho",
             as_of=snapshot_as_of,
         )
     for selected in items:
         verified = _select_verified_quote_item(selected.sku)
         assert verified is not None
-        available = int(verified["stock_on_hand"])
+        available = int(verified["sellable_units"])
         if requested_by_id[str(verified["item_id"])] > available:
             clear_pending_quotation(ctx.deps.conversation)
             metadata = dict(ctx.deps.conversation.metadata_ or {})

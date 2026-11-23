@@ -24,6 +24,7 @@ from src.llm.catalog_planning import (
     CatalogConcept,
     count_concept_matches,
     product_matches_concept,
+    requested_catalog_concepts,
 )
 from src.llm.verified_answers import classify_product_match, query_names_specific_item
 from src.models.product import Product
@@ -83,7 +84,10 @@ async def apply_made_to_order_catalog_fallback(
         candidate_skus=[p.sku for p in product_responses],
     )
     primary_rank = _PRODUCT_MATCH_RANK[primary_match]
-    sofa_requested = bool(_SOFA_REQUEST_RE.search(query.query))
+    sofa_requested = bool(_SOFA_REQUEST_RE.search(query.query)) or any(
+        concept.name == "office_sofa"
+        for concept in requested_catalog_concepts(query.query)
+    )
     primary_has_sofa = any(_is_sofa_catalog_product(p) for p in product_responses)
     custom_requested = bool(_CUSTOM_CATALOG_REQUEST_RE.search(query.query))
 

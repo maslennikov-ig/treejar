@@ -887,7 +887,7 @@ CATALOG_CONCEPTS: tuple[CatalogConcept, ...] = (
         name="office_sofa",
         family="seating",
         query_re=re.compile(
-            r"\b(?:sofas?|couch(?:es)?|settees?|loveseats?|lounge\s+seating)\b"
+            r"\b(?:sofas?|couch(?:es)?|settees?|loveseats?|lounge\s+seating|beam\s+seating|upholstered\s+beam|waiting\s+bench(?:es)?)\b"
             r"|(?:كنب[ةه]?|أريكة|اريكة|صوفا)",
             re.IGNORECASE,
         ),
@@ -1041,6 +1041,26 @@ def extract_product_specifications_summary(
         return ""
     parts: list[str] = []
     seen_values: set[str] = set()
+    source = attributes.get("raw_source")
+    configs = source.get("configurations") if isinstance(source, Mapping) else None
+    if isinstance(configs, list):
+        for config in configs:
+            if not isinstance(config, Mapping) or not isinstance(
+                config.get("name"), str
+            ):
+                continue
+            options = config.get("options")
+            if not isinstance(options, list):
+                continue
+            labels = [
+                option["label"].strip()
+                for option in options
+                if isinstance(option, Mapping)
+                and isinstance(option.get("label"), str)
+                and option["label"].strip()
+            ]
+            if labels:
+                parts.append(f"{config['name']} options: {', '.join(labels)}")
     specs = attributes.get("specifications")
     if isinstance(specs, Mapping):
         for raw_key, raw_val in specs.items():
@@ -3293,14 +3313,7 @@ async def _zoho_stock_for_catalog_candidates(
         item = _coerce_inventory_item(raw_item, require_item_id=False)
         if item is None:
             continue
-        raw_stock = item.get("stock_on_hand")
-        if raw_stock is None:
-            continue
-        try:
-            inventory_available = int(raw_stock)
-        except (TypeError, ValueError):
-            continue
-        stock_by_sku[str(item["sku"]).strip().casefold()] = max(inventory_available, 0)
+        stock_by_sku[str(item["sku"]).strip().casefold()] = item["sellable_units"]
 
     for catalog_sku, zoho_sku in zoho_sku_map.items():
         zoho_key = zoho_sku.strip().casefold()

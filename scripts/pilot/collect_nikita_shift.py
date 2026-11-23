@@ -27,7 +27,7 @@ WITH pilot_convs AS (
     FROM conversations c
     WHERE c.created_at >= TIMESTAMP '2026-11-05 00:00:00'
       AND regexp_replace(c.phone, '[^0-9]', '', 'g') != ''
-      AND right(regexp_replace(c.phone, '[^0-9]', '', 'g'), 8) <> '551220665'
+      AND right(regexp_replace(c.phone, '[^0-9]', '', 'g'), 9) <> '551220665'
 )
 SELECT
     pc.mask,
@@ -35,15 +35,17 @@ SELECT
     pc.escalation_status,
     min(s.created_at) AS first_leaked_utc,
     max(s.created_at) AS last_leaked_utc,
-    count(*) FILTER (WHERE NOT s.is_echo) AS shadow_client_msgs,
-    count(*) FILTER (WHERE s.is_echo) AS shadow_echo_msgs
+    count(*) FILTER (WHERE s.created_at <= (now() AT TIME ZONE 'UTC') - interval '10 minutes') AS unmatched_inbound,
+    count(*) FILTER (WHERE s.created_at > (now() AT TIME ZONE 'UTC') - interval '10 minutes') AS pending_ingestion
 FROM shadow_webhook_events s
 JOIN pilot_convs pc ON pc.norm_phone = regexp_replace(s.chat_id, '[^0-9]', '', 'g')
 WHERE s.created_at >= '__WATERMARK_UTC__'
+  AND s.created_at >= pc.conv_created_utc
+  AND NOT s.is_echo
   AND NOT EXISTS (
       SELECT 1 FROM messages m
-      WHERE m.conversation_id = pc.id
-        AND m.created_at BETWEEN s.created_at - interval '10 minutes' AND s.created_at + interval '10 minutes'
+      WHERE m.conversation_id = pc.id AND m.role = 'user'
+        AND m.wazzup_message_id = s.message_id
   )
 GROUP BY pc.mask, pc.id, pc.escalation_status
 ORDER BY min(s.created_at) ASC;

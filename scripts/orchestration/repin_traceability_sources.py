@@ -9,7 +9,7 @@ both, and three manifest tests fail with a digest mismatch that says nothing
 about what actually changed. `tj-feet` hit this twice on 2026-08-05 and re-pinned
 by hand both times.
 
-So the drift is expected maintenance, and this is the maintenance step.
+Commit the generated manifest alongside the handoff change so both describe the same release.
 
 The narrowness is the safety property. Only the paths the repository contract
 itself declares mutable are re-pinned; a frozen requirement, a scenario set or

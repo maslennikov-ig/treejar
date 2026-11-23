@@ -89,6 +89,22 @@ def is_treejar_working_hours(
     )
 
 
+def showroom_clock_context(now_utc: datetime | None = None) -> str:
+    """Ground relative opening-hours questions in the showroom's local calendar."""
+    now = now_utc or datetime.now(UTC)
+    local = now.astimezone(_UAE_TZ)
+    today = (
+        "closed all day"
+        if local.weekday() in TREEJAR_CLOSED_WEEKDAYS
+        else f"{TREEJAR_WORKING_HOURS_START_HOUR:02}:00–{TREEJAR_WORKING_HOURS_END_HOUR:02}:00"
+    )
+    status = "open" if is_treejar_working_hours(now) else "closed"
+    return (
+        f"Dubai local time: {local:%A %Y-%m-%d %H:%M}. "
+        f"Regular showroom hours today: {today}. Showroom is {status} now."
+    )
+
+
 async def _phone_has_prior_messages(db: Any, phone: str) -> bool:
     from sqlalchemy import select
 
