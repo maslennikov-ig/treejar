@@ -317,11 +317,11 @@ _BULK_ITEM_AR = (
     r"طاولات|طاولة|وحدات|وحدة|قطع|قطعة|خزائن|خزانة)"
 )
 _UNIT_COUNT = r"\d{1,3}(?:,\d{3})+|\d+"
+# A dimension or a price is not a quantity: "140–160 cm desks", "250 AED chair".
 _WHOLESALE_QUANTITY_RE = re.compile(
     rf"(?<![\d.,/–—-])(?P<count>{_UNIT_COUNT})"
     rf"(?:\s*(?:[-–—]|\bto\b)\s*(?P<other_count>{_UNIT_COUNT}))?"
     r"(?![\d/–—-]|\.\d)"
-    # A dimension or a price is not a quantity: "140–160 cm desks", "250 AED chair".
     rf"(?!\s*(?:mm|cm|m|meters?|metres?|%|متر|سم|{SKU_FOLLOWING_CURRENCY_PATTERN}|{BUDGET_AR_CURRENCY_PATTERN})(?:\b|\s|$))"
     r"(?!\s*[x×*]\s*\d)\s*"
     r"(?:x\s*|×\s*)?"
