@@ -8,6 +8,7 @@ from src.llm.catalog_planning import (
 )
 from src.llm.company_faq import active_faq_topics
 from src.llm.engine import _coerce_inventory_item
+from src.llm.escalation_policy import wholesale_handoff_from_history, wholesale_quantity
 from src.services.inbound_batch import showroom_clock_context
 
 
@@ -62,3 +63,21 @@ def test_sellable_units_bound_search_and_quote(
         item = _coerce_inventory_item(row, require_item_id=require_item_id)
         assert item is not None and item["sellable_units"] == expected
         assert item["stock_on_hand"] == 39
+
+
+@pytest.mark.parametrize(
+    ("text", "minimum"),
+    [
+        ("I need around 45-50 tables of this size", 45),
+        ("25 to 45 conference tables", 25),
+        ("15–25 chairs", 15),
+        ("8—10 visitor chairs and 12 desks", 20),
+        ("NOVO 1400-1600 tables", 0),
+        ("140–160 cm desks", 0),
+        ("450-500 AED chairs", 0),
+    ],
+)
+def test_bulk_ranges_use_the_lower_quantity(text: str, minimum: int) -> None:
+    assert wholesale_quantity(text) == minimum
+    decision = wholesale_handoff_from_history("Walnut please", [f"user: {text}"])
+    assert decision.allowed == (minimum >= 20)

@@ -9,7 +9,7 @@ both, and three manifest tests fail with a digest mismatch that says nothing
 about what actually changed. `tj-feet` hit this twice on 2026-08-05 and re-pinned
 by hand both times.
 
-Commit the generated manifest alongside the handoff change so both describe the same release.
+Commit the generated manifest alongside the handoff change and verify the pair with the --check invocation below.
 
 The narrowness is the safety property. Only the paths the repository contract
 itself declares mutable are re-pinned; a frozen requirement, a scenario set or

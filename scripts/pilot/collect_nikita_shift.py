@@ -51,6 +51,26 @@ GROUP BY pc.mask, pc.id, pc.escalation_status
 ORDER BY min(s.created_at) ASC;
 
 \echo ''
+\echo '=== 0A. UNMATCHED SHADOW TRAFFIC BEFORE THE FIRST NOOR CONVERSATION (OUTSIDE SHIFT COHORTS) ==='
+WITH first_noor AS (
+    SELECT regexp_replace(phone, '[^0-9]', '', 'g') AS phone_digits,
+           min(created_at) AS first_noor_utc
+    FROM conversations
+    GROUP BY 1
+)
+SELECT right(n.phone_digits, 4) AS mask, n.first_noor_utc,
+       min(s.created_at) AS first_shadow_utc,
+       count(*) FILTER (WHERE NOT s.is_echo) AS inbound,
+       count(*) FILTER (WHERE s.is_echo) AS outbound
+FROM shadow_webhook_events s
+JOIN first_noor n ON n.phone_digits = regexp_replace(s.chat_id, '[^0-9]', '', 'g')
+WHERE s.created_at >= '__WATERMARK_UTC__' AND s.created_at < n.first_noor_utc
+  AND n.phone_digits <> '' AND right(n.phone_digits, 9) <> '551220665'
+  AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.wazzup_message_id = s.message_id)
+GROUP BY n.phone_digits, n.first_noor_utc
+ORDER BY first_shadow_utc;
+
+\echo ''
 \echo '=== 0B. SHIFT BUCKET BREAKDOWN BY MOSCOW DATE (NON-NOOR SHADOW CHATS SINCE WATERMARK) ==='
 WITH noor_phones AS (
     SELECT DISTINCT regexp_replace(phone, '[^0-9]', '', 'g') AS norm_phone

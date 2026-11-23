@@ -316,10 +316,13 @@ _BULK_ITEM_AR = (
     r"(?:محطات\s+عمل|محطة\s+عمل|محطات|مكاتب|مكتب|كراسي|كرسي|مقاعد|مقعد|"
     r"طاولات|طاولة|وحدات|وحدة|قطع|قطعة|خزائن|خزانة)"
 )
+_UNIT_COUNT = r"\d{1,3}(?:,\d{3})+|\d+"
 _WHOLESALE_QUANTITY_RE = re.compile(
-    r"(?<![\d.,\-])(?P<count>\d{1,3}(?:,\d{3})+|\d+)(?![\d\-]|\.\d)"
-    # A dimension or a price is not a quantity: "2400 mm", "1600x800".
-    rf"(?!\s*(?:mm|cm|m|meters?|metres?|%|متر|سم|{BUDGET_AR_CURRENCY_PATTERN})(?:\b|\s|$))"
+    rf"(?<![\d.,/–—-])(?P<count>{_UNIT_COUNT})"
+    rf"(?:\s*(?:[-–—]|\bto\b)\s*(?P<other_count>{_UNIT_COUNT}))?"
+    r"(?![\d/–—-]|\.\d)"
+    # A dimension or a price is not a quantity: "140–160 cm desks", "250 AED chair".
+    rf"(?!\s*(?:mm|cm|m|meters?|metres?|%|متر|سم|{SKU_FOLLOWING_CURRENCY_PATTERN}|{BUDGET_AR_CURRENCY_PATTERN})(?:\b|\s|$))"
     r"(?!\s*[x×*]\s*\d)\s*"
     r"(?:x\s*|×\s*)?"
     rf"(?:(?:[a-z][a-z\-]*\s+){{0,2}}{_BULK_ITEM_EN}\b|{_BULK_ITEM_AR})",
@@ -450,6 +453,9 @@ def _largest_bulk_quantity(text: str) -> int:
             value = int(match.group("count").replace(",", ""))
         except ValueError:
             continue
+        if other := match.group("other_count"):
+            # Only the lower end is committed for a threshold handoff.
+            value = min(value, int(other.replace(",", "")))
         raw_spans.append((match.start(), match.end(), value))
     for match in _ITEM_COLON_QUANTITY_RE.finditer(text):
         try:
