@@ -9,8 +9,9 @@ both, and three manifest tests fail with a digest mismatch that says nothing
 about what actually changed. `tj-feet` hit this twice on 2026-08-05 and re-pinned
 by hand both times.
 
-Regenerate the manifest after the last handoff edit. Commit both files
-together after the verification command succeeds.
+Regenerate the manifest from the repository root after the final handoff edit.
+Include the regenerated manifest and handoff in the delivery commit once the
+verification command succeeds.
 
 The narrowness is the safety property. Only the paths the repository contract
 itself declares mutable are re-pinned; a frozen requirement, a scenario set or

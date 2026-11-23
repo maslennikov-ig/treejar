@@ -3843,20 +3843,13 @@ async def _create_or_reuse_sales_opportunity(
                         deal_id=existing_deal_id,
                         error="existing_contact_unverified",
                     )
-                conversation.zoho_contact_id = expected_contact_id
             readback = await crm.get_deal_status(existing_deal_id)
-            raw_deal_amount = getattr(conversation, "deal_amount", None)
-            expected_amount = (
-                amount
-                if amount is not None
-                else (float(raw_deal_amount) if raw_deal_amount is not None else None)
-            )
+            # A linked opportunity can precede the quotation and have its own
+            # title and amount. Verify the contact relationship before reusing it.
             if not isinstance(readback, Mapping) or not _deal_readback_matches(
                 readback,
                 deal_id=existing_deal_id,
-                title=title,
                 contact_id=expected_contact_id,
-                amount=expected_amount,
             ):
                 return SalesOpportunityWriteResult(
                     verified=False,
@@ -3864,6 +3857,7 @@ async def _create_or_reuse_sales_opportunity(
                     error="existing_deal_unverified",
                 )
             stage = _string_value(readback.get("Stage"))
+            conversation.zoho_contact_id = expected_contact_id
             conversation.deal_status = stage
             if readback.get("Amount") is not None:
                 conversation.deal_amount = float(readback["Amount"])
@@ -3880,6 +3874,12 @@ async def _create_or_reuse_sales_opportunity(
         contact_id = (
             _string_value(contact.get("id")) if isinstance(contact, Mapping) else ""
         )
+        known_contact_id = _string_value(getattr(conversation, "zoho_contact_id", None))
+        if known_contact_id and known_contact_id != contact_id:
+            return SalesOpportunityWriteResult(
+                verified=False,
+                error="contact_identity_conflict",
+            )
         if not contact_id:
             details = _quote_context_details_from_deps(deps)
             contact_payload: dict[str, Any] = {
@@ -3929,12 +3929,6 @@ async def _create_or_reuse_sales_opportunity(
                     error="contact_readback_mismatch",
                 )
 
-        known_contact_id = _string_value(getattr(conversation, "zoho_contact_id", None))
-        if known_contact_id and known_contact_id != contact_id:
-            return SalesOpportunityWriteResult(
-                verified=False,
-                error="contact_identity_conflict",
-            )
         conversation.zoho_contact_id = contact_id
 
         operation_fingerprint = _sales_opportunity_write_fingerprint(
@@ -4792,7 +4786,9 @@ async def _ensure_crm_opportunity_for_quotation(
 
     if getattr(deps, "zoho_crm", None) is None:
         return
-    if _string_value(getattr(deps.conversation, "zoho_deal_id", None)):
+    if _string_value(
+        getattr(deps.conversation, "zoho_deal_id", None)
+    ) and _string_value(getattr(deps.conversation, "zoho_contact_id", None)):
         return
     account_label = (
         customer_company

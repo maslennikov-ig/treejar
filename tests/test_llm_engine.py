@@ -6745,6 +6745,92 @@ async def test_sales_opportunity_writer_reuses_only_verified_matching_deal(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("deal_contact_id", ["CONTACT123", "ANOTHER_CONTACT"])
+async def test_quotation_repairs_partial_crm_link_only_for_the_same_contact(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+    deal_contact_id: str,
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.zoho_deal_id = "DEAL123"
+    zoho_crm.find_contact_by_phone.return_value = {"id": "CONTACT123"}
+    zoho_crm.get_deal_status.return_value = {
+        "id": "DEAL123",
+        "Deal_Name": "Existing sales enquiry",
+        "Contact_Name": {"id": deal_contact_id},
+        "Stage": "New Lead",
+        "Amount": 1000.0,
+    }
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+
+    await engine_module._ensure_crm_opportunity_for_quotation(
+        deps,
+        customer_name="Buyer",
+        customer_company="Example company",
+        quote_number="Fr123",
+        subtotal=2000.0,
+    )
+
+    if deal_contact_id == "CONTACT123":
+        assert conv.zoho_contact_id == deal_contact_id
+        assert conv.deal_amount == 1000.0
+        db.flush.assert_awaited_once()
+    else:
+        assert conv.zoho_contact_id is None
+        db.flush.assert_not_awaited()
+    assert conv.zoho_deal_id == "DEAL123"
+    zoho_crm.find_contact_by_phone.assert_awaited_once_with("12345")
+    zoho_crm.get_deal_status.assert_awaited_once_with("DEAL123")
+    zoho_crm.create_contact.assert_not_awaited()
+    zoho_crm.create_deal.assert_not_awaited()
+    zoho_crm.update_deal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_quotation_does_not_duplicate_a_linked_contact_on_crm_lookup_miss(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.zoho_contact_id = "CONTACT123"
+    zoho_crm.find_contact_by_phone.return_value = None
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+
+    await engine_module._ensure_crm_opportunity_for_quotation(
+        deps,
+        customer_name="Buyer",
+        customer_company="Example company",
+        quote_number="Fr123",
+        subtotal=2000.0,
+    )
+
+    assert conv.zoho_contact_id == "CONTACT123"
+    assert conv.zoho_deal_id is None
+    zoho_crm.create_contact.assert_not_awaited()
+    zoho_crm.create_deal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_tools_create_deal_does_not_reuse_existing_conversation_deal(
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
