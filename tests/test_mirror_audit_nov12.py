@@ -30,6 +30,7 @@ def test_faq_contains_chair_wheel_and_cash_box_answers() -> None:
     assert "CH 420 V" in wheel_faq.content
     assert "cantilever" in wheel_faq.content.lower()
     assert "without wheels" in wheel_faq.content.lower()
+    assert "have wheels, including `CH 240 V new black`" in wheel_faq.content
 
     cash_box_faq = next(
         a

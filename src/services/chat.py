@@ -1451,19 +1451,49 @@ async def _process_batch_inner(
     # Read customer photos and documents into text so the turn can see them.
     media_notes: dict[str, CustomerMediaNote] = {}
     customer_media = [
-        m for m in messages if _determine_role(m) == "user" and is_customer_media(m)
+        m
+        for m in messages
+        if m.messageId and _determine_role(m) == "user" and is_customer_media(m)
     ]
     if customer_media:
-        await _ensure_side_effect_guard()
-        media_notes = await read_customer_media(
-            customer_media, channel_id=channel_id, batch_ref=batch_ref
-        )
+        # A superseded turn can requeue messages that were already persisted.
+        # Use the stored attachment evidence again, including unreadable notes.
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(Message.wazzup_message_id, Message.content)
+                .join(Conversation, Conversation.id == Message.conversation_id)
+                .where(
+                    Message.wazzup_message_id.in_(
+                        [m.messageId for m in customer_media]
+                    ),
+                    Message.role == "user",
+                    Message.content.contains("[The customer sent "),
+                    Conversation.phone == chat_id,
+                    Conversation.metadata_["inbound_channel_id"].as_string()
+                    == channel_id,
+                )
+            )
+            saved_media_text = {
+                message_id: content
+                for message_id, content in result.tuples().all()
+                if message_id is not None
+            }
+        unread_media = [
+            m for m in customer_media if m.messageId not in saved_media_text
+        ]
+        if unread_media:
+            await _ensure_side_effect_guard()
+            media_notes = await read_customer_media(
+                unread_media, channel_id=channel_id, batch_ref=batch_ref
+            )
+        media_text = {
+            **saved_media_text,
+            **{k: v.content for k, v in media_notes.items()},
+        }
         combined_text = "\n".join(
-            media_notes[m.messageId].content
-            if m.messageId in media_notes
-            else (m.text or "")
+            media_text.get(m.messageId or "", m.text or "")
             for m in messages
-            if m.messageId in media_notes or m.text
+            if m.messageId in media_text or m.text
         )
 
     # Check for audio/voice messages and transcribe them

@@ -143,7 +143,7 @@ Noor is a text-based AI assistant and cannot send outbound audio or voice notes 
 
 ## 25. Do you offer office chairs without wheels?
 
-Yes. In our catalog, visitor chairs (such as `CH 240 V` and `CH 420 V`, where 'V' denotes visitor/cantilever) feature stationary sled/cantilever frames without wheels. Standard executive and task chairs come with 5-star swivel bases on castors/wheels for mobility; for special requirements (such as marine/shipboard use or stationary executive seating), stationary glides or custom base options can be reviewed upon request with a sales manager.
+Yes. We carry visitor chairs with stationary sled or cantilever bases without wheels, including `CH 240 V black` and `CH 420 V black`. Some visitor variants have wheels, including `CH 240 V new black`. Check the exact variant's base and castor specifications. Standard executive and task chairs typically come with swivel bases on castors. For special requirements such as marine use or stationary executive seating, a sales manager can review stationary glides or custom base options.
 
 ## 26. Do you sell petty cash boxes, safes, or office stationery?
 

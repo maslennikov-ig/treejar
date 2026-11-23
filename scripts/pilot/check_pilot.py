@@ -76,7 +76,8 @@ printf '%s\n' "$NGINX_WAZZUP" | grep -v '" 401 .* "python-httpx/' | grep -v '"GE
 
 echo ""
 echo "--- [2B] ODD-DAY ROUTER BLACKOUT & STICKY-LEAD BYPASS WATCHDOG ---"
-docker exec -i noor-db-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v pilot_paused="$1" -P pager=off' -- "$PILOT_PAUSED" <<'SQL'
+PILOT_CHANNEL_ID="$(docker exec noor-app-1 python3 -c 'from src.core.config import settings; print(settings.wazzup_channel_id or "")')"
+docker exec -i noor-db-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -v pilot_paused="$1" -v watermark="$2" -v pilot_channel_id="$3" -P pager=off' -- "$PILOT_PAUSED" "$WATERMARK_UTC" "$PILOT_CHANNEL_ID" <<'SQL'
 WITH msk_bounds AS (
   SELECT
     to_char(now() AT TIME ZONE 'Europe/Moscow', 'YYYY-MM-DD') AS msk_date,
@@ -168,6 +169,43 @@ SELECT 'ALERT: STICKY_NOOR_CHAT_BYPASSED_ROUTER' AS alert_type,
 FROM bypassed
 GROUP BY chat_ref, conv_id, escalation_status
 ORDER BY max(shadow_utc) DESC;
+
+\echo ''
+\echo '--- FIRST-SEEN ODD-DAY WHATSAPP CHATS MISSING FROM NOOR ---'
+WITH recent_openings AS (
+  SELECT DISTINCT ON (s.chat_id)
+         s.chat_id, s.channel_id, s.created_at, s.message_id
+  FROM shadow_webhook_events s
+  WHERE :'pilot_paused' <> 'true'
+    AND s.channel_id = :'pilot_channel_id'
+    AND s.chat_type = 'whatsapp'
+    AND NOT s.is_echo
+    AND right(regexp_replace(s.chat_id, '[^0-9]', '', 'g'), 8) <> '551220665'
+    -- Include the previous run's grace window so advancing the watermark
+    -- cannot skip an opening that was still waiting for ingestion.
+    AND s.created_at > :'watermark'::timestamp - interval '10 minutes'
+    AND s.created_at <= (now() AT TIME ZONE 'UTC') - interval '10 minutes'
+  ORDER BY s.chat_id, s.created_at, s.message_id
+)
+SELECT 'ALERT: ODD_DAY_NEW_CHAT_MISSING_NOOR' AS alert_type,
+       '*' || right(regexp_replace(r.chat_id, '[^0-9]', '', 'g'), 4) AS chat_ref,
+       r.created_at AS first_shadow_utc
+FROM recent_openings r
+WHERE extract(day FROM r.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')::int % 2 = 1
+  AND NOT EXISTS (
+    SELECT 1 FROM shadow_webhook_events older
+    WHERE older.chat_id = r.chat_id AND older.channel_id = r.channel_id
+      AND older.created_at < r.created_at
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM conversations c
+    WHERE regexp_replace(c.phone, '[^0-9]', '', 'g') = regexp_replace(r.chat_id, '[^0-9]', '', 'g')
+      AND c.metadata->>'inbound_channel_id' = r.channel_id
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM messages m WHERE m.wazzup_message_id = r.message_id AND m.role = 'user'
+  )
+ORDER BY r.created_at;
 SQL
 
 echo ""

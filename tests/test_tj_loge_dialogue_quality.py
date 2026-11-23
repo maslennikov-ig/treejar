@@ -385,8 +385,11 @@ async def test_oversized_pdf_records_the_limit_without_calling_vision() -> None:
 
 
 @pytest.mark.asyncio
-async def test_photo_only_batch_reaches_the_turn_and_is_stored() -> None:
-    """*2588 / *5868: a photo with no text used to be dropped before the LLM."""
+@pytest.mark.parametrize("already_stored", [False, True])
+async def test_photo_batch_reaches_the_turn_without_reading_it_twice(
+    already_stored: bool,
+) -> None:
+    """An initial and a requeued turn both see the same attachment evidence."""
 
     redis = _FakeRedis()
     queue_key = inbound_queue_key(inbound_chat_reference(CHAT_ID))
@@ -411,17 +414,6 @@ async def test_photo_only_batch_reaches_the_turn_and_is_stored() -> None:
     session = AsyncMock()
     added: list[object] = []
     session.add = MagicMock(side_effect=added.append)
-
-    def execute(statement: Any) -> MagicMock:
-        result = MagicMock()
-        result.scalars.return_value.first.return_value = None
-        if "wazzup_message_id" in str(statement):
-            result.scalars.return_value.all.return_value = []
-        else:
-            result.scalars.return_value.all.return_value = [conversation]
-        return result
-
-    session.execute.side_effect = execute
     note = CustomerMediaNote(
         content="[The customer sent a photo. The photo shows: A round cabinet lock.]",
         read=True,
@@ -430,6 +422,22 @@ async def test_photo_only_batch_reaches_the_turn_and_is_stored() -> None:
         cost=0.001,
         model="anthropic/claude-haiku-5.5",
     )
+
+    def execute(statement: Any) -> MagicMock:
+        result = MagicMock()
+        result.scalars.return_value.first.return_value = None
+        if "wazzup_message_id" in str(statement):
+            result.tuples.return_value.all.return_value = (
+                [("img-1", note.content)] if already_stored else []
+            )
+            result.scalars.return_value.all.return_value = (
+                ["img-1"] if already_stored else []
+            )
+        else:
+            result.scalars.return_value.all.return_value = [conversation]
+        return result
+
+    session.execute.side_effect = execute
     read_media = AsyncMock(return_value={"img-1": note})
     process_message = AsyncMock(
         return_value=LLMResponse(
@@ -466,7 +474,6 @@ async def test_photo_only_batch_reaches_the_turn_and_is_stored() -> None:
             client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
         await process_incoming_batch({"redis": redis}, inbound_chat_reference(CHAT_ID))
 
-    read_media.assert_awaited_once()
     combined = process_message.await_args.kwargs["combined_text"]
     assert combined.startswith(
         "[The customer sent a photo. The photo shows: A round cabinet lock.]"
@@ -477,6 +484,12 @@ async def test_photo_only_batch_reaches_the_turn_and_is_stored() -> None:
         for item in added
         if isinstance(item, Message) and item.role == "user"
     }
+    if already_stored:
+        read_media.assert_not_awaited()
+        assert "img-1" not in stored
+        return
+
+    read_media.assert_awaited_once()
     assert stored["img-1"].content == note.content
     assert stored["img-1"].message_type == "image"
     assert (stored["img-1"].cost, stored["img-1"].model) == (
