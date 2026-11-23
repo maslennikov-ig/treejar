@@ -64,7 +64,10 @@ def test_base_system_prompt_contains_3d_chair_photo_tier_and_tablet_guidance() -
     assert "ch 300 beige" not in lower  # never hardcode live SKU stock in prompt
     assert "attached flip-up writing tablet arms" in lower
     assert "match the visible colour and style first" in lower
+    assert "if only one in-stock option closely fits, show that one" in lower
     assert "budget/mid-range and premium price tiers" in lower
+    assert "asks for wider alternatives or agrees to that trade-off" in lower
+    assert "leave any already-asked sales question open" in lower
 
 
 @pytest.mark.asyncio
