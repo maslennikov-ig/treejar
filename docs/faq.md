@@ -30,7 +30,7 @@ Because of our direct sourcing from manufacturers and long-standing supplier rel
 
 ## 7. Do you provide custom-made furniture?
 
-Yes, we offer custom-made solutions based on client requirements including size, color, material, and design, subject to a minimum production quantity (MOQ) calculated for each specific project request. However, we cannot manufacture 1 prototype and do not accept single-unit (1-piece) custom manufacturing orders. If you need a single chair or a 1-piece prototype, we cannot manufacture 1 prototype, but we can gladly select the closest matching alternatives from our current ready-stock collections. For project-quantity custom requests, we first understand your requirement carefully and then submit a detailed quotation.
+Yes, we offer custom-made solutions based on client requirements including size, color, material, and design, subject to a minimum production quantity (MOQ) calculated for each specific project request. However, we cannot manufacture 1 prototype and do not accept single-unit (1-piece) custom manufacturing orders. If you need a single chair or a 1-piece prototype, we cannot manufacture 1 prototype, but we can gladly select the closest matching alternatives from our current ready-stock collections. Exception for catalogue made-to-order office sofas (`SOFA-*`): single-unit orders from 1 sofa are accepted, with an estimated production time of 5 days for 1 sofa. For project-quantity custom requests, we first understand your requirement carefully and then submit a detailed quotation.
 
 ## 8. Can we visit your showroom?
 
@@ -103,7 +103,7 @@ We are currently strong in the UAE market, and we also support cross-border orde
 
 ## 17. What payment terms do you offer?
 
-Payment terms depend on order size and project scope. For regular clients and large projects, flexible terms can be discussed.
+After a formal PDF quotation/invoice is issued, payment is accepted via bank transfer using the details in the invoice. Cash on Delivery (COD) is available only for small orders. Payment terms also depend on order size and project scope — for regular clients and large projects, flexible terms can be discussed with the manager.
 
 ## 18. How do you understand client requirements?
 

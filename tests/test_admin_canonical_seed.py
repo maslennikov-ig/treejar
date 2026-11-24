@@ -86,6 +86,19 @@ def test_canonical_kb_makes_no_unapproved_promises() -> None:
     assert "storall building, st. 58, community 599" in showroom.content.lower()
     assert "9:00–18:00" in showroom.content.lower()
     assert "sunday closed" in showroom.content.lower()
+    assert "bank transfer" in vat.content.lower()
+    assert "cash on delivery" in vat.content.lower()
+    products = next(a for a in seed.canonical_kb_articles() if a.category == "products")
+    assert "af 1200" in products.content.lower()
+    assert "dual-motor" in products.content.lower()
+    assert "single-motor" in products.content.lower()
+    assert "5-day production time" in products.content.lower()
+    custom = next(
+        a
+        for a in seed.canonical_kb_articles()
+        if a.title == "Custom-made office furniture"
+    )
+    assert "5 days for 1 sofa" in custom.content.lower()
 
 
 def test_canonical_bot_rules_cover_the_eight_operating_rules() -> None:
