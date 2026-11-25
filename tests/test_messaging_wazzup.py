@@ -638,3 +638,25 @@ async def test_resolve_channel_phone_caches_in_memory_and_redis_with_fail_open(
     ) as provider3:
         assert await provider3.resolve_channel_phone("chan-cached") == "+971551220665"
     assert mock_request.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_download_media_stops_reading_oversized_attachment(
+    wazzup_provider: WazzupProvider,
+) -> None:
+    from src.integrations.messaging.wazzup import MediaDownloadTooLarge
+
+    async def chunks():
+        yield bytes(65536)
+        yield bytes(65536)
+        raise AssertionError("Read beyond the first oversized chunk")
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, content=chunks())
+        )
+    ) as client:
+        with pytest.raises(MediaDownloadTooLarge):
+            await wazzup_provider.download_media(
+                "https://cdn.wazzup24.com/file", client=client, max_bytes=65536
+            )

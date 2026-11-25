@@ -616,3 +616,37 @@ def test_supplier_pitch_reply_says_it_was_passed_on() -> None:
     before = response.text
     message_processor._ensure_supplier_pitch_notice(response, "en")
     assert response.text == before
+
+
+@pytest.mark.asyncio
+async def test_unsupported_events_leave_the_photo_read_budget_available() -> None:
+    photo = _image_message("reference", url="https://cdn.wazzup24.com/reference.jpg")
+    unsupported = [
+        photo.model_copy(
+            update={
+                "messageId": f"unsupported-{i}",
+                "type": "unsupported",
+                "text": "Ask the person to resend the information.",
+            }
+        )
+        for i in range(inbound_media.MAX_MEDIA_PER_BATCH)
+    ]
+    downloader = AsyncMock()
+    downloader.download_media.return_value = b"\xff\xd8\xffdata"
+    reading = media_reader.MediaDescriptionResult(text="A white desk.", model="m")
+    with (
+        patch.object(inbound_media, "WazzupProvider") as provider,
+        patch.object(
+            inbound_media, "describe_customer_media", AsyncMock(return_value=reading)
+        ),
+    ):
+        provider.return_value.__aenter__ = AsyncMock(return_value=downloader)
+        notes = await read_customer_media(
+            [*unsupported, photo], channel_id=CHANNEL_ID, batch_ref="mixed"
+        )
+
+    assert notes["reference"].read
+    assert "A white desk" in notes["reference"].content
+    assert "format WhatsApp could not deliver" in notes["unsupported-0"].content
+    assert "Ask the person" not in notes["unsupported-0"].content
+    downloader.download_media.assert_awaited_once()

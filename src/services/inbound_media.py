@@ -18,10 +18,11 @@ from typing import Any
 
 import httpx
 
-from src.integrations.messaging.wazzup import WazzupProvider
+from src.integrations.messaging.wazzup import MediaDownloadTooLarge, WazzupProvider
 from src.integrations.vision.media_reader import (
     DOCUMENT_MIME_TYPES,
     LOCAL_DOCUMENT_MIME_TYPES,
+    MAX_DOCUMENT_BYTES,
     describe_customer_media,
     detect_media_mime,
     media_size_limit,
@@ -31,7 +32,7 @@ from src.integrations.vision.media_reader import (
 logger = logging.getLogger(__name__)
 
 READABLE_MEDIA_TYPES = frozenset({"image", "document", "file", "sticker"})
-UNREADABLE_MEDIA_TYPES = frozenset({"video", "gif"})
+UNREADABLE_MEDIA_TYPES = frozenset({"video", "gif", "unsupported"})
 MAX_MEDIA_PER_BATCH = 6
 
 
@@ -115,6 +116,10 @@ def format_media_note(
     """
     caption = " ".join(caption.split())
     description = " ".join(description.split()) if description else None
+    if message_type == "unsupported":
+        return (
+            "[The customer sent an attachment in a format WhatsApp could not deliver.]"
+        )
     if message_type in UNREADABLE_MEDIA_TYPES:
         note = f"[The customer sent a {message_type}; Noor cannot view videos.]"
         return f"{caption}\n{note}" if caption else note
@@ -171,13 +176,6 @@ async def _read_one(
 ) -> CustomerMediaNote:
     message_type = str(getattr(message, "type", "") or "")
     caption = _caption(message)
-    if message_type in UNREADABLE_MEDIA_TYPES:
-        return CustomerMediaNote(
-            content=format_media_note(
-                message_type=message_type, caption=caption, description=None
-            ),
-            read=False,
-        )
     declared = _declared_mime(message)
     url = _media_url(message)
     if url is None:
@@ -198,7 +196,9 @@ async def _read_one(
     mime_type: str | None = declared or None
     filename_hint = _filename_hint(message, url, caption)
     try:
-        data = await downloader.download_media(url, max_retries=2, client=client)
+        data = await downloader.download_media(
+            url, max_retries=2, client=client, max_bytes=MAX_DOCUMENT_BYTES
+        )
         mime_type = detect_media_mime(data, declared, filename=filename_hint)
         if mime_type is None:
             raise ValueError("Unsupported attachment type")
@@ -230,6 +230,20 @@ async def _read_one(
             client=client,
             filename=filename,
             caption=None if filename == caption else caption,
+        )
+    except MediaDownloadTooLarge:
+        is_document = _kind_label(message_type, declared) == "document"
+        return CustomerMediaNote(
+            content=format_media_note(
+                message_type=message_type,
+                caption=caption or filename_hint or "",
+                description=None,
+                mime_type=declared,
+                size_limit_bytes=MAX_DOCUMENT_BYTES
+                if is_document
+                else media_size_limit(declared),
+            ),
+            read=False,
         )
     except Exception as exc:
         logger.warning(
@@ -273,18 +287,23 @@ async def read_customer_media(
     if not targets:
         return {}
     notes: dict[str, CustomerMediaNote] = {}
-    readable = targets[:MAX_MEDIA_PER_BATCH]
-    for skipped in targets[MAX_MEDIA_PER_BATCH:]:
-        notes[skipped.messageId] = CustomerMediaNote(
+    readable: list[Any] = []
+    for message in targets:
+        if message.type in READABLE_MEDIA_TYPES and len(readable) < MAX_MEDIA_PER_BATCH:
+            readable.append(message)
+            continue
+        notes[message.messageId] = CustomerMediaNote(
             content=format_media_note(
-                message_type=str(skipped.type),
-                caption=_caption(skipped),
+                message_type=str(message.type),
+                caption=_caption(message),
                 description=None,
-                mime_type=_declared_mime(skipped) or None,
+                mime_type=_declared_mime(message) or None,
                 skipped_due_to_batch_limit=True,
             ),
             read=False,
         )
+    if not readable:
+        return notes
     try:
         async with (
             WazzupProvider(channel_id=channel_id) as downloader,

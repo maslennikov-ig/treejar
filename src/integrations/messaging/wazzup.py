@@ -22,6 +22,11 @@ from src.services.outbound_safety import require_wazzup_send
 
 logger = logging.getLogger(__name__)
 
+
+class MediaDownloadTooLarge(ValueError):
+    """The decoded attachment exceeded the caller's byte limit."""
+
+
 WAZZUP_CHANNEL_PHONE_CACHE_TTL_SECONDS = 600
 WAZZUP_CHANNEL_PHONE_KEY_PREFIX = "wazzup:channel_phone:"
 WAZZUP_OUTBOUND_CRM_KEY_PREFIX = "wazzup:outbound:crm:"
@@ -257,7 +262,12 @@ class WazzupProvider(MessagingProvider):
         return dl_url
 
     async def download_media(
-        self, url: str, max_retries: int = 2, client: httpx.AsyncClient | None = None
+        self,
+        url: str,
+        max_retries: int = 2,
+        client: httpx.AsyncClient | None = None,
+        *,
+        max_bytes: int | None = None,
     ) -> bytes:
         """Download media content (audio, images, etc.) from a URL.
 
@@ -269,23 +279,32 @@ class WazzupProvider(MessagingProvider):
             url: Full URL to the media file (typically from Wazzup CDN).
             max_retries: Number of retry attempts for transient failures.
             client: Optional shared httpx.AsyncClient to reuse connection.
+            max_bytes: Stop reading once the decoded body exceeds this size.
 
         Returns:
             Raw bytes of the media file.
         """
+
+        async def read(dl_client: httpx.AsyncClient) -> bytes:
+            if max_bytes is None:
+                response = await dl_client.get(url, timeout=30.0)
+                response.raise_for_status()
+                return response.content
+            async with dl_client.stream("GET", url, timeout=30.0) as response:
+                response.raise_for_status()
+                body = bytearray()
+                async for chunk in response.aiter_bytes(chunk_size=65536):
+                    if len(body) + len(chunk) > max_bytes:
+                        raise MediaDownloadTooLarge()
+                    body.extend(chunk)
+                return bytes(body)
+
         for attempt in range(1, max_retries + 1):
             try:
                 if client is not None:
-                    response = await client.get(url, timeout=httpx.Timeout(30.0))
-                    response.raise_for_status()
-                    return response.content
-                else:
-                    async with httpx.AsyncClient(
-                        timeout=httpx.Timeout(30.0)
-                    ) as dl_client:
-                        response = await dl_client.get(url)
-                        response.raise_for_status()
-                        return response.content
+                    return await read(client)
+                async with httpx.AsyncClient() as dl_client:
+                    return await read(dl_client)
             except (httpx.TimeoutException, httpx.NetworkError):
                 if attempt < max_retries:
                     await asyncio.sleep(2**attempt)

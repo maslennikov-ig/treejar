@@ -763,3 +763,11 @@ def test_bulk_quantity_distinguishes_additive_orders_from_or_alternatives(
 ) -> None:
     assert wholesale_quantity(customer_text) == expected_qty
     assert b2b_handoff_decision(customer_text).allowed is expected_allowed
+
+
+def test_boq_quantity_column_survives_dimensions_and_sparse_cells() -> None:
+    table = b"Item,Diameter mm,Qty,Unit Price\nBar stool,,20,750\nChair,,15,350\nChair,,10,400\nRound table,600,6,690\nCocktail table,600,6,780\nRound table,800,4,870\nTotal,,61,\n"
+    reading = extract_local_document_text(table, mime_type=CSV_MIME)
+    assert "600 | Qty: 6 | 690" in reading
+    assert wholesale_quantity(reading) == 61
+    assert b2b_handoff_decision(reading).allowed

@@ -11,7 +11,7 @@ by hand both times.
 
 Regenerate the manifest from the repository root after the final handoff edit.
 Include the regenerated manifest and handoff in the delivery commit once the
-verification command succeeds.
+verification command succeeds, including for pilot QA changes that update the handoff.
 
 The narrowness is the safety property. Only the paths the repository contract
 itself declares mutable are re-pinned; a frozen requirement, a scenario set or
