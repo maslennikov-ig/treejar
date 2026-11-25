@@ -416,12 +416,23 @@ SQL
 
 echo ""
 echo "--- [3C] REDIS INBOUND QUEUE & QUARANTINE WATCHDOG ---"
-docker exec noor-redis-1 sh -c '
+INBOUND_PREFIXES="$(docker exec noor-app-1 python3 -c '
+from src.services.chat import INBOUND_BATCH_QUARANTINE_PREFIX
+from src.services.inbound_batch import inbound_processing_key, inbound_queue_key
+print(inbound_queue_key(""), inbound_processing_key(""), INBOUND_BATCH_QUARANTINE_PREFIX)
+')"
+read -r INBOUND_QUEUE_PREFIX INBOUND_PROCESSING_PREFIX INBOUND_QUARANTINE_PREFIX <<< "$INBOUND_PREFIXES"
+docker exec noor-redis-1 sh -ec '
   echo "[Active inbound queues]:"
-  redis-cli --scan --pattern "wazzup:inbound:queue:*" | head -n 20 || true
+  redis-cli --scan --pattern "$1*" | head -n 20
+  echo "[In-flight inbound batches]:"
+  redis-cli --scan --pattern "$2*" | head -n 20
   echo "[Quarantined inbound batches]:"
-  redis-cli --scan --pattern "wazzup:inbound:quarantine:*" | head -n 20 || true
-'
+  quarantined="$(redis-cli --scan --pattern "$3*" | head -n 20)"
+  if [ -n "$quarantined" ]; then
+    printf "%s\n" "$quarantined" "ALERT: INBOUND_BATCH_QUARANTINED"
+  fi
+' -- "${INBOUND_QUEUE_PREFIX:?}" "${INBOUND_PROCESSING_PREFIX:?}" "${INBOUND_QUARANTINE_PREFIX:?}"
 
 echo ""
 echo "--- [4] WORKER MEDIA, ATTACHMENTS, AND SERVICE LOGS (last $LOG_SINCE) ---"

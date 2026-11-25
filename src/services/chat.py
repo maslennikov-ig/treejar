@@ -57,6 +57,7 @@ from src.services.escalation_state import (
     should_send_escalation_fallback,
 )
 from src.services.inbound_batch import (
+    INBOUND_BATCH_QUARANTINE_PREFIX,
     WAZZUP_SYSTEM_AUTO_REPLY_SUBSTRING,
     has_queued_manager_message,
     inbound_chat_reference,
@@ -100,7 +101,6 @@ logger = logging.getLogger(__name__)
 LLM_TIMEOUT = 120
 TYPING_REFRESH_INTERVAL_SECONDS = 4.0
 INBOUND_BATCH_MAX_TRIES = 3
-INBOUND_BATCH_QUARANTINE_PREFIX = "wazzup:inbound:quarantine:"
 INBOUND_BATCH_LOCK_TTL_SECONDS = 660
 INBOUND_EXECUTION_STARTED = "started"
 INBOUND_EXECUTION_COMPLETED = "completed"

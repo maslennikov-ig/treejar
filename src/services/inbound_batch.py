@@ -21,6 +21,7 @@ _REFERENCE_PREFIX = "ib1_"
 _REFERENCE_RE = re.compile(r"^ib1_[0-9a-f]{24}$")
 _QUEUE_PREFIX = "wazzup_msgs:"
 _PROCESSING_PREFIX = "wazzup:inbound:processing:"
+INBOUND_BATCH_QUARANTINE_PREFIX = "wazzup:inbound:quarantine:"
 _LOCK_PREFIX = "wazzup:inbound:lock:"
 _EXECUTION_PREFIX = "wazzup:inbound:execution:"
 _GRACE_PREFIX = "wazzup:inbound:grace:"
