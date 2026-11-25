@@ -2,7 +2,7 @@
   "schema_version": "noor-e2e-traceability/v1",
   "goal_id": "tj-ee5f",
   "scope_source_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
-  "source_set_digest": "efab67859678d80c35b13f41fd8b132c68a2728e76fbbf5ac65e6767a994adfe",
+  "source_set_digest": "baca609ff32446b4ae1145422a017d5e75edbf314245d9c2576bf43c153712df",
   "precedence_order": [
     "current repository and runtime contracts",
     "original and updated requirements",
@@ -179,12 +179,12 @@
     },
     "grounding-policy": {
       "path": "src/llm/communication_policy.py",
-      "content_digest": "b4370a11ad5073891b076211d7dcbdd5b3d0856fa73f7586f3bbc9668444eadc",
+      "content_digest": "0bcd555d2c3bb76ac1c7ae1055cf6811daaeb10f5ea148f9b96d20be3af539b9",
       "sections": [
         {
           "start_locator": "\"\"\"Compact runtime policy derived from the client dialogue rules.\"\"\"",
           "end_locator": null,
-          "content_digest": "b4370a11ad5073891b076211d7dcbdd5b3d0856fa73f7586f3bbc9668444eadc"
+          "content_digest": "0bcd555d2c3bb76ac1c7ae1055cf6811daaeb10f5ea148f9b96d20be3af539b9"
         }
       ]
     },
