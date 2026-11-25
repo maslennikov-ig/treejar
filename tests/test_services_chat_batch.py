@@ -704,7 +704,9 @@ async def test_process_incoming_batch_new_conversation(
     with (
         patch("src.services.chat.settings.wazzup_channel_id", "chan-1"),
         patch(
-            "src.services.chat.notify_manager_escalation", new_callable=AsyncMock
+            "src.services.chat.notify_manager_escalation",
+            new_callable=AsyncMock,
+            return_value=True,
         ) as notify,
     ):
         await process_incoming_batch(ctx, chat_id)
@@ -737,6 +739,60 @@ async def test_process_incoming_batch_new_conversation(
         INBOUND_EXECUTION_COMPLETED,
     ]
     mock_redis.enqueue_job.assert_not_called()
+
+    if not capacity_limited:
+        return
+
+    # Further customer messages still reach the model and the transcript.
+    # A second refusal adds neither an acknowledgement nor a Sales alert.
+    active_conv = next(
+        obj for obj in added_objects if type(obj).__name__ == "Conversation"
+    )
+    newer = msg.model_copy(update={"messageId": "msg-2", "text": "Any chair options?"})
+    _seed_inbound_redis(mock_redis, [newer.model_dump_json()])
+    mock_session.execute.side_effect = [
+        MockResult(None),  # bot_enabled
+        MockResult(active_conv),
+        MockResult([]),  # msg dedup check
+    ]
+    with (
+        patch("src.services.chat.settings.wazzup_channel_id", "chan-1"),
+        patch("src.services.chat.notify_manager_escalation", notify),
+    ):
+        await process_incoming_batch(ctx, chat_id)
+
+    assert mock_process_message.await_count == 2
+    assert {
+        obj.content
+        for obj in added_objects
+        if type(obj).__name__ == "Message" and obj.role == "user"
+    } == {"Hi there", "Any chair options?"}
+    mock_wazzup.send_text.assert_awaited_once()
+    notify.assert_awaited_once()
+
+    recovered = msg.model_copy(update={"messageId": "msg-3", "text": "Black please"})
+    _seed_inbound_redis(mock_redis, [recovered.model_dump_json()])
+    mock_process_message.return_value = LLMResponse(
+        text="We have black office chairs.",
+        tokens_in=10,
+        tokens_out=12,
+        cost=0.05,
+        model="test-model",
+    )
+    mock_session.execute.side_effect = [
+        MockResult(None),
+        MockResult(active_conv),
+        MockResult([]),
+        MockResult(None),  # outbound audit
+        MockResult(4),
+        MockResult(None),  # summary lookup
+    ]
+    with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
+        await process_incoming_batch(ctx, chat_id)
+
+    assert mock_wazzup.send_text.await_count == 2
+    assert mock_wazzup.send_text.await_args.args[1] == "We have black office chairs."
+    assert "provider_capacity_notice" not in active_conv.metadata_
 
 
 @pytest.mark.asyncio

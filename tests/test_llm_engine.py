@@ -3208,7 +3208,10 @@ async def test_process_message_does_not_recover_catalog_after_side_effect_tool(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("capacity_limited", [False, True])
+@pytest.mark.parametrize(
+    "limit_source",
+    [None, "openrouter_in_flight_budget", "openrouter_credits", "openrouter_key_limit"],
+)
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
@@ -3221,7 +3224,7 @@ async def test_process_message_arabic_error_fallback_avoids_language_guard_promp
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
-    capacity_limited: bool,
+    limit_source: str | None,
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
     conv.language = "ar"
@@ -3235,12 +3238,11 @@ async def test_process_message_arabic_error_fallback_avoids_language_guard_promp
         model_name="mock-model",
         body={
             "metadata": {
-                "reason": "in_flight_budget_exhausted",
-                "limit_source": "openrouter_in_flight_budget",
+                "limit_source": limit_source,
                 "headers": {"Retry-After": "120"},
             }
         }
-        if capacity_limited
+        if limit_source is not None
         else {"message": "Insufficient credits"},
     )
 
@@ -3255,8 +3257,8 @@ async def test_process_message_arabic_error_fallback_avoids_language_guard_promp
     )
 
     assert response.model == "mock-model|error"
-    assert response.provider_capacity_limited is capacity_limited
-    assert ("يرجى المحاولة" in response.text) is not capacity_limited
+    assert response.provider_capacity_limited is (limit_source is not None)
+    assert ("يرجى المحاولة" in response.text) is (limit_source is None)
     assert "مشكلة تقنية مؤقتة" in response.text
     assert "بماذا يمكنني مساعدتك" not in response.text
     assert "؟" not in response.text

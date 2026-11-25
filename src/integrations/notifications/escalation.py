@@ -1,5 +1,6 @@
 import logging
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
@@ -32,7 +33,8 @@ async def notify_manager_escalation(
     pdf_bytes: bytes | None = None,
     pdf_filename: str = "quotation.pdf",
     pause_bot: bool = True,
-) -> None:
+    reuse_open_reasons: tuple[str, ...] = (),
+) -> bool:
     """
     Notify the manager about a soft escalation via logging and Telegram.
 
@@ -47,6 +49,11 @@ async def notify_manager_escalation(
         pause_bot: Hand the conversation to the manager. ``False`` records the
             escalation and alerts the manager while the bot keeps answering
             (`tj-asty.2`: a sourcing lead for out-of-catalog equipment).
+        reuse_open_reasons: Reuse an open case with these reasons when retrying
+            an alert for the same issue.
+
+    Returns:
+        Whether Telegram accepted the alert.
     """
     phone_display = (
         conversation.phone
@@ -68,13 +75,27 @@ async def notify_manager_escalation(
 
         clear_pending_quotation(conversation)
         conversation.escalation_status = EscalationStatus.PENDING.value
-    db.add(
-        Escalation(
-            conversation_id=conversation.id,
-            reason=reason,
-            status=EscalationStatus.PENDING.value,
+    existing_id = None
+    if reuse_open_reasons:
+        existing_id = await db.scalar(
+            select(Escalation.id)
+            .where(
+                Escalation.conversation_id == conversation.id,
+                Escalation.reason.in_(reuse_open_reasons),
+                Escalation.status.in_(
+                    (EscalationStatus.PENDING.value, EscalationStatus.IN_PROGRESS.value)
+                ),
+            )
+            .limit(1)
         )
-    )
+    if existing_id is None:
+        db.add(
+            Escalation(
+                conversation_id=conversation.id,
+                reason=reason,
+                status=EscalationStatus.PENDING.value,
+            )
+        )
     await db.commit()
 
     # Send Telegram notification with action buttons (non-blocking).
@@ -154,6 +175,9 @@ async def notify_manager_escalation(
         if sent is None:
             undelivered_reason = "Telegram is not configured on this runtime"
             raise _AlertNotDelivered
+        if not sent.get("ok"):
+            undelivered_reason = "Telegram did not accept the alert"
+            raise _AlertNotDelivered
         delivered = True
 
         # Send PDF document if provided (ORDER_CONFIRMATION with quotation)
@@ -181,3 +205,4 @@ async def notify_manager_escalation(
             escalation_type,
             undelivered_reason or "unknown reason",
         )
+    return delivered

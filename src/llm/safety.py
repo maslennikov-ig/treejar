@@ -1163,6 +1163,21 @@ def _is_retryable_error(error: BaseException) -> bool:
     )
 
 
+def is_openrouter_spending_rejection(error: BaseException) -> bool:
+    if (
+        not isinstance(error, ModelHTTPError)
+        or error.status_code != 402
+        or not isinstance(error.body, Mapping)
+    ):
+        return False
+    metadata = error.body.get("metadata")
+    return isinstance(metadata, Mapping) and metadata.get("limit_source") in (
+        "openrouter_in_flight_budget",
+        "openrouter_credits",
+        "openrouter_key_limit",
+    )
+
+
 async def run_agent_with_safety(
     agent: Any,
     path: str,
@@ -1269,7 +1284,12 @@ async def run_agent_with_safety(
                 if backoff > 0:
                     await asyncio.sleep(backoff)
                 continue
-            if notify_on_failure:
+            # The WhatsApp chat path creates an actionable Sales handoff for these.
+            if notify_on_failure and not (
+                path == PATH_CORE_CHAT
+                and provider == OPENROUTER_PROVIDER_NAME
+                and is_openrouter_spending_rejection(exc)
+            ):
                 await _notify_safely(
                     event="final_failure",
                     policy=policy,

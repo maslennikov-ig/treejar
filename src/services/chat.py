@@ -473,6 +473,39 @@ _RUNTIME_MANAGER_ALERT_METADATA_KEYS = (
     "team_followup_notice",
     "team_followup_quote_notice",
 )
+_PROVIDER_CAPACITY_NOTICE_KEY = "provider_capacity_notice"
+_PROVIDER_SPENDING_REASON = (
+    "OpenRouter declined this reply because of a spending limit. "
+    "Check the conversation and reply to the customer's outstanding request."
+)
+_LEGACY_PROVIDER_CAPACITY_REASON = (
+    "OpenRouter temporarily rejected this turn because its "
+    "in-flight budget was exhausted. Review the existing "
+    "conversation and follow up if the request is still open."
+)
+
+
+async def _notify_provider_capacity_followup(
+    conv: Conversation, db: Any, combined_text: str, notice: dict[str, Any]
+) -> None:
+    if notice.get("manager_notified"):
+        return
+    if await notify_manager_escalation(
+        conversation=conv,
+        reason=_PROVIDER_SPENDING_REASON,
+        recent_messages=[combined_text],
+        db=db,
+        pause_bot=False,
+        reuse_open_reasons=(
+            _PROVIDER_SPENDING_REASON,
+            _LEGACY_PROVIDER_CAPACITY_REASON,
+        ),
+    ):
+        conv.metadata_ = {
+            **(conv.metadata_ or {}),
+            _PROVIDER_CAPACITY_NOTICE_KEY: {**notice, "manager_notified": True},
+        }
+        await db.commit()
 
 
 def _snapshot_manager_alert_state(conv: Any) -> tuple[str, dict[str, Any]]:
@@ -1857,6 +1890,7 @@ async def _process_batch_inner(
                 )
                 metadata["last_manager_message_at"] = datetime.now(UTC).isoformat()
                 metadata.pop("pending_quotation", None)
+                metadata.pop(_PROVIDER_CAPACITY_NOTICE_KEY, None)
                 conv.metadata_ = metadata
                 if conv.escalation_status != "manual_takeover":
                     conv.escalation_status = "manual_takeover"
@@ -2171,6 +2205,35 @@ async def _process_batch_inner(
                     )
                     return
 
+                provider_followup = (
+                    llm_response.provider_capacity_limited and not escalation_mutated
+                )
+                prior_notice = (conv.metadata_ or {}).get(_PROVIDER_CAPACITY_NOTICE_KEY)
+                capacity_notice = prior_notice if isinstance(prior_notice, dict) else {}
+                if provider_followup and capacity_notice.get("acknowledged"):
+                    # The inbound is already saved. Keep checking future turns
+                    # for recovery, without repeating the same technical reply.
+                    capacity_notice = {
+                        **capacity_notice,
+                        "last_rejected_at": datetime.now(UTC).isoformat(),
+                    }
+                    conv.metadata_ = {
+                        **(conv.metadata_ or {}),
+                        _PROVIDER_CAPACITY_NOTICE_KEY: capacity_notice,
+                    }
+                    await _notify_provider_capacity_followup(
+                        conv, db, combined_text, capacity_notice
+                    )
+                    await db.commit()
+                    logger.info(
+                        "%s %s",
+                        CHAT_LATENCY_EVENT,
+                        format_chat_latency(
+                            latency_trace, status="provider_capacity_followup_pending"
+                        ),
+                    )
+                    return
+
                 # 4. Save response to DB
                 persist_started = latency_trace.start_phase()
                 assistant_msg = Message(
@@ -2237,6 +2300,16 @@ async def _process_batch_inner(
                 else:
                     bot_reply_sent = True
                     latency_trace.mark_text_delivered()
+                    if provider_followup:
+                        capacity_notice = {**capacity_notice, "acknowledged": True}
+                        conv.metadata_ = {
+                            **(conv.metadata_ or {}),
+                            _PROVIDER_CAPACITY_NOTICE_KEY: capacity_notice,
+                        }
+                    elif capacity_notice and not llm_response.model.endswith("|error"):
+                        metadata = dict(conv.metadata_ or {})
+                        metadata.pop(_PROVIDER_CAPACITY_NOTICE_KEY, None)
+                        conv.metadata_ = metadata
                     await db.commit()
                     if should_send_escalation_fallback(conv.escalation_status):
                         with suppress(Exception):
@@ -2248,17 +2321,9 @@ async def _process_batch_inner(
                 finally:
                     latency_trace.finish_phase("outbound_text", outbound_started)
 
-                if not escalation_mutated and llm_response.provider_capacity_limited:
-                    await notify_manager_escalation(
-                        conversation=conv,
-                        reason=(
-                            "OpenRouter temporarily rejected this turn because its "
-                            "in-flight budget was exhausted. Review the existing "
-                            "conversation and follow up if the request is still open."
-                        ),
-                        recent_messages=[combined_text],
-                        db=db,
-                        pause_bot=False,
+                if provider_followup:
+                    await _notify_provider_capacity_followup(
+                        conv, db, combined_text, capacity_notice
                     )
 
                 summary_started = latency_trace.start_phase()

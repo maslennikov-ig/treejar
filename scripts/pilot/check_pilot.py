@@ -370,6 +370,7 @@ last_msg AS (
   SELECT DISTINCT ON (m.conversation_id)
          m.conversation_id,
          m.role AS last_role,
+         m.model AS last_model,
          m.created_at AS last_msg_utc,
          left(replace(m.content, E'\n', ' '), 120) AS last_preview
   FROM messages m
@@ -386,10 +387,16 @@ conv_stats AS (
          rc.deal_amount,
          rc.metadata->'order_runtime'->'quote_workflow'->>'lifecycle' AS quote_lifecycle,
          lm.last_role,
+         lm.last_model,
          lm.last_msg_utc,
          lm.last_preview,
          (SELECT count(*) FROM escalations e WHERE e.conversation_id = rc.id) AS esc_cnt,
          (SELECT max(e.created_at) FROM escalations e WHERE e.conversation_id = rc.id AND e.status = 'pending') AS pending_esc_utc,
+         (SELECT min(e.created_at) FROM escalations e
+          WHERE e.conversation_id = rc.id AND e.status IN ('pending', 'in_progress')
+            AND (e.reason LIKE 'OpenRouter declined this reply because of a spending limit.%'
+             OR e.reason LIKE 'OpenRouter temporarily rejected this turn because its in-flight budget%')
+         ) AS open_capacity_esc_utc,
          (SELECT count(*) FROM messages m WHERE m.conversation_id = rc.id AND m.role = 'manager') AS mgr_cnt,
          (SELECT max(m.created_at) FROM messages m WHERE m.conversation_id = rc.id AND m.role = 'manager') AS last_mgr_utc,
          EXISTS (
@@ -399,7 +406,8 @@ conv_stats AS (
          rc.id = ANY (:'team_promise_ids'::uuid[]) AS has_team_promise
   FROM recent_convs rc
   LEFT JOIN last_msg lm ON lm.conversation_id = rc.id
-)
+),
+watchdog AS (
 SELECT chat_ref,
        id AS conv_id,
        coalesce(customer_name, '-') AS customer,
@@ -426,6 +434,11 @@ SELECT chat_ref,
                AND pending_esc_utc < (now() AT TIME ZONE 'utc') - interval '60 minutes'
                AND (last_mgr_utc IS NULL OR last_mgr_utc < pending_esc_utc)
               THEN 'pending_escalation_unanswered_gt_60m' END,
+         CASE WHEN escalation_status IN ('none', 'resolved')
+               AND (last_role = 'user' OR (last_role = 'assistant' AND last_model LIKE '%|error'))
+               AND open_capacity_esc_utc < (now() AT TIME ZONE 'utc') - interval '60 minutes'
+               AND (last_mgr_utc IS NULL OR last_mgr_utc < open_capacity_esc_utc)
+              THEN 'provider_capacity_followup_unanswered_gt_60m' END,
          CASE WHEN escalation_status = 'manual_takeover'
                AND last_role = 'user'
                AND last_msg_utc < (now() AT TIME ZONE 'utc') - interval '30 minutes'
@@ -436,14 +449,9 @@ SELECT chat_ref,
        last_msg_utc,
        last_preview
 FROM conv_stats
-WHERE (
-  (last_role = 'user' AND last_msg_utc < (now() AT TIME ZONE 'utc') - interval '3 minutes' AND escalation_status = 'none' AND mgr_cnt = 0)
-  OR ((quote_lifecycle = 'created' OR has_quote_pdf) AND (zoho_contact_id IS NULL OR zoho_deal_id IS NULL))
-  OR (mgr_cnt > 0 AND escalation_status NOT IN ('manual_takeover', 'resolved'))
-  OR (has_team_promise AND escalation_status = 'none' AND esc_cnt = 0 AND mgr_cnt = 0)
-  OR (escalation_status IN ('pending', 'in_progress') AND pending_esc_utc IS NOT NULL AND pending_esc_utc < (now() AT TIME ZONE 'utc') - interval '60 minutes' AND (last_mgr_utc IS NULL OR last_mgr_utc < pending_esc_utc))
-  OR (escalation_status = 'manual_takeover' AND last_role = 'user' AND last_msg_utc < (now() AT TIME ZONE 'utc') - interval '30 minutes' AND (last_mgr_utc IS NULL OR last_mgr_utc < last_msg_utc - interval '4 hours'))
 )
+SELECT * FROM watchdog
+WHERE cardinality(hang_flags) > 0
 ORDER BY last_msg_utc DESC;
 SQL
 
@@ -481,19 +489,52 @@ docker logs --since "$LOG_SINCE" noor-app-1 2>&1 | grep -Ei "traceback|exception
 echo ""
 echo "--- [5] OPENROUTER CREDIT ---"
 docker exec -i noor-app-1 python3 - <<'PY'
-import json, urllib.request
+import json
+import urllib.error
+import urllib.request
 from src.core.config import settings
 raw = settings.openrouter_api_key
 key = raw.get_secret_value() if hasattr(raw, "get_secret_value") else str(raw)
-req = urllib.request.Request("https://openrouter.ai/api/v1/key", headers={"Authorization": f"Bearer {key}"})
-with urllib.request.urlopen(req, timeout=10) as resp:
-    data = json.loads(resp.read().decode())["data"]
-    print(json.dumps({
-        "limit": data.get("limit"),
-        "limit_remaining": round(float(data.get("limit_remaining") or 0), 4),
-        "usage": round(float(data.get("usage") or 0), 4),
-        "usage_daily": round(float(data.get("usage_daily") or 0), 4),
-    }))
+
+def fetch(path):
+    req = urllib.request.Request(
+        f"https://openrouter.ai/api/v1/{path}",
+        headers={"Authorization": f"Bearer {key}"},
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.load(resp)["data"]
+
+key_remaining = None
+account_remaining = None
+key_data = {}
+credits_data = {}
+try:
+    key_data = fetch("key")
+    if key_data["limit_remaining"] is not None:
+        key_remaining = float(key_data["limit_remaining"])
+except (urllib.error.URLError, TimeoutError, KeyError, TypeError, ValueError) as exc:
+    print(f"ALERT: OPENROUTER_KEY_LIMIT_UNAVAILABLE | {type(exc).__name__}")
+
+try:
+    credits_data = fetch("credits")
+    account_remaining = float(credits_data["total_credits"]) - float(credits_data["total_usage"])
+except (urllib.error.URLError, TimeoutError, KeyError, TypeError, ValueError) as exc:
+    print(f"ALERT: OPENROUTER_ACCOUNT_BALANCE_UNAVAILABLE | {type(exc).__name__}")
+
+effective_remaining = account_remaining
+if account_remaining is not None and key_remaining is not None:
+    effective_remaining = min(account_remaining, key_remaining)
+
+print(json.dumps({
+    "limit": key_data.get("limit"),
+    # The scheduler reads limit_remaining for its daily low-balance alert.
+    "limit_remaining": round(max(0, effective_remaining), 4) if effective_remaining is not None else None,
+    "key_limit_remaining": round(key_remaining, 4) if key_remaining is not None else None,
+    "account_remaining": round(account_remaining, 4) if account_remaining is not None else None,
+    "account_total_credits": credits_data.get("total_credits"),
+    "usage": key_data.get("usage"),
+    "usage_daily": key_data.get("usage_daily"),
+}))
 PY
 """
 

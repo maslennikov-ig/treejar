@@ -28,7 +28,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic_ai import RunContext
-from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -110,6 +110,7 @@ from src.llm.safety import (
     PATH_CORE_CHAT,
     extract_run_usage,
     get_llm_usage_telemetry,
+    is_openrouter_spending_rejection,
     model_name_for_path,
     model_settings_for_path,
     run_agent_with_safety,
@@ -1745,18 +1746,7 @@ async def process_message_impl(
         )
 
     except Exception as error:
-        metadata = (
-            error.body.get("metadata")
-            if isinstance(error, ModelHTTPError)
-            and error.status_code == 402
-            and isinstance(error.body, Mapping)
-            else None
-        )
-        capacity_limited = (
-            isinstance(metadata, Mapping)
-            and metadata.get("reason") == "in_flight_budget_exhausted"
-            and metadata.get("limit_source") == "openrouter_in_flight_budget"
-        )
+        capacity_limited = is_openrouter_spending_rejection(error)
         logger.exception(
             "LLM generation failed for conv_id=%s phone=%s",
             str(turn.conv.id),
