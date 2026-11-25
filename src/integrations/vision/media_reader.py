@@ -231,39 +231,42 @@ def _normalize_boq_row_cells(raw_cells: list[str]) -> list[str]:
     return merged
 
 
-def _boq_table_row(
-    cells: dict[str, str], qty_column: str | None
-) -> tuple[list[str], str | None]:
-    """Use the labeled column even when other cells are blank or contain numbers."""
-    for column, value in cells.items():
-        if value.strip().casefold().rstrip(".") in {"qty", "quantity"}:
-            return _normalize_boq_row_cells(list(cells.values())), column
-    if qty_column is None:
-        return _normalize_boq_row_cells(list(cells.values())), None
-    values = {
-        key: " ".join(value.split())[:_MAX_CELL_CHARS] for key, value in cells.items()
-    }
-    qty = values.get(qty_column, "")
-    if _INT_QTY_CELL_RE.fullmatch(qty) and not any(
-        value.casefold() in {"total", "subtotal", "grand total"}
-        for value in values.values()
-    ):
-        unit = next(
-            (
-                _BOQ_UNIT_MAP[value.casefold()]
-                for value in values.values()
-                if value.casefold() in _BOQ_UNIT_MAP
-            ),
-            None,
-        )
-        if unit:
-            values = {
-                key: value
-                for key, value in values.items()
-                if value.casefold() not in _BOQ_UNIT_MAP
-            }
-        values[qty_column] = f"Qty: {int(float(qty))}" + (f" {unit}" if unit else "")
-    return [value for value in values.values() if value], qty_column
+@dataclass(slots=True)
+class _BoqTable:
+    """Carry explicit quantity and unit column identities across one worksheet."""
+
+    qty_column: str | None = None
+    unit_column: str | None = None
+
+    def format_row(self, cells: dict[str, str]) -> list[str]:
+        values = {
+            key: " ".join(value.split())[:_MAX_CELL_CHARS]
+            for key, value in cells.items()
+        }
+        labels = {value.casefold().rstrip("."): key for key, value in values.items()}
+        qty_header = labels.get("qty") or labels.get("quantity")
+        if qty_header is not None:
+            self.qty_column = qty_header
+            self.unit_column = (
+                labels.get("unit") or labels.get("uom") or labels.get("unit of measure")
+            )
+        if self.qty_column is None:
+            return _normalize_boq_row_cells(list(values.values()))
+        qty = values.get(self.qty_column, "")
+        if _INT_QTY_CELL_RE.fullmatch(qty) and not labels.keys() & {
+            "total",
+            "subtotal",
+            "grand total",
+        }:
+            unit = _BOQ_UNIT_MAP.get(
+                values.get(self.unit_column or "", "").casefold().rstrip(".")
+            )
+            if unit and self.unit_column is not None:
+                del values[self.unit_column]
+            values[self.qty_column] = f"Qty: {int(float(qty))}" + (
+                f" {unit}" if unit else ""
+            )
+        return [value for value in values.values() if value]
 
 
 def _extract_xlsx_text(data: bytes) -> str:
@@ -324,7 +327,7 @@ def _extract_xlsx_text(data: bytes) -> str:
             raw_ws, remaining = _read_safe_zip_bytes(zf, member, remaining)
             ws_root = _parse_safe_xml(raw_ws)
             sheet_rows: list[str] = []
-            qty_column = None
+            table = _BoqTable()
             for row_el in ws_root.iter(f"{_XLSX_NS}row"):
                 if len(rows_out) + len(sheet_rows) >= _MAX_SPREADSHEET_ROWS:
                     break
@@ -351,7 +354,7 @@ def _extract_xlsx_text(data: bytes) -> str:
                         val = cell_el.findtext(f"{_XLSX_NS}v")
                         if val is not None:
                             cells[column] = val
-                normalized_cells, qty_column = _boq_table_row(cells, qty_column)
+                normalized_cells = table.format_row(cells)
                 if normalized_cells:
                     sheet_rows.append(" | ".join(normalized_cells))
             if sheet_rows:
@@ -400,10 +403,10 @@ def _extract_delimited_text(data: bytes, *, delimiter: str) -> str:
         decoded = data.decode("latin-1")
     reader = csv.reader(io.StringIO(decoded), delimiter=delimiter)
     rows_out: list[str] = []
-    qty_column = None
+    table = _BoqTable()
     for row in reader:
-        normalized_cells, qty_column = _boq_table_row(
-            {str(i): cell for i, cell in enumerate(row)}, qty_column
+        normalized_cells = table.format_row(
+            {str(i): cell for i, cell in enumerate(row)}
         )
         if normalized_cells:
             rows_out.append(" | ".join(normalized_cells))

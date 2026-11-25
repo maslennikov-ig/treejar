@@ -771,3 +771,19 @@ def test_boq_quantity_column_survives_dimensions_and_sparse_cells() -> None:
     assert "600 | Qty: 6 | 690" in reading
     assert wholesale_quantity(reading) == 61
     assert b2b_handoff_decision(reading).allowed
+
+
+def test_sparse_xlsx_reads_only_the_labeled_quantity_column() -> None:
+    worksheet = """<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+    <sheetData><row><c r="A1" t="inlineStr"><is><t>Item</t></is></c>
+    <c r="D1" t="inlineStr"><is><t>Qty</t></is></c></row>
+    <row><c r="A2" t="inlineStr"><is><t>Bar Stool</t></is></c>
+    <c r="D2"><v>20</v></c><c r="E2" t="inlineStr"><is><t>No</t></is></c></row>
+    <row><c r="A3" t="inlineStr"><is><t>Table</t></is></c>
+    <c r="E3"><v>600</v></c></row></sheetData></worksheet>"""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        archive.writestr("xl/worksheets/sheet1.xml", worksheet)
+    reading = extract_local_document_text(buf.getvalue(), mime_type=XLSX_MIME)
+    assert "Bar Stool | Qty: 20 | No" in reading
+    assert wholesale_quantity(reading) == 20

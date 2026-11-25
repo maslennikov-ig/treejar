@@ -7,7 +7,7 @@ Status: **LIVE PILOT ACTIVE (`2026-11-21 10:15 MSK`)** on `https://noor.starec.a
 
 ## Nov 24 Nikita shift QA (tj-pf5x / tj-r62i)
 - The Nov 25 10:15 MSK cut covered 13 scheduled chats (112 inbound, 86 outbound including continuations), six odd-date chats (44/33) and 368 historical transcript rows. *7040 explicitly lost five chairs to another vendor after a Nov 18 quote. *1155 still needed a video, availability and urgent fulfilment. *1247 received a correctly taxed AED 10,206 quote that omitted six visitor chairs. *3359's custom schedule contained six rows and 61 units. *3129 requested 20 chairs and *5108 requested a quotation for 15.
-- Noor's attachment reader pairs order quantities with their rows in visual schedules and labeled spreadsheet columns. The sales prompt retains marked revisions, handedness, finish and the distinction between a reference and an offered product. Unsupported WhatsApp events have their own history note and do not consume a readable attachment slot. Oversized document downloads stop at the byte limit. Storefront promotional prices remain evidence for review under the existing catalog pricing policy.
+- Noor's attachment reader pairs order quantities with their rows in visual schedules and labeled spreadsheet columns. The sales prompt retains marked revisions, handedness, finish and the distinction between a reference and an offered product. Unsupported WhatsApp events have their own history note and do not consume a readable attachment slot. Oversized document downloads stop at the byte limit. Sales received internal follow-up 1415. Storefront promotional prices remain evidence for review under the existing catalog pricing policy.
 
 ## Nov 25 and Nov 23 pilot audits and Nov 22 Nikita shift QA (tj-pf5x / tj-r62i)
 - The Nov 25 10:00 MSK audit reviewed five Noor conversations (three created in the window), 31 messages and 32 outbound audit rows. In `*5910`, unordered product matching combined the single-seat LUMA model with a list number and the NOVO capacity description, sending a photo of the unoffered LUMA 9719-2. Deferred media now requires the model code and description to support the same item. Attachment guidance preserves intended use, seating capacity and the customer's stated finish (`*5910`, `*3171`). The stale project follow-up in `*9164` is still with Sales. Telegram accepted reminder 1414 and the customer's thread stays in manual takeover.
@@ -159,7 +159,7 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 
 ## Explicit defers
 
-- tj-r62i / tj-z3hw: On Nov 25, shadow openings `*6890` and `*0933` had no matching Noor inbound provider IDs. Sales answered both. `*6890` was first-seen in the mirror. For `*0933`, Sales referenced an earlier quotation, so first-seen mirror traffic does not establish pilot eligibility. The client router owner needs to confirm the route for `*6890` and the eligibility decision for `*0933` from `audit.treejartrading.ae` records.
+- tj-r62i / tj-z3hw: On Nov 25, shadow openings `*6890` and `*0933` had no matching Noor inbound provider IDs. Sales answered both. `*6890` was first-seen in the mirror. For `*0933`, Sales referenced an earlier quotation, so first-seen mirror traffic does not establish pilot eligibility. Zoho identifies existing deals for both phones (Nov 4 and Nov 6 respectively); the shift bucket alone does not establish a routing failure. The client router owner needs to confirm the route for `*6890` and the eligibility decision for `*0933` from `audit.treejartrading.ae` records.
 - tj-id6m.17 (deferred by owner 2026-11-02 on closing `tj-id6m`): 10 optional product/ops choices parked unless requested (`docs/reports/audit-2026-11-01/README.md`: LLM reasoning effort/retries, in-flight supersession cancel, duplicate current-turn prompt message, CRM `paused`/`closed` reply behavior, manual `escalation_status` editing, `bot_enabled` fail-open vs fail-closed default + UI kill-switch, payment reminder UI/`manual` mode, public `/client-self-test/submit` retirement/rate-limit, KB `language` filter & `target_only` definition, one-off GitHub workflows).
 - tj-r62i / tj-z3hw: The Nov 23 12:00 MSK monitor confirmed a missing provider message in manager-owned chat `*0698` alongside a client-router POST 502. The inbound was restored from shadow and sales was notified. At 19:08 MSK, the first observed inbound in `*9658` reached Nikita with no matching Noor delivery. Sales was notified about the unanswered locker enquiry. The external router owner still needs to verify retry and acknowledgement for `*0698` and routing eligibility for `*9658`. Keep the incident open until router evidence is available.
 - tj-i2b1: earlier527fe1f saved budget/hold but failed mixed matching/selection.
@@ -184,15 +184,7 @@ Delivery: owner authorized Push, Merge, Deploy2026-10-03; delivery completed, CI
 ## Next recommended
 
 Next stage id: tj-uvld-stock-sync
-Recommended action: continue the same boundary after approved provider evidence.
-
-Code delivery completed. Owner requires working-org read-only continuation.
-History access live-verified through temporary read-only Self Client grants.
-Next needs sufficient redacted before/after operation observations and complete
-delta membership, without introducing warehouse test operations.
-Read-only access alone does not establish otherwise unobserved coverage. Resolve
-modified-since/filter timestamp semantics, prove AC02, then authorize delta
-activation and collect24h UTC[start,end) counters. Do not close tj-uvld early.
+Recommended action: continue within the approved working-org read-only scope. Collect redacted before/after stock observations and complete delta membership, resolve modified-since and filter timestamp semantics, then verify AC02 before delta activation and real 24h UTC counters.
 
 ## Starter prompt for next orchestrator
 
