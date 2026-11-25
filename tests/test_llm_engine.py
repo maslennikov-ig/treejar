@@ -1265,6 +1265,43 @@ def test_product_media_reference_drops_model_siblings_by_descriptor() -> None:
     assert _referenced_product_media(pending, reply) == (media["novo_four"],)
 
 
+def test_product_media_reference_keeps_model_code_and_description_together() -> None:
+    def payload(key: str, name: str, sku: str) -> ProductMediaPayload:
+        return ProductMediaPayload(
+            url=f"https://example.com/{key}.jpg",
+            caption=name,
+            product_key=key,
+            reference_tokens=(name, sku),
+        )
+
+    novo = payload(
+        "novo",
+        "2 Person Face to Face Table SKYLAND NOVO 1200",
+        "OF-YED-NOVO-Workstation-63LW-1.2T-5-white",
+    )
+    luma_single = payload(
+        "luma-single",
+        "Single workstation SKYLAND LUMA 9719-1",
+        "OF-HAI-Luma-Workstation-RJ 9719-1-Walnut",
+    )
+    luma_two = payload(
+        "luma-two",
+        "Two person workstation SKYLAND LUMA 9719-2",
+        "OF-HAI-Luma-Workstation-RJ 9719-2-Walnut",
+    )
+    reply = (
+        "*1. 2 Person Face to Face Table SKYLAND NOVO 1200* (white)\n"
+        "It is a two-person unit with privacy panels.\n"
+        "*2. Single workstation SKYLAND LUMA 9719-1* (walnut)"
+    )
+
+    assert _referenced_product_media((luma_two, novo, luma_single), reply) == (
+        novo,
+        luma_single,
+    )
+    assert not _product_media_is_referenced(luma_two, reply.replace("\n", " "))
+
+
 def _colour_sibling_media() -> tuple[ProductMediaPayload, ProductMediaPayload]:
     def payload(colour: str) -> ProductMediaPayload:
         name = f"Visitor Office Chair CH 490 V {colour}"

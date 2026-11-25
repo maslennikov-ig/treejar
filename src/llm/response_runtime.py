@@ -371,7 +371,6 @@ def _product_media_reference_strength(
     response_text: str,
 ) -> ProductMediaReferenceStrength | None:
     normalized_response = _normalized_product_reference(response_text)
-    response_words = set(normalized_response.split())
     padded_response = f" {normalized_response} "
     model_match = False
     for raw_reference in item.reference_tokens:
@@ -381,27 +380,34 @@ def _product_media_reference_strength(
         if _contains_exact_product_reference(reference, padded_response):
             return "full"
 
+        model_reference = _product_model_reference(raw_reference)
         reference_words = [
             word
-            for word in reference.split()
+            for word in _product_reference_words(raw_reference)
             if word not in _PRODUCT_REFERENCE_VARIANT_WORDS
         ]
-        if (
-            len(reference_words) >= 2
-            and any(_has_digit(word) for word in reference_words)
-            and all(word in response_words for word in reference_words)
+        if len(reference_words) >= 2 and any(
+            _has_digit(word) for word in reference_words
         ):
-            if not _is_variant_compatible_on_lines(
-                item.reference_tokens, reference_words, response_text
-            ):
-                # "CH 490 V" named as brown is not the black sibling, and
-                # "SK 38 white NEW" is not the older non-NEW sibling; leave it
-                # to the model-sibling rules instead of calling it a full match.
+            # The model code must stay intact on the line that describes the
+            # product. A list number or another item's capacity is not a suffix.
+            model_phrase = " ".join(model_reference)
+            matching_lines = [
+                line
+                for line in _lines_mentioning(response_text, reference_words)
+                if not model_phrase
+                or _contains_exact_product_reference(
+                    model_phrase, f" {_normalized_product_reference(line)} "
+                )
+            ]
+            if matching_lines:
+                if _is_variant_compatible_on_lines(
+                    item.reference_tokens, reference_words, "\n".join(matching_lines)
+                ):
+                    return "full"
+                # Leave conflicting colours and editions to sibling matching.
                 model_match = True
-                continue
-            return "full"
 
-        model_reference = _product_model_reference(raw_reference)
         if model_reference and f" {' '.join(model_reference)} " in padded_response:
             model_match = True
             # Structured titles end with a literal compound finish such as
