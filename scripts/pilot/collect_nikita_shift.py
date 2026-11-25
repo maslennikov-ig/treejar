@@ -42,6 +42,7 @@ JOIN pilot_convs pc ON pc.norm_phone = regexp_replace(s.chat_id, '[^0-9]', '', '
 WHERE s.created_at >= '__WATERMARK_UTC__'
   AND s.created_at >= pc.conv_created_utc
   AND NOT s.is_echo
+  AND s.message_type IS DISTINCT FROM 'missing_call'
   AND NOT EXISTS (
       SELECT 1 FROM messages m
       WHERE m.conversation_id = pc.id AND m.role = 'user'

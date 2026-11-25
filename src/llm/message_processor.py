@@ -1478,6 +1478,7 @@ async def _load_turn(
     crm_client: ZohoCRMClient | None,
     source_message_id: str | None,
     latency_trace: ChatLatencyTrace | None,
+    quoted_products: tuple[tuple[str, str], ...] = (),
 ) -> _Turn:
     """Load the conversation, mask, build the history, and assemble the turn."""
 
@@ -1564,6 +1565,9 @@ async def _load_turn(
         pii_map=pii_map,
         crm_context=crm_context,
         user_query=masked_text,
+        quoted_products=tuple(
+            (mask_pii(text)[0], sku) for text, sku in quoted_products
+        ),
         recent_history=recent_history,
         defer_product_media=True,
         source_message_id=source_message_id,
@@ -1700,6 +1704,7 @@ async def process_message_impl(
     crm_client: ZohoCRMClient | None = None,
     source_message_id: str | None = None,
     latency_trace: ChatLatencyTrace | None = None,
+    quoted_products: tuple[tuple[str, str], ...] = (),
 ) -> LLMResponseT:
     """Process an incoming message through the PydanticAI agent.
 
@@ -1718,6 +1723,7 @@ async def process_message_impl(
         crm_client=crm_client,
         source_message_id=source_message_id,
         latency_trace=latency_trace,
+        quoted_products=quoted_products,
     )
     config = await _read_turn_config(turn)
     turn.prose_guards_mode = config.prose_guards_mode

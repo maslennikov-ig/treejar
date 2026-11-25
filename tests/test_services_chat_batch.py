@@ -6,9 +6,11 @@ import logging
 from collections.abc import Iterator
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import UUID
 
 import pytest
 from arq import Retry
+from sqlalchemy.dialects import postgresql
 
 from src.integrations.zoho_oauth import ZohoOAuthError
 from src.schemas.webhook import WazzupIncomingMessage
@@ -62,6 +64,11 @@ class MockResult:
         if isinstance(self.val, list):
             return self.val
         return [self.val] if self.val is not None else []
+
+    def __iter__(self) -> Iterator[object]:
+        if isinstance(self.val, list):
+            return iter(self.val)
+        return iter(()) if self.val is None else iter((self.val,))
 
 
 def _seed_inbound_redis(redis: AsyncMock, raw_messages: list[str]) -> None:
@@ -1650,7 +1657,7 @@ async def test_process_incoming_batch_quarantines_without_expected_channel(
 @patch("src.services.chat.ZohoCRMClient")
 @patch("src.services.chat.ZohoInventoryClient")
 @patch("src.services.chat.EmbeddingEngine")
-async def test_process_incoming_batch_persists_stable_created_at_for_batched_messages(
+async def test_process_incoming_batch_persists_order_and_resolves_quoted_product(
     mock_embedding_cls: MagicMock,
     mock_zoho_inv_cls: MagicMock,
     mock_zoho_crm_cls: MagicMock,
@@ -1662,14 +1669,19 @@ async def test_process_incoming_batch_persists_stable_created_at_for_batched_mes
     mock_session_factory.return_value.__aenter__.return_value = mock_session
 
     existing_conv = MagicMock()
-    existing_conv.id = "conv-ordered"
+    existing_conv.id = UUID("8ed68f77-c37b-416f-9d8c-05effc7b4a94")
     existing_conv.phone = "1234567890"
     existing_conv.escalation_status = "none"
 
+    product_id = UUID("18e2df22-a5af-41e9-86db-769599c0d008")
     mock_session.execute.side_effect = [
         MockResult(None),  # bot_enabled
         MockResult(existing_conv),  # existing conversation
         MockResult([]),  # msg dedup check
+        MockResult(
+            [("quoted-photo", f"product:{existing_conv.id}:{product_id}:media")]
+        ),
+        MockResult([(product_id, "CH 145 M grey NEW")]),
         MockResult(None),  # outbound audit idempotency lookup
         MockResult(3),  # total messages after assistant commit
         MockResult(None),  # no existing summary
@@ -1708,6 +1720,7 @@ async def test_process_incoming_batch_persists_stable_created_at_for_batched_mes
         text="second in time",
         channelId="chan-1",
         dateTime="2026-04-03T10:00:01.000",
+        quotedMessage={"messageId": "quoted-photo", "type": "image"},
     )
     earlier_msg = WazzupIncomingMessage(
         messageId="msg-earlier",
@@ -1717,6 +1730,7 @@ async def test_process_incoming_batch_persists_stable_created_at_for_batched_mes
         text="first in time",
         channelId="chan-1",
         dateTime="2026-04-03T10:00:00.000",
+        quotedMessage="malformed optional field",
     )
 
     mock_redis = AsyncMock()
@@ -1744,6 +1758,17 @@ async def test_process_incoming_batch_persists_stable_created_at_for_batched_mes
     ]
     assert all(isinstance(message.created_at, datetime) for message in inbound_messages)
     assert inbound_messages[0].created_at < inbound_messages[1].created_at
+    assert mock_process_message.await_args.kwargs["combined_text"] == (
+        "first in time\nsecond in time"
+    )
+    assert mock_process_message.await_args.kwargs["quoted_products"] == (
+        ("second in time", "CH 145 M grey NEW"),
+    )
+    audit_stmt = mock_session.execute.await_args_list[3].args[0]
+    audit_params = audit_stmt.compile(dialect=postgresql.dialect()).params
+    assert existing_conv.id in audit_params.values()
+    assert existing_conv.phone in audit_params.values()
+    assert ["quoted-photo"] in audit_params.values()
 
 
 @pytest.mark.asyncio

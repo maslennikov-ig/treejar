@@ -79,6 +79,7 @@ from src.services.outbound_audit import (
     deterministic_crm_message_id,
     find_noor_outbound_audit_matches,
     product_media_crm_message_ids,
+    resolve_quoted_product_skus,
     send_wazzup_media_with_audit,
     send_wazzup_text_with_audit,
 )
@@ -2017,6 +2018,23 @@ async def _process_batch_inner(
                 return
 
             # 5. Generate LLM response
+            quoted_messages = [
+                (m.text or "", quoted_id)
+                for m in messages
+                if _determine_role(m) == "user"
+                and (quoted_id := m.quoted_message_id) is not None
+            ]
+            quoted_skus = await resolve_quoted_product_skus(
+                db,
+                conversation_id=conv.id,
+                chat_id=chat_id,
+                provider_message_ids={quoted_id for _, quoted_id in quoted_messages},
+            )
+            quoted_products = tuple(
+                (text, quoted_skus[quoted_id])
+                for text, quoted_id in quoted_messages
+                if quoted_id in quoted_skus
+            )
             embedding_engine = EmbeddingEngine()
 
             async with (
@@ -2050,6 +2068,7 @@ async def _process_batch_inner(
                                 messaging_client=wazzup_provider,
                                 source_message_id=source_message_id,
                                 latency_trace=latency_trace,
+                                quoted_products=quoted_products,
                             ),
                             timeout=LLM_TIMEOUT,
                         )

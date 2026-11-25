@@ -12,6 +12,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.outbound_message import OutboundMessageAudit
+from src.models.product import Product
 from src.services.outbound_safety import guarded_wazzup_send
 
 _ACTIVE_AUDIT_STATUSES = {
@@ -86,6 +87,65 @@ def product_key_from_media_crm_message_id(crm_message_id: str) -> str | None:
     if len(parts) >= 4 and parts[0] == "product" and parts[3] == "media":
         return parts[2]
     return None
+
+
+async def resolve_quoted_product_skus(
+    db: AsyncSession,
+    *,
+    conversation_id: uuid.UUID,
+    chat_id: str,
+    provider_message_ids: set[str],
+) -> dict[str, str]:
+    """Resolve reply targets through the catalog images sent to this conversation."""
+    if not provider_message_ids:
+        return {}
+
+    audits = await db.execute(
+        select(
+            OutboundMessageAudit.provider_message_id,
+            OutboundMessageAudit.crm_message_id,
+        ).where(
+            OutboundMessageAudit.provider == _PROVIDER,
+            OutboundMessageAudit.conversation_id == conversation_id,
+            OutboundMessageAudit.outbound_chat_id == chat_id,
+            OutboundMessageAudit.source == "product_media",
+            OutboundMessageAudit.message_type == "media",
+            OutboundMessageAudit.provider_message_id.in_(provider_message_ids),
+        )
+    )
+    keys_by_message: dict[str, str] = {}
+    product_ids: set[uuid.UUID] = set()
+    legacy_skus: set[str] = set()
+    for message_id, crm_message_id in audits:
+        key = product_key_from_media_crm_message_id(crm_message_id or "")
+        if not message_id or not key:
+            continue
+        try:
+            product_id = uuid.UUID(key)
+        except ValueError:
+            legacy_skus.add(key)
+        else:
+            product_ids.add(product_id)
+            key = str(product_id)
+        keys_by_message[message_id] = key
+    if not keys_by_message:
+        return {}
+
+    products = await db.execute(
+        select(Product.id, Product.sku).where(
+            or_(Product.id.in_(product_ids), Product.sku.in_(legacy_skus))
+        )
+    )
+    skus_by_key: dict[str, str] = {}
+    for product_id, sku in products:
+        skus_by_key[str(product_id)] = sku
+        if sku in legacy_skus:
+            skus_by_key[sku] = sku
+    return {
+        message_id: skus_by_key[key]
+        for message_id, key in keys_by_message.items()
+        if key in skus_by_key
+    }
 
 
 def _now() -> datetime:

@@ -543,6 +543,7 @@ async def test_inject_system_prompt_appends_runtime_directives(
             "likely concrete order handoff",
             "do not ask qualifying questions",
         ),
+        quoted_products=(("How much is this?", "CH 145 M grey NEW"),),
     )
 
     from pydantic_ai.usage import RunUsage
@@ -557,6 +558,10 @@ async def test_inject_system_prompt_appends_runtime_directives(
     assert "[RUNTIME DIRECTIVES]" in prompt
     assert "likely concrete order handoff" in prompt
     assert "do not ask qualifying questions" in prompt
+    assert (
+        '"customer_message": "How much is this?", "sku": "CH 145 M grey NEW"' in prompt
+    )
+    assert "verify and give the price of that SKU" in prompt
 
 
 @pytest.mark.asyncio

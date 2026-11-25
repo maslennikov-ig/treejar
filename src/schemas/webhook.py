@@ -51,6 +51,15 @@ class WazzupIncomingMessage(BaseModel):
 
     model_config = {"extra": "allow"}
 
+    @property
+    def quoted_message_id(self) -> str | None:
+        """Read the optional reply target without rejecting malformed metadata."""
+        quoted = (self.model_extra or {}).get("quotedMessage")
+        if not isinstance(quoted, dict):
+            return None
+        message_id = quoted.get("messageId")
+        return message_id if isinstance(message_id, str) and message_id else None
+
 
 class WazzupWebhookPayload(BaseModel):
     # `test: true` is sent by Wazzup during webhook registration verification

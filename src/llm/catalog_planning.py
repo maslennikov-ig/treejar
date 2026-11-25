@@ -2553,6 +2553,7 @@ class SalesDeps:
     pii_map: dict[str, str]
     crm_context: dict[str, Any] | None = None
     user_query: str = ""
+    quoted_products: tuple[tuple[str, str], ...] = ()  # (customer text, SKU)
     faq_context: list[dict[str, str]] | None = None  # Cached FAQ search results
     behavior_rules: list[dict[str, Any]] | None = None
     recent_history: list[str] | None = None  # Last N messages for escalation context

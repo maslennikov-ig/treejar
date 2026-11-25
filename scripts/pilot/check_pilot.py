@@ -92,6 +92,9 @@ shadow_today AS (
   FROM shadow_webhook_events s
   CROSS JOIN msk_bounds b
   WHERE s.created_at >= b.msk_day_start_utc
+    AND s.channel_id = :'pilot_channel_id'
+    AND s.chat_type = 'whatsapp'
+    AND s.message_type IS DISTINCT FROM 'missing_call'
     AND right(regexp_replace(s.chat_id, '[^0-9]', '', 'g'), 8) <> '551220665'
 ),
 noor_today AS (
@@ -147,6 +150,10 @@ bypassed AS (
   JOIN pilot_convs pc
     ON pc.norm_phone = regexp_replace(s.chat_id, '[^0-9]', '', 'g')
   WHERE NOT s.is_echo
+    AND s.channel_id = :'pilot_channel_id'
+    AND s.chat_type = 'whatsapp'
+    -- Noor intentionally ignores Wazzup missed-call notices at ingestion.
+    AND s.message_type IS DISTINCT FROM 'missing_call'
     AND s.created_at >= (now() AT TIME ZONE 'UTC') - interval '72 hours'
     -- Noor stores the message only after batching, media reads, and the first-turn
     -- manager grace period. Wait before treating a shadow event as unmatched.
@@ -180,6 +187,7 @@ WITH recent_openings AS (
     AND s.channel_id = :'pilot_channel_id'
     AND s.chat_type = 'whatsapp'
     AND NOT s.is_echo
+    AND s.message_type IS DISTINCT FROM 'missing_call'
     AND right(regexp_replace(s.chat_id, '[^0-9]', '', 'g'), 8) <> '551220665'
     -- Include the previous run's grace window so advancing the watermark
     -- cannot skip an opening that was still waiting for ingestion.
@@ -195,6 +203,9 @@ WHERE extract(day FROM r.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Mosc
   AND NOT EXISTS (
     SELECT 1 FROM shadow_webhook_events older
     WHERE older.chat_id = r.chat_id AND older.channel_id = r.channel_id
+      AND older.chat_type = 'whatsapp'
+      AND NOT older.is_echo
+      AND older.message_type IS DISTINCT FROM 'missing_call'
       AND older.created_at < r.created_at
   )
   AND NOT EXISTS (
