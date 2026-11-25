@@ -824,6 +824,17 @@ def decision_state_directives(
             "only the missing details."
         )
 
+    if (budget := state.slots.budget_cap_aed) is not None and budget > 0:
+        directives.append(
+            f"RECORDED CUSTOMER BUDGET: AED {budget:g}. Apply it on later turns "
+            "at the customer's stated scope (per item or for the full purchase) "
+            "until they revise it. If they give a new amount in this turn, "
+            "record and use that amount. Lead recommendations with options "
+            "that fit. Answer a specific question about an over-budget item "
+            "directly, mark it as over budget, and keep the next step within "
+            "the customer's limit unless they explicitly choose that item."
+        )
+
     reply = classify_short_reply(customer_text)
     layout = keyboard_layout_reading(customer_text)
     if layout is not None and (reply is None or reply.layout_reading is not None):
@@ -858,8 +869,13 @@ def decision_state_directives(
                 else ""
             )
             directives.append(
-                "The customer's current message is a yes to your last question: "
-                f'"{_quoted(proposal.question)}".{item_text} It accepts exactly what that '
+                "Treat the customer's short assent as a yes to your last question "
+                "only when it is a yes/no question with one clear proposal: "
+                f'"{_quoted(proposal.question)}".{item_text} '
+                "For an open question or a choice among options, a bare assent "
+                "acknowledges the message and leaves the choice open. If you "
+                "still need their choice, give at most one brief prompt. When "
+                "the assent does answer a yes/no question, it accepts exactly what that "
                 "question proposed -- the same item, variant and quantity you "
                 f"put to them, nothing else.{refinement} Act on it in this reply: "
                 "a quotation offer means record consent with record_customer_intent "

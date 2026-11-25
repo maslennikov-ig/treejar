@@ -163,6 +163,7 @@ def test_deferred_team_check_promises_are_detected(reply_text: str) -> None:
         "You are welcome to visit our showroom in Sharjah to try the chair.",
         "I will check our catalog for executive chairs.",
         "Let me check the dimensions of this chair: it is 120cm high.",
+        "If you have the link or a photo of the one you saw, send it and I'll check it.",
     ],
 )
 def test_ordinary_or_quoted_replies_are_not_flagged_as_team_promises(

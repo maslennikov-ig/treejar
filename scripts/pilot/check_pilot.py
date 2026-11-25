@@ -97,18 +97,18 @@ shadow_today AS (
     AND s.channel_id = :'pilot_channel_id'
     AND s.chat_type = 'whatsapp'
     AND s.message_type IS DISTINCT FROM 'missing_call'
-    AND right(regexp_replace(s.chat_id, '[^0-9]', '', 'g'), 8) <> '551220665'
+    AND right(regexp_replace(s.chat_id, '[^0-9]', '', 'g'), 9) <> '551220665'
 ),
 noor_today AS (
   SELECT
     count(*) FILTER (WHERE m.role = 'user') AS noor_inbound_msgs,
     count(DISTINCT m.conversation_id) FILTER (WHERE m.role = 'user') AS noor_inbound_chats,
-    (SELECT max(m2.created_at) FROM messages m2 JOIN conversations c2 ON c2.id = m2.conversation_id WHERE m2.role = 'user' AND right(regexp_replace(c2.phone, '[^0-9]', '', 'g'), 8) <> '551220665') AS last_noor_inbound_utc
+    (SELECT max(m2.created_at) FROM messages m2 JOIN conversations c2 ON c2.id = m2.conversation_id WHERE m2.role = 'user' AND right(regexp_replace(c2.phone, '[^0-9]', '', 'g'), 9) <> '551220665') AS last_noor_inbound_utc
   FROM messages m
   JOIN conversations c ON c.id = m.conversation_id
   CROSS JOIN msk_bounds b
   WHERE m.created_at >= b.msk_day_start_utc
-    AND right(regexp_replace(c.phone, '[^0-9]', '', 'g'), 8) <> '551220665'
+    AND right(regexp_replace(c.phone, '[^0-9]', '', 'g'), 9) <> '551220665'
 )
 SELECT
   CASE
@@ -139,7 +139,7 @@ WITH pilot_convs AS (
          c.created_at AS conv_created_utc
   FROM conversations c
   WHERE c.created_at >= TIMESTAMP '2026-11-05 00:00:00'
-    AND right(regexp_replace(c.phone, '[^0-9]', '', 'g'), 8) <> '551220665'
+    AND right(regexp_replace(c.phone, '[^0-9]', '', 'g'), 9) <> '551220665'
 ),
 bypassed AS (
   SELECT pc.chat_ref,
@@ -190,7 +190,7 @@ WITH recent_openings AS (
     AND s.chat_type = 'whatsapp'
     AND NOT s.is_echo
     AND s.message_type IS DISTINCT FROM 'missing_call'
-    AND right(regexp_replace(s.chat_id, '[^0-9]', '', 'g'), 8) <> '551220665'
+    AND right(regexp_replace(s.chat_id, '[^0-9]', '', 'g'), 9) <> '551220665'
     -- Include the previous run's grace window so advancing the watermark
     -- cannot skip an opening that was still waiting for ingestion.
     AND s.created_at > :'watermark'::timestamp - interval '10 minutes'
@@ -321,14 +321,50 @@ FROM outbound_message_audits o
 JOIN conversations c ON c.id = o.conversation_id
 WHERE o.created_at > :'watermark'::timestamp
 ORDER BY o.created_at ASC;
+SQL
 
-\echo ''
+TEAM_PROMISE_IDS="$(docker exec -i noor-app-1 python3 - <<'PY'
+import asyncio
+
+from sqlalchemy import text
+
+from src.core.database import async_session_factory
+from src.llm.message_processor import has_deferred_team_check_promise
+
+
+async def main() -> None:
+    async with async_session_factory() as db:
+        rows = await db.execute(text('''
+            SELECT c.id, m.content
+            FROM conversations c
+            JOIN messages m ON m.conversation_id = c.id AND m.role = 'assistant'
+            WHERE c.updated_at > (now() AT TIME ZONE 'utc') - interval '72 hours'
+              AND c.escalation_status = 'none'
+              AND NOT EXISTS (SELECT 1 FROM escalations e WHERE e.conversation_id = c.id)
+              AND NOT EXISTS (
+                  SELECT 1 FROM messages mm
+                  WHERE mm.conversation_id = c.id AND mm.role = 'manager'
+              )
+        '''))
+        ids = {
+            str(conv_id) for conv_id, reply in rows
+            if has_deferred_team_check_promise(reply)
+        }
+    print("{" + ",".join(sorted(ids)) + "}")
+
+
+asyncio.run(main())
+PY
+)"
+
+echo ""
+docker exec -i noor-db-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -v team_promise_ids="$1" -P pager=off' -- "$TEAM_PROMISE_IDS" <<'SQL'
 \echo '--- [3B] STUCK / HANGING CONVERSATION WATCHDOG (LAST 72H) ---'
 WITH recent_convs AS (
   SELECT c.*
   FROM conversations c
   WHERE c.updated_at > (now() AT TIME ZONE 'utc') - interval '72 hours'
-    AND right(regexp_replace(c.phone, '\D', '', 'g'), 8) <> '551220665'
+    AND right(regexp_replace(c.phone, '\D', '', 'g'), 9) <> '551220665'
 ),
 last_msg AS (
   SELECT DISTINCT ON (m.conversation_id)
@@ -360,12 +396,7 @@ conv_stats AS (
            SELECT 1 FROM outbound_message_audits o
            WHERE o.conversation_id = rc.id AND o.file_name ILIKE 'Quotation-%'
          ) AS has_quote_pdf,
-         EXISTS (
-           SELECT 1 FROM messages m
-           WHERE m.conversation_id = rc.id
-             AND m.role = 'assistant'
-             AND m.content ~* '((i(''|’)ll|i will|we(''|’)ll|we will|let me)\s+(check|confirm|verify|ask)|team\s+will\s+(check|confirm|verify|contact|reach\s+out)|remain\s+unconfirmed|need(s)?\s+confirmation)'
-         ) AS has_team_promise
+         rc.id = ANY (:'team_promise_ids'::uuid[]) AS has_team_promise
   FROM recent_convs rc
   LEFT JOIN last_msg lm ON lm.conversation_id = rc.id
 )

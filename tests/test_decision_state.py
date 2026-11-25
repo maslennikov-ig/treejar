@@ -459,6 +459,25 @@ def test_a_withdrawn_reply_leaves_no_question_to_answer() -> None:
     assert decision_state_directives(conversation, customer_text="yes") == ()
 
 
+def test_price_budget_and_open_choice_keep_their_own_meanings() -> None:
+    conversation = _conversation()
+    state = DialogueState()
+    state.slots.budget_cap_aed = 500
+    conversation.metadata_ = state.to_metadata()
+    _assistant_turn(
+        conversation, "Would you use it all day at a desk or for visitors?", {}
+    )
+
+    budget, assent = decision_state_directives(conversation, customer_text="ok")
+
+    assert "RECORDED CUSTOMER BUDGET: AED 500" in budget
+    assert (
+        "If they give a new amount in this turn, record and use that amount" in budget
+    )
+    assert "only when it is a yes/no question with one clear proposal" in assent
+    assert "bare assent acknowledges the message and leaves the choice open" in assent
+
+
 # --- Prompt wiring ---------------------------------------------------------------
 
 
