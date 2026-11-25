@@ -73,12 +73,18 @@ def test_singular_pc_unit_triggers_wholesale_escalation(
         "Whole sell",
         "Do you offer whole sell rates?",
         "Please share whole sale pricelist",
+        "CH 240 M Black, qty 6. Quote me best price for reselling.",
+        "Could you confirm reseller pricing on six chairs?",
     ],
 )
 def test_wholesale_pricing_spelling_variants_trigger_b2b_handoff(text: str) -> None:
     decision = b2b_handoff_decision(text)
     assert decision.allowed is True
     assert decision.trigger == "wholesale_or_bulk_project"
+
+
+def test_reseller_request_needs_explicit_trade_pricing() -> None:
+    assert not b2b_handoff_decision("I resell furniture. I need six chairs.").allowed
 
 
 @pytest.mark.parametrize(

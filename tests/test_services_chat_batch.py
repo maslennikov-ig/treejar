@@ -605,6 +605,7 @@ async def test_escalation_fallback_normalizes_legacy_arabic_language_marker(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("capacity_limited", [False, True])
 @patch("src.services.chat.async_session_factory")
 @patch("src.services.chat.process_message")
 @patch("src.services.chat.WazzupProvider")
@@ -618,6 +619,7 @@ async def test_process_incoming_batch_new_conversation(
     mock_wazzup_cls: MagicMock,
     mock_process_message: AsyncMock,
     mock_session_factory: MagicMock,
+    capacity_limited: bool,
 ) -> None:
     # Set up mocks
     mock_session = AsyncMock()
@@ -659,6 +661,7 @@ async def test_process_incoming_batch_new_conversation(
         tokens_out=20,
         cost=0.05,
         model="test-model",
+        provider_capacity_limited=capacity_limited,
     )
     mock_process_message.return_value = mock_llm_response
 
@@ -698,8 +701,20 @@ async def test_process_incoming_batch_new_conversation(
     ctx = {"redis": mock_redis}
     chat_id = "1234567890"
 
-    with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
+    with (
+        patch("src.services.chat.settings.wazzup_channel_id", "chan-1"),
+        patch(
+            "src.services.chat.notify_manager_escalation", new_callable=AsyncMock
+        ) as notify,
+    ):
         await process_incoming_batch(ctx, chat_id)
+
+    if capacity_limited:
+        notify.assert_awaited_once()
+        assert notify.await_args.kwargs["pause_bot"] is False
+        assert notify.await_args.kwargs["recent_messages"] == ["Hi there"]
+    else:
+        notify.assert_not_awaited()
 
     # Assertions
     mock_session.commit.assert_awaited()

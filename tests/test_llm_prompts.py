@@ -6,6 +6,7 @@ import pytest
 from src.llm.communication_policy import (
     COMMERCIAL_CAPABILITIES,
     EVIDENCE_GROUNDING_POLICY,
+    TREEJAR_SHOWROOM_MAP_URL,
 )
 from src.llm.prompts import build_system_prompt
 from src.schemas.common import SalesStage
@@ -255,6 +256,7 @@ async def test_build_system_prompt_appends_immutable_evidence_grounding_policy()
     assert "Unknown or unconfirmed does not mean unavailable" in prompt
     assert "Do not infer medical" in prompt
     assert "showroom_visit [direct]" in prompt
+    assert TREEJAR_SHOWROOM_MAP_URL in prompt
     assert "project_samples [conditional]" in prompt
     assert "stock [tool_required]" in prompt
     assert "discount [manager_required]" in prompt

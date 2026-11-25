@@ -49,6 +49,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
+from src.llm.communication_policy import TREEJAR_SHOWROOM_MAP_URL
 from src.models.bot_behavior_rule import BotBehaviorRule
 from src.models.knowledge_base import KnowledgeBase
 from src.schemas.admin import AdminCanonicalSyncPreview, AdminCanonicalSyncPreviewItem
@@ -92,10 +93,6 @@ _LEGACY_KB_TEMPLATE_DIGESTS = frozenset(
 
 # FAQ questions kept out of the verbatim seed: manager-controlled terms.
 MANAGER_CONTROLLED_FAQ_QUESTIONS: frozenset[int] = frozenset({12, 13, 17})
-
-TREEJAR_SHOWROOM_MAP_URL = (
-    "https://www.google.com/maps/place/Treejar+Trading/@24.9871463,55.1135981,17z"
-)
 
 # Synthetic smoke-test rows (e.g. "QA disposable KB 20260511...") stay hidden
 # in admin lists unless the operator searches for them explicitly.

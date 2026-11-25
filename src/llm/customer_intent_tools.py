@@ -569,6 +569,8 @@ async def record_customer_requirements(
 
     Args:
         items: Product lines the customer has settled on, as SKU and quantity.
+            If they confirmed only the quantity and several models are possible,
+            keep that quantity in the conversation and ask which SKU they mean.
         budget_cap_aed: The most the customer will spend, in AED. Per the unit
             they stated it in; say which in your reply.
         needed_by: When they need it, in the customer's own words.

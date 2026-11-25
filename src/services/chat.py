@@ -26,6 +26,7 @@ from src.dialogue.decision_state import clear_assistant_proposal
 from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 from src.integrations.messaging.wazzup import WazzupProvider
+from src.integrations.notifications.escalation import notify_manager_escalation
 from src.integrations.zoho_oauth import ZohoOAuthError
 from src.llm.conversation_summary import should_enqueue_conversation_summary_refresh
 from src.llm.engine import ProductMediaPayload, process_message
@@ -506,6 +507,11 @@ def _reply_may_be_superseded(
     """
 
     if escalation_mutated or message_count >= MAX_SUPERSEDED_BATCH_MESSAGES:
+        return False
+    if any(
+        name not in _SUPERSEDABLE_TOOL_NAMES
+        for name in getattr(llm_response, "failed_turn_tool_names", ())
+    ):
         return False
     traces = getattr(llm_response, "tool_traces", ()) or ()
     return all(
@@ -2241,6 +2247,19 @@ async def _process_batch_inner(
                             )
                 finally:
                     latency_trace.finish_phase("outbound_text", outbound_started)
+
+                if not escalation_mutated and llm_response.provider_capacity_limited:
+                    await notify_manager_escalation(
+                        conversation=conv,
+                        reason=(
+                            "OpenRouter temporarily rejected this turn because its "
+                            "in-flight budget was exhausted. Review the existing "
+                            "conversation and follow up if the request is still open."
+                        ),
+                        recent_messages=[combined_text],
+                        db=db,
+                        pause_bot=False,
+                    )
 
                 summary_started = latency_trace.start_phase()
                 try:

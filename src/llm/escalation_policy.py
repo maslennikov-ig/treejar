@@ -329,8 +329,9 @@ _WHOLESALE_QUANTITY_RE = re.compile(
     re.IGNORECASE,
 )
 _WHOLESALE_PRICING_RE = re.compile(
-    r"\b(?:wholesale|whole[\s-]sale|whole[\s-]sell(?:er|ers)?|bulk|volume|trade|project|tender)\s+"
+    r"\b(?:wholesale|whole[\s-]sale|whole[\s-]sell(?:er|ers)?|resellers?|resale|bulk|volume|trade|project|tender)\s+"
     r"(?:discount|price|prices|pricing|rate|rates|deal|offer|terms|list|pricelist)\b"
+    r"|\b(?:price|prices|pricing|rate|rates|discount|terms)\s+for\s+(?:resale|resell(?:ing|ers?))\b"
     r"|\b(?:special|better|best)\s+(?:wholesale|whole[\s-]sale|whole[\s-]sell(?:er|ers)?|bulk|volume|project)\s+"
     r"(?:price|prices|pricing|rate|rates|discount|deal|offer)\b"
     r"|\bdiscount\s+for\s+(?:a\s+)?(?:bulk|wholesale|whole[\s-]sale|whole[\s-]sell|large|big)\s+(?:order|quantity|quantities)\b"

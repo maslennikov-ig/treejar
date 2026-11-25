@@ -41,6 +41,8 @@ class LLMResponse:
     repair_policy_state: ReplyPolicyState | None = None
     repair_trace: RepairJudgeTrace | None = None
     emitted_asks: frozenset[AskKind] = frozenset()
+    provider_capacity_limited: bool = False
+    failed_turn_tool_names: tuple[str, ...] = ()
 
 
 @asynccontextmanager

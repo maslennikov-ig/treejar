@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from pydantic_ai import RunContext, ToolReturn
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -3207,6 +3208,7 @@ async def test_process_message_does_not_recover_catalog_after_side_effect_tool(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("capacity_limited", [False, True])
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
@@ -3219,6 +3221,7 @@ async def test_process_message_arabic_error_fallback_avoids_language_guard_promp
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
+    capacity_limited: bool,
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
     conv.language = "ar"
@@ -3227,7 +3230,19 @@ async def test_process_message_arabic_error_fallback_avoids_language_guard_promp
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
-    mock_run.side_effect = RuntimeError("OpenRouter 403 Key limit exceeded")
+    mock_run.side_effect = ModelHTTPError(
+        status_code=402,
+        model_name="mock-model",
+        body={
+            "metadata": {
+                "reason": "in_flight_budget_exhausted",
+                "limit_source": "openrouter_in_flight_budget",
+                "headers": {"Retry-After": "120"},
+            }
+        }
+        if capacity_limited
+        else {"message": "Insufficient credits"},
+    )
 
     response = await process_message(
         conversation_id=conv.id,
@@ -3240,6 +3255,8 @@ async def test_process_message_arabic_error_fallback_avoids_language_guard_promp
     )
 
     assert response.model == "mock-model|error"
+    assert response.provider_capacity_limited is capacity_limited
+    assert ("يرجى المحاولة" in response.text) is not capacity_limited
     assert "مشكلة تقنية مؤقتة" in response.text
     assert "بماذا يمكنني مساعدتك" not in response.text
     assert "؟" not in response.text

@@ -28,7 +28,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic_ai import RunContext
-from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -1744,7 +1744,19 @@ async def process_message_impl(
             claim_contract_every_catalog_turn=config.claim_contract_every_catalog_turn,
         )
 
-    except Exception:
+    except Exception as error:
+        metadata = (
+            error.body.get("metadata")
+            if isinstance(error, ModelHTTPError)
+            and error.status_code == 402
+            and isinstance(error.body, Mapping)
+            else None
+        )
+        capacity_limited = (
+            isinstance(metadata, Mapping)
+            and metadata.get("reason") == "in_flight_budget_exhausted"
+            and metadata.get("limit_source") == "openrouter_in_flight_budget"
+        )
         logger.exception(
             "LLM generation failed for conv_id=%s phone=%s",
             str(turn.conv.id),
@@ -1754,11 +1766,21 @@ async def process_message_impl(
         # `db_model_main` is "unknown" until the runtime resolves, which is what
         # the `locals()` probe here used to be testing for.
         response_model = f"{db_model_main}|error"
-        error_text = (
-            "عذراً، أواجه مشكلة تقنية مؤقتة حالياً. يرجى المحاولة مرة أخرى بعد لحظات."
-            if is_arabic_customer_language(str(getattr(turn.conv, "language", "en")))
-            else "I apologize, but I am experiencing a temporary issue. Please try again in a moment."
+        is_arabic = is_arabic_customer_language(
+            str(getattr(turn.conv, "language", "en"))
         )
+        if capacity_limited:
+            error_text = (
+                "تلقيت طلبك. أواجه مشكلة تقنية مؤقتة في الرد الآن."
+                if is_arabic
+                else "I've received your request. A temporary technical issue is preventing me from answering right now."
+            )
+        else:
+            error_text = (
+                "عذراً، أواجه مشكلة تقنية مؤقتة حالياً. يرجى المحاولة مرة أخرى بعد لحظات."
+                if is_arabic
+                else "I apologize, but I am experiencing a temporary issue. Please try again in a moment."
+            )
         rendered = turn.render_reply(
             error_text,
             response_deps=turn.deps,
@@ -1774,6 +1796,9 @@ async def process_message_impl(
             model=response_model,
             usage_provenance="deterministic_static",
         )
+        response.provider_capacity_limited = capacity_limited
+        if capacity_limited:
+            response.failed_turn_tool_names = tuple(turn.deps.executed_tool_names)
 
     finalized = await _finalize_turn_response(turn, response)
     language = str(getattr(turn.conv, "language", "en") or "en")

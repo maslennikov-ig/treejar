@@ -601,6 +601,26 @@ class _BatchFakeRedis:
         return AsyncMock(return_value=None)
 
 
+@pytest.mark.parametrize(
+    ("tool_names", "can_supersede"),
+    [((), True), (("search_products",), True), (("create_quotation",), False)],
+)
+def test_provider_capacity_failure_respects_tools_before_replay(
+    tool_names: tuple[str, ...], can_supersede: bool
+) -> None:
+    response = LLMResponse(
+        text="Request received",
+        tokens_in=0,
+        tokens_out=0,
+        cost=0,
+        model="anthropic/claude-sonnet-5.5|error",
+        provider_capacity_limited=True,
+        failed_turn_tool_names=tool_names,
+    )
+
+    assert _reply_may_be_superseded(response, 1) is can_supersede
+
+
 @pytest.mark.asyncio
 async def test_handoff_turn_is_never_superseded_and_suppresses_immediate_duplicate_ack() -> (
     None

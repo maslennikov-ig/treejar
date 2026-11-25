@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 COMMUNICATION_RULES_POLICY_SOURCE = "docs/04-sales-dialogue-guidelines.md"
+TREEJAR_SHOWROOM_MAP_URL = (
+    "https://www.google.com/maps/place/Treejar+Trading/@24.9871463,55.1135981,17z"
+)
 
 
 CapabilityMode = Literal[
@@ -109,8 +112,8 @@ COMMERCIAL_CAPABILITIES: dict[str, CommercialCapability] = {
             "Dubai (Dubai mainland, outside the JAFZA Freezone — no Freezone "
             "gate pass required; Monday-Saturday 9:00-18:00, Sunday closed; "
             "free warehouse self-pickup with no minimum order amount), share "
-            "the Google Maps pin when they ask for the location or map, and "
-            "leave the particular product, appointment, test setup, and "
+            f"this Google Maps pin when they ask for the location or map: {TREEJAR_SHOWROOM_MAP_URL}. "
+            "Leave the particular product, appointment, test setup, and "
             "whether a specific product will be available to try unconfirmed."
         ),
     ),
