@@ -588,7 +588,9 @@ class AdminCanonicalSyncPreviewItem(BaseModel):
     key: str
     title: str
     category: str | None = None
-    status: Literal["missing", "customized", "deleted", "unchanged", "unindexed"]
+    status: Literal[
+        "missing", "outdated", "customized", "deleted", "unchanged", "unindexed"
+    ]
     changed_fields: list[str] = Field(default_factory=list)
 
 
@@ -596,6 +598,7 @@ class AdminCanonicalSyncPreview(BaseModel):
     kind: Literal["knowledge", "bot_rules"]
     total_templates: int
     will_create: int = 0
+    will_update: int = 0
     customized: int = 0
     deleted_or_archived: int = 0
     unchanged: int = 0

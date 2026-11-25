@@ -50,11 +50,13 @@ from src.services.canonical_admin_seed import preview_canonical_knowledge_base
 async def main() -> None:
     async with async_session_factory() as db:
         p = await preview_canonical_knowledge_base(db)
-        if p.will_create > 0 or p.unindexed > 0:
-            missing = [i.title for i in p.items if i.status in ("missing", "unindexed")]
+        outdated = getattr(p, "will_update", 0)
+        if p.will_create > 0 or outdated > 0 or p.unindexed > 0:
+            affected = [i.title for i in p.items if i.status in ("missing", "outdated", "unindexed")]
             print(
                 f"ALERT: KB_SYNC_DRIFT | total_templates={p.total_templates} "
-                f"| will_create={p.will_create} | unindexed={p.unindexed} | missing={missing}"
+                f"| will_create={p.will_create} | will_update={outdated} "
+                f"| unindexed={p.unindexed} | affected={affected}"
             )
         else:
             active_cnt = p.unchanged + p.customized

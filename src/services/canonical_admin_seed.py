@@ -25,8 +25,8 @@ Content rules (spec ``docs/specs/admin-dashboard-polish/spec.md`` section 3.1):
   (Storall Building, St. 58, Community 599, Jebel Ali Industrial Area 2, Dubai;
   Monday–Saturday 9:00–18:00, Sunday closed; Google Maps pin shared on location
   or map requests; free warehouse self-pickup with no minimum order amount).
-  Return-window, warranty-term and payment-method specifics remain
-  manager-owned (explicit defer, see ``.codex/handoff.md``).
+  Return windows, warranty terms and order-specific payment terms remain
+  manager-owned (see ``.codex/handoff.md``).
 
 Nothing here touches the SHA256-pinned RAG files; embeddings go through the
 public ``EmbeddingEngine`` API.
@@ -34,6 +34,8 @@ public ``EmbeddingEngine`` API.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import uuid
 from collections.abc import Sequence
@@ -73,6 +75,20 @@ _FAQ_PATH = Path(__file__).resolve().parent.parent.parent / "docs" / "faq.md"
 CANONICAL_KB_SOURCE = "canonical_treejar"
 CANONICAL_RULE_SOURCE_TYPE = "canonical_default"
 CANONICAL_ACTOR = "canonical_seed"
+
+# Shipped template fingerprints from a5ea6c15 and 48357deb, before rows
+# recorded the last applied template. Exact matches can safely be upgraded.
+_LEGACY_KB_TEMPLATE_DIGESTS = frozenset(
+    {
+        "4ac8b6a306f311865bc373e4393c81dea11289377036335c071e40e6e62fc8b4",
+        "09c11083a5914637d5c9a1d77c0d1372c9f0040fe6c0428ffc97395cf42a2c96",
+        "d47e3f1498b4355ec2b8e45a70d5b3a5cec72c663ef21aa0e579988bad968d1e",
+        "95cc3009cbc290ddc0db9e874a3e9445bf46738f811068d0cf30e4392d883c83",
+        "3a961943dafc9b14f76ec76376c75e1f7e38e024fdd86f8bfab6a8ef08cb023b",
+        "91f99ecc17f653062010a1c7c398642c3866cc61ba12266da01c486b2c69b7e5",
+        "6704f6761b157286db4ad68d2818ca3f26d40ecefb2801b36122ff148dbce6a8",
+    }
+)
 
 # FAQ questions kept out of the verbatim seed: manager-controlled terms.
 MANAGER_CONTROLLED_FAQ_QUESTIONS: frozenset[int] = frozenset({12, 13, 17})
@@ -463,6 +479,22 @@ CANONICAL_BOT_RULES_BY_KEY: dict[str, CanonicalBotRule] = {
 }
 
 
+def _kb_template_digest(row: CanonicalKnowledgeArticle | KnowledgeBase) -> str:
+    payload = json.dumps(
+        (row.title, row.content, row.category, row.language),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _matches_applied_kb_template(row: KnowledgeBase) -> bool:
+    digest = _kb_template_digest(row)
+    if row.canonical_template_digest is not None:
+        return digest == row.canonical_template_digest
+    return digest in _LEGACY_KB_TEMPLATE_DIGESTS
+
+
 def is_canonical_kb_customized(row: KnowledgeBase) -> bool:
     if row.source != CANONICAL_KB_SOURCE:
         return False
@@ -473,7 +505,7 @@ def is_canonical_kb_customized(row: KnowledgeBase) -> bool:
         row.content != article.content
         or row.category != article.category
         or row.language != article.language
-    )
+    ) and not _matches_applied_kb_template(row)
 
 
 def is_canonical_bot_rule_customized(row: BotBehaviorRule) -> bool:
@@ -549,7 +581,11 @@ async def preview_canonical_knowledge_base(
                 )
             )
         elif changed_fields:
-            preview.customized += 1
+            outdated = _matches_applied_kb_template(row)
+            if outdated:
+                preview.will_update += 1
+            else:
+                preview.customized += 1
             if row.embedding is None:
                 preview.unindexed += 1
             preview.items.append(
@@ -557,7 +593,7 @@ async def preview_canonical_knowledge_base(
                     key=article.title,
                     title=article.title,
                     category=article.category,
-                    status="customized",
+                    status="outdated" if outdated else "customized",
                     changed_fields=changed_fields,
                 )
             )
@@ -687,8 +723,9 @@ async def sync_canonical_knowledge_base(
 ) -> dict[str, int]:
     """Upsert canonical articles by ``(source, title)`` and embed changed rows.
 
-    When ``mode == "safe"``, only missing articles are created and unindexed active
-    rows are embedded; admin edits and soft-deleted rows are preserved.
+    Safe mode creates missing articles, updates rows that still match an applied
+    template, and embeds unindexed active rows. It preserves admin edits and
+    soft-deleted rows.
     When ``mode == "full_reset"``, all canonical articles are restored to factory
     defaults.
     The caller owns the transaction (commit / audit).
@@ -697,10 +734,13 @@ async def sync_canonical_knowledge_base(
     catalog = tuple(articles) if articles is not None else canonical_kb_articles()
     titles = [article.title for article in catalog]
     existing_result = await db.execute(
-        select(KnowledgeBase).where(
+        select(KnowledgeBase)
+        .where(
             KnowledgeBase.source == CANONICAL_KB_SOURCE,
             KnowledgeBase.title.in_(titles),
         )
+        .order_by(KnowledgeBase.title)
+        .with_for_update()
     )
     existing = {row.title: row for row in existing_result.scalars().all()}
 
@@ -718,6 +758,7 @@ async def sync_canonical_knowledge_base(
                 content=article.content,
                 language=article.language,
                 category=article.category,
+                canonical_template_digest=_kb_template_digest(article),
                 is_auto_generated=False,
                 updated_at=now,
             )
@@ -727,24 +768,19 @@ async def sync_canonical_knowledge_base(
             active_count += 1
             continue
 
-        if mode == "safe":
-            if row.deleted_at is not None:
-                counts.unchanged += 1
-                continue
-            active_count += 1
-            if row.embedding is None:
-                to_embed.append(row)
-                counts.updated += 1
-                row.updated_at = now
-            else:
-                counts.unchanged += 1
+        if mode == "safe" and row.deleted_at is not None:
+            counts.unchanged += 1
             continue
 
-        content_changed = (
+        differs_from_template = (
             row.content != article.content
             or row.category != article.category
             or row.language != article.language
         )
+        apply_template = mode == "full_reset" or (
+            not differs_from_template or _matches_applied_kb_template(row)
+        )
+        content_changed = differs_from_template and apply_template
         restored = row.deleted_at is not None
         needs_embedding = content_changed or row.embedding is None
         if restored:
@@ -754,6 +790,8 @@ async def sync_canonical_knowledge_base(
             row.content = article.content
             row.category = article.category
             row.language = article.language
+        if apply_template:
+            row.canonical_template_digest = _kb_template_digest(article)
         if needs_embedding:
             to_embed.append(row)
         if restored:

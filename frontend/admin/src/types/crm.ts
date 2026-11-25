@@ -286,7 +286,7 @@ export interface AdminCanonicalSyncPreviewItem {
     key: string;
     title: string;
     category: string | null;
-    status: 'missing' | 'customized' | 'deleted' | 'unchanged' | 'unindexed';
+    status: 'missing' | 'outdated' | 'customized' | 'deleted' | 'unchanged' | 'unindexed';
     changed_fields: string[];
 }
 
@@ -294,6 +294,7 @@ export interface AdminCanonicalSyncPreview {
     kind: 'knowledge' | 'bot_rules';
     total_templates: number;
     will_create: number;
+    will_update?: number;
     customized: number;
     deleted_or_archived: number;
     unchanged: number;

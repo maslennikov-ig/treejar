@@ -113,7 +113,7 @@ def test_admin_timestamp_indexes_migration_and_single_head() -> None:
             referenced_parents.add(down_match.group(1))
 
     heads = revisions - referenced_parents
-    assert heads == {"2026_11_09_shadow_webhooks"}
+    assert heads == {"2026_11_25_kb_template_digest"}
 
 
 def test_shadow_webhook_events_migration_and_orm_alignment() -> None:

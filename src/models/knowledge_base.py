@@ -22,6 +22,7 @@ class KnowledgeBase(UUIDMixin, Base):
     content: Mapped[str] = mapped_column(Text)
     language: Mapped[str] = mapped_column(String, default="en")
     category: Mapped[str | None] = mapped_column(String, default=None)
+    canonical_template_digest: Mapped[str | None] = mapped_column(String(64))
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(1024), nullable=True, default=None
     )

@@ -84,6 +84,27 @@ def test_trust_model_prose_still_enforces_price_grounding() -> None:
     assert any(flag.guard_name == "grounding_output" for flag in rendered.flags)
 
 
+def test_trust_model_prose_keeps_vat_intact_for_a_low_stock_item() -> None:
+    raw = (
+        "*CH 200 blue*\n"
+        "• AED 699.00 excl. 5% VAT (AED 733.95 incl. 5% VAT)\n"
+        "• German TUV Class 3 gas lift\n\n"
+        "Are you looking for a complete chair?"
+    )
+    rendered = render_reply(
+        raw,
+        state=ReplyPolicyState(
+            language="en",
+            limited_stock_product_references=("CH 200 blue",),
+            limited_stock_figures=(1,),
+            trust_model_prose=True,
+        ),
+        provenance="model",
+    )
+
+    assert rendered.text == raw
+
+
 @pytest.mark.asyncio
 async def test_report_non_sales_inquiry_tool_logs_once_without_pausing() -> None:
     registered = engine.sales_agent._function_toolset.tools

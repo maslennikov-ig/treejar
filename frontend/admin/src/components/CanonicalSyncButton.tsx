@@ -155,10 +155,10 @@ export default function CanonicalSyncButton({
                             <div className="grid grid-cols-3 gap-2">
                                 <div className="admin-subpanel rounded-lg p-2.5 text-center">
                                     <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                                        {t('canonicalSync.diffNew')}
+                                        {t(kind === 'knowledge' ? 'canonicalSync.diffApply' : 'canonicalSync.diffNew')}
                                     </div>
                                     <div className="mt-0.5 text-lg font-bold text-blue-600 dark:text-blue-400">
-                                        {Number(preview.will_create ?? 0)}
+                                        {Number(preview.will_create ?? 0) + Number(preview.will_update ?? 0)}
                                     </div>
                                 </div>
                                 <div className="admin-subpanel rounded-lg p-2.5 text-center">
@@ -202,7 +202,7 @@ export default function CanonicalSyncButton({
                                             <span>{t('canonicalSync.modeSafeTitle')}</span>
                                         </div>
                                         <p className="mt-0.5 text-slate-600 dark:text-slate-300">
-                                            {t('canonicalSync.modeSafeBody')}
+                                            {t(kind === 'knowledge' ? 'canonicalSync.modeSafeKbBody' : 'canonicalSync.modeSafeBody')}
                                         </p>
                                     </div>
                                 </label>

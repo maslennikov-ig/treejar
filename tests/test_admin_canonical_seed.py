@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -472,6 +473,66 @@ async def test_safe_sync_preserves_admin_edits_and_deleted_rows() -> None:
     assert counts["restored"] == 0
     assert customized.content == "Admin custom policy wording"
     assert deleted.deleted_at is not None
+
+
+@pytest.mark.asyncio
+async def test_safe_sync_updates_only_unchanged_older_templates() -> None:
+    current = next(a for a in seed.canonical_kb_articles() if a.category == "payment")
+    older = replace(
+        current,
+        content=(
+            "Catalogue prices are shown without VAT. Every product price and every "
+            "package total is given twice: excl. 5% VAT and incl. 5% VAT. Package "
+            "totals and budget verdicts come from the deterministic package "
+            "calculation, never from mental arithmetic. A formal PDF quotation is "
+            "prepared once the customer's name, company or individual status, "
+            "delivery address and the exact items and quantities are confirmed. "
+            "Payment terms depend on order size and project scope and are agreed "
+            "with the manager."
+        ),
+    )
+    row = KnowledgeBase(
+        source=seed.CANONICAL_KB_SOURCE,
+        title=older.title,
+        category=older.category,
+        language=older.language,
+        content=older.content,
+        embedding=[0.2] * 4,
+    )
+    db = _fake_db([row])
+    engine = FakeEmbeddingEngine()
+
+    preview = await seed.preview_canonical_knowledge_base(db, articles=[current])
+    assert preview.will_update == 1
+    assert preview.customized == 0
+    assert preview.items[0].status == "outdated"
+
+    counts = await seed.sync_canonical_knowledge_base(
+        db, engine, articles=[current], mode="safe"
+    )
+    assert counts["updated"] == 1
+    assert row.content == current.content
+    assert engine.calls == [[current.content]]
+    assert row.canonical_template_digest
+
+    next_template = replace(current, content="Revised approved payment policy")
+    counts = await seed.sync_canonical_knowledge_base(
+        db, engine, articles=[next_template], mode="safe"
+    )
+    assert counts["updated"] == 1
+    assert row.content == next_template.content
+    counts = await seed.sync_canonical_knowledge_base(
+        db, engine, articles=[next_template], mode="safe"
+    )
+    assert counts["updated"] == 0
+    assert engine.calls == [[current.content], [next_template.content]]
+
+    row.content = "Admin edits to payment policy"
+    counts = await seed.sync_canonical_knowledge_base(
+        db, engine, articles=[current], mode="safe"
+    )
+    assert counts["updated"] == 0
+    assert row.content == "Admin edits to payment policy"
 
 
 @pytest.mark.asyncio

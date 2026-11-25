@@ -2356,7 +2356,7 @@ def _product_search_response_contract(
             if specific_item_requested
             else "Relevant catalog options were found, but the search does not "
             "establish every requested detail.",
-            "Lead with up to 3 closest alternatives from these results before any generic qualifying questions, but respect an explicit smaller maximum in the customer's request."
+            "Lead with up to 3 closest alternatives that meet the customer's essential requirements. If the customer asks for an exact item and the alternatives differ in an essential feature, answer the availability question first and ask whether that feature can flex before listing alternatives. Respect an explicit smaller maximum in the customer's request."
             if specific_item_requested
             else "Lead with up to 3 concrete options relevant to the customer's "
             "actual need before qualifying questions; respect a smaller "
@@ -2376,7 +2376,7 @@ def _product_search_response_contract(
             "Use only facts already present in tool results; do not invent specs or allocate more units than returned catalog stock.",
             "Treejar Catalog price is the customer-facing commercial truth by default.",
             "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
-            "After the alternatives, ask at most one narrow follow-up; do not offer sourcing or escalation for an ordinary no-match.",
+            "Ask at most one narrow follow-up; do not offer sourcing or escalation for an ordinary no-match.",
             "Tie one verified fact to the stated need and end with one concrete next action.",
         ]
     elif match_kind == "generic":
@@ -2414,7 +2414,7 @@ def _product_search_response_contract(
         contract_parts = [
             "Current catalog results are too weak to establish a reliable match for this request.",
             "Do not present these results as exact options.",
-            "Give related alternatives or ask one narrow clarification; do not offer sourcing or escalation for an ordinary no-match.",
+            "Give relevant alternatives that meet the customer's essential requirements or ask one narrow clarification. When the customer wants an exact item, ask whether an essential feature can flex before showing alternatives that lack it. Do not offer sourcing or escalation for an ordinary no-match.",
             "Use only facts already present in tool results; do not invent specs, prices, or quantities above returned catalog stock.",
             "Treejar Catalog price is the customer-facing commercial truth by default for any catalog option you do show.",
             "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
@@ -2465,7 +2465,7 @@ def _product_search_response_contract(
             [
                 "Product search budget for this customer message is exhausted.",
                 "Do not say that you lack catalog access or that you cannot browse the catalog.",
-                "Use the product results already returned in this conversation and, if needed, offer the closest alternatives plus one narrow clarification.",
+                "Use the product results already returned in this conversation. If offering the closest alternatives, carry forward the customer's essential requirements and limits on alternatives.",
             ]
         )
 
@@ -2478,14 +2478,14 @@ def _search_budget_fallback_contract(*, prior_results_seen: bool) -> str:
             "Product search budget for this customer message is exhausted. "
             "Do not say that you lack catalog access or that you cannot browse the catalog. "
             "Use the product results already returned in this conversation. "
-            "If the exact match is still missing, say that honestly, present the closest alternatives, "
-            "and ask at most one narrow clarifying question."
+            "If the exact match is still missing, say that honestly. Offer only alternatives "
+            "consistent with the customer's stated requirements and ask at most one narrow clarifying question."
         )
 
     return (
         "Product search budget for this customer message is exhausted and no exact match was found. "
-        "Do not search again. Be honest that no exact match was found, offer nearby alternatives if any, "
-        "and ask at most one narrow clarifying question instead of an apology-only fallback."
+        "Do not search again. Be honest that no exact match was found, and offer nearby alternatives only "
+        "if they meet the customer's essential requirements, and ask at most one narrow clarifying question."
     )
 
 

@@ -858,17 +858,17 @@ def render_reply(
                     guard=partial(carry_the_company_question, language=state.language),
                 )
                 raised_flags.extend(flags)
-    rendered, flags = _render_declared_guard(
-        rendered,
-        guard_name="limited_stock",
-        guard=partial(
-            disclose_limited_stock,
-            product_references=state.limited_stock_product_references,
-            language=state.language,
-            stock_figures=state.limited_stock_figures,
-        ),
-    )
-    raised_flags.extend(flags)
+        rendered, flags = _render_declared_guard(
+            rendered,
+            guard_name="limited_stock",
+            guard=partial(
+                disclose_limited_stock,
+                product_references=state.limited_stock_product_references,
+                language=state.language,
+                stock_figures=state.limited_stock_figures,
+            ),
+        )
+        raised_flags.extend(flags)
     if not state.is_first_turn and not state.trust_model_prose:
         rendered, flags = _render_declared_guard(
             rendered,
