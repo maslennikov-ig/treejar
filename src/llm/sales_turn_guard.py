@@ -41,6 +41,51 @@ from src.services.customer_language import is_arabic_customer_language
 _MODEL_QUESTION_LIMIT = 1
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?\u061f])\s+")
+_URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+_ABBREVIATION_BEFORE_DOT_RE = re.compile(r"([A-Za-z]+(?:\.[A-Za-z]+)*)\.$")
+_LIMITED_STOCK_ABBREVIATIONS = frozenset(
+    {
+        "incl",
+        "excl",
+        "approx",
+        "etc",
+        "vs",
+        "pcs",
+        "pc",
+        "st",
+        "rd",
+        "ave",
+        "blvd",
+        "dr",
+        "mr",
+        "mrs",
+        "ms",
+        "prof",
+        "fig",
+        "dept",
+        "max",
+        "min",
+        "qty",
+        "est",
+        "tel",
+        "ext",
+        "ref",
+        "eg",
+        "ie",
+        "jan",
+        "feb",
+        "mar",
+        "apr",
+        "jun",
+        "jul",
+        "aug",
+        "sep",
+        "sept",
+        "oct",
+        "nov",
+        "dec",
+    }
+)
 _LIST_ITEM_RE = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)])\s+")
 # The lead-in that turns a list into a form. Measured on R04: the four items
 # under "please share:" carry no question mark at all -- they are nouns, not
@@ -212,21 +257,85 @@ def disclose_limited_stock(
         if is_arabic_customer_language(language)
         else _LIMITED_STOCK_DISCLOSURE_EN
     )
-    question_positions = [
-        position for mark in ("?", "؟") if (position := text.find(mark)) >= 0
-    ]
-    if not question_positions:
-        return f"{text.rstrip()} {disclosure}"
+    question_position = _first_question_mark_position(text)
+    if question_position is None:
+        joiner = "\n\n" if "\n" in text.rstrip() else " "
+        return f"{text.rstrip()}{joiner}{disclosure}"
 
-    question_position = min(question_positions)
-    question_start = 0
-    for match in _SENTENCE_SPLIT_RE.finditer(text[:question_position]):
-        question_start = match.end()
+    question_start = _question_sentence_start(text, question_position)
     before = text[:question_start].rstrip()
     question_and_after = text[question_start:].lstrip()
     if not before:
         return f"{disclosure} {question_and_after}"
-    return f"{before} {disclosure} {question_and_after}"
+    gap = text[len(before) : len(text) - len(question_and_after)]
+    if "\n\n" in gap or gap.count("\n") >= 2:
+        joiner = "\n\n"
+    elif "\n" in gap:
+        joiner = "\n"
+    else:
+        joiner = " "
+    return f"{before}{joiner}{disclosure}{joiner}{question_and_after}"
+
+
+def _url_spans(text: str) -> list[tuple[int, int]]:
+    return [(match.start(), match.end()) for match in _URL_RE.finditer(text)]
+
+
+def _in_spans(position: int, spans: Sequence[tuple[int, int]]) -> bool:
+    return any(start <= position < end for start, end in spans)
+
+
+def _first_question_mark_position(text: str) -> int | None:
+    spans = _url_spans(text)
+    positions = [
+        index
+        for index, char in enumerate(text)
+        if char in ("?", "؟") and not _in_spans(index, spans)
+    ]
+    return positions[0] if positions else None
+
+
+def _paren_depth_up_to(text: str, end: int) -> int:
+    depth = 0
+    for char in text[:end]:
+        if char == "(":
+            depth += 1
+        elif char == ")" and depth > 0:
+            depth -= 1
+    return depth
+
+
+def _is_abbreviation_period(line_prefix: str, period_pos: int, after_pos: int) -> bool:
+    if period_pos < 0 or line_prefix[period_pos] != ".":
+        return False
+    match = _ABBREVIATION_BEFORE_DOT_RE.search(line_prefix[: period_pos + 1])
+    if not match:
+        return False
+    token = match.group(1).casefold()
+    if "." in token or token in _LIMITED_STOCK_ABBREVIATIONS:
+        return True
+    return (
+        token == "no"
+        and after_pos < len(line_prefix)
+        and line_prefix[after_pos].isdigit()
+    )
+
+
+def _question_sentence_start(text: str, question_position: int) -> int:
+    line_start = text.rfind("\n", 0, question_position) + 1
+    line_prefix = text[line_start:question_position]
+    spans = _url_spans(line_prefix)
+    question_start = line_start
+    for match in _SENTENCE_SPLIT_RE.finditer(line_prefix):
+        punct_pos = match.start() - 1
+        if _in_spans(punct_pos, spans):
+            continue
+        if _paren_depth_up_to(line_prefix, punct_pos) > 0:
+            continue
+        if _is_abbreviation_period(line_prefix, punct_pos, match.end()):
+            continue
+        question_start = line_start + match.end()
+    return question_start
 
 
 def _item_reads_as_a_question(item: str) -> bool:

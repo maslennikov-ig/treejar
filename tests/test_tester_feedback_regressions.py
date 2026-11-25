@@ -477,6 +477,53 @@ def test_limited_stock_warning_stays_when_the_figure_is_not_stated() -> None:
     assert "limited stock" in rendered
 
 
+def test_limited_stock_warning_does_not_splice_inside_vat_abbreviation_or_bullets() -> (
+    None
+):
+    reply = (
+        "Here are three complete chairs with Class 3 gas lifts:\n\n"
+        "3. *Executive Office Chair CH 200 blue*\n"
+        "• AED 699.00 excl. 5% VAT (AED 733.95 incl. 5% VAT)\n"
+        "• Has a German TUV Class 3 gas lift, a mesh back and a built-in massage function\n\n"
+        "Are you replacing a chair you already have, or buying new chairs for your office?"
+    )
+
+    rendered = disclose_limited_stock(
+        reply,
+        product_references=("CH 200 blue", "Executive Office Chair CH 200 blue"),
+        language="en",
+        stock_figures=(2,),
+    )
+
+    assert "(AED 733.95 incl. 5% VAT)" in rendered
+    assert (
+        "• Has a German TUV Class 3 gas lift, a mesh back and a built-in massage function\n\n"
+        "This item has limited stock; larger quantities may need a different option and price.\n\n"
+        "Are you replacing a chair you already have"
+    ) in rendered
+
+
+def test_limited_stock_warning_respects_inline_abbreviations_and_url_queries() -> None:
+    reply = (
+        "See https://treejartrading.ae/product/ch-200?color=blue — "
+        "CH 200 blue is AED 699.00 excl. 5% VAT (AED 733.95 incl. 5% VAT). "
+        "Would you like 2 pcs. for your office?"
+    )
+
+    rendered = disclose_limited_stock(
+        reply,
+        product_references=("CH 200 blue",),
+        language="en",
+        stock_figures=(2,),
+    )
+
+    assert (
+        "AED 699.00 excl. 5% VAT (AED 733.95 incl. 5% VAT). "
+        "This item has limited stock; larger quantities may need a different option and price. "
+        "Would you like 2 pcs. for your office?"
+    ) in rendered
+
+
 # --- 4. The details the model asks for are the gate's own list ---------------
 
 
