@@ -1785,15 +1785,18 @@ async def _process_batch_inner(
                     None,
                 )
 
-        # 0. Check if bot is enabled
+        # 0. Check if bot is enabled (fail-closed, matching outbound_safety.py)
         cfg_stmt = select(SystemConfig).where(SystemConfig.key == "bot_enabled")
         cfg_result = await db.execute(cfg_stmt)
         bot_enabled_cfg = cfg_result.scalars().first()
-        if bot_enabled_cfg and (
-            bot_enabled_cfg.value is False
-            or str(bot_enabled_cfg.value).lower() == "false"
+        enabled_val = bot_enabled_cfg.value if bot_enabled_cfg is not None else None
+        if enabled_val is not True and not (
+            isinstance(enabled_val, str) and enabled_val.lower() == "true"
         ):
-            logger.info("Bot is globally disabled: batch_ref=%s", batch_ref)
+            logger.info(
+                "Bot is globally disabled or not enabled: batch_ref=%s",
+                batch_ref,
+            )
             return
 
         # 1. Keep channel ownership immutable for retained conversation IDs.

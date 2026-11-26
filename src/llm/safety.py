@@ -35,6 +35,11 @@ from pydantic_ai.models.openai import (
 from pydantic_ai.usage import RequestUsage, RunUsage
 
 from src.core.config import settings
+from src.llm.model_capabilities import (
+    MODEL_CAPABILITIES,
+    ModelCapabilities,
+    resolve_model_capabilities,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,12 +68,18 @@ _QUALITY_PATHS = frozenset(
         PATH_RESPONSE_REPAIR_JUDGE,
     }
 )
-_BOUNDED_OPENAI_HELPER_MODELS = frozenset({"openai/gpt-6-luna", "openai/gpt-6.1-terra"})
+_BOUNDED_OPENAI_HELPER_MODELS = frozenset(
+    model_id
+    for model_id, capabilities in MODEL_CAPABILITIES.items()
+    if capabilities.bounded_non_core_helper
+)
 OPENROUTER_PROVIDER_NAME = "openrouter"
 LLM_USAGE_TELEMETRY_ATTR = "__treejar_llm_usage_telemetry__"
-_OPENROUTER_CACHE_CONTROL_SUPPORTED_MODEL_PREFIXES = ("anthropic/",)
-_OPENROUTER_REASONING_DISABLED_MODEL_IDS = frozenset({"deepseek/deepseek-v4-flash"})
-_OPENROUTER_LOW_REASONING_EFFORT_CORE_MODEL_IDS = frozenset({"z-ai/glm-5.3-flash"})
+_OPENROUTER_REASONING_DISABLED_MODEL_IDS = frozenset(
+    model_id
+    for model_id, capabilities in MODEL_CAPABILITIES.items()
+    if capabilities.reasoning_disabled
+)
 _OPENROUTER_RETRYABLE_ERROR_TYPES = frozenset(
     {
         "rate_limit_exceeded",
@@ -688,46 +699,34 @@ def is_glm5_model_name(model_name: str) -> bool:
 
 
 def openrouter_supports_prompt_cache_control(model_name: str) -> bool:
-    normalized = model_name.strip().lower()
-    return normalized.startswith(_OPENROUTER_CACHE_CONTROL_SUPPORTED_MODEL_PREFIXES)
+    return resolve_model_capabilities(model_name).supports_prompt_cache_control
 
 
 def _openrouter_reasoning_effort(
     policy: LLMPathPolicy,
     model_name: str | None,
 ) -> Literal["none", "low", "medium"] | None:
+    if not model_name:
+        return None
+    capabilities = resolve_model_capabilities(model_name)
     # Bounded JSON helpers need their output budget for the answer. Keep the
     # established core chat/follow-up reasoning policy separate.
-    if _bounded_openai_helper(policy, model_name):
+    if policy.scope == "non_core" and capabilities.bounded_non_core_helper:
         return "none"
-    if (
-        policy.scope == "core"
-        and model_name is not None
-        and model_name.strip().lower() == "openai/gpt-6-luna"
-    ):
-        return "medium"
+    if policy.scope == "core" and capabilities.core_reasoning_effort is not None:
+        return capabilities.core_reasoning_effort
     if (
         policy.path == PATH_CORE_CHAT
-        and model_name is not None
-        and model_name.strip().lower() == "openai/gpt-6.1-sol"
+        and capabilities.core_chat_only_reasoning_effort is not None
     ):
-        return "medium"
-    if (
-        policy.scope == "core"
-        and model_name is not None
-        and model_name.strip().lower()
-        in _OPENROUTER_LOW_REASONING_EFFORT_CORE_MODEL_IDS
-    ):
-        return "low"
+        return capabilities.core_chat_only_reasoning_effort
     return None
 
 
 def _bounded_openai_helper(policy: LLMPathPolicy, model_name: str | None) -> bool:
-    return (
-        policy.scope == "non_core"
-        and model_name is not None
-        and model_name.strip().lower() in _BOUNDED_OPENAI_HELPER_MODELS
-    )
+    if policy.scope != "non_core" or not model_name:
+        return False
+    return resolve_model_capabilities(model_name).bounded_non_core_helper
 
 
 def _openrouter_extra_body(
@@ -738,19 +737,21 @@ def _openrouter_extra_body(
     reasoning_effort: Literal["none", "low", "medium"] | None = None,
 ) -> dict[str, Any]:
     extra_body: dict[str, Any] = {}
+    capabilities = (
+        resolve_model_capabilities(model_name) if model_name else ModelCapabilities()
+    )
     if cache_telemetry_enabled:
         extra_body["usage"] = {"include": True}
-        if model_name and openrouter_supports_prompt_cache_control(model_name):
+        if capabilities.supports_prompt_cache_control:
             extra_body["cache_control"] = {"type": "ephemeral"}
     if reasoning_effort == "none":
         extra_body["reasoning"] = {"effort": "none"}
-    elif reasoning_enabled is False or (
-        model_name
-        and model_name.strip().lower() in _OPENROUTER_REASONING_DISABLED_MODEL_IDS
-    ):
+    elif reasoning_enabled is False or capabilities.reasoning_disabled:
         extra_body["reasoning"] = {"enabled": False}
     elif reasoning_effort is not None:
         extra_body["reasoning"] = {"effort": reasoning_effort}
+    if "reasoning" in extra_body:
+        extra_body["provider"] = {"require_parameters": True}
     return extra_body
 
 
@@ -762,8 +763,14 @@ def _merge_extra_body(
     cache_telemetry_enabled: bool,
 ) -> dict[str, Any] | None:
     merged: dict[str, Any] = dict(current) if isinstance(current, Mapping) else {}
+    current_provider = merged.get("provider")
     if generated:
         merged.update(generated)
+        generated_provider = generated.get("provider")
+        if isinstance(current_provider, Mapping) and isinstance(
+            generated_provider, Mapping
+        ):
+            merged["provider"] = {**current_provider, **generated_provider}
 
     if (
         not cache_telemetry_enabled

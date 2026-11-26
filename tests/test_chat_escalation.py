@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.llm import LLMResponse
+from src.models.system_config import SystemConfig
 from src.schemas.webhook import WazzupIncomingMessage
 from src.services.chat import _determine_role, process_incoming_batch
 
@@ -122,7 +123,7 @@ async def test_resolved_escalation_resumes_bot(
     mock_conv.sales_stage = "solution"
 
     mock_session.execute.side_effect = [
-        MockResult(None),
+        MockResult(SystemConfig(key="bot_enabled", value=True)),
         MockResult(mock_conv),
         MockResult([]),
         MockResult(None),  # outbound audit lookup
@@ -194,7 +195,7 @@ async def test_bot_silent_when_escalated(
     mock_conv = _make_mock_conv(escalation_status="pending")
 
     mock_session.execute.side_effect = [
-        MockResult(None),  # bot_enabled check
+        MockResult(SystemConfig(key="bot_enabled", value=True)),  # bot_enabled check
         MockResult(mock_conv),  # conv lookup
         MockResult([]),  # msg dedup check
     ]
@@ -246,7 +247,7 @@ async def test_bot_silent_during_manual_takeover(
     mock_conv = _make_mock_conv(escalation_status="manual_takeover")
 
     mock_session.execute.side_effect = [
-        MockResult(None),
+        MockResult(SystemConfig(key="bot_enabled", value=True)),
         MockResult(mock_conv),
         MockResult([]),
     ]
@@ -298,7 +299,7 @@ async def test_manual_takeover_triggered(
     mock_conv = _make_mock_conv(escalation_status="none")
 
     mock_session.execute.side_effect = [
-        MockResult(None),
+        MockResult(SystemConfig(key="bot_enabled", value=True)),
         MockResult(mock_conv),
         MockResult([]),
     ]
@@ -359,7 +360,7 @@ async def test_manual_takeover_triggered_when_escalation_active(
     mock_conv = _make_mock_conv(escalation_status=initial_status)
 
     mock_session.execute.side_effect = [
-        MockResult(None),
+        MockResult(SystemConfig(key="bot_enabled", value=True)),
         MockResult(mock_conv),
         MockResult([]),
     ]
@@ -413,7 +414,7 @@ async def test_customer_reply_after_manual_takeover_from_pending_stays_silent(
     mock_conv = _make_mock_conv(escalation_status="manual_takeover")
 
     mock_session.execute.side_effect = [
-        MockResult(None),
+        MockResult(SystemConfig(key="bot_enabled", value=True)),
         MockResult(mock_conv),
         MockResult([]),
     ]
@@ -468,7 +469,7 @@ async def test_manager_message_saved_with_correct_role(
     mock_conv = _make_mock_conv(escalation_status="pending")
 
     mock_session.execute.side_effect = [
-        MockResult(None),
+        MockResult(SystemConfig(key="bot_enabled", value=True)),
         MockResult(mock_conv),
         MockResult([]),
     ]
@@ -571,7 +572,7 @@ async def test_worker_whatsapp_phone_echo_without_author_type_triggers_manual_ta
     mock_session_factory.return_value.__aenter__.return_value = mock_session
     mock_conv = _make_mock_conv(escalation_status="none")
     mock_session.execute.side_effect = [
-        MockResult(None),
+        MockResult(SystemConfig(key="bot_enabled", value=True)),
         MockResult(mock_conv),
         MockResult([]),
     ]

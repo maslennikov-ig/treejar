@@ -447,7 +447,6 @@ async def test_process_message_first_turn_is_not_intercepted_before_the_llm(
     # The turn reaches a real route instead of being parked, and the name rides
     # along at the end of whatever that route says.
     assert "how should I address you" in response.text
-    assert "name_gate_pending_request" not in conv.metadata_
     mock_run.assert_awaited_once()
     assert mock_run.await_args.kwargs["deps"].user_query == text
 
@@ -2280,7 +2279,6 @@ async def test_process_message_first_turn_unknown_name_blocks_exact_sku_side_eff
     assert "CH 620" in response.text
     assert "290 AED" in response.text
     assert "how should I address you" in response.text
-    assert "name_gate_pending_request" not in (conv.metadata_ or {})
     assert mock_run.await_count == 1
     mock_notify.assert_not_awaited()
 
@@ -2716,7 +2714,6 @@ async def test_process_message_first_turn_unknown_name_does_not_store_plain_gree
     assert "quote from our own catalog" in response.text
     assert "What are you looking to furnish" in response.text
     assert response.text.count("?") == 1
-    assert "name_gate_pending_request" not in (conv.metadata_ or {})
     mock_notify.assert_not_awaited()
     messaging.send_media.assert_not_called()
 
@@ -2844,9 +2841,7 @@ async def test_process_message_assist_opener_returns_clarification_without_hando
     assert response.model == "mock-model"
     mock_run.assert_awaited_once()
     assert mock_notify.await_count == 0
-    # Nothing is parked any more: the request is served on the turn it arrives,
-    # so there is no pending state for a second message to resume.
-    assert "name_gate_pending_request" not in (conv.metadata_ or {})
+    # Nothing is parked any more: the request is served on the turn it arrives.
     assert "how should I address you" in response.text
     assert conv.escalation_status == "none"
 
@@ -2892,7 +2887,6 @@ async def test_process_message_first_turn_static_clarification_gets_opening(
     mock_run.assert_awaited_once()
     assert mock_notify.await_count == 0
     assert "how should I address you" in response.text
-    assert "name_gate_pending_request" not in (conv.metadata_ or {})
 
 
 @pytest.mark.parametrize(

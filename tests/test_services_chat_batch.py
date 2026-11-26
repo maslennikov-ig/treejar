@@ -13,6 +13,7 @@ from arq import Retry
 from sqlalchemy.dialects import postgresql
 
 from src.integrations.zoho_oauth import ZohoOAuthError
+from src.models.system_config import SystemConfig
 from src.schemas.webhook import WazzupIncomingMessage
 from src.services.chat import (
     INBOUND_EXECUTION_COMPLETED,
@@ -644,7 +645,7 @@ async def test_process_incoming_batch_new_conversation(
     mock_conv.escalation_status = "none"
 
     mock_session.execute.side_effect = [
-        MockResult(None),  # bot_enabled
+        MockResult(SystemConfig(key="bot_enabled", value=True)),  # bot_enabled
         MockResult(None),  # conv lookup (None = create new)
         MockResult([]),  # msg dedup check
         MockResult(None),  # outbound audit idempotency lookup
@@ -751,7 +752,7 @@ async def test_process_incoming_batch_new_conversation(
     newer = msg.model_copy(update={"messageId": "msg-2", "text": "Any chair options?"})
     _seed_inbound_redis(mock_redis, [newer.model_dump_json()])
     mock_session.execute.side_effect = [
-        MockResult(None),  # bot_enabled
+        MockResult(SystemConfig(key="bot_enabled", value=True)),  # bot_enabled
         MockResult(active_conv),
         MockResult([]),  # msg dedup check
     ]
@@ -780,7 +781,7 @@ async def test_process_incoming_batch_new_conversation(
         model="test-model",
     )
     mock_session.execute.side_effect = [
-        MockResult(None),
+        MockResult(SystemConfig(key="bot_enabled", value=True)),
         MockResult(active_conv),
         MockResult([]),
         MockResult(None),  # outbound audit
@@ -823,7 +824,7 @@ async def test_process_incoming_batch_keeps_batch_successful_when_bot_reply_send
     existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
-        MockResult(None),  # bot_enabled
+        MockResult(SystemConfig(key="bot_enabled", value=True)),  # bot_enabled
         MockResult(existing_conv),  # conversation lookup
         MockResult([]),  # msg dedup check
         MockResult(None),  # outbound audit idempotency lookup
@@ -911,7 +912,7 @@ async def test_process_incoming_batch_sends_deferred_product_media_after_bot_rep
     existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
-        MockResult(None),  # bot_enabled
+        MockResult(SystemConfig(key="bot_enabled", value=True)),  # bot_enabled
         MockResult(existing_conv),  # conversation lookup
         MockResult([]),  # msg dedup check
         MockResult(None),  # bot_reply audit idempotency lookup
@@ -1023,7 +1024,7 @@ async def test_process_incoming_batch_refreshes_typing_while_llm_runs(
     existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
-        MockResult(None),  # bot_enabled
+        MockResult(SystemConfig(key="bot_enabled", value=True)),  # bot_enabled
         MockResult(existing_conv),  # conversation lookup
         MockResult([]),  # msg dedup check
         MockResult(None),  # outbound audit idempotency lookup
@@ -1111,7 +1112,7 @@ async def test_process_incoming_batch_ignores_typing_failures(
     existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
-        MockResult(None),  # bot_enabled
+        MockResult(SystemConfig(key="bot_enabled", value=True)),  # bot_enabled
         MockResult(existing_conv),  # conversation lookup
         MockResult([]),  # msg dedup check
         MockResult(None),  # outbound audit idempotency lookup
@@ -1190,7 +1191,7 @@ async def test_process_incoming_batch_skips_typing_loop_when_provider_unsupporte
     existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
-        MockResult(None),  # bot_enabled
+        MockResult(SystemConfig(key="bot_enabled", value=True)),  # bot_enabled
         MockResult(existing_conv),  # conversation lookup
         MockResult([]),  # msg dedup check
         MockResult(None),  # outbound audit idempotency lookup
@@ -1275,7 +1276,7 @@ async def test_process_incoming_batch_stops_proposal_followup_on_customer_reply(
     )
 
     mock_session.execute.side_effect = [
-        MockResult(None),  # bot_enabled
+        MockResult(SystemConfig(key="bot_enabled", value=True)),  # bot_enabled
         MockResult(existing_conv),  # conversation lookup
         MockResult([]),  # msg dedup check
         MockResult(None),  # outbound audit idempotency lookup
@@ -1355,7 +1356,7 @@ async def test_process_incoming_batch_typing_failure_does_not_block_timeout_fall
     existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
-        MockResult(None),  # bot_enabled
+        MockResult(SystemConfig(key="bot_enabled", value=True)),  # bot_enabled
         MockResult(existing_conv),  # conversation lookup
         MockResult([]),  # msg dedup check
         MockResult(None),  # timeout fallback audit idempotency lookup
@@ -1439,7 +1440,7 @@ async def test_process_incoming_batch_prefers_non_empty_conversation_when_duplic
     populated_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
-        MockResult(None),  # bot_enabled
+        MockResult(SystemConfig(key="bot_enabled", value=True)),  # bot_enabled
         MockResult([duplicate_empty, populated_conv]),  # duplicate conv lookup
         MockResult(["conv-live"]),  # conversations that already have messages
         MockResult([]),  # msg dedup check
@@ -1530,7 +1531,7 @@ async def test_process_incoming_batch_enqueues_summary_refresh_when_summary_exis
     existing_conv.escalation_status = "none"
 
     mock_session.execute.side_effect = [
-        MockResult(None),  # bot_enabled
+        MockResult(SystemConfig(key="bot_enabled", value=True)),  # bot_enabled
         MockResult(existing_conv),  # single existing conversation
         MockResult([]),  # msg dedup check
         MockResult(None),  # outbound audit idempotency lookup
@@ -1619,7 +1620,7 @@ async def test_process_incoming_batch_persists_inbound_channel_metadata(
     existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
-        MockResult(None),  # bot_enabled
+        MockResult(SystemConfig(key="bot_enabled", value=True)),  # bot_enabled
         MockResult(existing_conv),  # existing conversation
         MockResult([]),  # msg dedup check
         MockResult(None),  # outbound audit idempotency lookup
@@ -1746,7 +1747,7 @@ async def test_process_incoming_batch_persists_order_and_resolves_quoted_product
 
     product_id = UUID("18e2df22-a5af-41e9-86db-769599c0d008")
     mock_session.execute.side_effect = [
-        MockResult(None),  # bot_enabled
+        MockResult(SystemConfig(key="bot_enabled", value=True)),  # bot_enabled
         MockResult(existing_conv),  # existing conversation
         MockResult([]),  # msg dedup check
         MockResult(
@@ -1876,7 +1877,7 @@ async def test_process_incoming_batch_uses_server_received_at_and_arq_enqueue_ti
     existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
 
     mock_session.execute.side_effect = [
-        MockResult(None),  # bot_enabled
+        MockResult(SystemConfig(key="bot_enabled", value=True)),  # bot_enabled
         MockResult(existing_conv),  # conversation lookup
         MockResult([]),  # msg dedup check
         MockResult(None),  # outbound audit idempotency lookup

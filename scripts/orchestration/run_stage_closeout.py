@@ -65,7 +65,6 @@ STRUCTURAL_CHANGE_FILES = {
     "pyproject.toml",
     "Dockerfile",
     "docker-compose.yml",
-    "docker-compose.dev.yml",
     ".codex/orchestrator.toml",
     "src/main.py",
     "src/worker.py",
@@ -1578,7 +1577,7 @@ def documentation_impact(changed: list[str]) -> list[str]:
         categories.add("migration")
 
     if any(
-        path in {"Dockerfile", "docker-compose.yml", "docker-compose.dev.yml"}
+        path in {"Dockerfile", "docker-compose.yml"}
         or path.startswith((".github/workflows/", "deploy/", "infra/", "ops/"))
         for path in non_docs
     ):

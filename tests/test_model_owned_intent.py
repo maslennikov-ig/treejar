@@ -62,11 +62,7 @@ from src.models.conversation import Conversation
             },
         ),
         ("Please confirm the quotation.", "Let me think about it", {}),
-        (
-            "May I know your name?",
-            "Nadia",
-            {"name_gate_pending_request": "Find me a desk"},
-        ),
+        ("May I know your name?", "Nadia", {}),
         ("Which address should I use?", "Office 402, Tower A, Dubai Marina", {}),
         ("How can I help?", "Show me my previous order", {}),
         ("Хотите подобрать комплект для офиса?", "Конечно", {}),
@@ -168,7 +164,6 @@ async def _assert_model_receives_turn(previous, message, metadata, *, saved_case
     for key in (
         "pending_quote_selection",
         "order_runtime",
-        "name_gate_pending_request",
     ):
         assert (conv.metadata_ or {}).get(key) == metadata.get(key)
 

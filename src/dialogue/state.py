@@ -278,8 +278,6 @@ class DialogueState(BaseModel):
                 active_flow = "post_quotation_hold"
             elif selected_items:
                 active_flow = "quote_details"
-            elif isinstance(metadata.get("name_gate_pending_request"), Mapping):
-                active_flow = "name_gate"
         thread_id = state.thread_id or _mapping_text(
             metadata.get(DIALOGUE_KERNEL_METADATA_KEY), "thread_id"
         )

@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.main import app
+from src.models.system_config import SystemConfig
 from src.schemas.webhook import WazzupIncomingMessage
 from src.services import inbound_batch
 from src.services.chat import process_incoming_batch
@@ -425,7 +426,7 @@ async def test_manager_reply_in_grace_batch_takes_over_and_skips_llm(
     conv.escalation_status = "none"
     conv.metadata_ = {"inbound_channel_id": "ch1"}
     mock_session.execute.side_effect = [
-        _Result(None),  # bot_enabled
+        _Result(SystemConfig(key="bot_enabled", value=True)),  # bot_enabled
         MagicMock(scalars=lambda: MagicMock(all=lambda: [conv])),  # conv lookup
         MagicMock(scalars=lambda: MagicMock(all=lambda: [])),  # dedup lookup
     ]

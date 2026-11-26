@@ -7,10 +7,13 @@ from pydantic import (
     AliasChoices,
     Field,
     SecretStr,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from src.llm.model_capabilities import is_known_model_id, validate_openrouter_model_id
 
 logger = logging.getLogger(__name__)
 
@@ -177,13 +180,34 @@ class Settings(BaseSettings):
     @field_validator("voice_transcription_model")
     @classmethod
     def migrate_legacy_voice_chat_model(cls, value: str) -> str:
-        if value == _LEGACY_VOICE_CHAT_MODEL:
+        if isinstance(value, str) and value.strip() == _LEGACY_VOICE_CHAT_MODEL:
             logger.warning(
                 "VOXTRAL_MODEL selects a chat-era model; using the dedicated "
                 "STT default instead"
             )
             return DEFAULT_VOICE_TRANSCRIPTION_MODEL
         return value
+
+    @field_validator(
+        "openrouter_model_main",
+        "openrouter_model_fast",
+        "media_description_model",
+        "voice_transcription_model",
+    )
+    @classmethod
+    def validate_openrouter_models(cls, value: str, info: ValidationInfo) -> str:
+        field_name = info.field_name or "model"
+        validated = validate_openrouter_model_id(
+            value,
+            allow_empty=(field_name == "media_description_model"),
+        )
+        if validated and not is_known_model_id(validated):
+            logger.warning(
+                "Unrecognized OpenRouter model ID for %s: %s",
+                field_name,
+                validated,
+            )
+        return validated
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> Settings:

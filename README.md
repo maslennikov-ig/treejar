@@ -25,8 +25,6 @@ cp .env.example .env
 
 # Start services
 docker compose up -d                    # Production (Supabase Cloud)
-docker compose -f docker-compose.yml \
-  -f docker-compose.dev.yml up -d       # Local dev (local PostgreSQL)
 
 # Run migrations
 alembic upgrade head

@@ -132,29 +132,17 @@ async def test_inject_system_prompt_includes_customer_facts_memory(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "customer_text,pending",
+    "customer_text",
     [
-        (
-            "Please recommend ergonomic chairs. Lili, individual, 1 Dubai, lili@example.com",
-            False,
-        ),
-        ("Victor Memory Test, individual, Office 1905, JLT Dubai", True),
-        ("What did I order last time?", False),
+        "Please recommend ergonomic chairs. Lili, individual, 1 Dubai, lili@example.com",
+        "Victor Memory Test, individual, Office 1905, JLT Dubai",
+        "What did I order last time?",
     ],
 )
 async def test_customer_memory_is_data_for_model_not_a_semantic_interceptor(
     customer_text: str,
-    pending: bool,
 ) -> None:
     db, conv, embedding, zoho, redis, messaging, crm = _unknown_name_deps()
-    if pending:
-        conv.metadata_ = {
-            "name_gate_pending_request": {
-                "text": "Please recommend ergonomic chairs.",
-                "source": "first_turn_name_gate",
-            }
-        }
-    original_metadata = dict(conv.metadata_)
     memory = "Known customer profile: Lili\nPast orders: 4 x CH 616, accepted"
     with (
         patch.object(engine_module.settings, "pii_masking_enabled", True),
@@ -212,11 +200,6 @@ async def test_customer_memory_is_data_for_model_not_a_semantic_interceptor(
     assert deps.source_message_id == "msg-source-1"
     assert conv.customer_name is None
     assert "quote_customer_details" not in conv.metadata_
-    if pending:
-        assert (
-            conv.metadata_["name_gate_pending_request"]
-            == original_metadata["name_gate_pending_request"]
-        )
     if "lili@example.com" in customer_text:
         assert "lili@example.com" not in deps.user_query
         assert "lili@example.com" in deps.pii_map.values()

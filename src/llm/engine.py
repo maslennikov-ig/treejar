@@ -2601,7 +2601,6 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
         "pending_quote_selection",
         "quote_intent_frame",
         "pending_question_frame",
-        "name_gate_pending_request",
         "proposal_followup",
         "quotation_decision",
         "order_runtime",

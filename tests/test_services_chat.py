@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.models.message import Message
+from src.models.system_config import SystemConfig
 from src.services.chat import (
     INBOUND_EXECUTION_STARTED,
     InboundBatchTerminalError,
@@ -221,9 +222,11 @@ async def test_process_incoming_batch_success(
     mock_conv.escalation_status = "none"
     mock_conv.metadata_ = {"inbound_channel_id": "ch1"}
 
-    # Simulate: no bot_enabled config, existing conversation found, empty message dedup
+    # Simulate: bot_enabled config, existing conversation found, empty message dedup
     mock_db.execute.side_effect = [
-        MockResult(None),  # bot_enabled config lookup
+        MockResult(
+            SystemConfig(key="bot_enabled", value=True)
+        ),  # bot_enabled config lookup
         MockResult(mock_conv),  # conversation lookup
         MockResult([]),  # batch messages dedup check
         MockResult(None),  # outbound audit lookup
@@ -435,7 +438,9 @@ async def test_audio_transcription_metadata_is_persisted_for_user_message(
     mock_conv.language = "en"
     mock_conv.metadata_ = {"existing": "preserved", "inbound_channel_id": "ch1"}
     mock_db.execute.side_effect = [
-        MockResult(None),  # bot_enabled config lookup
+        MockResult(
+            SystemConfig(key="bot_enabled", value=True)
+        ),  # bot_enabled config lookup
         MockResult(mock_conv),  # conversation lookup
         MockResult([]),  # batch messages dedup check
         MockResult(None),  # outbound audit lookup
@@ -583,7 +588,9 @@ async def test_audio_only_oversized_message_sends_safe_fallback_without_llm(
     mock_conv.language = "en"
     mock_conv.metadata_ = {"inbound_channel_id": "ch1"}
     mock_db.execute.side_effect = [
-        MockResult(None),  # bot_enabled config lookup
+        MockResult(
+            SystemConfig(key="bot_enabled", value=True)
+        ),  # bot_enabled config lookup
         MockResult(mock_conv),  # conversation lookup
         MockResult([]),  # batch messages dedup check
         MockResult(None),  # outbound audit lookup for voice fallback
@@ -668,7 +675,9 @@ async def test_audio_only_transcription_error_sends_safe_fallback_without_llm(
     mock_conv.language = "en"
     mock_conv.metadata_ = {"inbound_channel_id": "ch1"}
     mock_db.execute.side_effect = [
-        MockResult(None),  # bot_enabled config lookup
+        MockResult(
+            SystemConfig(key="bot_enabled", value=True)
+        ),  # bot_enabled config lookup
         MockResult(mock_conv),  # conversation lookup
         MockResult([]),  # batch messages dedup check
         MockResult(None),  # outbound audit lookup for voice fallback
@@ -710,3 +719,109 @@ async def test_audio_only_transcription_error_sends_safe_fallback_without_llm(
     assert user_message.audio_url == audio_url
     assert "error during processing" in (user_message.transcription or "")
     assert assistant_message.model == "voice_fallback"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "config_row",
+    [
+        None,
+        SystemConfig(key="bot_enabled", value=False),
+        SystemConfig(key="bot_enabled", value="false"),
+        SystemConfig(key="bot_enabled", value="yes"),
+        SystemConfig(key="bot_enabled", value=""),
+    ],
+)
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+async def test_process_batch_inner_fails_closed_when_bot_not_enabled(
+    mock_process_message: AsyncMock,
+    mock_db_factory: MagicMock,
+    config_row: SystemConfig | None,
+) -> None:
+    from src.services.chat import _process_batch_inner
+
+    mock_db = AsyncMock()
+    mock_db_factory.return_value.__aenter__.return_value = mock_db
+    mock_db.execute.return_value = MockResult(config_row)
+
+    with patch("src.services.chat.settings.wazzup_channel_id", "ch1"):
+        await _process_batch_inner(
+            AsyncMock(),
+            "79991234567",
+            [
+                json.dumps(
+                    {
+                        "messageId": "msg-bot-disabled-1",
+                        "chatId": "79991234567",
+                        "chatType": "whatsapp",
+                        "type": "text",
+                        "text": "Hello",
+                        "channelId": "ch1",
+                        "status": "inbound",
+                        "authorType": "client",
+                        "dateTime": "2026-04-30T10:00:00.000",
+                    }
+                )
+            ],
+        )
+
+    assert mock_db.execute.await_count == 1
+    mock_process_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.process_message")
+async def test_process_batch_inner_allows_case_insensitive_true_bot_enabled(
+    mock_process_message: AsyncMock,
+    mock_provider_class: MagicMock,
+    mock_db_factory: MagicMock,
+) -> None:
+    from src.services.chat import _process_batch_inner
+
+    mock_conv = MagicMock()
+    mock_conv.id = "conv-uuid-123"
+    mock_conv.phone = "79991234567"
+    mock_conv.escalation_status = "manual_takeover"
+    mock_conv.metadata_ = {"inbound_channel_id": "ch1"}
+
+    mock_db = AsyncMock()
+    mock_db_factory.return_value.__aenter__.return_value = mock_db
+    mock_db.execute.side_effect = [
+        MockResult(SystemConfig(key="bot_enabled", value="True")),
+        MockResult(mock_conv),
+        MockResult([]),
+    ]
+    mock_provider = AsyncMock()
+    mock_provider.resolve_channel_phone.return_value = None
+    mock_provider_class.return_value.__aenter__ = AsyncMock(return_value=mock_provider)
+    mock_provider_class.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = None
+    mock_redis.set.return_value = True
+
+    with patch("src.services.chat.settings.wazzup_channel_id", "ch1"):
+        await _process_batch_inner(
+            mock_redis,
+            "79991234567",
+            [
+                json.dumps(
+                    {
+                        "messageId": "msg-bot-enabled-str-1",
+                        "chatId": "79991234567",
+                        "chatType": "whatsapp",
+                        "type": "text",
+                        "text": "Hello",
+                        "channelId": "ch1",
+                        "status": "inbound",
+                        "authorType": "client",
+                        "dateTime": "2026-04-30T10:00:00.000",
+                    }
+                )
+            ],
+        )
+
+    assert mock_db.execute.await_count >= 2
+    mock_process_message.assert_not_awaited()

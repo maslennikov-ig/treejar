@@ -401,7 +401,6 @@ class _Turn:
     opening_anchor_line: str | None = None
     opening_anchor_has_limited_stock: bool = False
     opening_anchor_grounded_amounts: tuple[float, ...] = ()
-    name_gate_resume_customer_name: str | None = None
     failed_run_usage: RunUsageT | None = None
     permitted_asks_cache: frozenset[AskKind] | None = None
     completed_model_history: list[ModelRequestT | ModelResponseT] | None = None
@@ -458,8 +457,7 @@ class _Turn:
             }:
                 crm_name = candidate
         return (
-            engine._string_value(self.name_gate_resume_customer_name)
-            or engine._string_value(
+            engine._string_value(
                 self.current_message_quote_customer_details.get("name")
             )
             or engine._string_value(quote_details.get("name"))

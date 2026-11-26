@@ -1343,3 +1343,52 @@ async def test_non_anthropic_and_cache_disabled_keep_plain_string_system_prompt(
     assert len(disabled_captured) == 1
     assert "cache_control" not in disabled_captured[0]
     assert isinstance(disabled_captured[0]["messages"][0]["content"], str)
+
+
+def test_reasoning_extra_body_sets_require_parameters_and_preserves_provider_keys() -> (
+    None
+):
+    from src.llm.safety import (
+        PATH_CORE_CHAT,
+        PATH_QUALITY_FINAL,
+        _merge_model_settings,
+        model_settings_for_path,
+    )
+
+    sol_settings = model_settings_for_path(
+        PATH_CORE_CHAT, model_name="openai/gpt-6.1-sol-20260901"
+    )
+    assert sol_settings["extra_body"]["reasoning"] == {"effort": "medium"}
+    assert sol_settings["extra_body"]["provider"] == {"require_parameters": True}
+
+    deepseek_variant = model_settings_for_path(
+        PATH_QUALITY_FINAL, model_name="deepseek/deepseek-v4-flash:free"
+    )
+    assert deepseek_variant["extra_body"]["reasoning"] == {"enabled": False}
+    assert deepseek_variant["extra_body"]["provider"] == {"require_parameters": True}
+
+    sonnet_settings = model_settings_for_path(
+        PATH_CORE_CHAT, model_name="anthropic/claude-sonnet-5.5"
+    )
+    assert "reasoning" not in sonnet_settings["extra_body"]
+    assert "provider" not in sonnet_settings["extra_body"]
+
+    merged = _merge_model_settings(
+        PATH_CORE_CHAT,
+        {
+            "extra_body": {
+                "provider": {"order": ["openai"], "allow_fallbacks": False},
+                "custom_flag": 1,
+            }
+        },
+        model_name="openai/gpt-6.1-sol",
+        provider="openrouter",
+        cache_telemetry_enabled=True,
+    )
+    assert merged["extra_body"]["provider"] == {
+        "order": ["openai"],
+        "allow_fallbacks": False,
+        "require_parameters": True,
+    }
+    assert merged["extra_body"]["custom_flag"] == 1
+    assert merged["extra_body"]["reasoning"] == {"effort": "medium"}

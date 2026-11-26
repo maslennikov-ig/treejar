@@ -52,7 +52,7 @@ async def test_client_self_test_submit_requires_admin_session(
 
 
 @pytest.mark.asyncio
-async def test_public_client_self_test_submit_sends_escaped_telegram_summary(
+async def test_client_self_test_endpoint_requires_admin_session(
     client: AsyncClient,
 ) -> None:
     with patch(
@@ -61,6 +61,24 @@ async def test_public_client_self_test_submit_sends_escaped_telegram_summary(
         create=True,
     ) as send:
         response = await client.post(
+            "/api/v1/client-self-test/submit",
+            json=_payload(),
+        )
+
+    assert response.status_code == 401
+    send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_client_self_test_endpoint_submit_sends_escaped_telegram_summary(
+    admin_client: AsyncClient,
+) -> None:
+    with patch(
+        "src.api.v1.client_self_test.send_telegram_message",
+        new_callable=AsyncMock,
+        create=True,
+    ) as send:
+        response = await admin_client.post(
             "/api/v1/client-self-test/submit",
             json=_payload(),
         )

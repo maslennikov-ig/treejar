@@ -1054,14 +1054,7 @@
         ]
       }
     ],
-    "metadata": {
-      "name_gate_pending_request": {
-        "version": 2,
-        "text": "نجهز مكتباً لستة موظفين ونحتاج محطات عمل خاصة وكراسي مريحة ضمن ميزانية محددة. ما الخيارات المناسبة؟",
-        "intent": "catalog_discovery",
-        "language": "ar"
-      }
-    },
+    "metadata": {},
     "customer_name": null,
     "language": "ar",
     "sales_stage": "greeting"
@@ -1107,11 +1100,7 @@
         ]
       }
     ],
-    "metadata": {
-      "name_gate_pending_request": {
-        "text": "Hi, I need CH-620 price and availability."
-      }
-    },
+    "metadata": {},
     "customer_name": null,
     "language": "en",
     "sales_stage": "greeting"
@@ -1157,11 +1146,7 @@
         ]
       }
     ],
-    "metadata": {
-      "name_gate_pending_request": {
-        "text": "Hi, I need two wardrobes for my living room."
-      }
-    },
+    "metadata": {},
     "customer_name": null,
     "language": "en",
     "sales_stage": "greeting"
@@ -1547,11 +1532,7 @@
         ]
       }
     ],
-    "metadata": {
-      "name_gate_pending_request": {
-        "text": "Hello, I am interested in ordering work station for 2 people and some mobile drawers. I appreciate fast delivery within 2-3 days. I wanted to ask if you will also assembly the desk upon delivery?"
-      }
-    },
+    "metadata": {},
     "customer_name": null,
     "language": "en",
     "sales_stage": "greeting"
@@ -1597,11 +1578,7 @@
         ]
       }
     ],
-    "metadata": {
-      "name_gate_pending_request": {
-        "text": "Hi! I need a workstation for 4 people and storage cabinets. Do you also offer assembly?"
-      }
-    },
+    "metadata": {},
     "customer_name": null,
     "language": "en",
     "sales_stage": "greeting"
@@ -1647,11 +1624,7 @@
         ]
       }
     ],
-    "metadata": {
-      "name_gate_pending_request": {
-        "text": "I need SKYLAND NOVO 2400 Meeting Table and CH 616"
-      }
-    },
+    "metadata": {},
     "customer_name": null,
     "language": "en",
     "sales_stage": "greeting"
@@ -1697,11 +1670,7 @@
         ]
       }
     ],
-    "metadata": {
-      "name_gate_pending_request": {
-        "text": "Hi, I need 5 x CH 190.\n[smoke:a444e12f]"
-      }
-    },
+    "metadata": {},
     "customer_name": null,
     "language": "en",
     "sales_stage": "greeting"
@@ -2587,11 +2556,7 @@
         ]
       }
     ],
-    "metadata": {
-      "name_gate_pending_request": {
-        "text": "Hi Noor, I need 2 CH 616 black chairs with delivery to Office 1905, JLT Dubai, email victor.pii.e2e@example.com, phone +15550001111. Please confirm these selected items."
-      }
-    },
+    "metadata": {},
     "customer_name": null,
     "language": "en",
     "sales_stage": "greeting"
@@ -2693,11 +2658,7 @@
         ]
       }
     ],
-    "metadata": {
-      "name_gate_pending_request": {
-        "text": "Hi Noor, I need 2 CH 616 black chairs with delivery and assembly. My name is Victor PII Test, individual, delivery address Office 1905, JLT Dubai, email victor.pii.e2e@example.com, phone +15550001111. Please confirm these selected items using these details."
-      }
-    },
+    "metadata": {},
     "customer_name": null,
     "language": "en",
     "sales_stage": "greeting"
@@ -4943,9 +4904,6 @@
       }
     ],
     "metadata": {
-      "name_gate_pending_request": {
-        "text": "Hi, I need a quotation: 5 x CH 620"
-      },
       "pending_quote_selection": {
         "source": "exact_quote",
         "items": [
@@ -5609,16 +5567,7 @@
         ]
       }
     ],
-    "metadata": {
-      "name_gate_pending_request": {
-        "version": 2,
-        "text": "We're preparing a ten-person office in Dubai. We need desks and supportive chairs and want to keep the total near AED 14,000. What combination should we consider?",
-        "source": "first_turn_name_gate",
-        "intent": "catalog_discovery",
-        "language": "en",
-        "identity": {}
-      }
-    },
+    "metadata": {},
     "customer_name": null,
     "language": "en",
     "sales_stage": "greeting"
