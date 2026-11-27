@@ -68,6 +68,7 @@ from src.llm.company_faq import has_quote_delivery_context, with_approved_faq
 from src.llm.escalation_policy import (
     NON_PAUSING_HANDOFF_TRIGGERS,
     WHOLESALE_HANDOFF_METADATA_KEY,
+    active_non_sales_inquiry,
     b2b_handoff_buckets,
     critical_escalation_decision,
     external_order_support_decision,
@@ -423,10 +424,7 @@ class _Turn:
     def permitted_asks(self) -> frozenset[AskKind]:
         """Read current workflow state, including changes made by model tools."""
 
-        if (
-            isinstance(self.conv.metadata_, Mapping)
-            and isinstance(self.conv.metadata_.get("non_sales_notice"), Mapping)
-        ) or (
+        if active_non_sales_inquiry(self.conv.metadata_) or (
             not self.trusts_model_prose()
             and non_sales_intent(self.combined_text) is not None
         ):
@@ -829,6 +827,8 @@ async def _deterministic_wholesale_handoff(turn: _Turn) -> bool:
     )
     # A model-made handoff already set the status; a blocked tool call did not.
     if should_pause_bot_for_escalation(conversation.escalation_status):
+        return False
+    if active_non_sales_inquiry(metadata):
         return False
     already_notified = bool(metadata.get(WHOLESALE_HANDOFF_METADATA_KEY))
     history: tuple[str, ...] = (

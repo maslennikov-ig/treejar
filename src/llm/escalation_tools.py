@@ -14,6 +14,7 @@ from src.llm.escalation_policy import (
     NON_PAUSING_HANDOFF_TRIGGERS,
     WHOLESALE_HANDOFF_METADATA_KEY,
     critical_escalation_decision,
+    non_sales_notice,
 )
 from src.services.escalation_state import is_active_human_handoff
 
@@ -194,7 +195,14 @@ async def report_non_sales_inquiry(
         if isinstance(ctx.deps.conversation.metadata_, dict)
         else {}
     )
-    if metadata.get(_NON_SALES_NOTICE_KEY):
+    prior_notice = non_sales_notice(metadata)
+    if prior_notice:
+        if prior_notice.get("purchase_evidence"):
+            notice = dict(prior_notice)
+            notice.pop("purchase_evidence")
+            notice["intent"] = inquiry_type
+            metadata[_NON_SALES_NOTICE_KEY] = notice
+            ctx.deps.conversation.metadata_ = metadata
         return (
             "Already logged for internal review. Address new information briefly. "
             "Omit any channel explanation or forwarding confirmation already given. "

@@ -176,7 +176,10 @@ from src.llm.customer_intent_tools import (
     retry_rejected_customer_write,
     validate_customer_writes,
 )
-from src.llm.escalation_policy import critical_escalation_decision
+from src.llm.escalation_policy import (
+    active_non_sales_inquiry,
+    critical_escalation_decision,
+)
 from src.llm.escalation_tools import (
     escalate_to_manager as _escalate_to_manager_impl,
 )
@@ -2440,6 +2443,11 @@ async def _prepare_sales_tools(
             tool_def for tool_def in tool_defs if tool_def.name != "escalate_to_manager"
         ]
 
+    if active_non_sales_inquiry(ctx.deps.conversation.metadata_):
+        tool_defs = [
+            d for d in tool_defs if d.name not in {"create_deal", "create_quotation"}
+        ]
+
     if _quotation_tools_withdrawn(ctx.deps):
         withdrawn = [
             tool_def for tool_def in tool_defs if tool_def.name in QUOTATION_TOOLS
@@ -4079,6 +4087,8 @@ async def create_deal(
     """
     logger.info(f"LLM Tool called: create_deal(title={title!r}, amount={amount})")
 
+    if active_non_sales_inquiry(ctx.deps.conversation.metadata_):
+        return "No sales opportunity was created for this non-sales inquiry."
     result = await _create_or_reuse_sales_opportunity(
         ctx.deps,
         title=title,
@@ -4137,6 +4147,10 @@ async def _create_quotation(
     ctx: RunContext[SalesDeps], items: list[QuotationItem]
 ) -> str:
     require_resolved_customer_writes(ctx)
+    if active_non_sales_inquiry(ctx.deps.conversation.metadata_):
+        return (
+            "No quotation or wholesale handoff was created for this non-sales inquiry."
+        )
     logger.info(f"LLM Tool called: create_quotation(items={items})")
 
     from src.llm.escalation_policy import (

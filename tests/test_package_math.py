@@ -68,6 +68,9 @@ def test_vat_is_exact_to_the_cent() -> None:
         ("We also need three LUMA 9719-4 workstations in walnut", {LUMA: 3}),
         ("2 x CH 460 black please", {CH460: 2, CH460_WHITE: None}),
         ("CH 460 black x 5", {CH460: 5}),
+        ("Ch460 chair\n88 pcs send price", {CH460: 88, CH616: None}),
+        ("CH460 white x 3", {CH460: None, CH460_WHITE: 3}),
+        ("CH4600 black x 3", {CH460: None}),
         # A comparison names no quantity, and a budget is not a quantity.
         ("Please compare LUMA 9719-4 and a NOVO 2400 setup", {LUMA: None}),
         ("LUMA 9719-4 under 6,000 AED?", {LUMA: None}),

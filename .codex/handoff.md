@@ -1,9 +1,15 @@
 # Orchestrator Handoff
 
 Updated: 2026-11-27
-Current branch: main (live runtime `f6ed7c6c` + pending `tj-1baw` latency wins)
+Current branch: main (`tj-1baw` latency release verified at `a3c3eed2`; Nov 26 Nikita mirror fixes in this delivery)
 Current stage id: tj-pdnm (Post-Pilot Stabilization, Optimization & Backlog Consolidation; `tj-pdnm.3`, `tj-pdnm.4`, `tj-pdnm.5` closed)
 Status: **LIVE PILOT ACTIVE (`2026-11-27`)** on `https://noor.starec.ai` (`anthropic/claude-sonnet-5.5`, `prose_guards_mode = "trust_model"`, `bot_enabled = true`): autonomous pilot monitor, Nikita QA report, Noor shift report, and `@adt_helper_bot` 1-tap approval daemon run on `80.74.28.160` (`/opt/adt-ops`) over SSH to `noor-server`.
+
+## Nov 26 Nikita mirror (`tj-pf5x`, `tj-r62i`)
+
+The 10:15 MSK cut contains 13 even-window chats and 19 adjacent odd-window chats. Three sticky Noor chats were already under human control. The client router forwarded no Nov 27 user turns by the cut. Sales has the urgent cabinet/delivery and folding-furniture requests. The 384-chair sourcing enquiry still needs a human response.
+
+Noor now uses the model's recorded buyer unit count even before a catalog SKU exists, reads quantities from the canonical dialogue state, and keeps supplier MOQ out of wholesale, deal and quotation actions. A later genuine purchase can reopen the sales path. Compact model references such as CH245 receive verified line arithmetic. Routing ownership remains with the client. The local report state holds the masked shift evidence and verified deployment.
 
 ## Master Epic `tj-pdnm` Consolidation (`2026-11-26..27`)
 - **Stream 4 (`tj-pdnm.4`) — Closed**: Audited August 2026 pre-pilot eval backlog against live `anthropic/claude-sonnet-5.5` + `prose_guards_mode = "trust_model"`. Closed `tj-vz7o` (13/13 children complete), `tj-wvuk`, `tj-c58g`, `tj-2f1u`, `tj-gwg1`, and `tj-jlx4` as superseded with concrete code/doc evidence, and closed `tj-1786710875876-43-79ae060f` as duplicate of canonical externally blocked GH #54 issue `tj-2pkk`.
@@ -38,10 +44,10 @@ Status: **LIVE PILOT ACTIVE (`2026-11-27`)** on `https://noor.starec.ai` (`anthr
 
 ## Next recommended
 Next stage id: tj-pdnm
-Recommended action: Verify CI + live production deploy of `tj-1baw` latency wins, monitor the read-only `snapshot-watch.py` observer on `noor-server` for `tj-uvld` AC02, confirm real Nov 27 odd-shift `noor_chat_latency` telemetry, and resume `tj-pdnm.1` items as client answers arrive.
+Recommended action: Monitor the read-only `snapshot-watch.py` observer on `noor-server` for `tj-uvld` AC02, confirm real Nov 27 odd-shift `noor_chat_latency` telemetry, and resume `tj-pdnm.1` items as client answers arrive.
 
 ## Starter prompt for next orchestrator
 Use $orchestrator-stage for Beads epic `tj-pdnm` (`tj-pdnm.1` / `tj-pdnm.2`). Read `.codex/orchestrator.toml`, `.codex/handoff.md`, and `bd show tj-pdnm` before acting; inspect `snapshot-watch` output on `noor-server` and live `noor_chat_latency` telemetry before any delta activation.
 
-docs-reviewed: updated - `.codex/handoff.md` updated for `tj-pdnm` (`tj-1baw` + OpenRouter `$40` top-up + required orchestrator handoff sections).
+docs-reviewed: updated - current pilot handoff covers the Nov 26 commercial QA, routing and Noor action-policy checks.
 graph-reviewed: no-change-needed - no enabled task-owned graph; ordinary code navigation used.

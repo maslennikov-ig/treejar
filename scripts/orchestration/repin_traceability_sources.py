@@ -10,8 +10,8 @@ about what actually changed. `tj-feet` hit this twice on 2026-08-05 and re-pinne
 by hand both times.
 
 Regenerate the manifest from the repository root after the final handoff edit.
-Include the regenerated manifest and handoff in the delivery commit once the
-verification command succeeds, including for pilot QA changes that update the handoff.
+For a pilot QA delivery, run the write command after editing the handoff,
+verify it with `--check`, and commit the regenerated manifest with the handoff.
 
 The narrowness is the safety property. Only the paths the repository contract
 itself declares mutable are re-pinned; a frozen requirement, a scenario set or

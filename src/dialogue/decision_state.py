@@ -37,7 +37,11 @@ from src.dialogue.state import (
     DialogueState,
     ProposalItem,
 )
-from src.llm.escalation_policy import is_single_unit_prototype_request
+from src.llm.escalation_policy import (
+    active_non_sales_inquiry,
+    is_single_unit_prototype_request,
+    non_sales_notice,
+)
 
 MAX_PROPOSAL_QUESTION_CHARS = 400
 MAX_PROPOSAL_ITEMS = 6
@@ -724,9 +728,10 @@ def decision_state_directives(
             "ALREADY received an internal notification for this conversation. Do "
             "not claim no one was notified."
         )
-    non_sales_notice = metadata.get("non_sales_notice")
-    if isinstance(non_sales_notice, Mapping):
-        non_sales_intent_val = str(non_sales_notice.get("intent") or "").strip()
+    if active_non_sales_inquiry(metadata):
+        non_sales_intent_val = str(
+            non_sales_notice(metadata).get("intent") or ""
+        ).strip()
         if non_sales_intent_val:
             directives.append(
                 f"NON-SALES INQUIRY LOGGED ({non_sales_intent_val}): This "
@@ -736,7 +741,9 @@ def decision_state_directives(
                 "and sales invitation you already gave. Correct any material "
                 "misunderstanding briefly without asking sales discovery or quotation "
                 "questions. Answer a new, genuine office furniture purchase inquiry "
-                "on its own merits."
+                "on its own merits. If the sender now wants to buy, call "
+                "record_customer_intent with begin_purchase=true and their current "
+                "purchase request as evidence before using sales handoff tools."
             )
     recorded_intent = metadata.get("model_customer_intent")
     intent_evidence = (

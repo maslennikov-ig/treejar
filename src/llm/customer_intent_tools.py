@@ -9,6 +9,7 @@ import datetime
 import inspect
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from copy import deepcopy
 from functools import wraps
@@ -25,6 +26,7 @@ from src.dialogue.order_state import (
     quote_workflow_from_metadata,
 )
 from src.llm.catalog_planning import CustomerWriteRejection, SalesDeps
+from src.llm.escalation_policy import active_non_sales_inquiry, non_sales_notice
 
 logger = logging.getLogger("src.llm.engine")
 
@@ -61,6 +63,8 @@ def _customer_write_fields(name: str, arguments: dict[str, Any]) -> frozenset[st
     if name == "record_customer_intent":
         if arguments.get("quotation_consent") is not None:
             fields.add("quotation_consent")
+        if arguments.get("begin_purchase"):
+            fields.add("begin_purchase")
         if arguments.get("accept_sent_quotation"):
             fields.add("accept_sent_quotation")
         fields.update(
@@ -74,6 +78,7 @@ def _customer_write_fields(name: str, arguments: dict[str, Any]) -> frozenset[st
         ):
             fields.add("items")
         for name in (
+            "project_units",
             "budget_cap_aed",
             "needed_by",
             "decision_authority",
@@ -267,11 +272,15 @@ async def record_customer_intent(
     quotation_consent: Literal["granted", "declined", "deferred"] | None = None,
     details: list[CustomerDetailEvidence] | None = None,
     accept_sent_quotation: bool = False,
+    begin_purchase: bool = False,
 ) -> str:
     """Record your contextual interpretation of the CURRENT customer message.
 
     Prefer evidence=null: the tool captures the CURRENT customer message verbatim.
     An optional string must be one literal excerpt, never joined quotes or history.
+    Set begin_purchase only when a previously logged non-sales sender now
+    explicitly wants to buy furniture from Treejar. Supply their current words
+    as evidence. A vendor's catalog, prices and MOQ describe an offer to sell.
     Judge short
     answers against the last assistant offer and history. Consent is permission
     to prepare a quotation, not order acceptance. Each detail needs its own
@@ -432,6 +441,11 @@ async def record_customer_intent(
                     customer_text=evidence,
                 )
             metadata = dict(conversation.metadata_ or {})
+            if begin_purchase and active_non_sales_inquiry(metadata):
+                metadata["non_sales_notice"] = {
+                    **non_sales_notice(metadata),
+                    "purchase_evidence": evidence[:2000],
+                }
             metadata["model_customer_intent"] = {
                 "evidence": evidence[:2000],
                 "quotation_consent": quotation_consent,
@@ -558,6 +572,7 @@ async def record_customer_requirements(
     company_activity: str | None = None,
     replace_items: bool = False,
     remove_skus: list[str] | None = None,
+    project_units: int | None = None,
 ) -> str:
     """Record what the customer told you, so the conversation stops re-asking it.
 
@@ -571,6 +586,10 @@ async def record_customer_requirements(
         items: Product lines the customer has settled on, as SKU and quantity.
             If they confirmed only the quantity and several models are possible,
             keep that quantity in the conversation and ask which SKU they mean.
+        project_units: The buyer's explicit total unit count in this message,
+            including sourcing inquiries without a catalog match. Record a revised
+            total when demand changes. Never use a supplier MOQ, price, model
+            number, dimension or color count as purchase demand.
         budget_cap_aed: The most the customer will spend, in AED. Per the unit
             they stated it in; say which in your reply.
         needed_by: When they need it, in the customer's own words.
@@ -601,6 +620,19 @@ async def record_customer_requirements(
 
     recorded: list[str] = []
     rejected: list[str] = []
+
+    if project_units is not None:
+        numbers = re.findall(
+            r"(?<![\w.,])\d+(?:,\d{3})*(?!\w|[.,]\d)", ctx.deps.user_query
+        )
+        if (
+            active_non_sales_inquiry(conversation.metadata_)
+            or not 1 <= project_units <= MAX_RECORDED_QUANTITY
+            or str(project_units) not in {n.replace(",", "") for n in numbers}
+        ):
+            return "Not recorded: project_units needs an explicit current buyer unit count."
+        slots.project_units = project_units
+        recorded.append(f"project total {project_units} units")
 
     existing = {
         str(item.get("sku")): item
@@ -685,6 +717,7 @@ async def record_customer_requirements(
     # quantity correction must expose the budget retained from an earlier turn.
     snapshot = {
         "items": slots.selected_items,
+        "project_units": slots.project_units,
         "budget_cap_aed": slots.budget_cap_aed,
         "needed_by": slots.needed_by,
         "decision_authority": slots.decision_authority,

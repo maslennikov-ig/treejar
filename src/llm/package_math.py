@@ -221,7 +221,12 @@ def _find_occurrences(
     for key in keys:
         key_words = key.split()
         width = len(key_words)
-        for index in range(len(folded_words) - width + 1):
+        compact_key = "".join(key_words) if width == 2 else None
+        for index in range(len(folded_words)):
+            # Customers often type the catalog series and model number together
+            # (CH245 for CH 245). Match the exact token, preserving variant checks.
+            if folded_words[index] == compact_key:
+                found.append(_Occurrence(index, index + 1, key))
             if list(folded_words[index : index + width]) == key_words:
                 found.append(_Occurrence(index, index + width, key))
     found.sort(key=lambda item: (item.start, -(item.end - item.start)))

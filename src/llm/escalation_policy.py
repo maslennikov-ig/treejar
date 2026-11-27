@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.core.text_utils import ARABIC_INDIC_DIGITS as _ARABIC_INDIC_DIGITS
+from src.dialogue.state import DialogueState
 from src.llm.money import BUDGET_AR_CURRENCY_PATTERN, SKU_FOLLOWING_CURRENCY_PATTERN
 from src.schemas.common import EscalationType
 
@@ -154,6 +155,21 @@ def customer_text_for_escalation(
     return str(customer_text or "").strip()
 
 
+def non_sales_notice(metadata: Mapping[str, Any] | None) -> Mapping[str, Any]:
+    if not isinstance(metadata, Mapping):
+        return {}
+    for key in ("non_sales_notice", "non_sales_team_notice"):
+        notice = metadata.get(key)
+        if isinstance(notice, Mapping) and notice.get("intent"):
+            return notice
+    return {}
+
+
+def active_non_sales_inquiry(metadata: Mapping[str, Any] | None) -> bool:
+    notice = non_sales_notice(metadata)
+    return bool(notice) and not notice.get("purchase_evidence")
+
+
 def critical_escalation_decision(
     *,
     customer_text: str | None,
@@ -219,9 +235,10 @@ def critical_escalation_decision(
             trigger="critical_customer_incident",
         )
 
-    b2b_decision = b2b_handoff_decision(text)
-    if b2b_decision.allowed:
-        return b2b_decision
+    if not active_non_sales_inquiry(metadata):
+        b2b_decision = b2b_handoff_decision(text)
+        if b2b_decision.allowed:
+            return b2b_decision
     # tj-r62i: a bulk quantity given in an earlier turn still routes, unless
     # this conversation's wholesale handoff already happened.
     if not metadata.get(WHOLESALE_HANDOFF_METADATA_KEY):
@@ -521,18 +538,11 @@ def _largest_bulk_quantity(text: str) -> int:
 def recorded_wholesale_quantity(
     conversation_metadata: Mapping[str, Any] | None,
 ) -> int:
-    """Total units recorded semantically by the model in ``selected_items``."""
+    """Read current model-recorded demand from the canonical or legacy slots."""
     if not isinstance(conversation_metadata, Mapping):
         return 0
-    state = conversation_metadata.get("dialogue_state")
-    if not isinstance(state, Mapping):
-        return 0
-    slots = state.get("slots")
-    if not isinstance(slots, Mapping):
-        return 0
-    items = slots.get("selected_items")
-    if not isinstance(items, list):
-        return 0
+    slots = DialogueState.load(dict(conversation_metadata)).slots
+    items = slots.selected_items
     total = 0
     for row in items:
         if not isinstance(row, Mapping):
@@ -546,7 +556,7 @@ def recorded_wholesale_quantity(
             continue
         if qty > 0:
             total += qty
-    return total
+    return max(total, slots.project_units or 0)
 
 
 def wholesale_quantity(customer_text: str | None) -> int:
@@ -571,6 +581,15 @@ def wholesale_handoff_from_history(
     spreadsheet/photo BOQs that the model records via ``record_customer_requirements``.
     """
 
+    notice = non_sales_notice(conversation_metadata)
+    if active_non_sales_inquiry(conversation_metadata):
+        return CriticalEscalationDecision(
+            allowed=False, reason="The sender is making a non-sales inquiry."
+        )
+    # After a supplier becomes a buyer, their former MOQ and catalog numbers
+    # still appear in the untyped transcript. Only use fresh or recorded demand.
+    if notice:
+        recent_history = ()
     texts = [str(customer_text or "")]
     for line in recent_history:
         line_text = str(line or "")

@@ -35,6 +35,7 @@ class DialogueSlots(BaseModel):
     # The four facts a quotation needs, as the customer gave them. Written only
     # by `record_customer_requirements`, which the model calls after reading the
     # message: no regex can cover every way a person writes "ten of those".
+    project_units: int | None = None
     budget_cap_aed: float | None = None
     needed_by: str | None = None
     decision_authority: str | None = None

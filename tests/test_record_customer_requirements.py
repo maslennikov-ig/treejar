@@ -139,3 +139,50 @@ async def test_quantity_update_returns_the_current_selection_and_retained_budget
     )
     assert "generic acknowledgement" in result
     ctx.deps.db.flush.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_project_total_before_catalog_match_reaches_the_handoff_policy():
+    from src.llm.escalation_policy import critical_escalation_decision
+
+    query = "We have 2 colours; we need 192 of each. total 384"
+    ctx = context(query)
+    result = await engine.record_customer_requirements(ctx, project_units=384)
+    metadata = ctx.deps.conversation.metadata_
+    assert "384 units" in result
+    assert not DialogueState.load(metadata).slots.selected_items
+    decision = critical_escalation_decision(
+        customer_text=query, conversation_metadata=metadata
+    )
+    assert decision.allowed and "384 units" in decision.reason
+    assert (
+        await engine.record_customer_requirements(ctx, project_units=38)
+    ).startswith("Not recorded")
+
+
+@pytest.mark.asyncio
+async def test_supplier_moq_is_not_an_order_and_sender_can_later_purchase():
+    from src.llm.escalation_policy import critical_escalation_decision
+    from src.llm.message_processor import _deterministic_wholesale_handoff
+
+    ctx = context("MOQ: 50 pcs", {"non_sales_notice": {"intent": "supplier_pitch"}})
+
+    def decision():
+        return critical_escalation_decision(
+            customer_text=ctx.deps.user_query,
+            conversation_metadata=ctx.deps.conversation.metadata_,
+            recent_history=["user: MOQ: 50 pcs"],
+        )
+
+    assert not decision().allowed
+    assert not await _deterministic_wholesale_handoff(
+        SimpleNamespace(deps=ctx.deps, combined_text=ctx.deps.user_query)
+    )
+    assert (
+        await engine.record_customer_requirements(ctx, project_units=50)
+    ).startswith("Not recorded")
+    ctx.deps.user_query = "We want to buy two desks"
+    await engine.record_customer_intent(ctx, begin_purchase=True)
+    assert not decision().allowed
+    ctx.deps.user_query = "Please quote 30 chairs"
+    assert decision().allowed
