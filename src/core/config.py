@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any, Literal
 
 from pydantic import (
@@ -254,3 +255,34 @@ async def get_system_config(db: Any, key: str, default: str) -> str:
         )
 
     return default
+
+
+_UNPATCHED_GET_SYSTEM_CONFIG = get_system_config
+
+
+async def get_system_configs(
+    db: Any,
+    defaults: Mapping[str, str],
+) -> dict[str, str]:
+    """Fetch multiple configuration values in one query, fallback to defaults."""
+    resolved = {key: str(default) for key, default in defaults.items()}
+    if not resolved:
+        return resolved
+
+    from sqlalchemy import select
+
+    from src.models.system_config import SystemConfig
+
+    try:
+        stmt = select(SystemConfig).where(SystemConfig.key.in_(tuple(resolved)))
+        result = await db.execute(stmt)
+        for config in result.scalars().all():
+            if config.key in resolved:
+                resolved[str(config.key)] = str(config.value)
+    except Exception:
+        logger.warning(
+            "Failed to fetch system configs %s, using defaults",
+            tuple(resolved),
+        )
+
+    return resolved

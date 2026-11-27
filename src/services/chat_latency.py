@@ -16,6 +16,7 @@ _PHASES = frozenset(
     {
         "queue_wait",
         "arq_queue_wait",
+        "quiet_wait",
         "pre_llm",
         "llm",
         "llm_context",
@@ -32,7 +33,7 @@ _PHASES = frozenset(
 )
 _DERIVED_PHASES = frozenset({"to_text_delivery", "total"})
 _DOMINANT_EXCLUDED_PHASES = frozenset(
-    {"arq_queue_wait", "llm", "to_text_delivery", "total"}
+    {"arq_queue_wait", "quiet_wait", "llm", "to_text_delivery", "total"}
 )
 _STATUSES = frozenset(
     {
@@ -62,6 +63,7 @@ class ChatLatencyTrace:
     _phase_ms: dict[str, float] = field(default_factory=dict, init=False, repr=False)
     _queue_wait_ms: float | None = field(default=None, init=False, repr=False)
     _arq_queue_wait_ms: float | None = field(default=None, init=False, repr=False)
+    _quiet_wait_ms: float | None = field(default=None, init=False, repr=False)
     _text_delivered_at: float | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -89,6 +91,11 @@ class ChatLatencyTrace:
             raise ValueError("arq queue wait must be a finite non-negative number")
         self._arq_queue_wait_ms = round(value, 3)
 
+    def set_quiet_wait_ms(self, value: float) -> None:
+        if not math.isfinite(value) or value < 0:
+            raise ValueError("quiet wait must be a finite non-negative number")
+        self._quiet_wait_ms = round(value, 3)
+
     def mark_text_delivered(self) -> None:
         if self._text_delivered_at is None:
             self._text_delivered_at = self.clock()
@@ -101,6 +108,8 @@ class ChatLatencyTrace:
             latency_ms["queue_wait"] = self._queue_wait_ms
         if self._arq_queue_wait_ms is not None:
             latency_ms["arq_queue_wait"] = self._arq_queue_wait_ms
+        if self._quiet_wait_ms is not None:
+            latency_ms["quiet_wait"] = self._quiet_wait_ms
         if self._text_delivered_at is not None:
             latency_ms["to_text_delivery"] = _milliseconds(
                 self._text_delivered_at - self._started_at
@@ -228,7 +237,13 @@ def summarize_chat_latency(samples: Iterable[Mapping[str, Any]]) -> dict[str, An
         "status_counts": dict(sorted(status_counts.items())),
         "dominant_phase": dominant_phase,
     }
-    for phase in ("queue_wait", "arq_queue_wait", "to_text_delivery", "total"):
+    for phase in (
+        "queue_wait",
+        "arq_queue_wait",
+        "quiet_wait",
+        "to_text_delivery",
+        "total",
+    ):
         if values := phase_values.get(phase):
             summary[f"{phase}_ms"] = _metric(values)
     summary["phase_ms"] = {

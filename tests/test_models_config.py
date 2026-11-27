@@ -10,6 +10,7 @@ from src.core.config import (
     DEFAULT_VOICE_TRANSCRIPTION_MODEL,
     Settings,
     get_system_config,
+    get_system_configs,
 )
 from src.llm.model_capabilities import (
     ModelCapabilities,
@@ -40,6 +41,41 @@ async def test_get_system_config() -> None:
 
     val_missing = await get_system_config(mock_db, "missing_key", "default_val")
     assert val_missing == "default_val"
+
+
+@pytest.mark.asyncio
+async def test_get_system_configs_batches_query_and_falls_back(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    mock_db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [
+        SystemConfig(key="prose_guards_mode", value="trust_model"),
+        SystemConfig(key="customer_facts_max_context_orders", value=4),
+    ]
+    mock_db.execute.return_value = mock_result
+
+    defaults = {
+        "customer_facts_mode": "disabled",
+        "customer_facts_max_context_orders": "2",
+        "prose_guards_mode": "auto",
+    }
+    resolved = await get_system_configs(mock_db, defaults)
+    assert resolved == {
+        "customer_facts_mode": "disabled",
+        "customer_facts_max_context_orders": "4",
+        "prose_guards_mode": "trust_model",
+    }
+    mock_db.execute.assert_awaited_once()
+
+    assert await get_system_configs(mock_db, {}) == {}
+    mock_db.execute.assert_awaited_once()
+
+    mock_db.execute.side_effect = RuntimeError("db offline")
+    with caplog.at_level(logging.WARNING, logger="src.core.config"):
+        fallback = await get_system_configs(mock_db, defaults)
+    assert fallback == defaults
+    assert "Failed to fetch system configs" in caplog.text
 
 
 def test_model_capabilities_module_stays_dependency_light() -> None:

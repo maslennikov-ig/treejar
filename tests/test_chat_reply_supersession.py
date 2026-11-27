@@ -19,6 +19,7 @@ import pytest
 from src.llm import LLMResponse
 from src.models.conversation import Conversation
 from src.models.message import Message
+from src.models.system_config import SystemConfig
 from src.schemas.webhook import WazzupIncomingMessage
 from src.services import chat
 from src.services.chat import (
@@ -164,6 +165,11 @@ async def _run_batches(
 
     def execute(statement: Any) -> MagicMock:
         result = MagicMock()
+        if "system_configs" in str(statement):
+            result.scalars.return_value.first.return_value = SystemConfig(
+                key="bot_enabled", value=True
+            )
+            return result
         result.scalars.return_value.first.return_value = None
         if "wazzup_message_id" in str(statement):
             # Messages already stored are not stored again.
@@ -268,6 +274,11 @@ async def test_manager_echo_arriving_during_generation_aborts_bot_send_and_takes
 
     def execute(statement: Any) -> MagicMock:
         result = MagicMock()
+        if "system_configs" in str(statement):
+            result.scalars.return_value.first.return_value = SystemConfig(
+                key="bot_enabled", value=True
+            )
+            return result
         result.scalars.return_value.first.return_value = None
         if "wazzup_message_id" in str(statement):
             result.scalars.return_value.all.return_value = [

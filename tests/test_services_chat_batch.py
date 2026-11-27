@@ -239,7 +239,10 @@ async def test_process_incoming_batch_recovers_durable_processing_batch_after_cr
             batch_ref=batch_ref,
         )
 
-    inner.assert_awaited_once_with(redis, batch_ref, [raw_message])
+    inner.assert_awaited_once()
+    assert inner.await_args.args == (redis, batch_ref, [raw_message])
+    assert isinstance(inner.await_args.kwargs["quiet_wait_seconds"], float)
+    assert isinstance(inner.await_args.kwargs["pickup_time"], datetime)
     redis.lpop.assert_not_awaited()
     redis.lmove.assert_not_awaited()
     assert len(_processing_finalization_calls(redis, batch_ref)) == 1
@@ -916,10 +919,10 @@ async def test_process_incoming_batch_sends_deferred_product_media_after_bot_rep
         MockResult(existing_conv),  # conversation lookup
         MockResult([]),  # msg dedup check
         MockResult(None),  # bot_reply audit idempotency lookup
-        MockResult(2),  # total messages after assistant commit
-        MockResult(None),  # no existing summary
         MockResult(None),  # product media audit idempotency lookup
         MockResult(None),  # product caption audit idempotency lookup
+        MockResult(2),  # total messages after assistant commit
+        MockResult(None),  # no existing summary
     ]
 
     mock_process_message.return_value = LLMResponse(
@@ -1943,3 +1946,264 @@ async def test_process_incoming_batch_uses_server_received_at_and_arq_enqueue_ti
     timings = parsed_records[0]["latency_ms"]
     assert 5000.0 <= timings["queue_wait"] < 15000.0
     assert 4000.0 <= timings["arq_queue_wait"] < 15000.0
+    assert timings["quiet_wait"] == 0.0
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_process_incoming_batch_splits_quiet_wait_and_defers_summary_after_media(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from datetime import UTC, timedelta
+
+    from src.llm import LLMResponse
+    from src.llm.engine import ProductMediaPayload
+    from src.services.chat_latency import parse_chat_latency_line
+    from src.services.inbound_batch import serialize_inbound_message
+
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+    mock_session.add = MagicMock()
+
+    existing_conv = MagicMock()
+    existing_conv.id = "conv-quiet-media"
+    existing_conv.phone = "1234567890"
+    existing_conv.escalation_status = "none"
+    existing_conv.metadata_ = {"inbound_channel_id": "chan-1"}
+    mock_session.execute.side_effect = [
+        MockResult(SystemConfig(key="bot_enabled", value=True)),
+        MockResult(existing_conv),
+        MockResult([]),
+        MockResult(None),
+    ]
+
+    mock_process_message.return_value = LLMResponse(
+        text="Here is the chair.",
+        tokens_in=10,
+        tokens_out=12,
+        cost=0.01,
+        model="test-model",
+        deferred_product_media=(
+            ProductMediaPayload(
+                url="https://example.com/chair.jpg",
+                caption="Ergonomic Chair",
+                product_key="chair-1",
+                zoho_item_id=None,
+            ),
+        ),
+    )
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_wazzup = AsyncMock()
+    mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
+    mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_wazzup.send_text.return_value = "msg-text"
+    mock_wazzup.send_typing = AsyncMock()
+    mock_wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
+
+    events: list[str] = []
+
+    async def _send_media(*_args: object, **_kwargs: object) -> None:
+        events.append("deferred_media")
+
+    async def _enqueue_summary(*_args: object, **_kwargs: object) -> None:
+        events.append("summary_refresh_enqueue")
+
+    now_utc = datetime.now(UTC)
+    arq_enqueue_at = now_utc - timedelta(seconds=2)
+    msg = WazzupIncomingMessage(
+        messageId="msg-quiet-split",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Hi",
+        channelId="chan-1",
+    )
+    mock_redis = AsyncMock()
+    _seed_inbound_redis(
+        mock_redis,
+        [serialize_inbound_message(msg, received_at=now_utc.timestamp())],
+    )
+
+    with (
+        patch("src.services.chat.settings.wazzup_channel_id", "chan-1"),
+        patch(
+            "src.services.chat.wait_for_inbound_quiet",
+            AsyncMock(return_value=12.5),
+        ),
+        patch(
+            "src.services.chat._send_deferred_product_media",
+            AsyncMock(side_effect=_send_media),
+        ),
+        patch(
+            "src.services.chat._enqueue_summary_refresh_if_needed",
+            AsyncMock(side_effect=_enqueue_summary),
+        ),
+        caplog.at_level("INFO", logger="src.services.chat"),
+    ):
+        await process_incoming_batch(
+            {"redis": mock_redis, "enqueue_time": arq_enqueue_at},
+            "1234567890",
+        )
+
+    assert events == ["deferred_media", "summary_refresh_enqueue"]
+    parsed_records = [
+        parsed
+        for record in caplog.records
+        if (parsed := parse_chat_latency_line(record.getMessage())) is not None
+    ]
+    assert len(parsed_records) == 1
+    timings = parsed_records[0]["latency_ms"]
+    assert timings["quiet_wait"] == 12500.0
+    assert 1500.0 <= timings["arq_queue_wait"] < 10000.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("scenario", "expected_status"),
+    [
+        ("voice_fallback", "voice_fallback"),
+        ("escalation_fallback", "escalation_fallback"),
+        ("manual_takeover_before_llm", "manual_takeover"),
+        ("manual_takeover_pre_llm", "manual_takeover"),
+        ("manual_takeover_timeout", "manual_takeover"),
+        ("manual_takeover_post_llm", "manual_takeover"),
+        ("skipped_superseded", "skipped"),
+    ],
+)
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_process_batch_inner_emits_chat_latency_on_early_returns(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+    scenario: str,
+    expected_status: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from src.llm import LLMResponse
+    from src.services.chat import _process_batch_inner
+    from src.services.chat_latency import parse_chat_latency_line
+
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+    mock_session.add = MagicMock()
+
+    conv = MagicMock()
+    conv.id = "conv-early"
+    conv.phone = "1234567890"
+    conv.language = "en"
+    conv.escalation_status = (
+        "pending"
+        if scenario == "escalation_fallback"
+        else ("manual_takeover" if scenario == "manual_takeover_pre_llm" else "none")
+    )
+    conv.metadata_ = {"inbound_channel_id": "chan-1"}
+    mock_session.execute.side_effect = [
+        MockResult(SystemConfig(key="bot_enabled", value=True)),
+        MockResult(conv),
+        MockResult([]),
+        MockResult(None),
+    ]
+
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_wazzup = AsyncMock()
+    mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
+    mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_wazzup.send_text.return_value = "msg-early"
+    mock_wazzup.send_typing = AsyncMock()
+    mock_wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
+
+    if scenario == "manual_takeover_timeout":
+        mock_process_message.side_effect = TimeoutError()
+    else:
+        mock_process_message.return_value = LLMResponse(
+            text="Draft reply",
+            tokens_in=5,
+            tokens_out=5,
+            cost=0.01,
+            model="test-model",
+        )
+
+    msg = WazzupIncomingMessage(
+        messageId=f"msg-{scenario}",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="voice" if scenario == "voice_fallback" else "text",
+        text=None if scenario == "voice_fallback" else "Hello",
+        contentUri="https://cdn.example.com/voice.ogg"
+        if scenario == "voice_fallback"
+        else None,
+        channelId="chan-1",
+    )
+    mock_redis = AsyncMock()
+    mock_redis.set.return_value = True
+    mock_redis.get.return_value = None
+
+    takeover_side_effect = {
+        "manual_takeover_before_llm": [True],
+        "manual_takeover_timeout": [False, True],
+        "manual_takeover_post_llm": [False, True],
+    }.get(scenario, [False, False])
+
+    with (
+        patch("src.services.chat.settings.wazzup_channel_id", "chan-1"),
+        patch(
+            "src.integrations.voice.voxtral.transcribe_audio_with_metadata",
+            AsyncMock(side_effect=RuntimeError("asr down")),
+        ),
+        patch("src.services.chat._handle_escalation_fallback", AsyncMock()),
+        patch(
+            "src.services.chat._manager_takeover_active",
+            AsyncMock(side_effect=takeover_side_effect),
+        ),
+        patch(
+            "src.services.chat._reply_may_be_superseded",
+            return_value=(scenario == "skipped_superseded"),
+        ),
+        patch(
+            "src.services.chat._newer_customer_messages_waiting",
+            AsyncMock(return_value=(scenario == "skipped_superseded")),
+        ),
+        caplog.at_level("INFO", logger="src.services.chat"),
+    ):
+        await _process_batch_inner(
+            mock_redis,
+            "1234567890",
+            [msg.model_dump_json()],
+            quiet_wait_seconds=1.5,
+        )
+
+    parsed_records = [
+        parsed
+        for record in caplog.records
+        if (parsed := parse_chat_latency_line(record.getMessage())) is not None
+    ]
+    assert len(parsed_records) == 1
+    assert parsed_records[0]["status"] == expected_status
+    assert parsed_records[0]["latency_ms"]["quiet_wait"] == 1500.0

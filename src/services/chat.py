@@ -1177,7 +1177,8 @@ async def process_incoming_batch(
     try:
         while True:
             # Answer a burst of customer messages once, after they stop typing.
-            await wait_for_inbound_quiet(redis, queue_key)
+            pickup_time = datetime.now(UTC)
+            quiet_waited = await wait_for_inbound_quiet(redis, queue_key)
             try:
                 raw_messages = await _claim_inbound_messages(
                     redis,
@@ -1227,7 +1228,13 @@ async def process_incoming_batch(
                 else:
                     enqueue_token = _CURRENT_BATCH_ENQUEUE_TIME.set(claim_enqueue_time)
                     try:
-                        await _process_batch_inner(redis, queue_token, raw_messages)
+                        await _process_batch_inner(
+                            redis,
+                            queue_token,
+                            raw_messages,
+                            quiet_wait_seconds=quiet_waited,
+                            pickup_time=pickup_time,
+                        )
                     finally:
                         _CURRENT_BATCH_ENQUEUE_TIME.reset(enqueue_token)
                     await _mark_inbound_execution_completed(redis, batch_id)
@@ -1372,12 +1379,22 @@ def _inbound_message_received_at_utc(message: WazzupIncomingMessage) -> datetime
     ).replace(tzinfo=UTC)
 
 
+def _log_chat_latency(latency_trace: ChatLatencyTrace, *, status: str) -> None:
+    logger.info(
+        "%s %s",
+        CHAT_LATENCY_EVENT,
+        format_chat_latency(latency_trace, status=status),
+    )
+
+
 async def _process_batch_inner(
     redis: Any,
     queue_token: str,
     raw_messages: Sequence[str],
     *,
     enqueue_time: Any = None,
+    quiet_wait_seconds: float | None = None,
+    pickup_time: Any = None,
 ) -> None:
     """Inner implementation — separated for clean error handling."""
     batch_id = _inbound_batch_id(raw_messages)
@@ -1433,11 +1450,14 @@ async def _process_batch_inner(
         enqueue_time if enqueue_time is not None else _CURRENT_BATCH_ENQUEUE_TIME.get()
     )
     if effective_enqueue_time is not None:
+        effective_pickup_time = _coerce_utc_datetime(pickup_time) or now_utc
         arq_queue_wait_ms = max(
-            (now_utc - effective_enqueue_time).total_seconds() * 1000.0,
+            (effective_pickup_time - effective_enqueue_time).total_seconds() * 1000.0,
             0.0,
         )
         latency_trace.set_arq_queue_wait_ms(arq_queue_wait_ms)
+    if quiet_wait_seconds is not None:
+        latency_trace.set_quiet_wait_ms(max(float(quiet_wait_seconds) * 1000.0, 0.0))
 
     expected_channel = settings.wazzup_channel_id
     if not expected_channel:
@@ -2003,6 +2023,7 @@ async def _process_batch_inner(
                     "batch_ref=%s",
                     batch_ref,
                 )
+                _log_chat_latency(latency_trace, status="manual_takeover")
                 return
 
             if should_send_voice_fallback:
@@ -2034,6 +2055,7 @@ async def _process_batch_inner(
                     )
                 )
                 await db.commit()
+                _log_chat_latency(latency_trace, status="voice_fallback")
                 return
 
             # 4. Active human handoff: send fallback to client + re-notify manager.
@@ -2052,12 +2074,14 @@ async def _process_batch_inner(
                     redis=redis,
                     db=db,
                 )
+                _log_chat_latency(latency_trace, status="escalation_fallback")
                 return
             if conv.escalation_status == "manual_takeover":
                 logger.info(
                     "Manual takeover active; skipping LLM: batch_ref=%s",
                     batch_ref,
                 )
+                _log_chat_latency(latency_trace, status="manual_takeover")
                 return
 
             # 5. Generate LLM response
@@ -2135,6 +2159,7 @@ async def _process_batch_inner(
                             "skipping timeout fallback: batch_ref=%s",
                             batch_ref,
                         )
+                        _log_chat_latency(latency_trace, status="manual_takeover")
                         return
                     # R3-11: Send timeout fallback in client's language
                     timeout_msg = (
@@ -2178,6 +2203,7 @@ async def _process_batch_inner(
                         "aborting outbound reply: batch_ref=%s",
                         batch_ref,
                     )
+                    _log_chat_latency(latency_trace, status="manual_takeover")
                     return
 
                 escalation_mutated = _snapshot_manager_alert_state(
@@ -2206,6 +2232,7 @@ async def _process_batch_inner(
                         batch_ref,
                         len(raw_messages),
                     )
+                    _log_chat_latency(latency_trace, status="skipped")
                     return
 
                 provider_followup = (
@@ -2329,15 +2356,6 @@ async def _process_batch_inner(
                         conv, db, combined_text, capacity_notice
                     )
 
-                summary_started = latency_trace.start_phase()
-                try:
-                    await _enqueue_summary_refresh_if_needed(redis, db, conv.id)
-                finally:
-                    latency_trace.finish_phase(
-                        "summary_refresh_enqueue",
-                        summary_started,
-                    )
-
                 if bot_reply_sent and llm_response.deferred_product_media:
                     media_started = latency_trace.start_phase()
                     try:
@@ -2355,6 +2373,15 @@ async def _process_batch_inner(
                         )
                     finally:
                         latency_trace.finish_phase("deferred_media", media_started)
+
+                summary_started = latency_trace.start_phase()
+                try:
+                    await _enqueue_summary_refresh_if_needed(redis, db, conv.id)
+                finally:
+                    latency_trace.finish_phase(
+                        "summary_refresh_enqueue",
+                        summary_started,
+                    )
                 if bot_reply_sent:
                     logger.info("Reply sent successfully: batch_ref=%s", batch_ref)
                 logger.info(

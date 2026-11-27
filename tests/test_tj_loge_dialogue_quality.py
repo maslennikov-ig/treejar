@@ -26,6 +26,7 @@ from src.llm import LLMResponse, message_processor
 from src.llm.non_sales_intent import non_sales_intent
 from src.models.conversation import Conversation
 from src.models.message import Message
+from src.models.system_config import SystemConfig
 from src.schemas.webhook import WazzupIncomingMessage, WazzupMedia
 from src.services import inbound_media
 from src.services.chat import process_incoming_batch
@@ -425,6 +426,11 @@ async def test_photo_batch_reaches_the_turn_without_reading_it_twice(
 
     def execute(statement: Any) -> MagicMock:
         result = MagicMock()
+        if "system_configs" in str(statement):
+            result.scalars.return_value.first.return_value = SystemConfig(
+                key="bot_enabled", value=True
+            )
+            return result
         result.scalars.return_value.first.return_value = None
         if "wazzup_message_id" in str(statement):
             result.tuples.return_value.all.return_value = (

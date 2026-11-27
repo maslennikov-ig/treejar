@@ -11435,3 +11435,119 @@ async def test_tools_lookup_customer_reports_crm_outage(
     result = await lookup_customer(ctx, "+971501234567")
 
     assert "temporarily unavailable" in result
+
+
+@pytest.mark.asyncio
+async def test_read_turn_config_batches_when_unpatched_and_falls_back_when_patched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from src.core import config as config_module
+    from src.llm.message_processor import _read_turn_config
+    from src.models.system_config import SystemConfig
+
+    mock_db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [
+        SystemConfig(key="prose_guards_mode", value="trust_model"),
+        SystemConfig(key="customer_facts_mode", value="enforce"),
+    ]
+    mock_db.execute.return_value = mock_result
+
+    turn: Any = SimpleNamespace(db=mock_db)
+    cfg = await _read_turn_config(turn)
+    assert cfg.prose_guards_mode == "trust_model"
+    assert cfg.customer_facts_mode == "enforce"
+    mock_db.execute.assert_awaited_once()
+
+    patched = AsyncMock(
+        side_effect=lambda _db, key, default: (
+            "every_catalog_turn" if key == "claim_contract_scope" else default
+        )
+    )
+    monkeypatch.setattr(config_module, "get_system_config", patched)
+    patched_cfg = await _read_turn_config(turn)
+    assert patched_cfg.claim_contract_every_catalog_turn is True
+    assert patched.await_count == 4
+
+
+@pytest.mark.asyncio
+async def test_load_turn_overlaps_crm_lookup_with_history_and_cancels_on_error(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    import asyncio
+
+    from src.llm.message_processor import _load_turn
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    crm_started = asyncio.Event()
+    history_started = asyncio.Event()
+    crm_cancelled = asyncio.Event()
+
+    async def _find_contact(_phone: str) -> dict[str, Any]:
+        crm_started.set()
+        await history_started.wait()
+        return {"Segment": "B2B", "Full_Name": "Dana"}
+
+    async def _build_history(*_args: Any, **_kwargs: Any) -> list[Any]:
+        history_started.set()
+        await crm_started.wait()
+        return []
+
+    zoho_crm.find_contact_by_phone.side_effect = _find_contact
+    with patch(
+        "src.llm.engine.build_message_history",
+        AsyncMock(side_effect=_build_history),
+    ):
+        turn = await _load_turn(
+            conversation_id=conv.id,
+            combined_text="Hello",
+            db=db,
+            redis=redis,
+            embedding_engine=embedding,
+            zoho_client=zoho,
+            messaging_client=messaging,
+            crm_client=zoho_crm,
+            source_message_id="src-1",
+            latency_trace=None,
+        )
+
+    assert turn.deps.crm_context is not None
+    assert turn.deps.crm_context["Returning_Customer"] == "yes"
+
+    async def _slow_crm(_phone: str) -> None:
+        try:
+            await asyncio.sleep(10.0)
+        except asyncio.CancelledError:
+            crm_cancelled.set()
+            raise
+
+    zoho_crm.find_contact_by_phone.side_effect = _slow_crm
+
+    async def _failing_history(*_args: Any, **_kwargs: Any) -> list[Any]:
+        await asyncio.sleep(0)
+        raise RuntimeError("history failed")
+
+    with (
+        patch(
+            "src.llm.engine.build_message_history",
+            AsyncMock(side_effect=_failing_history),
+        ),
+        pytest.raises(RuntimeError, match="history failed"),
+    ):
+        await _load_turn(
+            conversation_id=conv.id,
+            combined_text="Hello",
+            db=db,
+            redis=redis,
+            embedding_engine=embedding,
+            zoho_client=zoho,
+            messaging_client=messaging,
+            crm_client=zoho_crm,
+            source_message_id="src-2",
+            latency_trace=None,
+        )
+    assert crm_cancelled.is_set()

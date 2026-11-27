@@ -19,10 +19,12 @@ suite rather than trusting anyone to keep a second list correct.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 from collections.abc import Mapping
+from contextlib import suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
@@ -1238,41 +1240,40 @@ async def _read_turn_config(turn: _Turn) -> _TurnConfig:
     # Imported at call time, not at module import: the suite patches
     # `src.core.config.get_system_config`, and a module-level binding would
     # freeze the real one before the patch lands.
-    from src.core.config import get_system_config
+    import src.core.config as config_module
+
+    defaults = {
+        "customer_facts_mode": settings.customer_facts_mode,
+        "customer_facts_max_context_orders": str(
+            settings.customer_facts_max_context_orders
+        ),
+        CLAIM_CONTRACT_SCOPE_KEY: "requested_gaps",
+        "prose_guards_mode": settings.prose_guards_mode,
+    }
+    if config_module.get_system_config is getattr(
+        config_module, "_UNPATCHED_GET_SYSTEM_CONFIG", None
+    ):
+        raw_values = await config_module.get_system_configs(turn.db, defaults)
+    else:
+        raw_values = {
+            key: await config_module.get_system_config(turn.db, key, default)
+            for key, default in defaults.items()
+        }
 
     return _TurnConfig(
         customer_facts_mode=engine._normalize_customer_facts_mode(
-            await get_system_config(
-                turn.db,
-                "customer_facts_mode",
-                settings.customer_facts_mode,
-            )
+            raw_values["customer_facts_mode"]
         ),
         customer_facts_max_context_orders=engine._customer_facts_int_config(
-            await get_system_config(
-                turn.db,
-                "customer_facts_max_context_orders",
-                str(settings.customer_facts_max_context_orders),
-            ),
+            raw_values["customer_facts_max_context_orders"],
             default=settings.customer_facts_max_context_orders,
             minimum=0,
             maximum=10,
         ),
         claim_contract_every_catalog_turn=_claim_contract_runs_every_catalog_turn(
-            await get_system_config(
-                turn.db,
-                CLAIM_CONTRACT_SCOPE_KEY,
-                "requested_gaps",
-            )
+            raw_values[CLAIM_CONTRACT_SCOPE_KEY]
         ),
-        prose_guards_mode=str(
-            await get_system_config(
-                turn.db,
-                "prose_guards_mode",
-                settings.prose_guards_mode,
-            )
-            or "auto"
-        ),
+        prose_guards_mode=str(raw_values["prose_guards_mode"] or "auto"),
     )
 
 
@@ -1465,6 +1466,42 @@ async def _sales_agent_route(
     )
 
 
+async def _fetch_crm_context(
+    redis: Any,
+    crm_client: ZohoCRMClient | None,
+    phone: str | None,
+) -> dict[str, Any] | None:
+    """Fetch and cache bounded CRM customer context using Redis and CRM only."""
+    if not crm_client or not phone:
+        return None
+
+    from src.core.cache import get_cached_crm_profile, set_cached_crm_profile
+
+    crm_context = await get_cached_crm_profile(redis, phone)
+    if crm_context:
+        return crm_context
+
+    try:
+        contact = await crm_client.find_contact_by_phone(phone)
+    except Exception as exc:
+        # The profile only enriches the turn. A CRM outage or rejected
+        # credentials (2026-09-29) must not cost the customer a reply;
+        # leave the context unknown rather than claim a new customer.
+        logger.warning(
+            "CRM profile lookup failed; replying without it: %s",
+            type(exc).__name__,
+        )
+        return None
+
+    if contact:
+        bound_context: dict[str, Any] = dict(
+            build_bounded_returning_customer_context(contact)
+        )
+        await set_cached_crm_profile(redis, phone, bound_context)
+        return bound_context
+    return dict(build_bounded_returning_customer_context(None))
+
+
 async def _load_turn(
     *,
     conversation_id: UUID,
@@ -1488,35 +1525,20 @@ async def _load_turn(
     if not conv:
         raise ValueError(f"Conversation {conversation_id} not found")
 
-    from src.core.cache import get_cached_crm_profile, set_cached_crm_profile
-
-    # Fetch CRM Profile for context enrichment
-    crm_context = None
-    if crm_client and conv.phone:
-        crm_context = await get_cached_crm_profile(redis, conv.phone)
-        if not crm_context:
-            try:
-                contact = await crm_client.find_contact_by_phone(conv.phone)
-            except Exception as exc:
-                # The profile only enriches the turn. A CRM outage or rejected
-                # credentials (2026-09-29) must not cost the customer a reply;
-                # leave the context unknown rather than claim a new customer.
-                logger.warning(
-                    "CRM profile lookup failed; replying without it: %s",
-                    type(exc).__name__,
-                )
-            else:
-                if contact:
-                    crm_context = build_bounded_returning_customer_context(contact)
-                    await set_cached_crm_profile(redis, conv.phone, crm_context)
-                else:
-                    crm_context = build_bounded_returning_customer_context(None)
-
     # Optional shared dict for PII placeholders across history.
     pii_map: dict[str, str] = {}
 
-    # Process history (also populates pii_map when PII masking is enabled).
-    history = await engine.build_message_history(db, conversation_id, pii_map)
+    # Overlap CRM profile lookup (Redis + HTTP) with DB message history load.
+    crm_task = asyncio.create_task(_fetch_crm_context(redis, crm_client, conv.phone))
+    try:
+        # Process history (also populates pii_map when PII masking is enabled).
+        history = await engine.build_message_history(db, conversation_id, pii_map)
+        crm_context = await crm_task
+    finally:
+        if not crm_task.done():
+            crm_task.cancel()
+        with suppress(Exception, asyncio.CancelledError):
+            await crm_task
 
     # Keep contact details visible by default for deterministic fact extraction.
     masked_text, new_piis = mask_pii(combined_text)

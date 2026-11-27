@@ -110,3 +110,29 @@ def test_chat_latency_tracks_arq_queue_wait_without_skewing_dominant_phase() -> 
     }
     assert summary["dominant_phase"] == "queue_wait"
     assert "arq_queue_wait" not in summary["phase_ms"]
+
+
+def test_chat_latency_tracks_quiet_wait_without_skewing_dominant_phase() -> None:
+    values = _clock([10.0, 11.0, 12.0, 13.0])
+    trace = ChatLatencyTrace(clock=lambda: next(values))
+    trace.set_queue_wait_ms(15200.0)
+    trace.set_arq_queue_wait_ms(180.0)
+    trace.set_quiet_wait_ms(15000.1234)
+    pre_started = trace.start_phase()
+    trace.finish_phase("pre_llm", pre_started)
+
+    payload = trace.snapshot(status="sent")
+    assert payload["latency_ms"]["quiet_wait"] == 15000.123
+    assert payload["latency_ms"]["arq_queue_wait"] == 180.0
+
+    summary = summarize_chat_latency([payload])
+    assert summary["quiet_wait_ms"] == {
+        "p50": 15000.123,
+        "p95": 15000.123,
+        "max": 15000.123,
+    }
+    assert summary["dominant_phase"] == "queue_wait"
+    assert "quiet_wait" not in summary["phase_ms"]
+
+    with pytest.raises(ValueError, match="quiet wait"):
+        trace.set_quiet_wait_ms(-1.0)

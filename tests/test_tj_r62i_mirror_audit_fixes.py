@@ -43,6 +43,7 @@ from src.llm.engine import _MADE_TO_ORDER_STOCK_LINE, SalesDeps, search_products
 from src.llm.escalation_policy import b2b_handoff_decision, wholesale_quantity
 from src.models.conversation import Conversation
 from src.models.message import Message
+from src.models.system_config import SystemConfig
 from src.rag.made_to_order_fallback import search_products_with_made_to_order_fallback
 from src.schemas.product import ProductSearchQuery
 from src.schemas.webhook import WazzupIncomingMessage, WazzupMedia
@@ -687,6 +688,11 @@ async def test_handoff_turn_is_never_superseded_and_suppresses_immediate_duplica
             return result
         if "conversation_summaries" in stmt_str:
             result.scalar_one_or_none.return_value = None
+            return result
+        if "system_configs" in stmt_str:
+            result.scalars.return_value.first.return_value = SystemConfig(
+                key="bot_enabled", value=True
+            )
             return result
         result.scalars.return_value.first.return_value = None
         if "wazzup_message_id" in stmt_str:
